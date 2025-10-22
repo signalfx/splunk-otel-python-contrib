@@ -1,0 +1,9 @@
+*       @signalfx/gdi-python-contrib-maintainers @signalfx/gdi-python-contrib-approvers
+
+#####################################################
+#
+# Docs reviewers
+#
+#####################################################
+
+*.md @signalfx/gdi-docs @signalfx/gdi-python-contrib-maintainers @signalfx/gdi-python-contrib-approvers
