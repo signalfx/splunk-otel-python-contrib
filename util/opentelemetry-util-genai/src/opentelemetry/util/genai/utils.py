@@ -14,6 +14,13 @@
 
 import logging
 import os
+from typing import Optional
+
+
+from opentelemetry.util._importlib_metadata import (
+    entry_points,  # pyright: ignore[reportUnknownVariableType]
+)
+from .callbacks import CompletionCallback
 
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
@@ -82,3 +89,94 @@ def get_content_capturing_mode() -> ContentCapturingMode:
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE instead."
         )
     return ContentCapturingMode.NO_CONTENT
+
+def _coerce_completion_callback(
+    provider: object, name: str
+) -> CompletionCallback | None:
+    if provider is None:
+        return None
+    if hasattr(provider, "on_completion"):
+        if isinstance(provider, type):
+            try:
+                instance = provider()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "Completion callback class '%s' failed to instantiate: %s",
+                    name,
+                    exc,
+                )
+                return None
+            return instance  # type: ignore[return-value]
+        return provider  # type: ignore[return-value]
+    if callable(provider):
+        try:
+            instance = provider()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Completion callback factory '%s' raised an exception: %s",
+                name,
+                exc,
+            )
+            return None
+        if hasattr(instance, "on_completion"):
+            return instance  # type: ignore[return-value]
+        logger.warning(
+            "Completion callback factory '%s' returned an object without on_completion",
+            name,
+        )
+        return None
+    logger.warning(
+        "Completion callback entry point '%s' is not callable or instance",
+        name,
+    )
+    return None
+
+
+def _load_completion_callbacks(
+    selected: set[str] | None,
+) -> tuple[list[tuple[str, CompletionCallback]], set[str]]:
+    callbacks: list[tuple[str, CompletionCallback]] = []
+    seen: set[str] = set()
+    try:
+        entries = entry_points(
+            group="opentelemetry_util_genai_completion_callbacks"
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("Completion callback entry point group not available")
+        return callbacks, seen
+    for ep in entries:  # type: ignore[assignment]
+        name = getattr(ep, "name", "")
+        lowered = name.lower()
+        seen.add(lowered)
+        if selected and lowered not in selected:
+            continue
+        try:
+            provider = ep.load()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "Failed to load completion callback '%s': %s",
+                name,
+                exc,
+                exc_info=True,
+            )
+            continue
+        instance = _coerce_completion_callback(provider, name)
+        if instance is None:
+            continue
+        callbacks.append((name, instance))
+    return callbacks, seen
+
+
+def _is_truthy_env(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in _TRUTHY_VALUES
+
+
+def _parse_callback_filter(value: Optional[str]) -> set[str] | None:
+    if value is None:
+        return None
+    selected = {
+        item.strip().lower() for item in value.split(",") if item.strip()
+    }
+    return selected or None
