@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opentelemetry-util-genai-evals"
+dynamic = ["version"]
+description = "OpenTelemetry GenAI Evaluations"
+readme = "README.rst"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [
+  { name = "OpenTelemetry Authors", email = "cncf-opentelemetry-contributors@lists.cncf.io" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "opentelemetry-util-genai>=0.1b0.dev0",
+]
+
+[project.entry-points.opentelemetry_util_genai_evaluators]
+length = "opentelemetry.util.genai.evals.defaults:length_registration"
+
+[project.entry-points.opentelemetry_util_genai_completion_callbacks]
+evaluations = "opentelemetry.util.genai.evals.bootstrap:create_completion_callback"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-genai"
+Repository = "https://github.com/open-telemetry/opentelemetry-python-contrib"
+
+[tool.hatch.version]
+path = "src/opentelemetry/util/genai/evals/version.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opentelemetry"]
