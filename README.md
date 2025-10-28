@@ -248,12 +248,19 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 ## 14. How to use (end-to-end)
 Get the packages installed:
 
+Setup a virtual env (Note: will erase your .venv in the current folder)
+
 ```bash
-pip install -e util/opentelemetry-util-genai
-pip install -e util/opentelemetry-util-evals
-pip install -e util/opentelemetry-util-evals-deepeval
-pip install -e util/opentelemetry-util-emitters-splunk
-pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain
+deactivate ; rm -rf .venv; python --version ; python -m venv .venv && . .venv/bin/activate && python -m ensurepip && python -m pip install --upgrade pip && python -m pip install pre-commit -c dev-requirements.txt && pre-commit install && python -m pip install rstcheck
+```
+
+```bash
+pip install -e util/opentelemetry-util-genai --no-deps
+pip install -e util/opentelemetry-util-genai-evals --no-deps
+pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
+pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
+pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
+
 
 export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk

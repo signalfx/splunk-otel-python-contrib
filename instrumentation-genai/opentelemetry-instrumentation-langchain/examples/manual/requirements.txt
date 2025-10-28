@@ -1,20 +1,32 @@
-langchain==0.3.21 # TODO: find the lowest compatible version
-langchain_openai
+deepeval
+langchain==1.0.2
+#langchain-classic==1.0.0
+langchain-core==1.0.1
+langchain-openai==1.0.1
+langchain-text-splitters==1.0.0
+langgraph==1.0.1
+#langgraph-api==0.4.46
+langgraph-checkpoint==3.0.0
+#langgraph-cli==0.4.4
+langgraph-prebuilt==1.0.1
+langgraph-runtime-inmem==0.14.1
+#langgraph-sdk==0.2.9
+#langsmith==0.4.38
+requests
 
-# OpenTelemetry core (track latest main branch)
-opentelemetry-api @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-api&subdirectory=opentelemetry-api
-opentelemetry-sdk @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-sdk&subdirectory=opentelemetry-sdk
-opentelemetry-semantic-conventions @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-semantic-conventions&subdirectory=opentelemetry-semantic-conventions
-opentelemetry-test-utils @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-test-utils&subdirectory=tests/opentelemetry-test-utils
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-http
+# opentelemetry-instrumentation==0.59b0
 
-# Exporters / protocol (also track main for consistency)
-opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-exporter-otlp-proto-grpc&subdirectory=exporter/opentelemetry-exporter-otlp-proto-grpc
-opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-exporter-otlp-proto-common&subdirectory=exporter/opentelemetry-exporter-otlp-proto-common
-opentelemetry-proto @ git+https://github.com/open-telemetry/opentelemetry-python.git@main#egg=opentelemetry-proto&subdirectory=opentelemetry-proto
+# OpenTelemetry core (track latest v1.38.0 branch)
+opentelemetry-api @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-api&subdirectory=opentelemetry-api
+opentelemetry-sdk @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-sdk&subdirectory=opentelemetry-sdk
+opentelemetry-semantic-conventions @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-semantic-conventions&subdirectory=opentelemetry-semantic-conventions
+opentelemetry-test-utils @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-test-utils&subdirectory=tests/opentelemetry-test-utils
 
-# Optional extras (uncomment as needed)
-# python-dotenv[cli]
-# deepeval
-# nltk
+# Exporters / protocol (also track v1.38.0 for consistency)
+opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-grpc&subdirectory=exporter/opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-common&subdirectory=exporter/opentelemetry-exporter-otlp-proto-common
+opentelemetry-proto @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-proto&subdirectory=opentelemetry-proto
+opentelemetry-instrumentation @ git+https://github.com/open-telemetry/opentelemetry-python-contrib.git@v0.59b0#egg=opentelemetry-instrumentation&subdirectory=opentelemetry-instrumentation
 
-# For local development: `pip install -e /path/to/opentelemetry-instrumentation-langchain`
