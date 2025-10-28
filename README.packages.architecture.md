@@ -1,10 +1,15 @@
-# OpenTelemetry GenAI Utility – Packages Architecture Snapshot (Updated)
 
-Scope (util/ subpackages):
+# OpenTelemetry GenAI Utility - Packages architecture
 
-`opentelemetry-util-genai-dev`, `opentelemetry-util-genai-emitters-splunk`, `opentelemetry-util-genai-emitters-traceloop`, `opentelemetry-util-genai-evals-deepeval`, `opentelemetry-util-genai-evals-nltk`
+## 1. Goals (Why this utility exists)
+Provide a stable, extensible core abstraction (GenAI Types + TelemetryHandler + CompositeEmitter + Evaluator hooks) separating *instrumentation capture* from *telemetry flavor emission* so that:
+- Instrumentation authors create neutral GenAI data objects once.
+- Different telemetry flavors (semantic conventions, vendor enrichments, events vs attributes, aggregated evaluation results, cost / agent metrics) are produced by pluggable emitters without touching instrumentation code.
+- Evaluations (LLM-as-a-judge, quality metrics) run asynchronously and re-emit results through the same handler/emitter pipeline.
+- Third parties can add / replace / augment emitters in well-defined category chains.
+- Configuration is primarily environment-variable driven; complexity is opt-in.
 
----
+Non-goal: Replace the OpenTelemetry SDK pipeline. Emitters sit *above* the SDK using public Span / Metrics / Logs / Events APIs.
 
 ## Core Package: `opentelemetry-util-genai-dev`
 
@@ -48,13 +53,6 @@ src/opentelemetry/util/genai/
     content_events.py       # Message content events/log emission (optional capture)
     evaluation.py           # Evaluation result(s) emitter bridging Manager -> OTel
     utils.py                # Shared mapping helpers & safe value transforms
-  evaluators/
-    __init__.py
-    base.py                 # Evaluator base + shared option parsing logic
-    manager.py              # Async Manager (queue, sampling, aggregation, worker thread)
-    builtins.py             # Placeholder/simple builtin evaluators (length, sentiment-lite, etc.)
-    normalize.py            # Canonical normalization + skip flags (tool-only, creation, non-invoke)
-    registry.py             # Evaluator registration & default metrics lookup
 ```
 
 Removed (from previous doc): `evaluation_emitters.py` (responsibility merged into `emitters/evaluation.py` and handler path).
@@ -273,5 +271,3 @@ Async emitters, dynamic hot-swap reconfig, advanced PII redaction, large queue b
 ```
 
 ---
-
-End of updated packages architecture snapshot.
