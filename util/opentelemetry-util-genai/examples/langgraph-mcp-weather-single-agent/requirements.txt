@@ -1,0 +1,22 @@
+# LangChain/LangGraph
+langgraph
+langchain-openai
+langchain_community
+
+# MCP (Model Context Protocol)
+mcp
+fastmcp
+httpx
+
+# Flask web framework
+flask
+flask-cors
+
+# OpenTelemetry
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
+
+# Utilities
+python-dotenv
+requests
