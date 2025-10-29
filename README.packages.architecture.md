@@ -155,19 +155,6 @@ version.py
 
 ---
 
-## Emitters Package: `opentelemetry-util-genai-emitters-traceloop`
-
-Purpose: Traceloop proprietary span enrichment.
-
-```text
-src/opentelemetry/util/genai/emitters/traceloop.py
-  TraceloopSpanEmitter        # kind="span" position after SemanticConvSpan
-  load_emitters() -> list[EmitterSpec]
-version.py
-```
-
----
-
 ## Evaluators Package: `opentelemetry-util-genai-evals-deepeval`
 
 Purpose: Deepeval metrics (bias, toxicity, answer_relevancy, hallucination, sentiment, etc.) with LLM-as-a-judge backend.
@@ -192,16 +179,13 @@ Notes:
 
 ---
 
-## Evaluators Package: `opentelemetry-util-genai-evals-nltk`
+## Langchain Instrumentation Package: `opentelemetry-instrumentation-langchain`
 
-Purpose: Lightweight NLTK-based text metrics (readability, token length, etc.).
+Purpose: Instrumentation package for Langchain/Langgraph frameworks
 
 ```text
-src/opentelemetry/util/evaluator/nltk.py
-  NLTKEvaluator               # implements Evaluator
-  default_metrics()
-  evaluate(invocation)
-version.py
+instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/instrumentation/langchain
+  LangchainCallbackHandler               # implements Langchain callback handler to aquire telemetry 
 ```
 
 ---
