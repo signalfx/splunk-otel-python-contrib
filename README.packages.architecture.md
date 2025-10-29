@@ -179,16 +179,13 @@ Notes:
 
 ---
 
-## Evaluators Package: `opentelemetry-util-genai-evals-nltk`
+## Langchain Instrumentation Package: `opentelemetry-instrumentation-langchain`
 
-Purpose: Lightweight NLTK-based text metrics (readability, token length, etc.).
+Purpose: Instrumentation package for Langchain/Langgraph frameworks
 
 ```text
-src/opentelemetry/util/evaluator/nltk.py
-  NLTKEvaluator               # implements Evaluator
-  default_metrics()
-  evaluate(invocation)
-version.py
+instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/instrumentation/langchain
+  LangchainCallbackHandler               # implements Langchain callback handler to aquire telemetry 
 ```
 
 ---
