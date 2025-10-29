@@ -6,4 +6,5 @@
 #
 #####################################################
 
-*.md @signalfx/gdi-docs @signalfx/gdi-python-contrib-maintainers @signalfx/gdi-python-contrib-approvers
+# This is temporarily disabled by @zhirafovod while in alpha release 
+# *.md @signalfx/gdi-docs @signalfx/gdi-python-contrib-maintainers @signalfx/gdi-python-contrib-approvers

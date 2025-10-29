@@ -1,5 +1,7 @@
 # OpenTelemetry GenAI Utility
 
+This software is for Alpha preview only. This code may be discontinued, include breaking changes and may require code changes to use it.
+
 ## 1. Goals (Why this utility exists)
 
 Provide a stable, extensible core abstraction (GenAI Types + TelemetryHandler + CompositeEmitter + Evaluator hooks) separating *instrumentation capture* from *telemetry flavor emission* so that:
