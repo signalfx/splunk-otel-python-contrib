@@ -42,8 +42,3 @@ class Instruments:
             unit="s",
             description="Duration of agent operations",
         )
-        self.step_duration_histogram: Histogram = meter.create_histogram(
-            name="gen_ai.step.duration",
-            unit="s",
-            description="Duration of step executions",
-        )

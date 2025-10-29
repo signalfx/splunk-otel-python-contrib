@@ -260,7 +260,8 @@ pip install -e util/opentelemetry-util-genai-evals --no-deps
 pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
 pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
 pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
-
+pip install -r dev-genai-requirements.txt
+pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/requirements.txt
 
 export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk

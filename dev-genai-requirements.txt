@@ -1,0 +1,34 @@
+pylint==3.0.2
+httpretty==1.1.4
+pyright==v1.1.404
+sphinx==7.1.2
+sphinx-rtd-theme==2.0.0rc4
+sphinx-autodoc-typehints==1.25.2
+pytest==7.4.4
+pytest-cov==4.1.0
+readme-renderer==42.0
+bleach==4.1.0 # transient dependency for readme-renderer
+markupsafe>=2.0.1
+codespell==2.1.0
+requests==2.32.3
+ruamel.yaml==0.17.21
+flaky==3.7.0
+pre-commit==3.7.0; python_version >= '3.9'
+pre-commit==3.5.0; python_version < '3.9'
+ruff==0.6.9
+
+# opentelemetry dependencies: 
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-http
+
+# OpenTelemetry core (track latest v1.38.0 branch)
+opentelemetry-api @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-api&subdirectory=opentelemetry-api
+opentelemetry-sdk @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-sdk&subdirectory=opentelemetry-sdk
+opentelemetry-semantic-conventions @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-semantic-conventions&subdirectory=opentelemetry-semantic-conventions
+opentelemetry-test-utils @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-test-utils&subdirectory=tests/opentelemetry-test-utils
+
+# Exporters / protocol (also track v1.38.0 for consistency)
+opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-grpc&subdirectory=exporter/opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-common&subdirectory=exporter/opentelemetry-exporter-otlp-proto-common
+opentelemetry-proto @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-proto&subdirectory=opentelemetry-proto
+opentelemetry-instrumentation @ git+https://github.com/open-telemetry/opentelemetry-python-contrib.git@v0.59b0#egg=opentelemetry-instrumentation&subdirectory=opentelemetry-instrumentation

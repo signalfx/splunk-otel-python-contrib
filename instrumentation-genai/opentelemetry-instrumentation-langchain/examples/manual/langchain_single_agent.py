@@ -42,8 +42,8 @@ instrumentor.instrument()
 A simple LangChain single-agent example with LangChain instrumentaiton using OpenTelemetry GenAI Utils with evals enabled.
 
 Example telemetry expected: 
-Trace ID: 4a0203cac3bcf7dc40960d938c257278
-└── Span ID: 64f3b947ba47d433 (Parent: none) - Name: invoke_agent weather-agent [op:invoke_agent] (Type: span)
+Trace ID: d6d3550630667b15dc20c521ea3abd2a
+└── Span ID: 3363678cbe837b99 (Parent: none) - Name: invoke_agent weather-agent [op:chat] (Type: span)
     ├── Log: gen_ai.client.agent.operation.details (Type: log)
     ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
     ├── Metric: gen_ai.agent.duration [op:invoke_agent] (Type: metric)
@@ -52,22 +52,21 @@ Trace ID: 4a0203cac3bcf7dc40960d938c257278
     ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
     ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
     ├── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-    ├── Span ID: 072ebe1698abf8b5 (Parent: 64f3b947ba47d433) - Name: gen_ai.step model (Type: span)
-    │   ├── Span ID: 8cdd0c6c54488dae (Parent: 072ebe1698abf8b5) - Name: chat ChatOpenAI [op:chat] (Type: span)
+    ├── Span ID: a6679f427633fcb9 (Parent: 3363678cbe837b99) - Name: gen_ai.step model (Type: span)
+    │   ├── Span ID: 727c71391cb03753 (Parent: a6679f427633fcb9) - Name: chat ChatOpenAI [op:chat] (Type: span)
     │   │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
     │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
+    │   │   ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
+    │   │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
     │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
     │   │   └── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-    │   └── Span ID: 46d14eaab07d930c (Parent: 072ebe1698abf8b5) - Name: gen_ai.step model_to_tools (Type: span)
-    ├── Span ID: 8d4cf6fa661400e1 (Parent: 64f3b947ba47d433) - Name: gen_ai.step tools (Type: span)
-    │   ├── Metric: gen_ai.step.duration (Type: metric)
-    │   ├── Span ID: 6cb4be88f8e83162 (Parent: 8d4cf6fa661400e1) - Name: tool get_weather [op:execute_tool] (Type: span)
+    │   └── Span ID: 990a8858820e136e (Parent: a6679f427633fcb9) - Name: gen_ai.step model_to_tools (Type: span)
+    ├── Span ID: 73b3a8ef46b36a93 (Parent: 3363678cbe837b99) - Name: gen_ai.step tools [op:chat] (Type: span)
+    │   ├── Span ID: b14699dc6e4d265d (Parent: 73b3a8ef46b36a93) - Name: tool get_weather [op:execute_tool] (Type: span)
     │   │   └── Metric: gen_ai.client.operation.duration [op:execute_tool] (Type: metric)
-    │   └── Span ID: 99799bc83ead5255 (Parent: 8d4cf6fa661400e1) - Name: gen_ai.step tools_to_model (Type: span)
-    │       └── Metric: gen_ai.step.duration (Type: metric)
-    └── Span ID: af9231938e7f64b8 (Parent: 64f3b947ba47d433) - Name: gen_ai.step model (Type: span)
-        ├── Metric: gen_ai.step.duration (Type: metric)
-        ├── Span ID: 72769969acd490ce (Parent: af9231938e7f64b8) - Name: chat ChatOpenAI [op:chat] (Type: span)
+    │   └── Span ID: 2ff06d8b3d24aa60 (Parent: 73b3a8ef46b36a93) - Name: gen_ai.step tools_to_model (Type: span)
+    └── Span ID: 91ff632289379944 (Parent: 3363678cbe837b99) - Name: gen_ai.step model (Type: span)
+        ├── Span ID: 104ef8823199fdd1 (Parent: 91ff632289379944) - Name: chat ChatOpenAI [op:chat] (Type: span)
         │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
         │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
         │   ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
@@ -78,8 +77,7 @@ Trace ID: 4a0203cac3bcf7dc40960d938c257278
         │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
         │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
         │   └── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        └── Span ID: 8442104e9276b884 (Parent: af9231938e7f64b8) - Name: gen_ai.step model_to_tools (Type: span)
-            └── Metric: gen_ai.step.duration (Type: metric)
+        └── Span ID: 210e81dd011c2cb7 (Parent: 91ff632289379944) - Name: gen_ai.step model_to_tools (Type: span)
 
 vscode launch configuration to run this example:
 ```

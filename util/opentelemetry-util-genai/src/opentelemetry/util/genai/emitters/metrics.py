@@ -15,7 +15,7 @@ from ..types import (
     EmbeddingInvocation,
     Error,
     LLMInvocation,
-    Step,
+    ToolCall,
     Workflow,
 )
 from .utils import (
@@ -28,7 +28,7 @@ from .utils import (
 class MetricsEmitter(EmitterMeta):
     """Emits GenAI metrics (duration + token usage).
 
-    Supports LLMInvocation, EmbeddingInvocation, ToolCall, Workflow, Agent, and Step.
+    Supports LLMInvocation, EmbeddingInvocation, ToolCall, Workflow, and Agent.
     """
 
     role = "metric"
@@ -47,9 +47,6 @@ class MetricsEmitter(EmitterMeta):
         self._agent_duration_histogram: Histogram = (
             instruments.agent_duration_histogram
         )
-        self._step_duration_histogram: Histogram = (
-            instruments.step_duration_histogram
-        )
 
     def on_start(self, obj: Any) -> None:  # no-op for metrics
         return None
@@ -61,9 +58,7 @@ class MetricsEmitter(EmitterMeta):
         if isinstance(obj, AgentInvocation):
             self._record_agent_metrics(obj)
             return
-        if isinstance(obj, Step):
-            self._record_step_metrics(obj)
-            return
+        # Step metrics removed
 
         if isinstance(obj, LLMInvocation):
             invocation = obj
@@ -94,8 +89,6 @@ class MetricsEmitter(EmitterMeta):
                 span=getattr(invocation, "span", None),
             )
             return
-        from ..types import ToolCall
-
         if isinstance(obj, ToolCall):
             invocation = obj
             metric_attrs = _get_metric_attributes(
@@ -150,9 +143,7 @@ class MetricsEmitter(EmitterMeta):
         if isinstance(obj, AgentInvocation):
             self._record_agent_metrics(obj)
             return
-        if isinstance(obj, Step):
-            self._record_step_metrics(obj)
-            return
+        # Step metrics removed
 
         # Handle existing types with agent context
         if isinstance(obj, LLMInvocation):
@@ -174,8 +165,6 @@ class MetricsEmitter(EmitterMeta):
                 self._duration_histogram, invocation, metric_attrs
             )
             return
-        from ..types import ToolCall
-
         if isinstance(obj, ToolCall):
             invocation = obj
             metric_attrs = _get_metric_attributes(
@@ -223,8 +212,6 @@ class MetricsEmitter(EmitterMeta):
             )
 
     def handles(self, obj: Any) -> bool:
-        from ..types import LLMInvocation, ToolCall
-
         return isinstance(
             obj,
             (
@@ -232,7 +219,6 @@ class MetricsEmitter(EmitterMeta):
                 ToolCall,
                 Workflow,
                 AgentInvocation,
-                Step,
                 EmbeddingInvocation,
             ),
         )
@@ -256,7 +242,7 @@ class MetricsEmitter(EmitterMeta):
         if span is not None:
             try:
                 context = trace.set_span_in_context(span)
-            except Exception:  # pragma: no cover - defensive
+            except (ValueError, RuntimeError):  # pragma: no cover - defensive
                 context = None
 
         self._workflow_duration_histogram.record(
@@ -283,36 +269,9 @@ class MetricsEmitter(EmitterMeta):
         if span is not None:
             try:
                 context = trace.set_span_in_context(span)
-            except Exception:  # pragma: no cover - defensive
+            except (ValueError, RuntimeError):  # pragma: no cover - defensive
                 context = None
 
         self._agent_duration_histogram.record(
-            duration, attributes=metric_attrs, context=context
-        )
-
-    def _record_step_metrics(self, step: Step) -> None:
-        """Record metrics for a step."""
-        if step.end_time is None:
-            return
-        duration = step.end_time - step.start_time
-        metric_attrs = {
-            "gen_ai.step.name": step.name,
-        }
-        if step.step_type:
-            metric_attrs["gen_ai.step.type"] = step.step_type
-        if step.source:
-            metric_attrs["gen_ai.step.source"] = step.source
-        if step.assigned_agent:
-            metric_attrs[GenAI.GEN_AI_AGENT_NAME] = step.assigned_agent
-
-        context = None
-        span = getattr(step, "span", None)
-        if span is not None:
-            try:
-                context = trace.set_span_in_context(span)
-            except Exception:  # pragma: no cover - defensive
-                context = None
-
-        self._step_duration_histogram.record(
             duration, attributes=metric_attrs, context=context
         )
