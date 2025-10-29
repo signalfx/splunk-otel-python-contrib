@@ -80,17 +80,6 @@ def dont_throw(func):
 
     return wrapper
 
-
-def should_emit_events() -> bool:
-    """
-    Checks if the instrumentation isn't using the legacy attributes
-    and if the event logger is not None.
-    """
-    return not Config.use_legacy_attributes and isinstance(
-        Config.event_logger, EventLogger
-    )
-
-
 def is_package_available(package_name):
     return importlib.util.find_spec(package_name) is not None
 

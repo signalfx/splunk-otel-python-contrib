@@ -1,7 +1,7 @@
 """OpenTelemetry Langchain instrumentation"""
 
 import logging
-from typing import Any, Collection
+from typing import Collection
 
 from opentelemetry import context as context_api
 
@@ -15,19 +15,13 @@ from opentelemetry.instrumentation.langchain.config import Config
 from opentelemetry.instrumentation.langchain.utils import is_package_available
 from opentelemetry.instrumentation.langchain.version import __version__
 from opentelemetry.instrumentation.utils import unwrap
-from opentelemetry.metrics import get_meter
 from .semconv_ai import Meters, SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY
-from opentelemetry.trace import get_tracer
-from opentelemetry.trace.propagation import set_span_in_context
-from opentelemetry.trace.propagation.tracecontext import (
-    TraceContextTextMapPropagator,
-)
-from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     EmbeddingInvocation as UtilEmbeddingInvocation,
     Error as UtilError,
 )
 from wrapt import wrap_function_wrapper
+from opentelemetry.util.genai.handler import get_telemetry_handler
 
 logger = logging.getLogger(__name__)
 
@@ -66,50 +60,26 @@ class LangchainInstrumentor(BaseInstrumentor):
         Config.exception_logger = exception_logger
         Config.use_legacy_attributes = use_legacy_attributes
         self.disable_trace_context_propagation = disable_trace_context_propagation
+        self._telemetry_handler = None
 
     def instrumentation_dependencies(self) -> Collection[str]:
         return _instruments
 
     def _instrument(self, **kwargs):
         tracer_provider = kwargs.get("tracer_provider")
-        tracer = get_tracer(__name__, __version__, tracer_provider)
-
-        # Add meter creation
         meter_provider = kwargs.get("meter_provider")
-        meter = get_meter(__name__, __version__, meter_provider)
+        logger_provider = kwargs.get("logger_provider")
 
-        # Create duration histogram
-        duration_histogram = meter.create_histogram(
-            name=Meters.LLM_OPERATION_DURATION,
-            unit="s",
-            description="GenAI operation duration",
+        self._telemetry_handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            logger_provider=logger_provider
         )
-
-        # Create token histogram
-        token_histogram = meter.create_histogram(
-            name=Meters.LLM_TOKEN_USAGE,
-            unit="token",
-            description="Measures number of input and output tokens used",
-        )
-
-        if not Config.use_legacy_attributes:
-            event_logger_provider = kwargs.get("event_logger_provider")
-            Config.event_logger = get_event_logger(
-                __name__, __version__, event_logger_provider=event_logger_provider
-            )
-
-        telemetry_handler_kwargs: dict[str, Any] = {}
-        if tracer_provider is not None:
-            telemetry_handler_kwargs["tracer_provider"] = tracer_provider
-        if meter_provider is not None:
-            telemetry_handler_kwargs["meter_provider"] = meter_provider
 
         langchainCallbackHandler = LangchainCallbackHandler(
-            tracer,
-            duration_histogram,
-            token_histogram,
-            telemetry_handler_kwargs=telemetry_handler_kwargs or None,
+            telemetry_handler=self._telemetry_handler,
         )
+
         wrap_function_wrapper(
             module="langchain_core.callbacks",
             name="BaseCallbackManager.__init__",
@@ -119,11 +89,6 @@ class LangchainInstrumentor(BaseInstrumentor):
         if not self.disable_trace_context_propagation:
             self._wrap_openai_functions_for_tracing(langchainCallbackHandler)
 
-        # Initialize telemetry handler for embeddings
-        self._telemetry_handler = TelemetryHandler(
-            tracer_provider=tracer_provider,
-            meter_provider=meter_provider,
-        )
         self._wrap_embedding_functions()
 
     def _wrap_openai_functions_for_tracing(self, langchainCallbackHandler):

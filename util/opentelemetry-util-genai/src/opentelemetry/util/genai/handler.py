@@ -63,11 +63,19 @@ except Exception:  # pragma: no cover - fallback if debug module missing
 
 
 from opentelemetry import _events as _otel_events
-from opentelemetry import _logs
 from opentelemetry import metrics as _metrics
 from opentelemetry import trace as _trace_mod
+from opentelemetry._logs import Logger, LoggerProvider, get_logger
+from opentelemetry.metrics import MeterProvider, get_meter
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAI,
+)
 from opentelemetry.semconv.schemas import Schemas
-from opentelemetry.trace import get_tracer
+from opentelemetry.trace import (
+    TracerProvider,
+    get_tracer,
+)
+
 from opentelemetry.util.genai.emitters.configuration import (
     build_emitter_pipeline,
 )
@@ -118,28 +126,36 @@ class TelemetryHandler:
     delegated to EvaluationManager for extensibility (mirrors emitter design).
     """
 
-    def __init__(self, **kwargs: Any):
-        tracer_provider = kwargs.get("tracer_provider")
-        # Store provider reference for later identity comparison (test isolation)
-        # Use already imported _trace_mod for provider reference; avoid re-import for lint.
-        self._tracer_provider_ref = (
-            tracer_provider or _trace_mod.get_tracer_provider()
-        )
+    def __init__(
+            self,
+            tracer_provider: TracerProvider | None = None,
+            logger_provider: LoggerProvider | None = None,
+            meter_provider: MeterProvider | None = None,
+    ):
         self._tracer = get_tracer(
             __name__,
             __version__,
             tracer_provider,
-            schema_url=Schemas.V1_36_0.value,
+            schema_url=Schemas.V1_37_0.value,
         )
-        self._event_logger = _otel_events.get_event_logger(__name__)
+
         # Logger for content events (uses Logs API, not Events API)
-        self._content_logger = _logs.get_logger(__name__)
-        meter_provider = kwargs.get("meter_provider")
-        self._meter_provider = meter_provider  # store for flushing in tests
-        if meter_provider is not None:
-            meter = meter_provider.get_meter(__name__)
-        else:
-            meter = _metrics.get_meter(__name__)
+        self._content_logger: Logger = get_logger(
+            __name__,
+            __version__,
+            logger_provider=logger_provider,
+            schema_url=Schemas.V1_37_0.value,
+        )
+        self._meter_provider = meter_provider
+        meter = get_meter(
+            __name__,
+            __version__,
+            meter_provider=meter_provider,
+            schema_url=Schemas.V1_37_0.value
+        )
+
+        self._event_logger = _otel_events.get_event_logger(__name__)
+
         # Fixed canonical evaluation histograms (no longer dynamic):
         # gen_ai.evaluation.(relevance|hallucination|sentiment|toxicity|bias)
         self._evaluation_histograms: dict[str, Any] = {}
@@ -896,26 +912,22 @@ class TelemetryHandler:
         return obj
 
 
-def get_telemetry_handler(**kwargs: Any) -> TelemetryHandler:
+def get_telemetry_handler(
+    tracer_provider: TracerProvider | None = None,
+    meter_provider: MeterProvider | None = None,
+    logger_provider: LoggerProvider | None = None,
+) -> TelemetryHandler:
     """
-    Returns a singleton TelemetryHandler instance. If the global tracer provider
-    has changed since the handler was created, a new handler is instantiated so that
-    spans are recorded with the active provider (important for test isolation).
+    Returns a singleton TelemetryHandler instance.
     """
     handler: Optional[TelemetryHandler] = getattr(
         get_telemetry_handler, "_default_handler", None
     )
-    current_provider = _trace_mod.get_tracer_provider()
-    requested_provider = kwargs.get("tracer_provider")
-    target_provider = requested_provider or current_provider
-    recreate = False
-    if handler is not None:
-        # Recreate if provider changed or handler lacks provider reference (older instance)
-        if not hasattr(handler, "_tracer_provider_ref"):
-            recreate = True
-        elif handler._tracer_provider_ref is not target_provider:  # type: ignore[attr-defined]
-            recreate = True
-    if handler is None or recreate:
-        handler = TelemetryHandler(**kwargs)
+    if handler is None:
+        handler = TelemetryHandler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            logger_provider=logger_provider,
+        )
         setattr(get_telemetry_handler, "_default_handler", handler)
     return handler
