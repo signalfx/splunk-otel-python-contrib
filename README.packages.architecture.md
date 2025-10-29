@@ -155,19 +155,6 @@ version.py
 
 ---
 
-## Emitters Package: `opentelemetry-util-genai-emitters-traceloop`
-
-Purpose: Traceloop proprietary span enrichment.
-
-```text
-src/opentelemetry/util/genai/emitters/traceloop.py
-  TraceloopSpanEmitter        # kind="span" position after SemanticConvSpan
-  load_emitters() -> list[EmitterSpec]
-version.py
-```
-
----
-
 ## Evaluators Package: `opentelemetry-util-genai-evals-deepeval`
 
 Purpose: Deepeval metrics (bias, toxicity, answer_relevancy, hallucination, sentiment, etc.) with LLM-as-a-judge backend.
