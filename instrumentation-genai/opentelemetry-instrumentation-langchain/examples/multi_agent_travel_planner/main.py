@@ -27,6 +27,7 @@ import json
 import os
 import random
 from datetime import datetime, timedelta
+import time
 from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
 
@@ -41,27 +42,51 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 
-try:  # LangChain >= 1.0.0
-    from langchain.agents import (
-        create_agent as _create_react_agent,  # type: ignore[attr-defined]
-    )
-except (
-    ImportError
-):  # pragma: no cover - compatibility with older LangGraph releases
-    from langgraph.prebuilt import (
-        create_react_agent as _create_react_agent,  # type: ignore[assignment]
-    )
 
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-    OTLPSpanExporter,
+from langchain.agents import (
+    create_agent as _create_react_agent,  # type: ignore[attr-defined]
 )
 
-# from opentelemetry.instrumentation.langchain import LangChainInstrumentor
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
+
+from opentelemetry import _events, _logs, metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+    OTLPMetricExporter,
+)
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter,
+)
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+from opentelemetry.sdk._events import EventLoggerProvider
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Configure tracing/metrics/logging once per process so exported data goes to OTLP.
+trace.set_tracer_provider(TracerProvider())
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter())
+)
+
+demo_tracer = trace.get_tracer("instrumentation.langchain.demo")
+
+metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
+
+_logs.set_logger_provider(LoggerProvider())
+_logs.get_logger_provider().add_log_record_processor(
+    BatchLogRecordProcessor(OTLPLogExporter())
+)
+_events.set_event_logger_provider(EventLoggerProvider())
+
+instrumentor = LangchainInstrumentor()
+instrumentor.instrument()
 
 # ---------------------------------------------------------------------------
 # Sample data utilities
@@ -571,6 +596,7 @@ def main() -> None:
     provider = trace.get_tracer_provider()
     if hasattr(provider, "force_flush"):
         provider.force_flush()
+    time.sleep(300)
     if hasattr(provider, "shutdown"):
         provider.shutdown()
 
