@@ -5,7 +5,7 @@ This example demonstrates a **LangGraph-driven multi-agent workflow** for synthe
 - Workflow orchestration (`gen_ai.workflow`, `gen_ai.step` spans)
 - Individual agent invocations (`invoke_agent` spans & metrics)
 - Underlying model calls (`chat` spans & token usage metrics)
-- Automatic evaluation metrics (LLM-as-a-judge) such as hallucination, bias, relevance, sentiment, toxicity (emitted by the instrumentation layer — no evaluation code inside the app)
+- Automatic evaluation metrics (LLM-as-a-judge) such as hallucination, bias, relevance, sentiment, toxicity (emitted by the instrumentation layer evaluator)
 
 ## Architecture Overview
 
@@ -21,7 +21,7 @@ State flows through a LangGraph `StateGraph` with conditional edges driven by `s
 
 ## Instrumentation
 
-`LangchainInstrumentor().instrument()` wires tracing, metrics, and logs. Each agent/model call yields spans and evaluation metrics automatically (LLM-as-a-judge style). You do **not** need to add any evaluation code — the instrumentation inspects messages and model responses.
+`LangchainInstrumentor().instrument()` wires tracing, metrics, and logs. Each agent/model call yields spans and evaluation metrics automatically via [opentelemetry-util-genai-evals](https://github.com/signalfx/splunk-otel-python-contrib/) evaluator.
 
 ## Prompt Poisoning (Quality Degradation) Mechanism
 
