@@ -1,0 +1,102 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: langgraph-travel-agent-langchain-config
+  namespace: travel-agent
+data:
+  OPENAI_MODEL: "gpt-4o-mini"
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "DELTA"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_AND_EVENT"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event,splunk"
+  OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION: "true"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION: "replace-category:SplunkEvaluationResults"
+  OTEL_INSTRUMENTATION_GENAI_DEBUG: "true"
+  # OTEL_INSTRUMENTATION_LANGCHAIN_DEBUG: "true"
+  # OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: "deepeval(LLMInvocation(bias,toxicity))"
+  DEEPEVAL_FILE_SYSTEM: "READ_ONLY"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: langgraph-travel-agent-langchain-cronjob
+  namespace: travel-agent
+  labels:
+    app: langgraph-travel-agent-langchain
+    component: cronjob
+spec:
+  schedule: "*/5 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: langgraph-travel-agent-langchain
+        component: job
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 2
+      
+      template:
+        metadata:
+          labels:
+            app: langgraph-travel-agent-langchain
+            component: pod
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+          
+          containers:
+          - name: langgraph-travel-agent-langchain
+            image: ertserendavga918/langgraph-travel-agent-langchain:v1.0.9
+            imagePullPolicy: Always
+            
+            envFrom:
+            - configMapRef:
+                name: langgraph-travel-agent-langchain-config
+            
+            env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langgraph-travel-agent-langchain-secrets
+                  key: openai-api-key
+            - name: OTEL_SERVICE_NAME
+              value: "langgraph-travel-agent-langchain"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=o11y-inframon-ai"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+            
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: false

@@ -13,9 +13,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.outputs import LLMResult
-from opentelemetry.trace import Tracer
-
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     Workflow,
     Step,
@@ -161,18 +159,10 @@ def _extract_tool_details(
 class LangchainCallbackHandler(BaseCallbackHandler):
     def __init__(
         self,
-        tracer: Tracer,
-        duration_histogram: Any,
-        token_histogram: Any,
-        *,
-        telemetry_handler: Optional[Any] = None,
-        telemetry_handler_kwargs: Optional[dict[str, Any]] = None,
+        telemetry_handler: Optional[TelemetryHandler] = None,
     ) -> None:
         super().__init__()
-        self.tracer = tracer
-        self._handler = telemetry_handler or get_telemetry_handler(
-            **(telemetry_handler_kwargs or {})
-        )
+        self._handler = telemetry_handler
 
     def _find_nearest_agent(
         self, run_id: Optional[UUID]
