@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: travel-planner-load-generator
+  namespace: travel-planner
+spec:
+  schedule: "*/5 * * * *" # Every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: load-generator
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Generating travel planning requests..."
+              
+              # Simple requests without bash-specific syntax
+              destinations="Tokyo Paris NewYork Sydney Barcelona Dubai London Singapore"
+              budgets="2000 3000 1500 4000 2500"
+              durations="3 5 7 10"
+              
+              # Generate 3 requests per run
+              i=1
+              while [ $i -le 3 ]; do
+                # Pick values using modulo on timestamp
+                RAND=$(date +%s)
+                dest=$(echo $destinations | cut -d' ' -f$((($RAND % 8) + 1)))
+                budget=$(echo $budgets | cut -d' ' -f$((($RAND % 5) + 1)))
+                duration=$(echo $durations | cut -d' ' -f$((($RAND % 4) + 1)))
+                
+                echo "Request $i: Planning trip to $dest, budget: \$$budget, duration: $duration days"
+                
+                # Make request to the travel planner service
+                curl -X POST http://travel-planner-service.travel-planner.svc.cluster.local/plan \
+                  -H "Content-Type: application/json" \
+                  -d "{
+                    \"destination\": \"$dest\",
+                    \"budget\": $budget,
+                    \"duration\": $duration,
+                    \"travelers\": 2,
+                    \"interests\": [\"sightseeing\", \"food\", \"culture\"]
+                  }" \
+                  --max-time 60 \
+                  --retry 2 \
+                  --retry-delay 5 || echo "Request $i failed"
+                
+                # Wait between requests
+                sleep 10
+                i=$((i + 1))
+              done
+              
+              echo "Load generation completed"
+          restartPolicy: OnFailure
+      backoffLimit: 3
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
