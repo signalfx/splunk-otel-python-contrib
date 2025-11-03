@@ -298,7 +298,14 @@ class EvaluationMetricsEmitter(_EvaluationEmitterBase):
                 attrs["gen_ai.evaluation.passed"] = passed
             attrs["gen_ai.evaluation.score.units"] = "score"
             if res.error is not None:
-                attrs["error.type"] = res.error.type.__qualname__
+                if getattr(res.error, "message", None):
+                    attrs["gen_ai.evaluation.error.message"] = (
+                        res.error.message
+                    )
+                if getattr(res.error, "type", None):
+                    attrs["gen_ai.evaluation.error.type"] = (
+                        res.error.type.__qualname__
+                    )
             try:
                 if otel_context is not None:
                     histogram.record(  # type: ignore[attr-defined]
@@ -409,7 +416,14 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
             if isinstance(res.score, (int, float)):
                 base_attrs["gen_ai.evaluation.score.units"] = "score"
             if res.error is not None:
-                base_attrs["error.type"] = res.error.type.__qualname__
+                if getattr(res.error, "message", None):
+                    base_attrs["gen_ai.evaluation.error.message"] = (
+                        res.error.message
+                    )
+                if getattr(res.error, "type", None):
+                    base_attrs["gen_ai.evaluation.error.type"] = (
+                        res.error.type.__qualname__
+                    )
 
             spec_attrs = dict(base_attrs)
             if res.explanation:
@@ -420,10 +434,15 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
                     spec_attrs[
                         f"{GEN_AI_EVALUATION_ATTRIBUTES_PREFIX}{key_str}"
                     ] = value
-            if res.error is not None and getattr(res.error, "message", None):
-                spec_attrs[
-                    f"{GEN_AI_EVALUATION_ATTRIBUTES_PREFIX}error.message"
-                ] = res.error.message
+            if res.error is not None:
+                if getattr(res.error, "message", None):
+                    spec_attrs["gen_ai.evaluation.error.message"] = (
+                        res.error.message
+                    )
+                if getattr(res.error, "type", None):
+                    spec_attrs["gen_ai.evaluation.error.type"] = (
+                        res.error.type.__qualname__
+                    )
 
             primary_body: Dict[str, Any] = {}
             if isinstance(res.score, (int, float)):
