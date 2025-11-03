@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opentelemetry-instrumentation-langchain"
+name = "splunk-otel-instrumentation-langchain"
 dynamic = ["version"]
 description = "OpenTelemetry Official Langchain instrumentation"
 readme = "README.rst"
