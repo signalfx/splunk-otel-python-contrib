@@ -30,6 +30,7 @@ import random
 import time
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import cast
 from uuid import uuid4
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -73,7 +74,11 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.trace import SpanKind
-from opentelemetry.semconv.resource import ResourceAttributes
+try:  # Prefer new semconv attributes module (>=1.25)
+    from opentelemetry.semconv.attributes import SERVICE_NAME  # type: ignore
+except Exception:  # fallback for older versions
+    from opentelemetry.semconv.resource import ResourceAttributes  # type: ignore
+    SERVICE_NAME = ResourceAttributes.SERVICE_NAME  # type: ignore[attr-defined]
 
 import sys  # noqa: F401  # retained for potential future debugging/CLI extensions
 
@@ -383,6 +388,34 @@ def _compute_dates() -> tuple[str, str]:
     return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 
+def _coerce_content(raw: Any) -> str:
+    """Best-effort convert LangChain message content (which can be str | list | dict) into a string.
+
+    LangChain tool / reasoning messages sometimes return structured lists of strings and dicts.
+    For telemetry preview we flatten these deterministically while keeping JSON-like readability.
+    """
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list):
+        # Join parts converting dicts to compact JSON
+        parts: list[str] = []
+        for item in raw:
+            if isinstance(item, str):
+                parts.append(item)
+            else:
+                try:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+                except Exception:
+                    parts.append(repr(item))
+        return "\n".join(parts)
+    if isinstance(raw, dict):
+        try:
+            return json.dumps(raw, ensure_ascii=False)
+        except Exception:
+            return repr(raw)
+    return str(raw)
+
+
 # ---------------------------------------------------------------------------
 # Tools exposed to agents
 # ---------------------------------------------------------------------------
@@ -479,9 +512,7 @@ def _configure_otlp_tracing() -> None:
     
     # Create resource with service name from environment
     service_name = os.getenv("OTEL_SERVICE_NAME", "unknown_service")
-    resource = Resource.create({
-        ResourceAttributes.SERVICE_NAME: service_name
-    })
+    resource = Resource.create({SERVICE_NAME: service_name})
     
     # Configure trace provider
     tracer_provider = TracerProvider(resource=resource)
@@ -556,6 +587,26 @@ def coordinator_node(state: PlannerState) -> PlannerState:
     )
     if handler:
         handler.start_agent(agent)
+        # Attach invoke_agent input messages (consistent with chat instrumentation)
+        span = getattr(agent, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.input.messages",
+                    json.dumps([
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "content": state.get("user_request", ""),
+                                }
+                            ],
+                        }
+                    ]),
+                )
+            except Exception:
+                pass  # non-fatal
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -578,7 +629,7 @@ def coordinator_node(state: PlannerState) -> PlannerState:
         )
     )
     response = llm.invoke([system_message] + state["messages"])
-    response_text = response.content if isinstance(response.content, str) else str(response.content)
+    response_text = _coerce_content(response.content)
 
     llm_invocation.output_messages = [
         OutputMessage(role="assistant", parts=[Text(content=response_text)], finish_reason="stop")
@@ -587,9 +638,27 @@ def coordinator_node(state: PlannerState) -> PlannerState:
         handler.stop_llm(llm_invocation)
 
     agent.output_result = response_text
-    state["messages"].append(response)
+    state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "flight_specialist"
     if handler:
+        # Attach invoke_agent output messages prior to stopping span
+        span = getattr(agent, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {"type": "text", "content": response_text},
+                            ],
+                            "finish_reason": "stop",
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
         handler.stop_agent(agent)
     return state
 
@@ -604,6 +673,30 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     )
     if handler:
         handler.start_agent(agent_invocation)
+        # Record agent input message
+        step_input = (
+            f"Find an appealing flight from {state['origin']} to {state['destination']} "
+            f"departing {state['departure']} for {state['travellers']} travellers."
+        )
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.input.messages",
+                    json.dumps([
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "content": step_input,
+                                }
+                            ],
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -647,7 +740,7 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     )
     result = react_agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
-    summary = final_message.content if isinstance(final_message, BaseMessage) and isinstance(final_message.content, str) else str(final_message.content if isinstance(final_message, BaseMessage) else final_message)
+    summary = _coerce_content(final_message.content if isinstance(final_message, BaseMessage) else final_message)
     state["flight_summary"] = summary
 
     llm_invocation.output_messages = [
@@ -658,10 +751,31 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
 
     agent_invocation.output_result = summary
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=summary)
+        cast(
+            AnyMessage,
+            final_message if isinstance(final_message, BaseMessage) else AIMessage(content=summary),
+        )
     )
     state["current_agent"] = "hotel_specialist"
     if handler:
+        # Attach agent output messages
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {"type": "text", "content": summary},
+                            ],
+                            "finish_reason": "stop",
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
         handler.stop_agent(agent_invocation)
     return state
 
@@ -676,6 +790,29 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     )
     if handler:
         handler.start_agent(agent_invocation)
+        step_input = (
+            f"Recommend hotels in {state['destination']} for {state['travellers']} "
+            f"travellers from {state['departure']} to {state['return_date']}."
+        )
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.input.messages",
+                    json.dumps([
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "content": step_input,
+                                }
+                            ],
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -719,7 +856,7 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     )
     result = react_agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
-    summary = final_message.content if isinstance(final_message, BaseMessage) and isinstance(final_message.content, str) else str(final_message.content if isinstance(final_message, BaseMessage) else final_message)
+    summary = _coerce_content(final_message.content if isinstance(final_message, BaseMessage) else final_message)
     state["hotel_summary"] = summary
 
     llm_invocation.output_messages = [
@@ -730,10 +867,30 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
 
     agent_invocation.output_result = summary
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=summary)
+        cast(
+            AnyMessage,
+            final_message if isinstance(final_message, BaseMessage) else AIMessage(content=summary),
+        )
     )
     state["current_agent"] = "activity_specialist"
     if handler:
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {"type": "text", "content": summary},
+                            ],
+                            "finish_reason": "stop",
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
         handler.stop_agent(agent_invocation)
     return state
 
@@ -749,6 +906,29 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     )
     if handler:
         handler.start_agent(agent_invocation)
+        step_input = (
+            f"Recommend activities in {state['destination']} for {state['travellers']} "
+            f"travellers from {state['departure']} to {state['return_date']}."
+        )
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.input.messages",
+                    json.dumps([
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "content": step_input,
+                                }
+                            ],
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -792,8 +972,9 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     )
     result = react_agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
-    summary = final_message.content if isinstance(final_message, BaseMessage) and isinstance(final_message.content, str) else str(final_message.content if isinstance(final_message, BaseMessage) else final_message)
-    state["activity_summary"] = summary
+    summary = _coerce_content(final_message.content if isinstance(final_message, BaseMessage) else final_message)
+    # Store under activities_summary key (TypedDict field)
+    state["activities_summary"] = summary
 
     llm_invocation.output_messages = [
         OutputMessage(role="assistant", parts=[Text(content=summary)], finish_reason="stop")
@@ -803,10 +984,30 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
 
     agent_invocation.output_result = summary
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=summary)
+        cast(
+            AnyMessage,
+            final_message if isinstance(final_message, BaseMessage) else AIMessage(content=summary),
+        )
     )
     state["current_agent"] = "plan_synthesizer"
     if handler:
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {"type": "text", "content": summary},
+                            ],
+                            "finish_reason": "stop",
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
         handler.stop_agent(agent_invocation)
     return state
 
@@ -821,6 +1022,26 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
     )
     if handler:
         handler.start_agent(agent_invocation)
+        # Input is a summarization instruction
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.input.messages",
+                    json.dumps([
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "content": "Combine specialist insights into itinerary",
+                                }
+                            ],
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -861,9 +1082,9 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
             )
         ),
     ])
-    response_text = response.content if isinstance(response.content, str) else str(response.content)
-    state["final_itinerary"] = response.content
-    state["messages"].append(response)
+    response_text = _coerce_content(response.content)
+    state["final_itinerary"] = _coerce_content(response.content)
+    state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "completed"
 
     llm_invocation.output_messages = [
@@ -874,6 +1095,23 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
 
     agent_invocation.output_result = response_text
     if handler:
+        span = getattr(agent_invocation, "span", None)
+        if span is not None:
+            try:
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {"type": "text", "content": response_text},
+                            ],
+                            "finish_reason": "stop",
+                        }
+                    ]),
+                )
+            except Exception:
+                pass
         handler.stop_agent(agent_invocation)
     return state
 

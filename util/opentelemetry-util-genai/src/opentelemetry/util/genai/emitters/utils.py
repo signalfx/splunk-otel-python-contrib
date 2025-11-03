@@ -6,9 +6,8 @@ from dataclasses import asdict
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from opentelemetry import trace
-from opentelemetry._logs import (
-    Logger,  # noqa: F401 (kept for backward compatibility if referenced externally)
-)
+
+# Removed unused Logger import (was only for backward compatibility)
 from opentelemetry.metrics import Histogram
 from opentelemetry.sdk._logs._internal import LogRecord as SDKLogRecord
 from opentelemetry.semconv._incubating.attributes import (
@@ -75,23 +74,21 @@ def _ensure_span_context(entity: Any) -> None:
     store_span_context(entity, span_context)
 
 
-def _evaluation_to_log_record(
-    invocation: GenAI,
+def _build_log_record(
+    entity: Any,
+    *,
     event_name: str,
     attributes: Dict[str, Any],
-    body: Dict[str, Any] | None = None,
+    body: Optional[Dict[str, Any]] = None,
 ) -> SDKLogRecord:
-    """Create a log record for an evaluation result."""
-
-    _ensure_span_context(invocation)
+    """Generic log record builder shared by all GenAI entities."""
+    _ensure_span_context(entity)
     otel_context = build_otel_context(
-        getattr(invocation, "span", None),
-        getattr(invocation, "span_context", None),
+        getattr(entity, "span", None), getattr(entity, "span_context", None)
     )
-    trace_id = getattr(invocation, "trace_id", None)
-    span_id = getattr(invocation, "span_id", None)
-    trace_flags = getattr(invocation, "trace_flags", None)
-
+    trace_id = getattr(entity, "trace_id", None)
+    span_id = getattr(entity, "span_id", None)
+    trace_flags = getattr(entity, "trace_flags", None)
     record = SDKLogRecord(
         body=body or None,
         attributes=attributes,
@@ -99,16 +96,28 @@ def _evaluation_to_log_record(
         context=otel_context,
     )
     if trace_id is not None:
-        record.trace_id = trace_id  # type: ignore[attr-defined]
+        record.trace_id = trace_id
     if span_id is not None:
-        record.span_id = span_id  # type: ignore[attr-defined]
+        record.span_id = span_id
     if trace_flags is not None:
-        record.trace_flags = trace_flags  # type: ignore[attr-defined]
+        record.trace_flags = trace_flags
     return record
 
 
+def _evaluation_to_log_record(
+    invocation: Any,
+    event_name: str,
+    attributes: Dict[str, Any],
+    body: Dict[str, Any] | None = None,
+) -> SDKLogRecord:
+    """Create a log record for an evaluation result using shared builder."""
+    return _build_log_record(
+        invocation, event_name=event_name, attributes=attributes, body=body
+    )
+
+
 def filter_semconv_gen_ai_attributes(
-    attributes: Mapping[str, Any] | None,
+    attributes: Optional[Mapping[str, Any]],
     *,
     extras: Iterable[str] = (),
 ) -> dict[str, Any]:
@@ -126,8 +135,6 @@ def filter_semconv_gen_ai_attributes(
         allowed.update(extras)
     filtered: dict[str, Any] = {}
     for key, value in attributes.items():
-        if not isinstance(key, str):
-            continue
         if key not in allowed:
             continue
         filtered[key] = value
@@ -152,7 +159,7 @@ def _flatten_message_parts(parts: Sequence[Any]) -> str:
                         }
                     )
                 )
-            except Exception:
+            except (TypeError, ValueError):
                 payloads.append(str(part))
             continue
         if isinstance(part, ToolCallResponse):
@@ -166,12 +173,12 @@ def _flatten_message_parts(parts: Sequence[Any]) -> str:
                         }
                     )
                 )
-            except Exception:
+            except (TypeError, ValueError):
                 payloads.append(str(part))
             continue
         try:
             payloads.append(json.dumps(part))
-        except Exception:
+        except (TypeError, ValueError):
             payloads.append(str(part))
     return "\n\n".join(p for p in payloads if p)
 
@@ -210,7 +217,8 @@ def build_completion_enumeration(
 
 
 def _serialize_messages(
-    messages, exclude_system: bool = False
+    messages: Sequence[InputMessage | OutputMessage],
+    exclude_system: bool = False,
 ) -> Optional[str]:
     """Safely JSON serialize a sequence of dataclass messages.
 
@@ -223,59 +231,67 @@ def _serialize_messages(
     Returns a JSON string or None on failure.
     """
     try:  # pragma: no cover - defensive
-        serialized_msgs = []
+        serialized_msgs: list[dict[str, Any]] = []
 
         for msg in messages:
             # Skip system messages if exclude_system is True
             if exclude_system and msg.role == "system":
                 continue
 
-            msg_dict = {"role": msg.role, "parts": []}
+            msg_dict: dict[str, Any] = {
+                "role": msg.role,
+                "parts": [],
+            }  # parts: list[Any]
 
             # Add finish_reason for output messages
-            if hasattr(msg, "finish_reason"):
+            if isinstance(
+                msg, OutputMessage
+            ):  # Only OutputMessage has finish_reason
                 msg_dict["finish_reason"] = msg.finish_reason or "stop"
 
             # Process parts (text, tool_call, tool_call_response)
             for part in msg.parts:
                 if isinstance(part, Text):
-                    part_dict = {
-                        "type": "text",
-                        "content": part.content,
-                    }
-                    msg_dict["parts"].append(part_dict)
+                    msg_dict["parts"].append(
+                        {
+                            "type": "text",
+                            "content": part.content,
+                        }
+                    )
                 elif isinstance(part, ToolCall):
-                    tool_dict = {
-                        "type": "tool_call",
-                        "id": part.id,
-                        "name": part.name,
-                        "arguments": part.arguments,
-                    }
-                    msg_dict["parts"].append(tool_dict)
+                    msg_dict["parts"].append(
+                        {
+                            "type": "tool_call",
+                            "id": part.id,
+                            "name": part.name,
+                            "arguments": part.arguments,
+                        }
+                    )
                 elif isinstance(part, ToolCallResponse):
-                    tool_response_dict = {
-                        "type": "tool_call_response",
-                        "id": part.id,
-                        "result": part.response,
-                    }
-                    msg_dict["parts"].append(tool_response_dict)
+                    msg_dict["parts"].append(
+                        {
+                            "type": "tool_call_response",
+                            "id": part.id,
+                            "result": part.response,
+                        }
+                    )
                 else:
-                    # Fallback for other part types
-                    part_dict = (
+                    msg_dict["parts"].append(
                         asdict(part)
                         if hasattr(part, "__dataclass_fields__")
                         else part
                     )
-                    msg_dict["parts"].append(part_dict)
 
             serialized_msgs.append(msg_dict)
 
         return json.dumps(serialized_msgs)
-    except Exception:  # pragma: no cover
+    except (TypeError, ValueError):  # pragma: no cover
         return None
 
 
-def _extract_system_instructions(messages) -> Optional[str]:
+def _extract_system_instructions(
+    messages: Sequence[InputMessage | OutputMessage],
+) -> Optional[str]:
     """Extract and serialize system instructions from messages.
 
     Extracts messages with role="system" and serializes their parts.
@@ -307,12 +323,12 @@ def _extract_system_instructions(messages) -> Optional[str]:
         if system_parts:
             return json.dumps(system_parts)
         return None
-    except Exception:  # pragma: no cover
+    except (TypeError, ValueError):  # pragma: no cover
         return None
 
 
 def _apply_function_definitions(
-    span: trace.Span, request_functions: Optional[List[dict]]
+    span: trace.Span, request_functions: Optional[List[dict[str, Any]]]
 ) -> None:
     """Apply request function definition attributes (idempotent).
 
@@ -335,7 +351,11 @@ def _apply_function_definitions(
                 span.set_attribute(
                     f"gen_ai.request.function.{idx}.parameters", str(params)
                 )
-        except Exception:  # pragma: no cover - defensive
+        except (
+            KeyError,
+            TypeError,
+            AttributeError,
+        ):  # pragma: no cover - defensive
             pass
 
 
@@ -364,7 +384,7 @@ def _apply_llm_finish_semconv(
                 GenAI.GEN_AI_USAGE_OUTPUT_TOKENS, invocation.output_tokens
             )
         _apply_function_definitions(span, invocation.request_functions)
-    except Exception:  # pragma: no cover
+    except (AttributeError, TypeError):  # pragma: no cover
         pass
 
 
@@ -453,7 +473,7 @@ def _llm_invocation_to_log_record(
                             ):
                                 part_dict["content"] = ""
                             system_instructions.append(part_dict)
-                        except Exception:
+                        except (TypeError, ValueError, AttributeError):
                             pass
                 continue  # Don't include in input_messages
 
@@ -499,7 +519,7 @@ def _llm_invocation_to_log_record(
                             if "response" in part_dict:
                                 part_dict["response"] = ""
                         input_msg["parts"].append(part_dict)
-                    except Exception:
+                    except (TypeError, ValueError, AttributeError):
                         pass
 
             input_msgs.append(input_msg)
@@ -550,7 +570,7 @@ def _llm_invocation_to_log_record(
                             if "arguments" in part_dict:
                                 part_dict["arguments"] = {}
                         output_msg["parts"].append(part_dict)
-                    except Exception:
+                    except (TypeError, ValueError, AttributeError):
                         pass
 
             output_msgs.append(output_msg)
@@ -610,7 +630,7 @@ def _record_token_metrics(
     if span is not None:
         try:
             context = trace.set_span_in_context(span)
-        except Exception:  # pragma: no cover - defensive
+        except (TypeError, ValueError):  # pragma: no cover - defensive
             context = None
     prompt_attrs: Dict[str, AttributeValue] = {
         GenAI.GEN_AI_TOKEN_TYPE: GenAI.GenAiTokenTypeValues.INPUT.value
@@ -644,7 +664,11 @@ def _record_duration(
         if span is not None:
             try:
                 context = trace.set_span_in_context(span)
-            except Exception:  # pragma: no cover - defensive
+            except (
+                TypeError,
+                ValueError,
+                AttributeError,
+            ):  # pragma: no cover - defensive
                 context = None
         duration_histogram.record(
             elapsed, attributes=metric_attributes, context=context
@@ -652,23 +676,26 @@ def _record_duration(
 
 
 # Helper functions for agentic types
+def _build_text_message(
+    role: str, text: str, *, capture: bool, finish_reason: Optional[str] = None
+) -> dict[str, Any]:
+    msg: dict[str, Any] = {
+        "role": role,
+        "parts": [{"type": "text", "content": text if capture else ""}],
+    }
+    if finish_reason is not None:
+        msg["finish_reason"] = finish_reason
+    return msg
+
+
 def _workflow_to_log_record(
     workflow: Workflow, capture_content: bool
 ) -> Optional[SDKLogRecord]:
-    """Create a log record for a workflow event."""
-    _ensure_span_context(workflow)
-    otel_context = build_otel_context(
-        getattr(workflow, "span", None),
-        getattr(workflow, "span_context", None),
-    )
-    trace_id = getattr(workflow, "trace_id", None)
-    span_id = getattr(workflow, "span_id", None)
-    trace_flags = getattr(workflow, "trace_flags", None)
+    """Create a workflow log record using unified message format."""
     attributes: Dict[str, Any] = {
         "event.name": "gen_ai.client.workflow.operation.details",
         "gen_ai.workflow.name": workflow.name,
     }
-
     if workflow.workflow_type:
         attributes["gen_ai.workflow.type"] = workflow.workflow_type
     if workflow.description:
@@ -677,77 +704,91 @@ def _workflow_to_log_record(
         attributes[GEN_AI_FRAMEWORK] = workflow.framework
 
     body: Dict[str, Any] = {}
-
-    if capture_content:
-        if workflow.initial_input:
-            body["initial_input"] = workflow.initial_input
-        if workflow.final_output:
-            body["final_output"] = workflow.final_output
-
-    record = SDKLogRecord(
-        body=body or None,
-        attributes=attributes,
+    # Represent initial input / final output as standardized messages
+    input_msgs: list[dict[str, Any]] = []
+    output_msgs: list[dict[str, Any]] = []
+    if workflow.initial_input:
+        input_msgs.append(
+            _build_text_message(
+                "user", workflow.initial_input, capture=capture_content
+            )
+        )
+    if workflow.final_output:
+        output_msgs.append(
+            _build_text_message(
+                "assistant",
+                workflow.final_output,
+                capture=capture_content,
+                finish_reason="stop",
+            )
+        )
+    if input_msgs:
+        body[GenAI.GEN_AI_INPUT_MESSAGES] = input_msgs
+    if output_msgs:
+        body[GenAI.GEN_AI_OUTPUT_MESSAGES] = output_msgs
+    # Preserve legacy fields for backward compatibility (only if capture enabled)
+    if capture_content and workflow.initial_input:
+        body["initial_input"] = workflow.initial_input
+    if capture_content and workflow.final_output:
+        body["final_output"] = workflow.final_output
+    return _build_log_record(
+        workflow,
         event_name="gen_ai.client.workflow.operation.details",
-        context=otel_context,
+        attributes=attributes,
+        body=body or None,
     )
-    if trace_id is not None:
-        record.trace_id = trace_id  # type: ignore[attr-defined]
-    if span_id is not None:
-        record.span_id = span_id  # type: ignore[attr-defined]
-    if trace_flags is not None:
-        record.trace_flags = trace_flags  # type: ignore[attr-defined]
-    return record
 
 
 def _agent_to_log_record(
     agent: AgentCreation | AgentInvocation, capture_content: bool
 ) -> Optional[SDKLogRecord]:
-    """Create a log record for agent event"""
-    if not capture_content:
-        return None
-
-    _ensure_span_context(agent)
-    otel_context = build_otel_context(
-        getattr(agent, "span", None),
-        getattr(agent, "span_context", None),
-    )
-    trace_id = getattr(agent, "trace_id", None)
-    span_id = getattr(agent, "span_id", None)
-    trace_flags = getattr(agent, "trace_flags", None)
-
+    """Create a log record for an agent event using unified message format."""
     attributes: Dict[str, Any] = {
         "event.name": "gen_ai.client.agent.operation.details",
-        GEN_AI_FRAMEWORK: agent.framework,
     }
-
+    if agent.framework:
+        attributes[GEN_AI_FRAMEWORK] = agent.framework
     attributes[GenAI.GEN_AI_AGENT_NAME] = agent.name
     attributes[GenAI.GEN_AI_AGENT_ID] = str(agent.run_id)
 
     body: Dict[str, Any] = {}
+    # System instructions treated similarly to LLM system messages
     if agent.system_instructions:
-        body["system_instructions"] = agent.system_instructions
+        body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = [
+            {
+                "type": "text",
+                "content": agent.system_instructions
+                if capture_content
+                else "",
+            }
+        ]
     input_context = getattr(agent, "input_context", None)
     if input_context:
-        body["input_context"] = input_context
+        body[GenAI.GEN_AI_INPUT_MESSAGES] = [
+            _build_text_message("user", input_context, capture=capture_content)
+        ]
+        if capture_content:
+            body["input_context"] = input_context  # legacy
     output_result = getattr(agent, "output_result", None)
     if output_result:
-        body["output_result"] = output_result
+        body[GenAI.GEN_AI_OUTPUT_MESSAGES] = [
+            _build_text_message(
+                "assistant",
+                output_result,
+                capture=capture_content,
+                finish_reason="stop",
+            )
+        ]
+        if capture_content:
+            body["output_result"] = output_result  # legacy
     if not body:
         return None
-
-    record = SDKLogRecord(
-        body=body,
-        attributes=attributes,
+    return _build_log_record(
+        agent,
         event_name="gen_ai.client.agent.operation.details",
-        context=otel_context,
+        attributes=attributes,
+        body=body,
     )
-    if trace_id is not None:
-        record.trace_id = trace_id  # type: ignore[attr-defined]
-    if span_id is not None:
-        record.span_id = span_id  # type: ignore[attr-defined]
-    if trace_flags is not None:
-        record.trace_flags = trace_flags  # type: ignore[attr-defined]
-    return record
 
 
 def _step_to_log_record(
