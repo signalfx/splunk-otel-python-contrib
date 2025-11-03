@@ -388,6 +388,8 @@ class SpanEmitter(EmitterMeta):
         self._attach_span(workflow, span, cm)
 
         # Set workflow attributes
+        # TODO: Align to enum when semconvs is updated.
+        span.set_attribute(GenAI.GEN_AI_OPERATION_NAME, "invoke_workflow")
         span.set_attribute(GEN_AI_WORKFLOW_NAME, workflow.name)
         if workflow.workflow_type:
             span.set_attribute(GEN_AI_WORKFLOW_TYPE, workflow.workflow_type)
