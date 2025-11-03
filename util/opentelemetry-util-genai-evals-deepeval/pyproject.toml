@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opentelemetry-util-genai-evals-deepeval"
+name = "splunk-otel-genai-evals-deepeval"
 dynamic = ["version"]
 description = "OpenTelemetry GenAI Utils"
 readme = "README.rst"
