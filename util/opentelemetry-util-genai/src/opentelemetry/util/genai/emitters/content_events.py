@@ -65,20 +65,20 @@ class ContentEventsEmitter(EmitterMeta):
                     type(obj).__name__,
                 )
             return
-
-        # if isinstance(obj, Workflow):
-        #     self._emit_workflow_event(obj)
-        #     return
-        # if isinstance(obj, Agent):
-        #     self._emit_agent_event(obj)
-        #     return
+        # Emit workflow event (includes initial input + final output messages)
+        if isinstance(obj, Workflow):
+            self._emit_workflow_event(obj)
+            return
+        # Emit agent creation/invocation event (input/output messages where available)
+        if isinstance(obj, (AgentCreation, AgentInvocation)):
+            self._emit_agent_event(obj)
+            return
+        # Optional: step and embedding events (currently excluded from request scope)
+        # Uncomment if needed later:
         # if isinstance(obj, Step):
-        #     self._emit_step_event(obj)
-        #     return
+        #     self._emit_step_event(obj); return
         # if isinstance(obj, EmbeddingInvocation):
-        #     self._emit_embedding_event(obj)
-        #     return
-
+        #     self._emit_embedding_event(obj); return
         if isinstance(obj, LLMInvocation):
             # Emit a single event for the entire LLM invocation
             try:
@@ -99,9 +99,9 @@ class ContentEventsEmitter(EmitterMeta):
                         "No log record generated for LLM invocation (capture_content=%s)",
                         self._capture_content,
                     )
-            except Exception as e:
+            except (TypeError, ValueError, AttributeError) as e:
                 logging.getLogger(__name__).warning(
-                    f"Failed to emit LLM invocation event: {e}", exc_info=True
+                    "Failed to emit LLM invocation event: %s", e, exc_info=True
                 )
 
     def on_error(self, error: Error, obj: Any) -> None:
@@ -120,8 +120,8 @@ class ContentEventsEmitter(EmitterMeta):
             record = _workflow_to_log_record(workflow, self._capture_content)
             if record and self._logger:
                 self._logger.emit(record)
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     def _emit_agent_event(
         self, agent: AgentCreation | AgentInvocation
@@ -131,8 +131,8 @@ class ContentEventsEmitter(EmitterMeta):
             record = _agent_to_log_record(agent, self._capture_content)
             if record and self._logger:
                 self._logger.emit(record)
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     def _emit_step_event(self, step: Step) -> None:
         """Emit an event for a step."""
@@ -140,8 +140,8 @@ class ContentEventsEmitter(EmitterMeta):
             record = _step_to_log_record(step, self._capture_content)
             if record and self._logger:
                 self._logger.emit(record)
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     def _emit_embedding_event(self, embedding: EmbeddingInvocation) -> None:
         """Emit an event for an embedding operation."""
@@ -149,5 +149,5 @@ class ContentEventsEmitter(EmitterMeta):
             record = _embedding_to_log_record(embedding, self._capture_content)
             if record and self._logger:
                 self._logger.emit(record)
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError):
+            return None
