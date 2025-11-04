@@ -17,10 +17,34 @@ if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
 fi
 
 # Script to test local builds of all GenAI packages
-# Usage: ./release-test-scripts/test-local-builds.sh
+# Usage: ./release-test-scripts/test-local-builds.sh [--keep] [--output-dir <path>]
+#   --keep              Keep the dist/ directories after building (don't clean up)
+#   --output-dir <path> Copy all built packages to a single directory
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Parse arguments
+KEEP_BUILDS=false
+OUTPUT_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --keep)
+            KEEP_BUILDS=true
+            shift
+            ;;
+        --output-dir)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--keep] [--output-dir <path>]"
+            exit 1
+            ;;
+    esac
+done
 
 # Package configurations: name:path
 declare -A PACKAGES=(
@@ -34,8 +58,21 @@ declare -A PACKAGES=(
 FAILED_PACKAGES=()
 SUCCESSFUL_PACKAGES=()
 
+# Create output directory if specified
+if [ -n "$OUTPUT_DIR" ]; then
+    mkdir -p "$OUTPUT_DIR"
+    OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)  # Get absolute path
+    echo "Output directory: $OUTPUT_DIR"
+fi
+
 echo "=========================================="
 echo "Testing Local Builds for GenAI Packages"
+if [ "$KEEP_BUILDS" = true ]; then
+    echo "(Keeping build artifacts)"
+fi
+if [ -n "$OUTPUT_DIR" ]; then
+    echo "(Copying to: $OUTPUT_DIR)"
+fi
 echo "=========================================="
 echo ""
 
@@ -103,9 +140,20 @@ for package_name in "${!PACKAGES[@]}"; do
                 FAILED_PACKAGES+=("$package_name (incomplete artifacts)")
             fi
             
-            # Clean up dist directory
-            rm -rf dist/
-            echo "✓ Cleaned up dist directory"
+            # Copy to output directory if specified
+            if [ -n "$OUTPUT_DIR" ]; then
+                echo "Copying artifacts to $OUTPUT_DIR..."
+                cp dist/* "$OUTPUT_DIR/"
+                echo "✓ Copied to output directory"
+            fi
+            
+            # Clean up dist directory (unless --keep flag is set)
+            if [ "$KEEP_BUILDS" = false ]; then
+                rm -rf dist/
+                echo "✓ Cleaned up dist directory"
+            else
+                echo "✓ Keeping dist directory at: $full_path/dist/"
+            fi
         else
             echo "❌ Error: No artifacts created in dist/"
             FAILED_PACKAGES+=("$package_name (no artifacts)")
@@ -144,6 +192,26 @@ if [ ${#FAILED_PACKAGES[@]} -gt 0 ]; then
 else
     echo "🎉 All packages built successfully!"
     echo ""
+    
+    if [ -n "$OUTPUT_DIR" ]; then
+        echo "All build artifacts copied to: $OUTPUT_DIR"
+        echo ""
+        echo "Contents:"
+        ls -lh "$OUTPUT_DIR"
+        echo ""
+        echo "Total artifacts: $(ls -1 "$OUTPUT_DIR" | wc -l)"
+        echo ""
+    fi
+    
+    if [ "$KEEP_BUILDS" = true ]; then
+        echo "Build artifacts also saved in each package's dist/ directory:"
+        for package_name in "${!PACKAGES[@]}"; do
+            package_path="${PACKAGES[$package_name]}"
+            echo "  - $REPO_ROOT/$package_path/dist/"
+        done
+        echo ""
+    fi
+    
     echo "Next steps:"
     echo "1. Review TESTING_CI_CHANGES.md for CI/CD testing strategies"
     echo "2. Test with a pre-release tag (e.g., util-genai-v0.0.1-alpha)"
