@@ -1,0 +1,5 @@
+# Auto-enable Traceloop span processor on package installation
+# This .pth file automatically imports the traceloop module when the package is installed,
+# triggering the _auto_enable() function that registers the TraceloopSpanProcessor
+# with the global TracerProvider.
+import opentelemetry.util.genai.traceloop

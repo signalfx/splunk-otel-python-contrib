@@ -1,0 +1,14 @@
+# Minimal dependencies to run translator tests locally
+# Install into a fresh virtualenv via: pip install -r requirements-tests.txt
+# We install the dev GenAI utilities (emitter-enabled) first so the translator
+# can extend opentelemetry.util.genai.*
+-e ../opentelemetry-util-genai-dev
+
+# Install this package in editable mode
+-e .
+
+# Test runner
+pytest>=7.0.0
+
+# Optional (uncomment if you want coverage):
+# pytest-cov>=4.0.0
