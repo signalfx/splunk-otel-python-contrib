@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from opentelemetry import trace
 from opentelemetry.metrics import Histogram, Meter, get_meter
+from opentelemetry.semconv._incubating.attributes import (
+    error_attributes as ErrorAttributes,
+)
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
@@ -90,7 +93,7 @@ class MetricsEmitter(EmitterMeta):
             )
             return
         if isinstance(obj, ToolCall):
-            invocation = obj
+            invocation = cast(Any, obj)
             metric_attrs = _get_metric_attributes(
                 invocation.name,
                 None,
@@ -112,7 +115,7 @@ class MetricsEmitter(EmitterMeta):
             )
 
         if isinstance(obj, EmbeddingInvocation):
-            invocation = obj
+            invocation = cast(Any, obj)
             metric_attrs = _get_metric_attributes(
                 invocation.request_model,
                 None,
@@ -160,13 +163,17 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = invocation.agent_name
             if invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = invocation.agent_id
+            if getattr(error, "type", None) is not None:
+                metric_attrs[ErrorAttributes.ERROR_TYPE] = (
+                    error.type.__qualname__
+                )
 
             _record_duration(
                 self._duration_histogram, invocation, metric_attrs
             )
             return
         if isinstance(obj, ToolCall):
-            invocation = obj
+            invocation = cast(Any, obj)
             metric_attrs = _get_metric_attributes(
                 invocation.name,
                 None,
@@ -179,6 +186,10 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = invocation.agent_name
             if invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = invocation.agent_id
+            if getattr(error, "type", None) is not None:
+                metric_attrs[ErrorAttributes.ERROR_TYPE] = (
+                    error.type.__qualname__
+                )
 
             _record_duration(
                 self._duration_histogram,
@@ -188,7 +199,7 @@ class MetricsEmitter(EmitterMeta):
             )
 
         if isinstance(obj, EmbeddingInvocation):
-            invocation = obj
+            invocation = cast(Any, obj)
             metric_attrs = _get_metric_attributes(
                 invocation.request_model,
                 None,
@@ -203,6 +214,10 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = invocation.agent_name
             if invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = invocation.agent_id
+            if getattr(error, "type", None) is not None:
+                metric_attrs[ErrorAttributes.ERROR_TYPE] = (
+                    error.type.__qualname__
+                )
 
             _record_duration(
                 self._duration_histogram,
