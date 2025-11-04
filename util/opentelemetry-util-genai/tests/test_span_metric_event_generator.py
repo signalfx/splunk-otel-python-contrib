@@ -22,6 +22,7 @@ from opentelemetry.util.genai.types import (
     OutputMessage,
     Text,
     Workflow,
+    AgentInvocation,
 )
 
 
@@ -214,3 +215,43 @@ def test_span_emitter_workflow_captures_content():
     assert (
         output_messages[0]["parts"][0]["content"] == "Here is your itinerary"
     )
+
+def test_invoke_agent_span_emitter_for_sampled_attribute():
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer)
+
+    agent_invocation = AgentInvocation(
+        name="weather_agent",
+    )
+
+    emitter.on_start(agent_invocation)
+    emitter.on_end(agent_invocation)
+
+    span = agent_invocation.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+
+    sampled_value = attrs.get("gen_ai.evaluation.sampled")
+    assert sampled_value is True
+
+def test_llm_span_emitter_for_sampled_attribute():
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer)
+
+    llm_invocation = LLMInvocation(request_model="test-model")
+
+    emitter.on_start(llm_invocation)
+    emitter.on_end(llm_invocation)
+
+    span = llm_invocation.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+
+    sampled_value = attrs.get("gen_ai.evaluation.sampled")
+    assert sampled_value is True

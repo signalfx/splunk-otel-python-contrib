@@ -99,9 +99,9 @@ from opentelemetry.util.genai.types import (
 )
 from opentelemetry.util.genai.utils import (
     get_content_capturing_mode,
-    _is_truthy_env,
-    _load_completion_callbacks,
-    _parse_callback_filter
+    is_truthy_env,
+    load_completion_callbacks,
+    parse_callback_filter,
 )
 from opentelemetry.util.genai.version import __version__
 
@@ -112,6 +112,7 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
 )
+from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,6 +157,11 @@ class TelemetryHandler:
 
         self._event_logger = _otel_events.get_event_logger(__name__)
 
+        settings = parse_env()
+
+        evaluation_sample_rate = settings.evaluation_sample_rate
+        self._sampler = TraceIdRatioBased(evaluation_sample_rate)
+
         # Fixed canonical evaluation histograms (no longer dynamic):
         # gen_ai.evaluation.(relevance|hallucination|sentiment|toxicity|bias)
         self._evaluation_histograms: dict[str, Any] = {}
@@ -189,7 +195,6 @@ class TelemetryHandler:
 
         self._get_eval_histogram = _get_eval_histogram  # type: ignore[attr-defined]
 
-        settings = parse_env()
         self._completion_callbacks: list[CompletionCallback] = []
         composite, capture_control = build_emitter_pipeline(
             tracer=self._tracer,
@@ -215,6 +220,31 @@ class TelemetryHandler:
         self._entity_registry: dict[str, GenAI] = {}
         self._initialize_default_callbacks()
 
+    def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
+        try:
+            if trace_id:
+                sampling_result = self._sampler.should_sample(
+                    trace_id=trace_id,
+                    parent_context=None,
+                    name="",
+                )
+                if (
+                        sampling_result
+                        and sampling_result.decision is Decision.RECORD_AND_SAMPLE
+                ):
+                    return True
+                else:
+                    return False
+            else:  # TODO remove else branch when trace_id is set on all invocations
+                logger.debug(
+                    "Trace based sampling not applied as trace id is not set.",
+                    exc_info=True,
+                )
+                return True
+        except Exception:
+            logger.debug("Sampler raised an exception", exc_info=True)
+            return True
+
     def _refresh_capture_content(
         self,
     ):  # re-evaluate env each start in case singleton created before patching
@@ -232,7 +262,7 @@ class TelemetryHandler:
             span_capture_allowed = True
             if control is not None:
                 span_capture_allowed = control.span_allowed
-            if _is_truthy_env(
+            if is_truthy_env(
                 os.environ.get(
                     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
                 )
@@ -312,6 +342,10 @@ class TelemetryHandler:
     def stop_llm(self, invocation: LLMInvocation) -> LLMInvocation:
         """Finalize an LLM invocation successfully and end its span."""
         invocation.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(invocation.trace_id)
+
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
         self._entity_registry.pop(str(invocation.run_id), None)
@@ -405,6 +439,10 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Finalize an embedding invocation successfully and end its span."""
         invocation.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(invocation.trace_id)
+
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
         self._entity_registry.pop(str(invocation.run_id), None)
@@ -458,6 +496,10 @@ class TelemetryHandler:
     def stop_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Finalize a tool call invocation successfully and end its span."""
         invocation.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(invocation.trace_id)
+
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
         self._entity_registry.pop(str(invocation.run_id), None)
@@ -541,7 +583,7 @@ class TelemetryHandler:
                 continue
 
     def _initialize_default_callbacks(self) -> None:
-        disable_defaults = _is_truthy_env(
+        disable_defaults = is_truthy_env(
             os.getenv(
                 OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS
             )
@@ -553,10 +595,10 @@ class TelemetryHandler:
             )
             return
 
-        selected = _parse_callback_filter(
+        selected = parse_callback_filter(
             os.getenv(OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS)
         )
-        callbacks, seen = _load_completion_callbacks(selected)
+        callbacks, seen = load_completion_callbacks(selected)
         if selected:
             missing = selected - seen
             for name in missing:
@@ -602,6 +644,10 @@ class TelemetryHandler:
     def stop_workflow(self, workflow: Workflow) -> Workflow:
         """Finalize a workflow successfully and end its span."""
         workflow.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        workflow.sample_for_evaluation = self._should_sample_for_evaluation(workflow.trace_id)
+
         self._emitter.on_end(workflow)
         self._notify_completion(workflow)
         self._entity_registry.pop(str(workflow.run_id), None)
@@ -658,6 +704,10 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Finalize an agent operation successfully and end its span."""
         agent.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        agent.sample_for_evaluation = self._should_sample_for_evaluation(agent.trace_id)
+
         self._emitter.on_end(agent)
         self._notify_completion(agent)
         self._entity_registry.pop(str(agent.run_id), None)
@@ -721,6 +771,10 @@ class TelemetryHandler:
     def stop_step(self, step: Step) -> Step:
         """Finalize a step successfully and end its span."""
         step.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        step.sample_for_evaluation = self._should_sample_for_evaluation(step.trace_id)
+
         self._emitter.on_end(step)
         self._notify_completion(step)
         self._entity_registry.pop(str(step.run_id), None)

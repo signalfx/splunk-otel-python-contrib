@@ -132,7 +132,7 @@ def _coerce_completion_callback(
     return None
 
 
-def _load_completion_callbacks(
+def load_completion_callbacks(
     selected: set[str] | None,
 ) -> tuple[list[tuple[str, CompletionCallback]], set[str]]:
     callbacks: list[tuple[str, CompletionCallback]] = []
@@ -167,13 +167,13 @@ def _load_completion_callbacks(
     return callbacks, seen
 
 
-def _is_truthy_env(value: Optional[str]) -> bool:
+def is_truthy_env(value: Optional[str]) -> bool:
     if value is None:
         return False
     return value.strip().lower() in _TRUTHY_VALUES
 
 
-def _parse_callback_filter(value: Optional[str]) -> set[str] | None:
+def parse_callback_filter(value: Optional[str]) -> set[str] | None:
     if value is None:
         return None
     selected = {

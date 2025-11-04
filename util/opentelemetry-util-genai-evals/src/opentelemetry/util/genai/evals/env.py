@@ -9,7 +9,6 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL,
     OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION,
-    OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE,
 )
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -50,29 +49,8 @@ def read_aggregation_flag(
         return None
     return raw.strip().lower() in _TRUTHY
 
-
-def read_sample_rate(
-    env: Mapping[str, str] | None = None,
-    *,
-    default: float = 1.0,
-) -> float:
-    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE, env)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        return default
-    if value < 0.0:
-        return 0.0
-    if value > 1.0:
-        return 1.0
-    return value
-
-
 __all__ = [
     "read_raw_evaluators",
     "read_interval",
     "read_aggregation_flag",
-    "read_sample_rate",
 ]
