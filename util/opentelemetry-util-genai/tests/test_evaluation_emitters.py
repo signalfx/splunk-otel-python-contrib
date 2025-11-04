@@ -56,7 +56,8 @@ def test_spec_event_emission_uses_semconv_attributes() -> None:
     assert attrs["gen_ai.evaluation.explanation"] == "Detected mild bias"
     assert attrs["gen_ai.evaluation.attributes.judge_model"] == "gpt-4"
     assert attrs["gen_ai.evaluation.attributes.1"] == "int-key"
-    assert attrs["gen_ai.evaluation.attributes.error.message"] == "timeout"
+    assert attrs["gen_ai.evaluation.error.message"] == "timeout"
+    assert attrs["gen_ai.evaluation.error.type"] == "TimeoutError"
     assert "error.message" not in attrs
     assert event.body == {
         "score": 0.75,
