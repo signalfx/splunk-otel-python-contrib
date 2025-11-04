@@ -514,7 +514,7 @@ class SplunkEvaluationResultsEmitter(EmitterMeta):
         # SDKLogRecord signature in current OTel version used elsewhere: body, attributes, event_name
         body = {"gen_ai.evaluations": evaluations}
         if _INCLUDE_EVALUATION_MESSAGE_CONTENT:
-            body["gen_ai.system.instructions"] = system_instructions or None
+            body["gen_ai.system_instructions"] = system_instructions or None
             body["gen_ai.input.messages"] = input_messages or None
             body["gen_ai.output.messages"] = output_messages or None
         record = _evaluation_to_log_record(

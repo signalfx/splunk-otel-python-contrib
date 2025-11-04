@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: travel-planner-load-generator
+  namespace: travel-planner
+spec:
+  schedule: "*/15 * * * *" # Every 15 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: load-generator
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Generating travel planning requests..."
+              
+              # Simple requests without bash-specific syntax
+              destinations="Tokyo Paris NewYork Sydney Barcelona Dubai London Singapore"
+              budgets="2000 3000 1500 4000 2500"
+              durations="3 5 7 10"
+              
+              # Generate a single random request per run
+              RAND=$(date +%s)
+              dest=$(echo $destinations | cut -d' ' -f$((($RAND % 8) + 1)))
+              budget=$(echo $budgets | cut -d' ' -f$((($RAND % 5) + 1)))
+              duration=$(echo $durations | cut -d' ' -f$((($RAND % 4) + 1)))
+
+              echo "Planning trip to $dest, budget: \$$budget, duration: $duration days"
+
+              # Make single request to the travel planner service
+              curl -X POST http://travel-planner-service.travel-planner.svc.cluster.local/plan \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"destination\": \"$dest\",
+                  \"budget\": $budget,
+                  \"duration\": $duration,
+                  \"travelers\": 2,
+                  \"interests\": [\"sightseeing\", \"food\", \"culture\"]
+                }" \
+                --max-time 600 || echo "Request failed"
+              
+              echo "Load generation completed"
+          restartPolicy: OnFailure
+      backoffLimit: 3
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
