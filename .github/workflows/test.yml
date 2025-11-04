@@ -1,0 +1,140 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: test-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  FORCE_COLOR: "1"
+
+jobs:
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Run Ruff linter
+        run: uv run ruff check .
+      
+      - name: Run Ruff formatter check
+        run: uv run ruff format --check .
+      
+      - name: Run Pyright type checker
+        run: uv run pyright
+
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ startsWith(matrix.os, 'macos-') && 'macOS' || startsWith(matrix.os, 'windows-') && 'Windows' || 'Linux' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ">=0.6.0"
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Run tests for langchain instrumentation
+        run: |
+          cd instrumentation-genai/opentelemetry-instrumentation-langchain
+          uv run pytest tests/ -v
+        continue-on-error: false
+      
+      - name: Run tests for genai utils
+        run: |
+          cd util/opentelemetry-util-genai
+          uv run pytest tests/ -v
+        continue-on-error: false
+      
+      - name: Run tests for genai evals
+        run: |
+          cd util/opentelemetry-util-genai-evals
+          uv run pytest tests/ -v
+        continue-on-error: false
+      
+      - name: Run tests for deepeval evaluator
+        run: |
+          cd util/opentelemetry-util-genai-evals-deepeval
+          uv run pytest tests/ -v
+        continue-on-error: false
+      
+      - name: Run tests for splunk emitters
+        run: |
+          cd util/opentelemetry-util-genai-emitters-splunk
+          uv run pytest tests/ -v
+        continue-on-error: false
+
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Install pytest-cov
+        run: uv pip install pytest-cov
+      
+      - name: Run tests with coverage for langchain instrumentation
+        run: |
+          cd instrumentation-genai/opentelemetry-instrumentation-langchain
+          uv run pytest tests/ --cov=src --cov-report=xml --cov-report=term
+      
+      - name: Run tests with coverage for genai utils
+        run: |
+          cd util/opentelemetry-util-genai
+          uv run pytest tests/ --cov=src --cov-report=xml --cov-report=term
+      
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./instrumentation-genai/opentelemetry-instrumentation-langchain/coverage.xml,./util/opentelemetry-util-genai/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
