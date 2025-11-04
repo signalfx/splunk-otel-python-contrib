@@ -1,7 +1,7 @@
 # Minimal dependencies to run examples (like examples/traceloop_example.py)
 # Usage: pip install -r requirements-examples.txt
 
--e ../opentelemetry-util-genai-dev
+-e ../opentelemetry-util-genai
 -e .
 
 # OpenTelemetry SDK pieces used in the example

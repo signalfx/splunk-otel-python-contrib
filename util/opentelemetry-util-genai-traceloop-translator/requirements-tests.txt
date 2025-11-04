@@ -2,7 +2,7 @@
 # Install into a fresh virtualenv via: pip install -r requirements-tests.txt
 # We install the dev GenAI utilities (emitter-enabled) first so the translator
 # can extend opentelemetry.util.genai.*
--e ../opentelemetry-util-genai-dev
+-e ../opentelemetry-util-genai
 
 # Install this package in editable mode
 -e .
