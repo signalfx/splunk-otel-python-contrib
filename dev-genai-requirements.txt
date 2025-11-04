@@ -17,6 +17,14 @@ pre-commit==3.7.0; python_version >= '3.9'
 pre-commit==3.5.0; python_version < '3.9'
 ruff==0.6.9
 
+# Optional test dependencies for langchain and deepeval
+openai
+pydantic
+langchain-core
+langchain
+langchain-openai
+deepeval
+
 # opentelemetry dependencies: 
 opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http

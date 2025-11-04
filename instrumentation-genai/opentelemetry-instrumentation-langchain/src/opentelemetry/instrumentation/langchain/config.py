@@ -1,6 +1,4 @@
-from typing import Optional
 
-from opentelemetry._events import EventLogger
 
 
 class Config:

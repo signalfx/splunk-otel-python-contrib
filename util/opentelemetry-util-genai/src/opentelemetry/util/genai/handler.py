@@ -53,7 +53,6 @@ import os
 import time
 from typing import Any, Optional
 
-
 try:
     from opentelemetry.util.genai.debug import genai_debug_log
 except Exception:  # pragma: no cover - fallback if debug module missing
@@ -63,7 +62,6 @@ except Exception:  # pragma: no cover - fallback if debug module missing
 
 
 from opentelemetry import _events as _otel_events
-from opentelemetry import metrics as _metrics
 from opentelemetry import trace as _trace_mod
 from opentelemetry._logs import Logger, LoggerProvider, get_logger
 from opentelemetry.metrics import MeterProvider, get_meter
@@ -75,7 +73,6 @@ from opentelemetry.trace import (
     TracerProvider,
     get_tracer,
 )
-
 from opentelemetry.util.genai.emitters.configuration import (
     build_emitter_pipeline,
 )
@@ -98,10 +95,10 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 from opentelemetry.util.genai.utils import (
-    get_content_capturing_mode,
     _is_truthy_env,
     _load_completion_callbacks,
-    _parse_callback_filter
+    _parse_callback_filter,
+    get_content_capturing_mode,
 )
 from opentelemetry.util.genai.version import __version__
 
