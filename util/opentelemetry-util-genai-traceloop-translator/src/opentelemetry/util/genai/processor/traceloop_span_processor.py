@@ -624,7 +624,7 @@ class TraceloopSpanProcessor(SpanProcessor):
         invocation = LLMInvocation(
             request_model=str(request_model),
             attributes=base_attrs,
-            # messages=[],
+            messages=[],
         )
         # Mark operation heuristically from original span name
         lowered = existing_span.name.lower()
