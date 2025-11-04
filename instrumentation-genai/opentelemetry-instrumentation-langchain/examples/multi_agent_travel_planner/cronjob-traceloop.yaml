@@ -76,8 +76,8 @@ spec:
               value: "replace-category:SplunkEvaluationResults"
             
             # === Evaluation Settings ===
-            - name: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
-              value: "Deepeval(LLMInvocation(bias,toxicity))"
+            # Note: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS not set - will use all default evaluations
+            # (bias, toxicity, answer_relevancy, faithfulness, contextual_relevancy)
             
             - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
               value: "true"
