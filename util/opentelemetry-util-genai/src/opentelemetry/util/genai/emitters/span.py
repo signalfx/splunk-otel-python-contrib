@@ -112,6 +112,12 @@ def _apply_gen_ai_semconv_attributes(
         except Exception:  # pragma: no cover - defensive
             pass
 
+def _apply_sampled_for_evaluation(
+    span:  Span,
+    is_sampled: bool,
+) -> None:
+    span.set_attribute("gen_ai.evaluation.sampled", is_sampled)
+
 
 class SpanEmitter(EmitterMeta):
     """Span-focused emitter supporting optional content capture.
@@ -317,7 +323,8 @@ class SpanEmitter(EmitterMeta):
             self._attach_span(invocation, span, cm)
             self._apply_start_attrs(invocation)
 
-    def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:  # type: ignore[override]
+    def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
+        _apply_sampled_for_evaluation(invocation.span, invocation.sample_for_evaluation)# type: ignore[override]
         if isinstance(invocation, Workflow):
             self._finish_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):

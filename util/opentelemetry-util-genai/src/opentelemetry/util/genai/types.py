@@ -97,6 +97,7 @@ class GenAI:
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},
     )
+    sample_for_evaluation: Optional[bool] = field(default=True)
 
     def semantic_convention_attributes(self) -> dict[str, Any]:
         """Return semantic convention attributes defined on this dataclass."""
