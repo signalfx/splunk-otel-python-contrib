@@ -34,6 +34,7 @@ from opentelemetry.util.genai.handler import (
 )
 
 from .content_normalizer import normalize_traceloop_content
+from .message_reconstructor import reconstruct_messages_from_traceloop
 
 _ENV_RULES = "OTEL_GENAI_SPAN_TRANSFORM_RULES"
 
@@ -55,7 +56,7 @@ class TransformationRule:
     traceloop_attributes: Dict[str, Any] = field(default_factory=dict)
 
     def matches(
-        self, span: ReadableSpan
+            self, span: ReadableSpan
     ) -> bool:  # pragma: no cover - simple logic
         if self.match_name:
             if not fnmatch.fnmatch(span.name, self.match_name):
@@ -81,7 +82,7 @@ class TransformationRule:
                 if k not in span.attributes:
                     return False
                 if expected is not None and str(span.attributes.get(k)) != str(
-                    expected
+                        expected
                 ):
                     return False
         return True
@@ -112,11 +113,11 @@ def _load_rules_from_env() -> List[TransformationRule]:
                     attribute_transformations=r.get(
                         "attribute_transformations", {}
                     )
-                    or {},
+                                              or {},
                     name_transformations=r.get("name_transformations", {})
-                    or {},
+                                         or {},
                     traceloop_attributes=r.get("traceloop_attributes", {})
-                    or {},
+                                         or {},
                 )
             )
         return rules
@@ -134,15 +135,15 @@ class TraceloopSpanProcessor(SpanProcessor):
     """
 
     def __init__(
-        self,
-        attribute_transformations: Optional[Dict[str, Any]] = None,
-        name_transformations: Optional[Dict[str, str]] = None,
-        traceloop_attributes: Optional[Dict[str, Any]] = None,
-        span_filter: Optional[Callable[[ReadableSpan], bool]] = None,
-        rules: Optional[List[TransformationRule]] = None,
-        load_env_rules: bool = True,
-        telemetry_handler: Optional[TelemetryHandler] = None,
-        mutate_original_span: bool = True,
+            self,
+            attribute_transformations: Optional[Dict[str, Any]] = None,
+            name_transformations: Optional[Dict[str, str]] = None,
+            traceloop_attributes: Optional[Dict[str, Any]] = None,
+            span_filter: Optional[Callable[[ReadableSpan], bool]] = None,
+            rules: Optional[List[TransformationRule]] = None,
+            load_env_rules: bool = True,
+            telemetry_handler: Optional[TelemetryHandler] = None,
+            mutate_original_span: bool = True,
     ):
         """
         Initialize the Traceloop span processor.
@@ -179,6 +180,9 @@ class TraceloopSpanProcessor(SpanProcessor):
         self._processed_span_ids = set()
         # Mapping from original span_id to translated INVOCATION (not span) for parent-child relationship preservation
         self._original_to_translated_invocation: Dict[int, Any] = {}
+        # Buffer spans to process them in the correct order (parents before children)
+        self._span_buffer: List[ReadableSpan] = []
+        self._processing_buffer = False
 
     def _default_span_filter(self, span: ReadableSpan) -> bool:
         """Default filter: Transform spans that look like LLM/AI calls.
@@ -219,8 +223,8 @@ class TraceloopSpanProcessor(SpanProcessor):
         if span.attributes:
             # Check for traceloop entity attributes
             if (
-                "traceloop.entity.input" in span.attributes
-                or "traceloop.entity.output" in span.attributes
+                    "traceloop.entity.input" in span.attributes
+                    or "traceloop.entity.output" in span.attributes
             ):
                 # We already filtered task/workflow spans above, so if we get here
                 # it means it has model data
@@ -229,14 +233,14 @@ class TraceloopSpanProcessor(SpanProcessor):
             for attr_key in span.attributes.keys():
                 attr_key_lower = str(attr_key).lower()
                 if any(
-                    marker in attr_key_lower
-                    for marker in ["llm", "ai", "gen_ai", "model"]
+                        marker in attr_key_lower
+                        for marker in ["llm", "ai", "gen_ai", "model"]
                 ):
                     return True
         return False
 
     def on_start(
-        self, span: Span, parent_context: Optional[Context] = None
+            self, span: Span, parent_context: Optional[Context] = None
     ) -> None:
         """Called when a span is started."""
         pass
@@ -248,8 +252,9 @@ class TraceloopSpanProcessor(SpanProcessor):
         """
         logger = logging.getLogger(__name__)
 
-        # Skip spans we already produced (recursion guard) - check FIRST before span_filter
-        if span.attributes and "_traceloop_processed" in span.attributes:
+        # Skip synthetic spans we already produced (recursion guard) - use different sentinel
+        # NOTE: _traceloop_processed is set by mutation, _traceloop_translated is set by translation
+        if span.attributes and "_traceloop_translated" in span.attributes:
             return None
 
         # Check if this span should be transformed
@@ -257,13 +262,9 @@ class TraceloopSpanProcessor(SpanProcessor):
             logger.debug("Span %s filtered out by span_filter", span.name)
             return None
 
-        logger.debug(
-            "Processing span for transformation: %s (kind=%s)",
-            span.name,
-            span.attributes.get("traceloop.span.kind")
-            if span.attributes
-            else None,
-        )
+        logger.debug("Processing span for transformation: %s (kind=%s)",
+                     span.name,
+                     span.attributes.get("traceloop.span.kind") if span.attributes else None)
 
         # avoid emitting multiple synthetic spans if on_end invoked repeatedly.
         span_id_int = getattr(getattr(span, "context", None), "span_id", None)
@@ -313,9 +314,9 @@ class TraceloopSpanProcessor(SpanProcessor):
             if span.parent:
                 parent_span_id = getattr(span.parent, "span_id", None)
                 if (
-                    parent_span_id
-                    and parent_span_id
-                    in self._original_to_translated_invocation
+                        parent_span_id
+                        and parent_span_id
+                        in self._original_to_translated_invocation
                 ):
                     # We found the translated invocation of the parent - use its span
                     translated_parent_invocation = (
@@ -325,9 +326,9 @@ class TraceloopSpanProcessor(SpanProcessor):
                         translated_parent_invocation, "span", None
                     )
                     if (
-                        translated_parent_span
-                        and hasattr(translated_parent_span, "is_recording")
-                        and translated_parent_span.is_recording()
+                            translated_parent_span
+                            and hasattr(translated_parent_span, "is_recording")
+                            and translated_parent_span.is_recording()
                     ):
                         from opentelemetry.trace import set_span_in_context
 
@@ -343,12 +344,13 @@ class TraceloopSpanProcessor(SpanProcessor):
             handler.start_llm(invocation)
             # Set the sentinel attribute immediately on the new span to prevent recursion
             if invocation.span and invocation.span.is_recording():
-                invocation.span.set_attribute("_traceloop_processed", True)
-                # Store the mapping from original span_id to translated INVOCATION
+                invocation.span.set_attribute("_traceloop_translated", True)
+                # Store the mapping from original span_id to translated INVOCATION (we'll close it later)
                 if original_span_id:
                     self._original_to_translated_invocation[
                         original_span_id
                     ] = invocation
+            # DON'T call stop_llm yet - we'll do that after processing all children
             return invocation
         except Exception as emit_err:  # pragma: no cover - defensive
             logging.getLogger(__name__).warning(
@@ -358,32 +360,122 @@ class TraceloopSpanProcessor(SpanProcessor):
 
     def on_end(self, span: ReadableSpan) -> None:
         """
-        Called when a span is ended. Mutate immediately, then process span translation.
+        Called when a span is ended. Mutate immediately, then process based on span type.
+
+        HYBRID APPROACH:
+        1. ALL spans get attribute translation immediately (via _mutate_span_if_needed)
+        2. LLM spans get processed immediately for evaluations
+        3. Non-LLM spans are buffered for optional batch processing
         """
+        _logger = logging.getLogger(__name__)
+
         try:
-            # FIRST: Mutate the original span immediately (before other processors/exporters see it)
-            # This ensures mutations happen before exporters capture the span
+            # STEP 1: Always mutate immediately (ALL spans get attribute translation)
             self._mutate_span_if_needed(span)
 
-            # THEN: Process span translation immediately for real-time telemetry
-            # This ensures evaluations and other downstream processes work correctly
-            result_invocation = self._process_span_translation(span)
+            # STEP 2: Check if this is an LLM span that needs evaluation
+            if self._is_llm_span(span):
+                _logger.debug(
+                    "🔍 TRACELOOP PROCESSOR: LLM span '%s' detected! Processing immediately for evaluations",
+                    span.name
+                )
+                # Process LLM spans IMMEDIATELY - create synthetic span and trigger evaluations
+                invocation = self._process_span_translation(span)
+                if invocation:
+                    # Close the invocation immediately to trigger evaluations
+                    handler = self.telemetry_handler or get_telemetry_handler()
+                    try:
+                        handler.stop_llm(invocation)
+                        _logger.debug(
+                            "🔍 TRACELOOP PROCESSOR: LLM invocation completed, evaluations should trigger"
+                        )
+                    except Exception as stop_err:
+                        _logger.warning(
+                            "Failed to stop LLM invocation: %s", stop_err
+                        )
+            else:
+                # Non-LLM spans (tasks, workflows, tools) - buffer for optional batch processing
+                _logger.debug(
+                    "🔍 TRACELOOP PROCESSOR: Non-LLM span '%s', buffering (%d in buffer)",
+                    span.name,
+                    len(self._span_buffer) + 1
+                )
+                self._span_buffer.append(span)
 
-            # Close the invocation immediately if one was created
-            if result_invocation:
-                handler = self.telemetry_handler or get_telemetry_handler()
-                try:
-                    handler.stop_llm(result_invocation)
-                except Exception as stop_err:
-                    logging.getLogger(__name__).warning(
-                        "Failed to stop invocation: %s", stop_err
+                # Process buffer when root span arrives (optional, for synthetic spans of workflows)
+                if span.parent is None and not self._processing_buffer:
+                    _logger.debug(
+                        "🔍 TRACELOOP PROCESSOR: ROOT SPAN detected, processing buffered non-LLM spans"
                     )
+                    self._processing_buffer = True
+                    try:
+                        spans_to_process = self._sort_spans_by_hierarchy(
+                            self._span_buffer
+                        )
+
+                        invocations_to_close = []
+                        for buffered_span in spans_to_process:
+                            result_invocation = self._process_span_translation(
+                                buffered_span
+                            )
+                            if result_invocation:
+                                invocations_to_close.append(result_invocation)
+
+                        handler = self.telemetry_handler or get_telemetry_handler()
+                        for invocation in reversed(invocations_to_close):
+                            try:
+                                handler.stop_llm(invocation)
+                            except Exception as stop_err:
+                                _logger.warning(
+                                    "Failed to stop invocation: %s", stop_err
+                                )
+
+                        self._span_buffer.clear()
+                        self._original_to_translated_invocation.clear()
+                    finally:
+                        self._processing_buffer = False
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
             logging.warning(
                 f"TraceloopSpanProcessor failed to transform span: {e}"
             )
+
+    def _sort_spans_by_hierarchy(
+            self, spans: List[ReadableSpan]
+    ) -> List[ReadableSpan]:
+        """Sort spans so parents come before children."""
+        # Build a map of span_id to span
+        span_map = {}
+        for s in spans:
+            span_id = getattr(getattr(s, "context", None), "span_id", None)
+            if span_id:
+                span_map[span_id] = s
+
+        # Build dependency graph: child -> parent
+        result = []
+        visited = set()
+
+        def visit(span: ReadableSpan) -> None:
+            span_id = getattr(getattr(span, "context", None), "span_id", None)
+            if not span_id or span_id in visited:
+                return
+
+            # Visit parent first
+            if span.parent:
+                parent_id = getattr(span.parent, "span_id", None)
+                if parent_id and parent_id in span_map:
+                    visit(span_map[parent_id])
+
+            # Then add this span
+            visited.add(span_id)
+            result.append(span)
+
+        # Visit all spans
+        for span in spans:
+            visit(span)
+
+        return result
 
     def shutdown(self) -> None:
         """Called when the tracer provider is shutdown."""
@@ -392,6 +484,79 @@ class TraceloopSpanProcessor(SpanProcessor):
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force flush any buffered spans."""
         return True
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _is_llm_span(self, span: ReadableSpan) -> bool:
+        """
+        Detect if this is a span that should trigger evaluations.
+
+        Returns True for:
+        1. Actual LLM API call spans (ChatOpenAI.chat, etc.) - detected by model attribute or name
+        2. Task/Agent spans with message data - detected by presence of entity.input/output or gen_ai.input.messages
+
+        Returns False for spans that don't need evaluation (utility tasks, tools without messages, etc.)
+        """
+        _logger = logging.getLogger(__name__)
+
+        if not span.attributes:
+            return False
+
+        # PRIORITY 1: Check if this span has message data (task/agent spans with entity.input/output)
+        # These are the spans where message reconstruction will work!
+        has_input_messages = (
+                "traceloop.entity.input" in span.attributes or
+                "gen_ai.input.messages" in span.attributes
+        )
+        has_output_messages = (
+                "traceloop.entity.output" in span.attributes or
+                "gen_ai.output.messages" in span.attributes
+        )
+
+        if has_input_messages or has_output_messages:
+            # This is a task/agent span with message data - PERFECT for evaluations!
+            span_kind = span.attributes.get("traceloop.span.kind") or span.attributes.get("gen_ai.span.kind")
+            _logger.debug(
+                "🔍 TRACELOOP PROCESSOR: Span '%s' (kind=%s) has message data (input=%s, output=%s) - WILL EVALUATE",
+                span.name, span_kind, has_input_messages, has_output_messages
+            )
+            return True
+
+        # PRIORITY 2: Check for explicit LLM span kind (even without messages, for compatibility)
+        span_kind = span.attributes.get("traceloop.span.kind") or span.attributes.get("gen_ai.span.kind")
+        if span_kind == "llm":
+            _logger.debug("🔍 TRACELOOP PROCESSOR: Span '%s' has span_kind='llm'", span.name)
+            return True
+
+        # PRIORITY 3: Check for model attributes (strong indicator of LLM call)
+        if any(key in span.attributes for key in [
+            "llm.request.model",
+            "gen_ai.request.model",
+            "ai.model.name"
+        ]):
+            _logger.debug("🔍 TRACELOOP PROCESSOR: Span '%s' has model attribute", span.name)
+            return True
+
+        # PRIORITY 4: Name-based detection (ChatOpenAI.chat, etc.)
+        span_name_lower = span.name.lower()
+
+        # Explicit excludes (utility spans that never have evaluable content)
+        exclude_keywords = ["should_continue", "model_to_tools", "tools_to_model"]
+        if any(ex in span_name_lower for ex in exclude_keywords):
+            _logger.debug("🔍 TRACELOOP PROCESSOR: Span '%s' excluded by keyword", span.name)
+            return False
+
+        # LLM indicators in span name
+        llm_indicators = ["chatopenai", "chatgoogleai", "chatanthropic", "chatvertexai", "openai.chat", "completion",
+                          "gpt-", "claude-", "gemini-", "llama-"]
+        for indicator in llm_indicators:
+            if indicator in span_name_lower:
+                _logger.debug("🔍 TRACELOOP PROCESSOR: Span '%s' matches LLM indicator '%s'", span.name, indicator)
+                return True
+
+        _logger.debug("🔍 TRACELOOP PROCESSOR: Span '%s' is NOT an evaluation span (no messages, no model)", span.name)
+        return False
 
     def _mutate_span_if_needed(self, span: ReadableSpan) -> None:
         """Mutate the original span's attributes and name if configured to do so.
@@ -432,9 +597,7 @@ class TraceloopSpanProcessor(SpanProcessor):
         if should_mutate and attr_tx:
             try:
                 if hasattr(span, "_attributes"):
-                    original = (
-                        dict(span._attributes) if span._attributes else {}
-                    )  # type: ignore[attr-defined]
+                    original = dict(span._attributes) if span._attributes else {}  # type: ignore[attr-defined]
                     mutated = self._apply_attribute_transformations(
                         original.copy(), attr_tx
                     )
@@ -451,8 +614,7 @@ class TraceloopSpanProcessor(SpanProcessor):
                     )
                 else:
                     logging.getLogger(__name__).warning(
-                        "Span %s does not have _attributes; mutation skipped",
-                        span.name,
+                        "Span %s does not have _attributes; mutation skipped", span.name
                     )
             except Exception as mut_err:
                 logging.getLogger(__name__).debug(
@@ -479,7 +641,7 @@ class TraceloopSpanProcessor(SpanProcessor):
                 )
 
     def _apply_attribute_transformations(
-        self, base: Dict[str, Any], transformations: Optional[Dict[str, Any]]
+            self, base: Dict[str, Any], transformations: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         if not transformations:
             return base
@@ -492,8 +654,8 @@ class TraceloopSpanProcessor(SpanProcessor):
                 value = base.pop(old)
                 # Special handling for entity input/output - normalize and serialize
                 if old in (
-                    "traceloop.entity.input",
-                    "traceloop.entity.output",
+                        "traceloop.entity.input",
+                        "traceloop.entity.output",
                 ):
                     try:
                         direction = "input" if "input" in old else "output"
@@ -521,9 +683,9 @@ class TraceloopSpanProcessor(SpanProcessor):
         return base
 
     def _derive_new_name(
-        self,
-        original_name: str,
-        name_transformations: Optional[Dict[str, str]],
+            self,
+            original_name: str,
+            name_transformations: Optional[Dict[str, str]],
     ) -> Optional[str]:
         if not name_transformations:
             return None
@@ -538,16 +700,24 @@ class TraceloopSpanProcessor(SpanProcessor):
         return None
 
     def _build_invocation(
-        self,
-        existing_span: ReadableSpan,
-        *,
-        attribute_transformations: Optional[Dict[str, Any]] = None,
-        name_transformations: Optional[Dict[str, str]] = None,
-        traceloop_attributes: Optional[Dict[str, Any]] = None,
+            self,
+            existing_span: ReadableSpan,
+            *,
+            attribute_transformations: Optional[Dict[str, Any]] = None,
+            name_transformations: Optional[Dict[str, str]] = None,
+            traceloop_attributes: Optional[Dict[str, Any]] = None,
     ) -> LLMInvocation:
         base_attrs: Dict[str, Any] = (
             dict(existing_span.attributes) if existing_span.attributes else {}
         )
+
+        # BEFORE transforming attributes, extract original message data
+        # for message reconstruction (needed for evaluations)
+        # Try both old format (traceloop.entity.*) and new format (gen_ai.*)
+        original_input_data = base_attrs.get("gen_ai.input.messages") or base_attrs.get("traceloop.entity.input")
+        original_output_data = base_attrs.get("gen_ai.output.messages") or base_attrs.get("traceloop.entity.output")
+
+        # Apply attribute transformations
         base_attrs = self._apply_attribute_transformations(
             base_attrs, attribute_transformations
         )
@@ -572,10 +742,10 @@ class TraceloopSpanProcessor(SpanProcessor):
 
         # Try to get model from various attribute sources
         request_model = (
-            base_attrs.get("gen_ai.request.model")
-            or base_attrs.get("gen_ai.response.model")
-            or base_attrs.get("llm.request.model")
-            or base_attrs.get("ai.model.name")
+                base_attrs.get("gen_ai.request.model")
+                or base_attrs.get("gen_ai.response.model")
+                or base_attrs.get("llm.request.model")
+                or base_attrs.get("ai.model.name")
         )
 
         # Infer model from original span name pattern like "chat gpt-4" if not found
@@ -599,10 +769,10 @@ class TraceloopSpanProcessor(SpanProcessor):
             "traceloop.span.kind"
         )
         if not request_model and span_kind in (
-            "task",
-            "workflow",
-            "agent",
-            "tool",
+                "task",
+                "workflow",
+                "agent",
+                "tool",
         ):
             # Use the original span name to avoid "chat unknown"
             if not new_name:
@@ -621,10 +791,27 @@ class TraceloopSpanProcessor(SpanProcessor):
         if new_name:
             # Provide override for SpanEmitter (we extended it to honor this)
             base_attrs.setdefault("gen_ai.override.span_name", new_name)
+
+        # Reconstruct LangChain message objects from Traceloop serialized data
+        # This enables evaluations to work without requiring LangChain instrumentation
+        input_messages = None
+        output_messages = None
+        if original_input_data or original_output_data:
+            try:
+                input_messages, output_messages = reconstruct_messages_from_traceloop(
+                    original_input_data, original_output_data
+                )
+            except Exception as e:
+                logging.getLogger(__name__).debug(
+                    f"Message reconstruction failed: {e}"
+                )
+
+        # Create invocation with reconstructed messages
         invocation = LLMInvocation(
             request_model=str(request_model),
             attributes=base_attrs,
-            messages=[],
+            input_messages=input_messages or [],
+            output_messages=output_messages or [],
         )
         # Mark operation heuristically from original span name
         lowered = existing_span.name.lower()

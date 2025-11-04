@@ -234,12 +234,15 @@ def _serialize_messages(
         serialized_msgs: list[dict[str, Any]] = []
 
         for msg in messages:
+            # Handle both .role (standard) and .type (LangChain) attributes
+            msg_role = getattr(msg, 'role', None) or getattr(msg, 'type', None)
+            
             # Skip system messages if exclude_system is True
-            if exclude_system and msg.role == "system":
+            if exclude_system and msg_role == "system":
                 continue
 
             msg_dict: dict[str, Any] = {
-                "role": msg.role,
+                "role": msg_role,
                 "parts": [],
             }  # parts: list[Any]
 
@@ -303,7 +306,9 @@ def _extract_system_instructions(
         system_parts = []
 
         for msg in messages:
-            if msg.role == "system":
+            # Handle both .role (standard) and .type (LangChain) attributes
+            msg_role = getattr(msg, 'role', None) or getattr(msg, 'type', None)
+            if msg_role == "system":
                 for part in msg.parts:
                     if isinstance(part, Text):
                         part_dict = {
@@ -451,7 +456,9 @@ def _llm_invocation_to_log_record(
     if invocation.input_messages:
         input_msgs = []
         for msg in invocation.input_messages:
-            if msg.role == "system":
+            # Handle both .role (standard) and .type (LangChain) attributes
+            msg_role = getattr(msg, 'role', None) or getattr(msg, 'type', None)
+            if msg_role == "system":
                 for part in msg.parts:
                     if isinstance(part, Text):
                         part_dict = {
