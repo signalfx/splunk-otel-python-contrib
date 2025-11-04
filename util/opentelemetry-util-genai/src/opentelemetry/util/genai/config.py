@@ -15,6 +15,7 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_SPAN,
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE,
 )
 from .types import ContentCapturingMode
 from .utils import get_content_capturing_mode
@@ -37,6 +38,7 @@ class Settings:
     legacy_capture_request: bool
     emit_legacy_evaluation_event: bool
     category_overrides: Dict[str, CategoryOverride]
+    evaluation_sample_rate: float = 1.0
 
 
 def parse_env() -> Settings:
@@ -113,6 +115,18 @@ def parse_env() -> Settings:
     ).strip()
     emit_legacy_event = legacy_event_flag.lower() in {"1", "true", "yes"}
 
+    evaluation_sample_rate = os.environ.get(OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE)
+    if evaluation_sample_rate is None or evaluation_sample_rate.strip() == "":
+        evaluation_sample_rate = 1.0
+    try:
+        evaluation_sample_rate = float(evaluation_sample_rate)
+    except ValueError:
+        evaluation_sample_rate =  1.0
+    if evaluation_sample_rate < 0.0:
+        evaluation_sample_rate =  0.0
+    if evaluation_sample_rate > 1.0:
+        evaluation_sample_rate = 1.0
+
     return Settings(
         enable_span=enable_span,
         enable_metrics=enable_metrics,
@@ -125,6 +139,7 @@ def parse_env() -> Settings:
         legacy_capture_request=legacy_capture_request,
         emit_legacy_evaluation_event=emit_legacy_event,
         category_overrides=overrides,
+        evaluation_sample_rate=evaluation_sample_rate,
     )
 
 

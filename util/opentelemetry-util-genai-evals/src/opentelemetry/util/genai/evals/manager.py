@@ -11,7 +11,6 @@ from ..callbacks import CompletionCallback
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..handler import TelemetryHandler
-from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
 
 from ..environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
@@ -33,7 +32,6 @@ from .env import (
     read_aggregation_flag,
     read_interval,
     read_raw_evaluators,
-    read_sample_rate,
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
@@ -86,8 +84,6 @@ class Manager(CompletionCallback):
         aggregate_results: bool | None = None,
     ) -> None:
         self._handler = handler
-        evaluation_sample_rate = read_sample_rate()
-        self._sampler = TraceIdRatioBased(evaluation_sample_rate)
         self._interval = interval if interval is not None else read_interval()
         self._aggregate_results = (
             aggregate_results
@@ -111,39 +107,8 @@ class Manager(CompletionCallback):
     def on_completion(self, invocation: GenAI) -> None:
         if not self.has_evaluators:
             return
-        trace_id_val = getattr(invocation, "trace_id", None)
-        span_context = getattr(invocation, "span_context", None)
-        if trace_id_val is None:
-            if (
-                span_context is None
-                and getattr(invocation, "span", None) is not None
-            ):
-                span_context = extract_span_context(invocation.span)
-                store_span_context(invocation, span_context)
-            trace_id_val = (
-                getattr(span_context, "trace_id", None)
-                if span_context is not None
-                else None
-            )
-        if trace_id_val:
-            try:
-                sampling_result = self._sampler.should_sample(
-                    trace_id=trace_id_val,
-                    parent_context=None,
-                    name="",
-                )
-                if (
-                    sampling_result
-                    and sampling_result.decision is Decision.RECORD_AND_SAMPLE
-                ):
-                    self.offer(invocation)
-            except Exception:  # pragma: no cover - defensive
-                _LOGGER.debug("Sampler raised an exception", exc_info=True)
-        else:  # TODO remove else branch when trace_id is set on all invocations
-            _LOGGER.debug(
-                "Trace based sampling not applied as trace id is not set.",
-                exc_info=True,
-            )
+
+        if invocation.sample_for_evaluation:
             self.offer(invocation)
 
     # Public API ---------------------------------------------------------
