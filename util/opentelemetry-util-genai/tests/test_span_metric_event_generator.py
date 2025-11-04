@@ -1,6 +1,15 @@
+import json
+
 import pytest
 
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAI,
+)
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_INPUT_MESSAGES,
+    GEN_AI_OUTPUT_MESSAGES,
+)
 from opentelemetry.util.genai.emitters.composite import CompositeEmitter
 from opentelemetry.util.genai.emitters.content_events import (
     ContentEventsEmitter,
@@ -12,6 +21,7 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
+    Workflow,
 )
 
 
@@ -75,7 +85,7 @@ class _RecordingEvaluationEmitter:
     role = "evaluation"
 
     def __init__(self) -> None:
-        self.call_log = []
+        self.call_log: list[tuple[str, object]] = []
 
     def on_evaluation_results(self, results, obj=None):
         self.call_log.append(("results", list(results)))
@@ -167,3 +177,40 @@ def test_span_emitter_filters_non_gen_ai_attributes():
     assert "traceloop.association.properties.ls_temperature" not in attrs
     assert all(not key.startswith("traceloop.") for key in attrs.keys())
     assert any(key.startswith("gen_ai.") for key in attrs)
+
+
+def test_span_emitter_workflow_captures_content():
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=True)
+
+    workflow = Workflow(
+        name="trip_planner",
+        workflow_type="sequential",
+        initial_input="Plan a trip to Rome",
+        final_output="Here is your itinerary",
+    )
+
+    emitter.on_start(workflow)
+    emitter.on_end(workflow)
+
+    span = workflow.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+
+    operation_value = attrs.get(GenAI.GEN_AI_OPERATION_NAME)
+    assert operation_value == "invoke_workflow"
+
+    input_messages_raw = attrs.get(GEN_AI_INPUT_MESSAGES)
+    assert input_messages_raw is not None
+    input_messages = json.loads(input_messages_raw)
+    assert input_messages[0]["parts"][0]["content"] == "Plan a trip to Rome"
+
+    output_messages_raw = attrs.get(GEN_AI_OUTPUT_MESSAGES)
+    assert output_messages_raw is not None
+    output_messages = json.loads(output_messages_raw)
+    assert (
+        output_messages[0]["parts"][0]["content"] == "Here is your itinerary"
+    )
