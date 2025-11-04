@@ -58,6 +58,3 @@ GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats"
 # Server attributes (from semantic conventions)
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
-
-ERROR_TYPE = "error.type"
-ERROR_MESSAGE = "error.message"
