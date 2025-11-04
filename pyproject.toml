@@ -1,8 +1,8 @@
 # Used for local development, not to be published.
 [project]
-name = "opentelemetry-python-contrib"
+name = "splunk-opentelemetry-python-contrib"
 version = "0.0.0" # This is not used.
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "opentelemetry-api",
   "opentelemetry-sdk",
@@ -142,17 +142,12 @@ opentelemetry-instrumentation-openai-v2 = { workspace = true }
 # https://docs.astral.sh/uv/reference/settings/#workspace
 [tool.uv.workspace]
 members = [
-  "instrumentation/*",
   "instrumentation-genai/*",
-  "exporter/*",
-  "opentelemetry-instrumentation",
-  "propagator/*",
   "util/*",
 ]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
-target-version = "py39"
 line-length = 79
 extend-exclude = ["_template", "*_pb2*.py*"]
 output-format = "concise"
