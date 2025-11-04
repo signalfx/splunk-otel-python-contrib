@@ -55,7 +55,7 @@ LLM call with agent context
                 ]
             }
         ],
-        "gen_ai.system.instructions": [
+        "gen_ai.system_instructions": [
             {
                 "type": "text",
                 "content": "You are a customer intent classifier."
@@ -298,7 +298,7 @@ LLM call with agent context
                 ]
             }
         ],
-        "gen_ai.system.instructions": [
+        "gen_ai.system_instructions": [
             {
                 "type": "text",
                 "content": "You are a helpful customer support agent. Assist with order status inquiries."
