@@ -149,7 +149,7 @@ members = [
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
 line-length = 79
-extend-exclude = ["_template", "*_pb2*.py*"]
+extend-exclude = ["_template", "*_pb2*.py*", "examples/", "*/examples/*"]
 output-format = "concise"
 
 [tool.ruff.lint]
