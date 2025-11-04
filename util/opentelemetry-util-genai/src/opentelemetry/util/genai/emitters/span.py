@@ -222,7 +222,7 @@ class SpanEmitter(EmitterMeta):
             )
             if system_instructions is not None:
                 span.set_attribute(
-                    "gen_ai.system.instructions", system_instructions
+                    GenAI.GEN_AI_SYSTEM_INSTRUCTIONS, system_instructions
                 )
 
             # Serialize input messages (excluding system messages)
@@ -508,7 +508,7 @@ class SpanEmitter(EmitterMeta):
                 {"type": "text", "content": agent.system_instructions}
             ]
             span.set_attribute(
-                "gen_ai.system.instructions", json.dumps(system_parts)
+                GenAI.GEN_AI_SYSTEM_INSTRUCTIONS, json.dumps(system_parts)
             )
         if (
             isinstance(agent, AgentInvocation)

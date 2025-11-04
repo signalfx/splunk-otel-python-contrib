@@ -47,7 +47,7 @@ from ..types import (
 _MISSING_GEN_AI_ATTRS = {
     "GEN_AI_INPUT_MESSAGES": "gen_ai.input.messages",
     "GEN_AI_OUTPUT_MESSAGES": "gen_ai.output.messages",
-    "GEN_AI_SYSTEM_INSTRUCTIONS": "gen_ai.system.instructions",
+    "GEN_AI_SYSTEM_INSTRUCTIONS": "gen_ai.system_instructions",
 }
 for _attr, _value in _MISSING_GEN_AI_ATTRS.items():
     if not hasattr(GenAI, _attr):
@@ -583,11 +583,11 @@ def _llm_invocation_to_log_record(
         context=otel_context,
     )
     if trace_id is not None:
-        record.trace_id = trace_id  # type: ignore[attr-defined]
+        record.trace_id = trace_id
     if span_id is not None:
-        record.span_id = span_id  # type: ignore[attr-defined]
+        record.span_id = span_id
     if trace_flags is not None:
-        record.trace_flags = trace_flags  # type: ignore[attr-defined]
+        record.trace_flags = trace_flags
     return record
 
 
@@ -726,11 +726,21 @@ def _workflow_to_log_record(
         body[GenAI.GEN_AI_INPUT_MESSAGES] = input_msgs
     if output_msgs:
         body[GenAI.GEN_AI_OUTPUT_MESSAGES] = output_msgs
-    # Preserve legacy fields for backward compatibility (only if capture enabled)
-    if capture_content and workflow.initial_input:
-        body["initial_input"] = workflow.initial_input
-    if capture_content and workflow.final_output:
-        body["final_output"] = workflow.final_output
+    # Always include system instructions key (empty list if none). Use workflow.description as source.
+    workflow_instructions: list[dict[str, Any]] = []
+    if workflow.description:
+        workflow_instructions.append(
+            {
+                "type": "text",
+                "content": workflow.description if capture_content else "",
+            }
+        )
+    body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = workflow_instructions
+    # Ensure finish_reason present on all output messages (defensive)
+    if GenAI.GEN_AI_OUTPUT_MESSAGES in body:
+        for m in body[GenAI.GEN_AI_OUTPUT_MESSAGES]:
+            if "finish_reason" not in m:
+                m["finish_reason"] = "stop"
     return _build_log_record(
         workflow,
         event_name="gen_ai.client.workflow.operation.details",
@@ -754,21 +764,24 @@ def _agent_to_log_record(
     body: Dict[str, Any] = {}
     # System instructions treated similarly to LLM system messages
     if agent.system_instructions:
-        body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = [
+        pass  # handled below for unified always-present key
+    # Always include system instructions key (empty list if none)
+    agent_instructions: list[dict[str, Any]] = []
+    if agent.system_instructions:
+        agent_instructions.append(
             {
                 "type": "text",
                 "content": agent.system_instructions
                 if capture_content
                 else "",
             }
-        ]
+        )
+    body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = agent_instructions
     input_context = getattr(agent, "input_context", None)
     if input_context:
         body[GenAI.GEN_AI_INPUT_MESSAGES] = [
             _build_text_message("user", input_context, capture=capture_content)
         ]
-        if capture_content:
-            body["input_context"] = input_context  # legacy
     output_result = getattr(agent, "output_result", None)
     if output_result:
         body[GenAI.GEN_AI_OUTPUT_MESSAGES] = [
@@ -779,8 +792,11 @@ def _agent_to_log_record(
                 finish_reason="stop",
             )
         ]
-        if capture_content:
-            body["output_result"] = output_result  # legacy
+    # Ensure finish_reason present on all output messages (defensive)
+    if GenAI.GEN_AI_OUTPUT_MESSAGES in body:
+        for m in body[GenAI.GEN_AI_OUTPUT_MESSAGES]:
+            if "finish_reason" not in m:
+                m["finish_reason"] = "stop"
     if not body:
         return None
     return _build_log_record(
@@ -848,11 +864,11 @@ def _step_to_log_record(
         context=otel_context,
     )
     if trace_id is not None:
-        record.trace_id = trace_id  # type: ignore[attr-defined]
+        record.trace_id = trace_id
     if span_id is not None:
-        record.span_id = span_id  # type: ignore[attr-defined]
+        record.span_id = span_id
     if trace_flags is not None:
-        record.trace_flags = trace_flags  # type: ignore[attr-defined]
+        record.trace_flags = trace_flags
     return record
 
 

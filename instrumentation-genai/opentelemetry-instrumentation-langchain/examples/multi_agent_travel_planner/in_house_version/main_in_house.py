@@ -583,6 +583,10 @@ def coordinator_node(state: PlannerState) -> PlannerState:
         name="coordinator",
         agent_type="coordinator",
         model=_model_name(),
+        system_instructions=(
+            "You are the lead travel coordinator. Extract key details from the user's request, "
+            "outline required specialist agents (flight, hotel, activities, synthesis) and provide planning guidance."
+        ),
         input_context=state.get("user_request"),
     )
     if handler:
@@ -670,6 +674,10 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         agent_type="specialist",
         model=_model_name(),
         tools=["mock_search_flights"],
+        system_instructions=(
+            "You are a flight specialist. Given origin, destination, dates and traveller count, "
+            "recommend the most appealing flight option with concise justification."
+        ),
     )
     if handler:
         handler.start_agent(agent_invocation)
@@ -787,6 +795,10 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
         agent_type="specialist",
         model=_model_name(),
         tools=["mock_search_hotels"],
+        system_instructions=(
+            "You are a hotel specialist. Recommend a single standout hotel option matching the trip context, "
+            "highlighting style, location and approximate nightly rate."
+        ),
     )
     if handler:
         handler.start_agent(agent_invocation)
@@ -903,6 +915,9 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
         agent_type="specialist",
         model=_model_name(),
         tools=["mock_search_activities"],
+        system_instructions=(
+            "You are an activity specialist. Suggest signature destination activities that fit the trip goals and dates."
+        ),
     )
     if handler:
         handler.start_agent(agent_invocation)
@@ -1019,6 +1034,9 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
         name="plan_synthesizer",
         agent_type="synthesizer",
         model=_model_name(),
+        system_instructions=(
+            "You synthesize the specialist outputs into a cohesive, structured itinerary (flights, hotel, activities)."
+        ),
     )
     if handler:
         handler.start_agent(agent_invocation)
