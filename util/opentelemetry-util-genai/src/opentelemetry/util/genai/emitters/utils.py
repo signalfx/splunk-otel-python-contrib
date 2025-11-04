@@ -693,7 +693,9 @@ def _workflow_to_log_record(
 ) -> Optional[SDKLogRecord]:
     """Create a workflow log record using unified message format."""
     attributes: Dict[str, Any] = {
-        "event.name": "gen_ai.client.workflow.operation.details",
+        # TODO: fixme in UI
+        # "event.name": "gen_ai.client.workflow.operation.details",
+        "event.name": "gen_ai.client.inference.operation.details",
         "gen_ai.workflow.name": workflow.name,
     }
     if workflow.workflow_type:
@@ -743,7 +745,9 @@ def _workflow_to_log_record(
                 m["finish_reason"] = "stop"
     return _build_log_record(
         workflow,
-        event_name="gen_ai.client.workflow.operation.details",
+        # TODO: fixme in UI
+        # event_name="gen_ai.client.workflow.operation.details",
+        event_name="gen_ai.client.inference.operation.details",
         attributes=attributes,
         body=body or None,
     )
@@ -754,7 +758,9 @@ def _agent_to_log_record(
 ) -> Optional[SDKLogRecord]:
     """Create a log record for an agent event using unified message format."""
     attributes: Dict[str, Any] = {
-        "event.name": "gen_ai.client.agent.operation.details",
+        # TODO: fixme in UI
+        # "event.name": "gen_ai.client.agent.operation.details",
+        "event.name": "gen_ai.client.inference.operation.details",
     }
     if agent.framework:
         attributes[GEN_AI_FRAMEWORK] = agent.framework
@@ -801,7 +807,9 @@ def _agent_to_log_record(
         return None
     return _build_log_record(
         agent,
-        event_name="gen_ai.client.agent.operation.details",
+        # TODO: fixme in UI
+        # event_name="gen_ai.client.agent.operation.details",
+        event_name="gen_ai.client.inference.operation.details",
         attributes=attributes,
         body=body,
     )
