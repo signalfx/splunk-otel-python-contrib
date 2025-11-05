@@ -8,10 +8,10 @@ metadata:
     component: telemetry
   annotations:
     description: "Multi-agent travel planner with Traceloop translator and GenAI evaluation infrastructure using Deepeval"
-    git-commit: "45a1905"
+    git-commit: "2e5901a"
 spec:
-  # Run every 30 minutes on weekdays (Monday to Friday)
-  schedule: "*/30 * * * 1-5"
+  # Run every 2 minutes for testing
+  schedule: "*/2 * * * *"
   suspend: false
   
   # Keep last 3 successful and 1 failed job for debugging
@@ -33,117 +33,117 @@ spec:
           restartPolicy: OnFailure
           
           containers:
-          - name: travel-planner-traceloop
-            # Multi-platform image (amd64, arm64) with git commit hash tag
-            image: admehra621/travel-planner-tl-translate-evals-splunk:45a1905
-            imagePullPolicy: Always
+            - name: travel-planner-traceloop
+              # Multi-platform image (amd64, arm64) with git commit hash tag
+              image: admehra621/travel-planner-tl-translate-evals-splunk:2e5901a
+              imagePullPolicy: Always
+              
+              env:
+                # === GenAI Semantic Conventions (REQUIRED) ===
+                - name: OTEL_SEMCONV_STABILITY_OPT_IN
+                  value: "gen_ai_latest_experimental"
             
-            env:
-            # === GenAI Semantic Conventions (REQUIRED) ===
-            - name: OTEL_SEMCONV_STABILITY_OPT_IN
-              value: "gen_ai_latest_experimental"
-            
-            # === OpenTelemetry Resource Attributes ===
-            - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "deployment.environment=o11y-inframon-ai,git.commit.id=45a1905"
-            
-            # === Service name for telemetry ===
-            - name: OTEL_SERVICE_NAME
-              value: "travel-planner-tl-translate-evals-splunk"
-            
-            # === OpenAI Configuration ===
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: openai-credentials
-                  key: api-key
-            
-            - name: OPENAI_MODEL
-              value: "gpt-4o-mini"
-            
-            # === GenAI Content Capture ===
-            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-              value: "true"
-            
-            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
-              value: "SPAN_AND_EVENT"
-            
-            # === GenAI Emitters Configuration ===
-            - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
-              value: "span_metric_event,splunk"
-            
-            - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
-              value: "replace-category:SplunkEvaluationResults"
-            
-            # === Evaluation Settings ===
-            # Note: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS not set - will use all default evaluations
-            # (bias, toxicity, answer_relevancy, faithfulness, contextual_relevancy)
-            
-            - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
-              value: "true"
-            
-            # === GenAI Debug Flags ===
-            - name: OTEL_GENAI_EVAL_DEBUG_SKIPS
-              value: "true"
-            
-            - name: OTEL_GENAI_EVAL_DEBUG_EACH
-              value: "true"
-            
-            - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
-              value: "true"
-            
-            # === OpenTelemetry Logs Exporter ===
-            - name: OTEL_LOGS_EXPORTER
-              value: "otlp"
-            
-            # === Get the host IP for Splunk OTEL agent ===
-            - name: SPLUNK_OTEL_AGENT
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.hostIP
-            
-            # === OpenTelemetry OTLP endpoint using Splunk agent ===
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://$(SPLUNK_OTEL_AGENT):4317"
-            
-            # === OTLP Protocol (grpc) ===
-            - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: "grpc"
-            
-            # === Exclude health check URLs ===
-            - name: OTEL_PYTHON_EXCLUDED_URLS
-              value: "^(https?://)?[^/]+(/)?$"
-            
-            # === Enable Python logging auto instrumentation ===
-            - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
-              value: "true"
-            
-            # === Enable log correlation ===
-            - name: OTEL_PYTHON_LOG_CORRELATION
-              value: "true"
-            
-            # === Enable LangChain content capture ===
-            - name: OTEL_INSTRUMENTATION_LANGCHAIN_CAPTURE_MESSAGE_CONTENT
-              value: "true"
-            
-            # === Enable Splunk profiler ===
-            - name: SPLUNK_PROFILER_ENABLED
-              value: "true"
-            
-            # === Unbuffered Python output ===
-            - name: PYTHONUNBUFFERED
-              value: "1"
-            
-            # === GenAI evaluation sampling rate ===
-            - name: OTEL_GENAI_EVALUATION_SAMPLING_RATE
-              value: "1"
-            
-            # === Resource limits ===
-            resources:
-              requests:
-                memory: "512Mi"
-                cpu: "500m"
-              limits:
-                memory: "1Gi"
-                cpu: "1000m"
+                # === OpenTelemetry Resource Attributes ===
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=2e5901a"
+                
+                # === Service name for telemetry ===
+                - name: OTEL_SERVICE_NAME
+                  value: "travel-planner-tl-translate-evals-splunk"
+                
+                # === OpenAI Configuration ===
+                - name: OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openai-credentials
+                      key: api-key
+                
+                - name: OPENAI_MODEL
+                  value: "gpt-4o-mini"
+                
+                # === GenAI Content Capture ===
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+                  value: "SPAN_AND_EVENT"
+                
+                # === GenAI Emitters Configuration ===
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+                  value: "span_metric_event,splunk"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
+                  value: "replace-category:SplunkEvaluationResults"
+                
+                # === Evaluation Settings ===
+                # Note: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS not set - will use all default evaluations
+                # (bias, toxicity, answer_relevancy, faithfulness, contextual_relevancy)
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
+                  value: "true"
+                
+                # === GenAI Debug Flags ===
+                - name: OTEL_GENAI_EVAL_DEBUG_SKIPS
+                  value: "true"
+                
+                - name: OTEL_GENAI_EVAL_DEBUG_EACH
+                  value: "true"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
+                  value: "true"
+                
+                # === OpenTelemetry Logs Exporter ===
+                - name: OTEL_LOGS_EXPORTER
+                  value: "otlp"
+                
+                # === Get the host IP for Splunk OTEL agent ===
+                - name: SPLUNK_OTEL_AGENT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                
+                # === OpenTelemetry OTLP endpoint using Splunk agent ===
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://$(SPLUNK_OTEL_AGENT):4317"
+                
+                # === OTLP Protocol (grpc) ===
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "grpc"
+                
+                # === Exclude health check URLs ===
+                - name: OTEL_PYTHON_EXCLUDED_URLS
+                  value: "^(https?://)?[^/]+(/)?$"
+                
+                # === Enable Python logging auto instrumentation ===
+                - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+                  value: "true"
+                
+                # === Enable log correlation ===
+                - name: OTEL_PYTHON_LOG_CORRELATION
+                  value: "true"
+                
+                # === Enable LangChain content capture ===
+                - name: OTEL_INSTRUMENTATION_LANGCHAIN_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                
+                # === Enable Splunk profiler ===
+                - name: SPLUNK_PROFILER_ENABLED
+                  value: "true"
+                
+                # === Unbuffered Python output ===
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+                
+                # === GenAI evaluation sampling rate ===
+                - name: OTEL_GENAI_EVALUATION_SAMPLING_RATE
+                  value: "1"
+              
+              # === Resource limits ===
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "500m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
 

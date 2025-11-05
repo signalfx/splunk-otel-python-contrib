@@ -53,7 +53,6 @@ def reconstruct_messages_from_traceloop(
         except ImportError:
             _logger.debug(
                 "LangChain not available; message reconstruction skipped. "
-                "Install langchain-core to enable evaluations with Traceloop."
             )
             return None, None
         

@@ -301,9 +301,6 @@ class TraceloopSpanProcessor(SpanProcessor):
             traceloop_attributes=extra_tl_attrs,
         )
         invocation.attributes.setdefault("_traceloop_processed", True)
-        
-        # Add test marker to verify lifecycle integrity
-        invocation.attributes["test.synthetic_span_marker"] = "created_in_start_llm"
 
         # Always emit via TelemetryHandler
         handler = self.telemetry_handler or get_telemetry_handler()
