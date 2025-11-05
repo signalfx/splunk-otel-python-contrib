@@ -172,10 +172,8 @@ class TraceloopSpanProcessor(SpanProcessor):
         self.mutate_original_span = mutate_original_span
         if self.rules:
             logging.getLogger(__name__).debug(
-                "TraceloopSpanProcessor loaded %d transformation rules (explicit=%d env=%d)",
-                len(self.rules),
-                len(rules or []),
-                len(env_rules),
+                "Loaded %d transformation rules",
+                len(self.rules)
             )
         self._processed_span_ids = set()
         # Mapping from original span_id to translated INVOCATION (not span) for parent-child relationship preservation
@@ -245,8 +243,6 @@ class TraceloopSpanProcessor(SpanProcessor):
     def _process_span_translation(
         self, 
         span: ReadableSpan,
-        original_traceloop_input: Optional[Any] = None,
-        original_traceloop_output: Optional[Any] = None,
     ) -> Optional[Any]:
         """Process a single span translation with proper parent mapping.
 
@@ -260,16 +256,10 @@ class TraceloopSpanProcessor(SpanProcessor):
 
         # Check if this span should be transformed
         if not self.span_filter(span):
-            logger.debug("Span %s filtered out by span_filter", span.name)
+            logger.debug("Span %s filtered out", span.name)
             return None
 
-        logger.debug(
-            "Processing span for transformation: %s (kind=%s)",
-            span.name,
-            span.attributes.get("traceloop.span.kind")
-            if span.attributes
-            else None,
-        )
+        logger.debug("Processing span: %s", span.name)
 
         # avoid emitting multiple synthetic spans if on_end invoked repeatedly.
         span_id_int = getattr(getattr(span, "context", None), "span_id", None)
@@ -303,14 +293,12 @@ class TraceloopSpanProcessor(SpanProcessor):
             extra_tl_attrs = {**self.traceloop_attributes, **sentinel}
 
         # Build invocation (mutation already happened in on_end before this method)
-        # Pass the original Traceloop entity data that was extracted before mutation
+        # Message data is extracted directly from span attributes in _build_invocation
         invocation = self._build_invocation(
             span,
             attribute_transformations=attr_tx,
             name_transformations=name_tx,
             traceloop_attributes=extra_tl_attrs,
-            original_traceloop_input=original_traceloop_input,
-            original_traceloop_output=original_traceloop_output,
         )
         invocation.attributes.setdefault("_traceloop_processed", True)
         
@@ -353,6 +341,7 @@ class TraceloopSpanProcessor(SpanProcessor):
 
             invocation.parent_context = parent_context
             handler.start_llm(invocation)
+            
             # Set the sentinel attribute immediately on the new span to prevent recursion
             if invocation.span and invocation.span.is_recording():
                 invocation.span.set_attribute("_traceloop_processed", True)
@@ -373,25 +362,12 @@ class TraceloopSpanProcessor(SpanProcessor):
         Called when a span is ended. Mutate immediately, then trigger evaluations on the mutated span.
         """
         try:
-            # FIRST: Extract original Traceloop entity data BEFORE mutation
-            # This is needed for message reconstruction in evaluations
-            traceloop_input = None
-            traceloop_output = None
-            if span.attributes:
-                traceloop_input = span.attributes.get("traceloop.entity.input")
-                traceloop_output = span.attributes.get("traceloop.entity.output")
-            
-            # SECOND: Mutate the original span immediately (before other processors/exporters see it)
+            # FIRST: Mutate the original span immediately (before other processors/exporters see it)
             # This ensures mutations happen before exporters capture the span
             self._mutate_span_if_needed(span)
 
-            # THIRD: Process span translation immediately for real-time telemetry
-            # Pass the original Traceloop entity data for message reconstruction
-            result_invocation = self._process_span_translation(
-                span, 
-                original_traceloop_input=traceloop_input,
-                original_traceloop_output=traceloop_output
-            )
+            # SECOND: Process span translation immediately for real-time telemetry
+            result_invocation = self._process_span_translation(span)
 
             # NOW mark the original span as processed (AFTER translation is done)
             # This prevents infinite recursion while allowing synthetic span creation
@@ -402,15 +378,6 @@ class TraceloopSpanProcessor(SpanProcessor):
             if result_invocation:
                 handler = self.telemetry_handler or get_telemetry_handler()
                 try:
-                    # Verify lifecycle integrity via test marker
-                    test_marker = result_invocation.attributes.get("test.synthetic_span_marker")
-                    logger = logging.getLogger(__name__)
-                    if test_marker:
-                        logger.debug(
-                            "Synthetic span lifecycle verified: original=%s -> synthetic=%s",
-                            span.name,
-                            result_invocation.span.name if hasattr(result_invocation, "span") and result_invocation.span else "N/A"
-                        )
                     handler.stop_llm(result_invocation)
                 except Exception as stop_err:
                     logging.getLogger(__name__).warning(
@@ -483,19 +450,17 @@ class TraceloopSpanProcessor(SpanProcessor):
                     span._attributes.clear()  # type: ignore[attr-defined]
                     span._attributes.update(mutated)  # type: ignore[attr-defined]
                     logging.getLogger(__name__).debug(
-                        "Mutated span %s attributes: %s -> %s keys",
+                        "Mutated span %s: %d attributes",
                         span.name,
-                        len(original),
                         len(mutated),
                     )
                 else:
                     logging.getLogger(__name__).warning(
-                        "Span %s does not have _attributes; mutation skipped",
-                        span.name,
+                        "Span %s missing _attributes", span.name
                     )
             except Exception as mut_err:
                 logging.getLogger(__name__).debug(
-                    "Attribute mutation skipped due to error: %s", mut_err
+                    "Attribute mutation failed: %s", mut_err
                 )
 
         # Mutate name
@@ -584,12 +549,18 @@ class TraceloopSpanProcessor(SpanProcessor):
         attribute_transformations: Optional[Dict[str, Any]] = None,
         name_transformations: Optional[Dict[str, str]] = None,
         traceloop_attributes: Optional[Dict[str, Any]] = None,
-        original_traceloop_input: Optional[Any] = None,
-        original_traceloop_output: Optional[Any] = None,
     ) -> LLMInvocation:
         base_attrs: Dict[str, Any] = (
             dict(existing_span.attributes) if existing_span.attributes else {}
         )
+        
+        # BEFORE transforming attributes, extract original message data
+        # for message reconstruction (needed for evaluations)
+        # Try both old format (traceloop.entity.*) and new format (gen_ai.*)
+        original_input_data = base_attrs.get("gen_ai.input.messages") or base_attrs.get("traceloop.entity.input")
+        original_output_data = base_attrs.get("gen_ai.output.messages") or base_attrs.get("traceloop.entity.output")
+        
+        # Apply attribute transformations AFTER extracting message data
         base_attrs = self._apply_attribute_transformations(
             base_attrs, attribute_transformations
         )
@@ -664,28 +635,25 @@ class TraceloopSpanProcessor(SpanProcessor):
             # Provide override for SpanEmitter (we extended it to honor this)
             base_attrs.setdefault("gen_ai.override.span_name", new_name)
         
-        # Use message reconstructor to create proper LangChain message objects
-        # This enables evaluations to work correctly by providing properly formatted messages
+        # Reconstruct LangChain message objects from Traceloop serialized data
+        # This enables evaluations to work without requiring LangChain instrumentation
         input_messages = None
         output_messages = None
-        logger = logging.getLogger(__name__)
-        
-        # Use the original Traceloop entity data passed from _process_span_translation
-        if original_traceloop_input or original_traceloop_output:
-            input_messages, output_messages = reconstruct_messages_from_traceloop(
-                original_traceloop_input, original_traceloop_output
-            )
-            if input_messages:
-                logger.debug(
-                    "Reconstructed %d input messages for span %s",
-                    len(input_messages),
-                    existing_span.name,
+        if original_input_data or original_output_data:
+            try:
+                input_messages, output_messages = reconstruct_messages_from_traceloop(
+                    original_input_data, original_output_data
                 )
-            if output_messages:
-                logger.debug(
-                    "Reconstructed %d output messages for span %s",
-                    len(output_messages),
-                    existing_span.name,
+                if input_messages or output_messages:
+                    logging.getLogger(__name__).debug(
+                        "Reconstructed %d input, %d output messages for %s",
+                        len(input_messages or []),
+                        len(output_messages or []),
+                        existing_span.name
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).debug(
+                    "Message reconstruction failed: %s", e
                 )
         
         invocation = LLMInvocation(
