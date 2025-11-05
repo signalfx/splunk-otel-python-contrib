@@ -10,8 +10,8 @@ metadata:
     description: "Multi-agent travel planner with Traceloop translator and GenAI evaluation infrastructure using Deepeval"
     git-commit: "45a1905"
 spec:
-  # Run every 1 minute for testing
-  schedule: "*/1 * * * *"
+  # Run every 30 minutes on weekdays (Monday to Friday)
+  schedule: "*/30 * * * 1-5"
   suspend: false
   
   # Keep last 3 successful and 1 failed job for debugging
