@@ -17,7 +17,7 @@ genai-evals-deepeval, instrumentation-langchain, genai-translator-traceloop):
 | splunk-otel-genai-emitters-splunk | `util/opentelemetry-util-genai-emitters-splunk` | `genai-emitters-splunk-v0.Y.Z`     |
 | splunk-otel-genai-evals-deepeval | `util/opentelemetry-util-genai-evals-deepeval` | `genai-evals-deepeval-v0.Y.Z`      |
 | splunk-otel-instrumentation-langchain | `instrumentation-genai/opentelemetry-instrumentation-langchain` | `instrumentation-langchain-v0.Y.Z` |
-| splunk-otel-genai-translator-traceloop | `util/opentelemetry-util-genai-translator-traceloop` | `genai-translator-traceloop-v0.Y.Z` |
+| splunk-otel-util-genai-translator-traceloop | `util/opentelemetry-util-genai-traceloop-translator` | `genai-translator-traceloop-v0.Y.Z` |
 
 ### Release Steps
 
