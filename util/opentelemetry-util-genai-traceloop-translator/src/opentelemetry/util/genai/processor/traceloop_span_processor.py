@@ -34,6 +34,7 @@ from opentelemetry.util.genai.handler import (
 )
 
 from .content_normalizer import normalize_traceloop_content
+from .message_reconstructor import reconstruct_messages_from_traceloop
 
 _ENV_RULES = "OTEL_GENAI_SPAN_TRANSFORM_RULES"
 
@@ -241,7 +242,12 @@ class TraceloopSpanProcessor(SpanProcessor):
         """Called when a span is started."""
         pass
 
-    def _process_span_translation(self, span: ReadableSpan) -> Optional[Any]:
+    def _process_span_translation(
+        self, 
+        span: ReadableSpan,
+        original_traceloop_input: Optional[Any] = None,
+        original_traceloop_output: Optional[Any] = None,
+    ) -> Optional[Any]:
         """Process a single span translation with proper parent mapping.
 
         Returns the invocation object if a translation was created, None otherwise.
@@ -297,11 +303,14 @@ class TraceloopSpanProcessor(SpanProcessor):
             extra_tl_attrs = {**self.traceloop_attributes, **sentinel}
 
         # Build invocation (mutation already happened in on_end before this method)
+        # Pass the original Traceloop entity data that was extracted before mutation
         invocation = self._build_invocation(
             span,
             attribute_transformations=attr_tx,
             name_transformations=name_tx,
             traceloop_attributes=extra_tl_attrs,
+            original_traceloop_input=original_traceloop_input,
+            original_traceloop_output=original_traceloop_output,
         )
         invocation.attributes.setdefault("_traceloop_processed", True)
         
@@ -364,13 +373,25 @@ class TraceloopSpanProcessor(SpanProcessor):
         Called when a span is ended. Mutate immediately, then trigger evaluations on the mutated span.
         """
         try:
-            # FIRST: Mutate the original span immediately (before other processors/exporters see it)
+            # FIRST: Extract original Traceloop entity data BEFORE mutation
+            # This is needed for message reconstruction in evaluations
+            traceloop_input = None
+            traceloop_output = None
+            if span.attributes:
+                traceloop_input = span.attributes.get("traceloop.entity.input")
+                traceloop_output = span.attributes.get("traceloop.entity.output")
+            
+            # SECOND: Mutate the original span immediately (before other processors/exporters see it)
             # This ensures mutations happen before exporters capture the span
             self._mutate_span_if_needed(span)
 
-            # THEN: Process span translation immediately for real-time telemetry
-            # This ensures evaluations and other downstream processes work correctly
-            result_invocation = self._process_span_translation(span)
+            # THIRD: Process span translation immediately for real-time telemetry
+            # Pass the original Traceloop entity data for message reconstruction
+            result_invocation = self._process_span_translation(
+                span, 
+                original_traceloop_input=traceloop_input,
+                original_traceloop_output=traceloop_output
+            )
 
             # NOW mark the original span as processed (AFTER translation is done)
             # This prevents infinite recursion while allowing synthetic span creation
@@ -555,56 +576,6 @@ class TraceloopSpanProcessor(SpanProcessor):
                 continue
         return None
 
-    def _deserialize_messages(
-        self, messages_json: str, message_type: str
-    ) -> List[Any]:
-        """Deserialize JSON messages back to InputMessage or OutputMessage objects.
-        
-        Args:
-            messages_json: JSON string containing messages
-            message_type: 'input' or 'output'
-            
-        Returns:
-            List of InputMessage or OutputMessage objects
-        """
-        from opentelemetry.util.genai.types import InputMessage, OutputMessage, Text
-        
-        try:
-            messages_data = json.loads(messages_json)
-            if not isinstance(messages_data, list):
-                return []
-            
-            result = []
-            for msg_data in messages_data:
-                if not isinstance(msg_data, dict):
-                    continue
-                    
-                role = msg_data.get("role", "")
-                parts_data = msg_data.get("parts", [])
-                
-                # Convert parts to Text objects
-                parts = []
-                for part in parts_data:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        parts.append(Text(content=part.get("content", "")))
-                
-                # Create appropriate message object
-                if message_type == "input":
-                    result.append(InputMessage(role=role, parts=parts))
-                else:  # output
-                    finish_reason = msg_data.get("finish_reason", "stop")
-                    result.append(
-                        OutputMessage(
-                            role=role, parts=parts, finish_reason=finish_reason
-                        )
-                    )
-            
-            return result
-        except Exception as e:
-            logging.getLogger(__name__).debug(
-                "Failed to deserialize %s messages: %s", message_type, e
-            )
-            return []
 
     def _build_invocation(
         self,
@@ -613,6 +584,8 @@ class TraceloopSpanProcessor(SpanProcessor):
         attribute_transformations: Optional[Dict[str, Any]] = None,
         name_transformations: Optional[Dict[str, str]] = None,
         traceloop_attributes: Optional[Dict[str, Any]] = None,
+        original_traceloop_input: Optional[Any] = None,
+        original_traceloop_output: Optional[Any] = None,
     ) -> LLMInvocation:
         base_attrs: Dict[str, Any] = (
             dict(existing_span.attributes) if existing_span.attributes else {}
@@ -691,40 +664,35 @@ class TraceloopSpanProcessor(SpanProcessor):
             # Provide override for SpanEmitter (we extended it to honor this)
             base_attrs.setdefault("gen_ai.override.span_name", new_name)
         
-        # Deserialize input and output messages from the normalized JSON strings
-        input_messages = []
-        output_messages = []
+        # Use message reconstructor to create proper LangChain message objects
+        # This enables evaluations to work correctly by providing properly formatted messages
+        input_messages = None
+        output_messages = None
         logger = logging.getLogger(__name__)
-        if "gen_ai.input.messages" in base_attrs:
-            input_messages = self._deserialize_messages(
-                base_attrs["gen_ai.input.messages"], "input"
-            )
-            logger.debug(
-                "Deserialized %d input messages for span %s",
-                len(input_messages),
-                existing_span.name,
+        
+        # Use the original Traceloop entity data passed from _process_span_translation
+        if original_traceloop_input or original_traceloop_output:
+            input_messages, output_messages = reconstruct_messages_from_traceloop(
+                original_traceloop_input, original_traceloop_output
             )
             if input_messages:
-                # Log first message content sample
-                first_msg = input_messages[0]
-                if hasattr(first_msg, 'parts') and first_msg.parts:
-                    content_preview = str(first_msg.parts[0].content)[:100] if first_msg.parts[0].content else "(empty)"
-                    logger.debug("First input message content preview: %s", content_preview)
-        if "gen_ai.output.messages" in base_attrs:
-            output_messages = self._deserialize_messages(
-                base_attrs["gen_ai.output.messages"], "output"
-            )
-            logger.debug(
-                "Deserialized %d output messages for span %s",
-                len(output_messages),
-                existing_span.name,
-            )
+                logger.debug(
+                    "Reconstructed %d input messages for span %s",
+                    len(input_messages),
+                    existing_span.name,
+                )
+            if output_messages:
+                logger.debug(
+                    "Reconstructed %d output messages for span %s",
+                    len(output_messages),
+                    existing_span.name,
+                )
         
         invocation = LLMInvocation(
             request_model=str(request_model),
             attributes=base_attrs,
-            input_messages=input_messages,
-            output_messages=output_messages,
+            input_messages=input_messages or [],
+            output_messages=output_messages or [],
         )
         # Mark operation heuristically from original span name
         lowered = existing_span.name.lower()
