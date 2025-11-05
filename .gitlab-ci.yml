@@ -10,7 +10,6 @@ stages:
   - build
   - sign
   - deploy
-  - post-release
 
 variables:
   # Define package configurations: name, path, and PyPI package name
@@ -20,6 +19,7 @@ variables:
     genai-emitters-splunk:util/opentelemetry-util-genai-emitters-splunk:splunk-otel-genai-emitters-splunk
     genai-evals-deepeval:util/opentelemetry-util-genai-evals-deepeval:splunk-otel-genai-evals-deepeval
     instrumentation-langchain:instrumentation-genai/opentelemetry-instrumentation-langchain:splunk-otel-instrumentation-langchain
+    genai-translator-traceloop:util/opentelemetry-util-genai-traceloop-translator:splunk-otel-util-genai-translator-traceloop
 
 # Build jobs for each package
 build-util-genai:
@@ -102,6 +102,22 @@ build-instrumentation-langchain:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-langchain-v[0-9]+\.[0-9]+\.[0-9]+.*/'
 
+build-genai-translator-traceloop:
+  stage: build
+  script:
+    - pip install hatch
+    - cd util/opentelemetry-util-genai-traceloop-translator
+    - hatch build
+    - mkdir -p ../../dist/genai-translator-traceloop
+    - mv dist/* ../../dist/genai-translator-traceloop/
+    - cd ../../dist/genai-translator-traceloop
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/genai-translator-traceloop/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v[0-9]+\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -183,6 +199,22 @@ sign-instrumentation-langchain:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-langchain-v[0-9]+\.[0-9]+\.[0-9]+.*/'
 
+sign-genai-translator-traceloop:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-genai-translator-traceloop
+  variables:
+    ARTIFACT: dist/genai-translator-traceloop/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/genai-translator-traceloop
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/genai-translator-traceloop/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v[0-9]+\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -249,45 +281,15 @@ deploy-instrumentation-langchain:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-langchain-v[0-9]+\.[0-9]+\.[0-9]+.*/'
 
-# Docker image publishing (if needed for any of these packages)
-publish-docker-image-util-genai:
-  stage: post-release
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^util-genai-v[0-9]+\.[0-9]+\.[0-9]+(-alpha)?.*/'
-    - when: manual
-  variables:
-    SIGNING_SERVICE_ADDR: "https://signing.prod.svc.splunk8s.io"
-    PACKAGE_NAME: "util-genai"
-    PACKAGE_PATH: "util/opentelemetry-util-genai"
-    PYPI_PACKAGE_NAME: "splunk-otel-util-genai"
-  id_tokens:
-    CI_JOB_JWT:
-      aud:
-        - $CICD_VAULT_ADDR
-        - $SIGNING_SERVICE_ADDR
-  before_script:
-    - ./docker/install-docker-deps.sh
-    - ./docker/install-gh-deps.sh
+deploy-genai-translator-traceloop:
+  stage: deploy
   script:
-    - ./docker/publish-docker-image.sh "$CI_COMMIT_TAG" "$PACKAGE_NAME" "$PYPI_PACKAGE_NAME"
-
-publish-docker-image-instrumentation-langchain:
-  stage: post-release
+    - pip install hatch keyrings.alt
+    - cd util/opentelemetry-util-genai-traceloop-translator
+    - mkdir -p dist
+    - cp ../../dist/genai-translator-traceloop/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-genai-translator-traceloop
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^instrumentation-langchain-v[0-9]+\.[0-9]+\.[0-9]+(-alpha)?.*/'
-    - when: manual
-  variables:
-    SIGNING_SERVICE_ADDR: "https://signing.prod.svc.splunk8s.io"
-    PACKAGE_NAME: "instrumentation-langchain"
-    PACKAGE_PATH: "instrumentation-genai/opentelemetry-instrumentation-langchain"
-    PYPI_PACKAGE_NAME: "splunk-otel-instrumentation-langchain"
-  id_tokens:
-    CI_JOB_JWT:
-      aud:
-        - $CICD_VAULT_ADDR
-        - $SIGNING_SERVICE_ADDR
-  before_script:
-    - ./docker/install-docker-deps.sh
-    - ./docker/install-gh-deps.sh
-  script:
-    - ./docker/publish-docker-image.sh "$CI_COMMIT_TAG" "$PACKAGE_NAME" "$PYPI_PACKAGE_NAME"
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v[0-9]+\.[0-9]+\.[0-9]+.*/'
