@@ -16,13 +16,13 @@ from opentelemetry.util.genai.emitters.content_events import (
 )
 from opentelemetry.util.genai.emitters.span import SpanEmitter
 from opentelemetry.util.genai.types import (
+    AgentInvocation,
     EvaluationResult,
     InputMessage,
     LLMInvocation,
     OutputMessage,
     Text,
     Workflow,
-    AgentInvocation,
 )
 
 
@@ -216,6 +216,7 @@ def test_span_emitter_workflow_captures_content():
         output_messages[0]["parts"][0]["content"] == "Here is your itinerary"
     )
 
+
 def test_invoke_agent_span_emitter_for_sampled_attribute():
     provider = TracerProvider()
     tracer = provider.get_tracer(__name__)
@@ -236,6 +237,7 @@ def test_invoke_agent_span_emitter_for_sampled_attribute():
 
     sampled_value = attrs.get("gen_ai.evaluation.sampled")
     assert sampled_value is True
+
 
 def test_llm_span_emitter_for_sampled_attribute():
     provider = TracerProvider()
