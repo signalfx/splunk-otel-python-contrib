@@ -239,13 +239,13 @@ class TelemetryHandler:
                 else:
                     return False
             else:  # TODO remove else branch when trace_id is set on all invocations
-                logger.debug(
+                _LOGGER.debug(
                     "Trace based sampling not applied as trace id is not set.",
                     exc_info=True,
                 )
                 return True
         except Exception:
-            logger.debug("Sampler raised an exception", exc_info=True)
+            _LOGGER.debug("Sampler raised an exception", exc_info=True)
             return True
 
     def _refresh_capture_content(
