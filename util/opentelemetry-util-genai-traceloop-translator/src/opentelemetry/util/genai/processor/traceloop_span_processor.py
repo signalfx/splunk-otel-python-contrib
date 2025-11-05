@@ -304,6 +304,9 @@ class TraceloopSpanProcessor(SpanProcessor):
             traceloop_attributes=extra_tl_attrs,
         )
         invocation.attributes.setdefault("_traceloop_processed", True)
+        
+        # Add test marker to verify lifecycle integrity
+        invocation.attributes["test.synthetic_span_marker"] = "created_in_start_llm"
 
         # Always emit via TelemetryHandler
         handler = self.telemetry_handler or get_telemetry_handler()
@@ -365,103 +368,38 @@ class TraceloopSpanProcessor(SpanProcessor):
             # This ensures mutations happen before exporters capture the span
             self._mutate_span_if_needed(span)
 
-            # THEN: Trigger evaluations on the mutated original span (NO synthetic spans)
-            # This ensures evaluation results appear in the same trace as the original span
-            self._trigger_evaluations_on_mutated_span(span)
+            # THEN: Process span translation immediately for real-time telemetry
+            # This ensures evaluations and other downstream processes work correctly
+            result_invocation = self._process_span_translation(span)
+
+            # NOW mark the original span as processed (AFTER translation is done)
+            # This prevents infinite recursion while allowing synthetic span creation
+            if hasattr(span, "_attributes"):
+                span._attributes["_traceloop_processed"] = True  # type: ignore[attr-defined]
+
+            # Close the invocation immediately if one was created
+            if result_invocation:
+                handler = self.telemetry_handler or get_telemetry_handler()
+                try:
+                    # Verify lifecycle integrity via test marker
+                    test_marker = result_invocation.attributes.get("test.synthetic_span_marker")
+                    logger = logging.getLogger(__name__)
+                    if test_marker:
+                        logger.debug(
+                            "Synthetic span lifecycle verified: original=%s -> synthetic=%s",
+                            span.name,
+                            result_invocation.span.name if hasattr(result_invocation, "span") and result_invocation.span else "N/A"
+                        )
+                    handler.stop_llm(result_invocation)
+                except Exception as stop_err:
+                    logging.getLogger(__name__).warning(
+                        "Failed to stop invocation: %s", stop_err
+                    )
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
             logging.warning(
                 f"TraceloopSpanProcessor failed to process span: {e}"
-            )
-
-    def _trigger_evaluations_on_mutated_span(self, span: ReadableSpan) -> None:
-        """Trigger evaluations on a mutated original span without creating synthetic spans.
-        
-        This ensures evaluation results appear in the same trace as the mutated original span.
-        """
-        logger = logging.getLogger(__name__)
-        
-        # Check if this span should be transformed (use the filter)
-        # NOTE: Don't check for _traceloop_processed here - it was just set during mutation!
-        if not self.span_filter(span):
-            return
-            
-        # Only trigger evaluations for LLM spans (those with input/output messages)
-        if not span.attributes:
-            return
-        
-        has_input = "gen_ai.input.messages" in span.attributes
-        has_output = "gen_ai.output.messages" in span.attributes
-        
-        if not (has_input and has_output):
-            logger.debug(
-                "Skipping evaluation for span %s: no input/output messages (input=%s, output=%s)",
-                span.name,
-                has_input,
-                has_output,
-            )
-            return
-        
-        logger.debug(
-            "Triggering evaluations on mutated span %s", span.name
-        )
-        
-        # Build invocation with messages for evaluation
-        # Determine which transformation set to use
-        applied_rule: Optional[TransformationRule] = None
-        for rule in self.rules:
-            try:
-                if rule.matches(span):
-                    applied_rule = rule
-                    break
-            except Exception as match_err:  # pragma: no cover - defensive
-                logging.warning("Rule match error ignored: %s", match_err)
-
-        sentinel = {"_traceloop_processed": True}
-        if applied_rule is not None:
-            attr_tx = applied_rule.attribute_transformations
-            name_tx = applied_rule.name_transformations
-            extra_tl_attrs = {
-                **applied_rule.traceloop_attributes,
-                **sentinel,
-            }
-        else:
-            attr_tx = self.attribute_transformations
-            name_tx = self.name_transformations
-            extra_tl_attrs = {**self.traceloop_attributes, **sentinel}
-
-        # Build invocation with the mutated span attached
-        invocation = self._build_invocation(
-            span,
-            attribute_transformations=attr_tx,
-            name_transformations=name_tx,
-            traceloop_attributes=extra_tl_attrs,
-        )
-        
-        # Attach the ORIGINAL mutated span so evaluations write to it
-        invocation.span = span
-        invocation.start_time = span.start_time / 1e9 if span.start_time else None
-        invocation.end_time = span.end_time / 1e9 if span.end_time else None
-        
-        # Set span context
-        from opentelemetry.util.genai.emitters.utils import extract_span_context, store_span_context
-        span_context = extract_span_context(span)
-        store_span_context(invocation, span_context)
-        
-        # Trigger evaluations by notifying completion
-        handler = self.telemetry_handler or get_telemetry_handler()
-        try:
-            handler._notify_completion(invocation)
-            logger.debug(
-                "Successfully triggered evaluations for span %s with %d input messages and %d output messages",
-                span.name,
-                len(invocation.input_messages) if invocation.input_messages else 0,
-                len(invocation.output_messages) if invocation.output_messages else 0,
-            )
-        except Exception as eval_err:
-            logger.warning(
-                "Failed to trigger evaluations on span %s: %s", span.name, eval_err
             )
 
     def shutdown(self) -> None:
@@ -517,8 +455,9 @@ class TraceloopSpanProcessor(SpanProcessor):
                     mutated = self._apply_attribute_transformations(
                         original.copy(), attr_tx
                     )
-                    # Mark as processed
-                    mutated["_traceloop_processed"] = True
+                    # DON'T mark as processed yet - will be done in on_end() AFTER translation
+                    # This allows _process_span_translation() to create synthetic spans
+                    # mutated["_traceloop_processed"] = True
                     # Clear and update the underlying _attributes dict
                     span._attributes.clear()  # type: ignore[attr-defined]
                     span._attributes.update(mutated)  # type: ignore[attr-defined]
