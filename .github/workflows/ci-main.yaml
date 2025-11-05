@@ -38,15 +38,21 @@ jobs:
           pip install pytest==7.4.4 pytest-cov==4.1.0
           pip install -r dev-genai-requirements.txt
 
-    - name: Run tests - opentelemetry-util-genai
-      run: |
-        pip install -e util/opentelemetry-util-genai --no-deps
-        python -m pytest util/opentelemetry-util-genai/tests/ -v --cov=opentelemetry.util.genai --cov-report=term-missing
+      - name: Install all genai packages
+        run: |
+          pip install -e util/opentelemetry-util-genai --no-deps
+          pip install -e util/opentelemetry-util-genai-evals --no-deps
+          pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
+          pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
+          pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
 
-    - name: Run tests - opentelemetry-util-genai-emitters-splunk
-      run: |
-        pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
-        python -m pytest util/opentelemetry-util-genai-emitters-splunk/tests/ -v
+      - name: Run tests - opentelemetry-util-genai
+        run: |
+          python -m pytest util/opentelemetry-util-genai/tests/ -v --cov=opentelemetry.util.genai --cov-report=term-missing
+
+      - name: Run tests - opentelemetry-util-genai-emitters-splunk
+        run: |
+          python -m pytest util/opentelemetry-util-genai-emitters-splunk/tests/ -v
 
       - name: Run tests - opentelemetry-util-genai-evals
         run: |
@@ -56,7 +62,6 @@ jobs:
         run: |
           python -m pytest util/opentelemetry-util-genai-evals-deepeval/tests/ -v
 
-    - name: Run tests - opentelemetry-instrumentation-langchain
-      run: |
-        pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
-        python -m pytest instrumentation-genai/opentelemetry-instrumentation-langchain/tests/ -v
+      - name: Run tests - opentelemetry-instrumentation-langchain
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-langchain/tests/ -v
