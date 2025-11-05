@@ -153,7 +153,7 @@ def _build_invocation():
 def test_sentiment_metric_result_attributes(monkeypatch):
     invocation = _build_invocation()
     evaluator = plugin.DeepevalEvaluator(
-        ("sentiment [geval]",), invocation_type="LLMInvocation"
+        ("sentiment [geval] [GEval]",), invocation_type="LLMInvocation"
     )
 
     # Fake deepeval result with a sentiment compound score 0.6 (will be mapped to (0.6+1)/2=0.8 recorded score)
@@ -164,7 +164,7 @@ def test_sentiment_metric_result_attributes(monkeypatch):
                 success=True,
                 metrics_data=[
                     MetricData(
-                        name="sentiment [geval]",
+                        name="sentiment [geval] [GEval]",
                         threshold=0.0,
                         success=True,
                         score=0.6,
@@ -194,7 +194,7 @@ def test_sentiment_metric_result_attributes(monkeypatch):
     results = evaluator.evaluate(invocation)
     assert len(results) == 1
     res = results[0]
-    assert res.metric_name == "sentiment [geval]"
+    assert res.metric_name == "sentiment [geval] [GEval]"
     # Recorded score should be mapped to [0,1]
     assert res.score == pytest.approx((0.6 + 1) / 2, rel=1e-6)
     # Distribution attributes should be present
