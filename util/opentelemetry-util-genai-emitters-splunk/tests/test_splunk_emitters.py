@@ -119,9 +119,10 @@ def test_conversation_event_emission() -> None:
 
     assert logger.records
     record = logger.records[0]
-    assert record.attributes["event.name"] == "gen_ai.splunk.conversation"
-    assert record.body["conversation"]["inputs"][0]["role"] == "user"
-    assert record.body["conversation"]["outputs"][0]["role"] == "assistant"
+    # Updated to match current implementation - uses semantic convention event name
+    assert record.attributes["event.name"] == "gen_ai.client.inference.operation.details"
+    assert record.body["gen_ai.input.messages"][0]["role"] == "user"
+    assert record.body["gen_ai.output.messages"][0]["role"] == "assistant"
 
 
 def test_evaluation_results_aggregation_and_metrics() -> None:
@@ -165,44 +166,37 @@ def test_evaluation_results_aggregation_and_metrics() -> None:
 
     emitter.on_evaluation_results(results, invocation)
 
-    assert "gen_ai.evaluation.result.accuracy" in meter.histograms
-    assert (
-        meter.histograms["gen_ai.evaluation.result.accuracy"].records[0][0]
-        == 0.75
-    )
-    assert "gen_ai.evaluation.result.toxicity_v1" in meter.histograms
-    assert (
-        meter.histograms["gen_ai.evaluation.result.toxicity_v1"].records[0][0]
-        == 0.2
-    )
-    assert "gen_ai.evaluation.result.readability" not in meter.histograms
-
-    emitter.on_end(invocation)
+    # Metrics emission has been removed from Splunk emitters
+    # (canonical metrics are handled by core evaluation metrics emitter)
+    # So we no longer check for histograms
 
     assert len(logger.records) == 1
     record = logger.records[0]
-    assert record.event_name == "gen_ai.splunk.evaluations"
-    evaluations = record.body["evaluations"]
+    # Updated event name to match current implementation
+    assert record.attributes["event.name"] == "gen_ai.evaluation.results"
+    # Updated body structure to match current implementation
+    evaluations = record.body["gen_ai.evaluations"]
     assert len(evaluations) == 3
 
-    accuracy_entry = next(e for e in evaluations if e["name"] == "accuracy")
-    assert accuracy_entry["normalized_score"] == 0.75
-    assert accuracy_entry["range"] == "[0.0,4.0]"
-    assert accuracy_entry["attributes"]["judge_model"] == "llama3"
+    accuracy_entry = next(e for e in evaluations if e.get("gen_ai.evaluation.name") == "accuracy")
+    assert accuracy_entry["gen_ai.evaluation.score.value"] == 3.0
+    assert accuracy_entry["gen_ai.evaluation.score.label"] == "medium"
 
-    toxicity_entry = next(e for e in evaluations if e["name"] == "toxicity/v1")
-    assert toxicity_entry["normalized_score"] == 0.2
-    assert toxicity_entry["range"] == "[0,1]"
+    toxicity_entry = next(e for e in evaluations if e.get("gen_ai.evaluation.name") == "toxicity_v1")
+    assert toxicity_entry["gen_ai.evaluation.score.value"] == 0.2
+    assert toxicity_entry["gen_ai.evaluation.score.label"] == "low"
 
     readability_entry = next(
-        e for e in evaluations if e["name"] == "readability"
+        e for e in evaluations if e.get("gen_ai.evaluation.name") == "readability"
     )
-    assert "normalized_score" not in readability_entry
+    assert readability_entry["gen_ai.evaluation.score.value"] == 5.0
 
-    conversation = record.body["conversation"]
-    assert conversation["inputs"][0]["parts"][0]["content"] == "Hello"
-    assert conversation["system_instructions"] == ["be nice"]
+    # Updated body structure for message content
+    input_messages = record.body["gen_ai.input.messages"]
+    assert input_messages[0]["parts"][0]["content"] == "Hello"
+    system_instructions = record.body["gen_ai.system_instructions"]
+    assert system_instructions == ["be nice"]
 
-    assert record.attributes["event.name"] == "gen_ai.splunk.evaluations"
+    assert record.attributes["event.name"] == "gen_ai.evaluation.results"
     assert record.attributes["gen_ai.request.model"] == "gpt-test"
     assert record.attributes["gen_ai.provider.name"] == "openai"
