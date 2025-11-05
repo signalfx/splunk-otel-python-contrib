@@ -59,5 +59,8 @@ _build/
 .mypy_cache/
 target
 
+# Deepeval cache
+.deepeval
+
 # Benchmark result files
 *-benchmark.json
