@@ -38,6 +38,11 @@ jobs:
         pip install pytest==7.4.4 pytest-cov==4.1.0
         pip install -r dev-genai-requirements.txt
 
+    - name: Run tests - opentelemetry-util-genai
+      run: |
+        pip install -e util/opentelemetry-util-genai --no-deps
+        python -m pytest util/opentelemetry-util-genai/tests/ -v --cov=opentelemetry.util.genai --cov-report=term-missing
+
     - name: Run tests - opentelemetry-util-genai-emitters-splunk
       run: |
         pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
@@ -57,8 +62,3 @@ jobs:
       run: |
         pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
         python -m pytest instrumentation-genai/opentelemetry-instrumentation-langchain/tests/ -v
-
-    - name: Run tests - opentelemetry-util-genai
-      run: |
-        pip install -e util/opentelemetry-util-genai --no-deps
-        python -m pytest util/opentelemetry-util-genai/tests/ -v --cov=opentelemetry.util.genai --cov-report=term-missing
