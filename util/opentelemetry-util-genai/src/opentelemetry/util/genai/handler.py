@@ -53,6 +53,7 @@ import os
 import time
 from typing import Any, Optional
 
+
 try:
     from opentelemetry.util.genai.debug import genai_debug_log
 except Exception:  # pragma: no cover - fallback if debug module missing
@@ -62,15 +63,19 @@ except Exception:  # pragma: no cover - fallback if debug module missing
 
 
 from opentelemetry import _events as _otel_events
+from opentelemetry import metrics as _metrics
 from opentelemetry import trace as _trace_mod
 from opentelemetry._logs import Logger, LoggerProvider, get_logger
 from opentelemetry.metrics import MeterProvider, get_meter
-from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAI,
+)
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import (
     TracerProvider,
     get_tracer,
 )
+
 from opentelemetry.util.genai.emitters.configuration import (
     build_emitter_pipeline,
 )
@@ -107,10 +112,12 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
 )
+from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
 
 _LOGGER = logging.getLogger(__name__)
 
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
 
 
 class TelemetryHandler:
@@ -121,10 +128,10 @@ class TelemetryHandler:
     """
 
     def __init__(
-        self,
-        tracer_provider: TracerProvider | None = None,
-        logger_provider: LoggerProvider | None = None,
-        meter_provider: MeterProvider | None = None,
+            self,
+            tracer_provider: TracerProvider | None = None,
+            logger_provider: LoggerProvider | None = None,
+            meter_provider: MeterProvider | None = None,
     ):
         self._tracer = get_tracer(
             __name__,
@@ -145,7 +152,7 @@ class TelemetryHandler:
             __name__,
             __version__,
             meter_provider=meter_provider,
-            schema_url=Schemas.V1_37_0.value,
+            schema_url=Schemas.V1_37_0.value
         )
 
         self._event_logger = _otel_events.get_event_logger(__name__)
@@ -222,20 +229,20 @@ class TelemetryHandler:
                     name="",
                 )
                 if (
-                    sampling_result
-                    and sampling_result.decision is Decision.RECORD_AND_SAMPLE
+                        sampling_result
+                        and sampling_result.decision is Decision.RECORD_AND_SAMPLE
                 ):
                     return True
                 else:
                     return False
             else:  # TODO remove else branch when trace_id is set on all invocations
-                _LOGGER.debug(
+                logger.debug(
                     "Trace based sampling not applied as trace id is not set.",
                     exc_info=True,
                 )
                 return True
         except Exception:
-            _LOGGER.debug("Sampler raised an exception", exc_info=True)
+            logger.debug("Sampler raised an exception", exc_info=True)
             return True
 
     def _refresh_capture_content(
@@ -337,9 +344,7 @@ class TelemetryHandler:
         invocation.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        invocation.sample_for_evaluation = self._should_sample_for_evaluation(
-            invocation.trace_id
-        )
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(invocation.trace_id)
 
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
@@ -436,9 +441,7 @@ class TelemetryHandler:
         invocation.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        invocation.sample_for_evaluation = self._should_sample_for_evaluation(
-            invocation.trace_id
-        )
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(invocation.trace_id)
 
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
@@ -495,9 +498,7 @@ class TelemetryHandler:
         invocation.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        invocation.sample_for_evaluation = self._should_sample_for_evaluation(
-            invocation.trace_id
-        )
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(invocation.trace_id)
 
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
@@ -645,9 +646,7 @@ class TelemetryHandler:
         workflow.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        workflow.sample_for_evaluation = self._should_sample_for_evaluation(
-            workflow.trace_id
-        )
+        workflow.sample_for_evaluation = self._should_sample_for_evaluation(workflow.trace_id)
 
         self._emitter.on_end(workflow)
         self._notify_completion(workflow)
@@ -707,9 +706,7 @@ class TelemetryHandler:
         agent.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        agent.sample_for_evaluation = self._should_sample_for_evaluation(
-            agent.trace_id
-        )
+        agent.sample_for_evaluation = self._should_sample_for_evaluation(agent.trace_id)
 
         self._emitter.on_end(agent)
         self._notify_completion(agent)
@@ -776,9 +773,7 @@ class TelemetryHandler:
         step.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        step.sample_for_evaluation = self._should_sample_for_evaluation(
-            step.trace_id
-        )
+        step.sample_for_evaluation = self._should_sample_for_evaluation(step.trace_id)
 
         self._emitter.on_end(step)
         self._notify_completion(step)

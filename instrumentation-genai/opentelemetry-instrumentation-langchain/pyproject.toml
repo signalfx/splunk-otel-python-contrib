@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opentelemetry-instrumentation-langchain"
+name = "splunk-otel-instrumentation-langchain"
 dynamic = ["version"]
 description = "OpenTelemetry Official Langchain instrumentation"
 readme = "README.rst"
@@ -27,7 +27,7 @@ dependencies = [
   "opentelemetry-api ~= 1.38.0.dev0",
   "opentelemetry-instrumentation ~= 0.59b0.dev0",
   "opentelemetry-semantic-conventions ~= 0.59b0.dev0",
-  "opentelemetry-util-genai",  # new util-genai dependency for updated handler
+  "splunk-otel-util-genai",  # new util-genai dependency for updated handler
 ]
 
 [project.optional-dependencies]

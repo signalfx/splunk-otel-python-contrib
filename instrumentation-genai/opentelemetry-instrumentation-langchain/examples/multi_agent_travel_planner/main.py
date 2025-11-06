@@ -27,7 +27,7 @@ week-long city break itinerary.
 [Coord] --> [Flight] --> [Hotel] --> [Act.] --> [Synth] --> END
     |          |          |          |          |
     └──────────┼──────────┼──────────┼──────────┘
-               |          |          |
+               |          |          | 
           (OTEL Spans/Metrics)
 
 
@@ -235,7 +235,9 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
 # Configure tracing/metrics/logging once per process so exported data goes to OTLP.
 trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter())
+)
 
 demo_tracer = trace.get_tracer("instrumentation.langchain.demo")
 
@@ -378,7 +380,9 @@ def _model_name() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4.1")
 
 
-def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
+def _create_llm(
+    agent_name: str, *, temperature: float, session_id: str
+) -> ChatOpenAI:
     """Create an LLM instance decorated with tags/metadata for tracing."""
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner"]
@@ -469,7 +473,9 @@ def _generate_poison_snippet(kind: str, agent_name: str) -> str:
             "could easily disappoint them."  # negative framing
         )
     if kind == "toxicity":
-        return "Remark: The coordination process feels messy and slightly chaotic."  # mild critical tone
+        return (
+            "Remark: The coordination process feels messy and slightly chaotic."  # mild critical tone
+        )
     return f"(poison:{kind})"
 
 
@@ -488,9 +494,13 @@ def maybe_add_quality_noise(
     random.shuffle(available)
     count = random.randint(1, min(cfg["max"], len(available)))
     chosen = available[:count]
-    snippets = [_generate_poison_snippet(kind, agent_name) for kind in chosen]
+    snippets = [
+        _generate_poison_snippet(kind, agent_name) for kind in chosen
+    ]
     # Record events
-    state["poison_events"].extend([f"{agent_name}:{kind}" for kind in chosen])
+    state["poison_events"].extend(
+        [f"{agent_name}:{kind}" for kind in chosen]
+    )
     injected = base_prompt + "\n\n" + "\n".join(snippets) + "\n"
     return injected
 
@@ -533,16 +543,21 @@ def _http_root_attributes(state: PlannerState) -> Dict[str, str]:
 
 
 def coordinator_node(state: PlannerState) -> PlannerState:
-    llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
-    agent = _create_react_agent(llm, tools=[]).with_config(
-        {
-            "run_name": "coordinator",
-            "tags": ["agent", "agent:coordinator"],
-            "metadata": {
-                "agent_name": "coordinator",
-                "session_id": state["session_id"],
-            },
-        }
+    llm = _create_llm(
+        "coordinator", temperature=0.2, session_id=state["session_id"]
+    )
+    agent = (
+        _create_react_agent(llm, tools=[])
+        .with_config(
+            {
+                "run_name": "coordinator",
+                "tags": ["agent", "agent:coordinator"],
+                "metadata": {
+                    "agent_name": "coordinator",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
     )
     system_message = SystemMessage(
         content=(
@@ -570,15 +585,17 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "flight_specialist", temperature=0.4, session_id=state["session_id"]
     )
-    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
-        {
-            "run_name": "flight_specialist",
-            "tags": ["agent", "agent:flight_specialist"],
-            "metadata": {
-                "agent_name": "flight_specialist",
-                "session_id": state["session_id"],
-            },
-        }
+    agent = (
+        _create_react_agent(llm, tools=[mock_search_flights]).with_config(
+            {
+                "run_name": "flight_specialist",
+                "tags": ["agent", "agent:flight_specialist"],
+                "metadata": {
+                    "agent_name": "flight_specialist",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
     )
     step = (
         f"Find an appealing flight from {state['origin']} to {state['destination']} "
@@ -605,15 +622,17 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "hotel_specialist", temperature=0.5, session_id=state["session_id"]
     )
-    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
-        {
-            "run_name": "hotel_specialist",
-            "tags": ["agent", "agent:hotel_specialist"],
-            "metadata": {
-                "agent_name": "hotel_specialist",
-                "session_id": state["session_id"],
-            },
-        }
+    agent = (
+        _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
+            {
+                "run_name": "hotel_specialist",
+                "tags": ["agent", "agent:hotel_specialist"],
+                "metadata": {
+                    "agent_name": "hotel_specialist",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
     )
     step = (
         f"Recommend a boutique hotel in {state['destination']} between {state['departure']} "
@@ -640,15 +659,17 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "activity_specialist", temperature=0.6, session_id=state["session_id"]
     )
-    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
-        {
-            "run_name": "activity_specialist",
-            "tags": ["agent", "agent:activity_specialist"],
-            "metadata": {
-                "agent_name": "activity_specialist",
-                "session_id": state["session_id"],
-            },
-        }
+    agent = (
+        _create_react_agent(llm, tools=[mock_search_activities]).with_config(
+            {
+                "run_name": "activity_specialist",
+                "tags": ["agent", "agent:activity_specialist"],
+                "metadata": {
+                    "agent_name": "activity_specialist",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
     )
     step = f"Curate signature activities for travellers spending a week in {state['destination']}."
     step = maybe_add_quality_noise("activity_specialist", step, state)
@@ -676,7 +697,9 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
         "You are the travel plan synthesiser. Combine the specialist insights into a "
         "concise, structured itinerary covering flights, accommodation and activities."
     )
-    system_content = maybe_add_quality_noise("plan_synthesizer", system_content, state)
+    system_content = maybe_add_quality_noise(
+        "plan_synthesizer", system_content, state
+    )
     system_prompt = SystemMessage(content=system_content)
     content = json.dumps(
         {
@@ -791,7 +814,9 @@ def main() -> None:
         kind=SpanKind.SERVER,
         attributes=attributes,
     ) as root_span:
-        root_span.set_attribute("gen_ai.input.messages", json.dumps(root_input))
+        root_span.set_attribute(
+            "gen_ai.input.messages", json.dumps(root_input)
+        )
 
         config = {
             "configurable": {"thread_id": session_id},
@@ -825,7 +850,9 @@ def main() -> None:
             print(final_plan)
 
         if final_plan:
-            preview = final_plan[:500] + ("..." if len(final_plan) > 500 else "")
+            preview = final_plan[:500] + (
+                "..." if len(final_plan) > 500 else ""
+            )
             root_span.set_attribute("travel.plan.preview", preview)
         if final_state and final_state.get("poison_events"):
             root_span.set_attribute(

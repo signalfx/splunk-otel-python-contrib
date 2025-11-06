@@ -46,7 +46,10 @@ def test_langchain_call_util(
     assert chat_spans, "No chat operation spans found"
     span = chat_spans[0]
     # Basic attribute checks
-    assert span.attributes.get(gen_ai_attributes.GEN_AI_REQUEST_MODEL) == model_name
+    assert (
+        span.attributes.get(gen_ai_attributes.GEN_AI_REQUEST_MODEL)
+        == model_name
+    )
     assert (
         gen_ai_attributes.GEN_AI_RESPONSE_MODEL in span.attributes or True
     )  # response model may differ depending on provider metadata

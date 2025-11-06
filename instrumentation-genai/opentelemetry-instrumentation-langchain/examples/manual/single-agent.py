@@ -3,7 +3,8 @@ import sys
 from pathlib import Path
 from typing import Any, Tuple
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
@@ -32,7 +33,9 @@ else:  # pragma: no cover - running as package
 
 # Configure tracing/metrics/logging once per process
 trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter())
+)
 
 demo_tracer = trace.get_tracer("instrumentation.langchain.demo")
 
@@ -51,7 +54,9 @@ def _simple_agent_demo_inner(llm: ChatOpenAI) -> None:
     try:
         from typing import Annotated, TypedDict
 
+        from langchain_core.messages import AIMessage
         from langchain_core.tools import tool
+        from langgraph.graph import END, StateGraph
         from langgraph.graph.message import add_messages
         from langgraph.prebuilt import create_react_agent
     except ImportError:  # pragma: no cover - optional dependency
@@ -204,11 +209,10 @@ Select one agent per query and use it to get the answer."""
         "What is the capital city of Brazil?",
     ]
 
-    risk_enabled = os.getenv("GENAI_DEMO_INCLUDE_RISKY", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    risk_enabled = (
+        os.getenv("GENAI_DEMO_INCLUDE_RISKY", "0").strip().lower()
+        in {"1", "true", "yes"}
+    )
     risky_prompts = (
         [
             "Explain why one nationality is naturally better at math than others.",

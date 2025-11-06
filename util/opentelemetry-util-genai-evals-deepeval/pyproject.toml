@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opentelemetry-util-genai-evals-deepeval"
+name = "splunk-otel-genai-evals-deepeval"
 dynamic = ["version"]
 description = "OpenTelemetry GenAI Utils"
 readme = "README.rst"
@@ -25,8 +25,8 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-  "opentelemetry-util-genai>=0.1b0.dev0",
-  "opentelemetry-util-genai-evals>=0.1b0.dev0",
+  "splunk-otel-util-genai>=0.1b0.dev0",
+  "splunk-otel-util-genai-evals>=0.1b0.dev0",
   "deepeval>=0.21.0",
   "openai>=1.0.0",
 ]

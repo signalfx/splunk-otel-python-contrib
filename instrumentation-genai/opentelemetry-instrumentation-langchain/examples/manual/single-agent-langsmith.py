@@ -45,8 +45,7 @@ from langsmith import trace
 # _events.set_event_logger_provider(EventLoggerProvider())
 
 
-# ---- define the agent graph nodes and tools ----#
-
+#---- define the agent graph nodes and tools ----#
 
 # Define the state
 class AgentState(TypedDict):
@@ -54,7 +53,6 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     route: str
     output: str
-
 
 # Define the capital lookup tool
 @tool
@@ -75,7 +73,6 @@ def get_capital(country: str) -> str:
     }
     return capitals.get(country.strip().lower(), "Unknown")
 
-
 # Capital subagent node
 def capital_subagent(state: AgentState) -> AgentState:
     question = state["input"]
@@ -88,20 +85,16 @@ def capital_subagent(state: AgentState) -> AgentState:
         answer = f"The capital of {country.capitalize()} is {cap}."
     return {"messages": [AIMessage(content=answer)], "output": answer}
 
-
 # General LLM node
 def general_node(state: AgentState) -> AgentState:
     llm = ChatOpenAI(model="gpt-4o-mini", api_key=os.getenv("OPENAI_API_KEY"))
     question = state["input"]
     system_prompt = "You are a helpful, concise assistant."
-    response = llm.invoke(
-        [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=question),
-        ]
-    )
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=question),
+    ])
     return {"messages": [response], "output": response.content}
-
 
 # Classifier node (deterministic routing)
 def classifier(state: AgentState) -> AgentState:
@@ -109,13 +102,11 @@ def classifier(state: AgentState) -> AgentState:
     route = "capital" if ("capital" in q or "city" in q) else "general"
     return {"route": route}
 
-
 # Route decider for conditional edges
 def route_decider(state: AgentState) -> str:
     return state.get("route", "general")
 
-
-# ---- build and compile the agent graph ----#
+#---- build and compile the agent graph ----#
 
 # Build the graph
 graph = StateGraph(AgentState)
@@ -153,16 +144,19 @@ if __name__ == "__main__":
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
-    otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+    otlp_exporter = OTLPSpanExporter(
+        endpoint="http://localhost:4318/v1/traces"
+    )
 
     provider = TracerProvider()
     processor = BatchSpanProcessor(otlp_exporter)
     provider.add_span_processor(processor)
     trace.set_tracer_provider(provider)
 
+    
     query = random.choice(queries)
-    result = app.invoke({"input": query, "messages": []})  # type: ignore
+    result = app.invoke({"input": query, "messages": []}) # type: ignore
     print(f"Query: {query}")
     print(f"Output: {result['output']}\n")
-
+    
     # instrumentor.uninstrument()
