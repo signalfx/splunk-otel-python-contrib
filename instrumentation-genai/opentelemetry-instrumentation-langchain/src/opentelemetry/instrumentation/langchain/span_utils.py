@@ -277,7 +277,7 @@ def set_chat_response_usage(
     response: LLMResult,
     token_histogram: Histogram,
     record_token_usage: bool,
-    model_name: str,
+    model_name: str
 ) -> None:
     input_tokens = 0
     output_tokens = 0
@@ -365,16 +365,12 @@ def extract_model_name_from_response_metadata(response: LLMResult) -> str:
             if (
                 getattr(generation, "message", None)
                 and getattr(generation.message, "response_metadata", None)
-                and (
-                    model_name := generation.message.response_metadata.get("model_name")
-                )
+                and (model_name := generation.message.response_metadata.get("model_name"))
             ):
                 return model_name
 
 
-def _extract_model_name_from_association_metadata(
-    metadata: Optional[dict[str, Any]] = None,
-) -> str:
+def _extract_model_name_from_association_metadata(metadata: Optional[dict[str, Any]] = None) -> str:
     if metadata:
         return metadata.get("ls_model_name") or "unknown"
     return "unknown"

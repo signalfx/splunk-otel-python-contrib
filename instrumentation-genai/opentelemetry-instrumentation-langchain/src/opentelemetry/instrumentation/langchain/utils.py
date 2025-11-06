@@ -6,6 +6,7 @@ import logging
 import traceback
 
 from opentelemetry import context as context_api
+from opentelemetry._events import EventLogger
 from opentelemetry.instrumentation.langchain.config import Config
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
@@ -43,7 +44,6 @@ class CallbackFilteredJSONEncoder(json.JSONEncoder):
             logger.debug("Failed to serialize object of type: %s", type(o).__name__)
             return ""
 
-
 def set_prompt_capture_enabled(enabled: bool) -> None:
     global _PROMPT_CAPTURE_ENABLED
     _PROMPT_CAPTURE_ENABLED = bool(enabled)
@@ -80,13 +80,12 @@ def dont_throw(func):
 
     return wrapper
 
-
 def is_package_available(package_name):
     return importlib.util.find_spec(package_name) is not None
-
 
 def get_property_value(obj, property_name):
     if isinstance(obj, dict):
         return obj.get(property_name, None)
 
     return getattr(obj, property_name, None)
+

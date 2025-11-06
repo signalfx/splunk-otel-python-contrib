@@ -69,9 +69,7 @@ def _resolve_agent_name(
     return None
 
 
-def _is_agent_root(
-    tags: Optional[list[str]], metadata: Optional[dict[str, Any]]
-) -> bool:
+def _is_agent_root(tags: Optional[list[str]], metadata: Optional[dict[str, Any]]) -> bool:
     if _resolve_agent_name(tags, metadata):
         return True
     if tags:
@@ -166,7 +164,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         super().__init__()
         self._handler = telemetry_handler
 
-    def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
+    def _find_nearest_agent(
+        self, run_id: Optional[UUID]
+    ) -> Optional[AgentInvocation]:
         current = run_id
         visited = set()
         while current is not None and current not in visited:
@@ -211,7 +211,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
 
     def on_chain_start(
         self,
-        serialized: Optional[dict[str, Any]],
+    serialized: Optional[dict[str, Any]],
         inputs: dict[str, Any],
         *,
         run_id: UUID,
@@ -254,9 +254,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             )
             if agent_name_hint:
                 hint_normalized = agent_name_hint.lower()
-                context_normalized = (
-                    context_agent_name.lower() if context_agent_name else None
-                )
+                context_normalized = context_agent_name.lower() if context_agent_name else None
                 if context_normalized != hint_normalized:
                     self._start_agent_invocation(
                         name=name,
@@ -274,9 +272,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 if isinstance(existing, ToolCall):
                     tool = existing
                     if context_agent is not None:
-                        agent_name_value = (
-                            context_agent.agent_name or context_agent.name
-                        )
+                        agent_name_value = context_agent.agent_name or context_agent.name
                         if not getattr(tool, "agent_name", None):
                             tool.agent_name = _safe_str(agent_name_value)
                         if not getattr(tool, "agent_id", None):
@@ -368,9 +364,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         for batch in messages:
             for m in batch:
                 content = getattr(m, "content", "")
-                input_messages.append(
-                    InputMessage(role="user", parts=[Text(content=_safe_str(content))])
-                )
+                input_messages.append(InputMessage(role="user", parts=[Text(content=_safe_str(content))]))
         attrs: dict[str, Any] = {}
         if metadata:
             attrs.update(metadata)
@@ -433,11 +427,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             content = getattr(generations[0][0].message, "content", None)
         if content is not None:
             inv.output_messages = [
-                OutputMessage(
-                    role="assistant",
-                    parts=[Text(content=_safe_str(content))],
-                    finish_reason="stop",
-                )
+                OutputMessage(role="assistant", parts=[Text(content=_safe_str(content))], finish_reason="stop")
             ]
         llm_output = getattr(response, "llm_output", {}) or {}
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
@@ -490,10 +480,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if attrs:
                 existing.attributes.update(attrs)
             if context_agent is not None:
-                if (
-                    not getattr(existing, "agent_name", None)
-                    and context_agent_name is not None
-                ):
+                if not getattr(existing, "agent_name", None) and context_agent_name is not None:
                     existing.agent_name = context_agent_name
                 if not getattr(existing, "agent_id", None):
                     existing.agent_id = str(context_agent.run_id)
@@ -537,56 +524,19 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         self._handler.stop_tool_call(tool)
 
     def _fail(self, run_id: UUID, error: BaseException) -> None:
-        self._handler.fail_by_run_id(
-            run_id, GenAIError(message=str(error), type=type(error))
-        )
+        self._handler.fail_by_run_id(run_id, GenAIError(message=str(error), type=type(error)))
 
-    def on_llm_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **_: Any,
-    ) -> None:
+    def on_llm_error(self, error: BaseException, *, run_id: UUID, parent_run_id: Optional[UUID] = None, **_: Any) -> None:
         self._fail(run_id, error)
 
-    def on_chain_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **_: Any,
-    ) -> None:
+    def on_chain_error(self, error: BaseException, *, run_id: UUID, parent_run_id: Optional[UUID] = None, **_: Any) -> None:
         self._fail(run_id, error)
 
-    def on_tool_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **_: Any,
-    ) -> None:
+    def on_tool_error(self, error: BaseException, *, run_id: UUID, parent_run_id: Optional[UUID] = None, **_: Any) -> None:
         self._fail(run_id, error)
 
-    def on_agent_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **_: Any,
-    ) -> None:
+    def on_agent_error(self, error: BaseException, *, run_id: UUID, parent_run_id: Optional[UUID] = None, **_: Any) -> None:
         self._fail(run_id, error)
 
-    def on_retriever_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **_: Any,
-    ) -> None:
+    def on_retriever_error(self, error: BaseException, *, run_id: UUID, parent_run_id: Optional[UUID] = None, **_: Any) -> None:
         self._fail(run_id, error)

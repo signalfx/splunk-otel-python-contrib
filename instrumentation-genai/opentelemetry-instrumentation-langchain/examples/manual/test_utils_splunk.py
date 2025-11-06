@@ -90,9 +90,7 @@ class TokenManager:
         os.remove(self.cache_file)
 
 
-def _assert_credentials(
-    client_id: Optional[str], client_secret: Optional[str]
-) -> Tuple[str, str]:
+def _assert_credentials(client_id: Optional[str], client_secret: Optional[str]) -> Tuple[str, str]:
     if not client_id or not client_secret:
         raise RuntimeError(
             "CISCO_CLIENT_ID and CISCO_CLIENT_SECRET must be set in the environment."

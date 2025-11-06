@@ -28,7 +28,9 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # configure tracing
 trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter())
+)
 
 metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
 metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))

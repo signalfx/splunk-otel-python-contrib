@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import os
-
 from dotenv import load_dotenv
 
 # Load .env first
 load_dotenv()
 
 try:
-    from openai import OpenAI
     from traceloop.sdk import Traceloop
-    from traceloop.sdk.decorators import agent, task, tool, workflow
+    from traceloop.sdk.decorators import task, workflow, agent, tool
+    from openai import OpenAI
 
     # Initialize Traceloop - this will also trigger TraceloopSpanProcessor registration
     Traceloop.init(disable_batch=True, api_endpoint="http://localhost:4318")
@@ -49,7 +48,7 @@ def translate_joke_to_pirate(joke: str):
 def history_jokes_tool():
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": "get some history jokes"}],
+        messages=[{"role": "user", "content": f"get some history jokes"}],
     )
 
     return completion.choices[0].message.content

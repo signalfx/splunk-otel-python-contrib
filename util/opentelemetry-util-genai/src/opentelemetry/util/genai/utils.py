@@ -16,16 +16,17 @@ import logging
 import os
 from typing import Optional
 
+
 from opentelemetry.util._importlib_metadata import (
     entry_points,  # pyright: ignore[reportUnknownVariableType]
 )
+from .callbacks import CompletionCallback
+
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
 )
 from opentelemetry.util.genai.types import ContentCapturingMode
-
-from .callbacks import CompletionCallback
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,6 @@ def get_content_capturing_mode() -> ContentCapturingMode:
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE instead."
         )
     return ContentCapturingMode.NO_CONTENT
-
 
 def _coerce_completion_callback(
     provider: object, name: str

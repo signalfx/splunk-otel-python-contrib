@@ -15,6 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 from ..environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
 )
+from ..span_context import extract_span_context, store_span_context
 from ..types import (
     AgentCreation,
     AgentInvocation,
