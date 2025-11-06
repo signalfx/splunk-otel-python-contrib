@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "splunk-otel-util-genai-translator-traceloop"
+name = "opentelemetry-util-genai-traceloop-translator"
 dynamic = ["version"]
 description = "Traceloop -> GenAI translator emitter for OpenTelemetry GenAI"
 readme = "README.rst"
@@ -29,7 +29,7 @@ dependencies = [
   "opentelemetry-semantic-conventions ~= 0.52b1",
   "opentelemetry-api>=1.31.0",
   "opentelemetry-sdk>=1.31.0",
-  "splunk-otel-util-genai",  # depends on base utilities & handler
+  "opentelemetry-util-genai",  # depends on base utilities & handler
 ]
 
 [project.entry-points.opentelemetry_configurator]

@@ -115,15 +115,17 @@ def parse_env() -> Settings:
     ).strip()
     emit_legacy_event = legacy_event_flag.lower() in {"1", "true", "yes"}
 
-    evaluation_sample_rate = os.environ.get(OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE)
+    evaluation_sample_rate = os.environ.get(
+        OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE
+    )
     if evaluation_sample_rate is None or evaluation_sample_rate.strip() == "":
         evaluation_sample_rate = 1.0
     try:
         evaluation_sample_rate = float(evaluation_sample_rate)
     except ValueError:
-        evaluation_sample_rate =  1.0
+        evaluation_sample_rate = 1.0
     if evaluation_sample_rate < 0.0:
-        evaluation_sample_rate =  0.0
+        evaluation_sample_rate = 0.0
     if evaluation_sample_rate > 1.0:
         evaluation_sample_rate = 1.0
 

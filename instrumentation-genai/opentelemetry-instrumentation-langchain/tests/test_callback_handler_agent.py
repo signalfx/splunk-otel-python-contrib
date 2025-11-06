@@ -8,20 +8,24 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-try:  # pragma: no cover - optional dependency in CI
-    from langchain_core.messages import HumanMessage
-except ModuleNotFoundError:  # pragma: no cover - allow running subset without langchain_core
-    HumanMessage = None  # type: ignore[assignment]
+
+# Add package source to path if needed
 _PACKAGE_SRC = Path(__file__).resolve().parents[1] / "src"
 if _PACKAGE_SRC.exists():
     sys.path.insert(0, str(_PACKAGE_SRC))
 
-from opentelemetry.sdk.trace import TracerProvider
+try:  # pragma: no cover - optional dependency in CI
+    from langchain_core.messages import HumanMessage
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - allow running subset without langchain_core
+    HumanMessage = None  # type: ignore[assignment]
 
-from opentelemetry.instrumentation.langchain.callback_handler import (
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: E402
     LangchainCallbackHandler,
 )
-from opentelemetry.util.genai.types import Step, ToolCall
+from opentelemetry.util.genai.types import Step, ToolCall  # noqa: E402
 
 LANGCHAIN_CORE_AVAILABLE = HumanMessage is not None
 
@@ -104,7 +108,9 @@ class _StubTelemetryHandler:
 
 
 @pytest.fixture(name="handler_with_stub")
-def _handler_with_stub_fixture() -> Tuple[LangchainCallbackHandler, _StubTelemetryHandler]:
+def _handler_with_stub_fixture() -> (
+    Tuple[LangchainCallbackHandler, _StubTelemetryHandler]
+):
     tracer = TracerProvider().get_tracer(__name__)
     histogram = MagicMock()
     histogram.record = MagicMock()
@@ -120,7 +126,10 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
 
     agent_run_id = uuid4()
     handler.on_chain_start(
-        serialized={"name": "AgentExecutor", "id": ["langchain", "agents", "AgentExecutor"]},
+        serialized={
+            "name": "AgentExecutor",
+            "id": ["langchain", "agents", "AgentExecutor"],
+        },
         inputs={"input": "plan my trip"},
         run_id=agent_run_id,
         tags=["agent"],
@@ -214,7 +223,9 @@ def test_chain_metadata_maps_to_tool_call(handler_with_stub):
     assert tool.agent_id == str(agent_run_id)
     assert tool.attributes.get("gen_ai.tool.arguments") is None
 
-    handler.on_chain_end(outputs={"temperature": 20}, run_id=tool_run_id, parent_run_id=agent_run_id)
+    handler.on_chain_end(
+        outputs={"temperature": 20}, run_id=tool_run_id, parent_run_id=agent_run_id
+    )
 
     assert stub.stopped_tools and stub.stopped_tools[-1] is tool
     assert tool.attributes.get("tool.response") == '{"temperature": 20}'
@@ -252,7 +263,9 @@ def test_tool_callbacks_use_tool_call(handler_with_stub):
     assert tool.arguments == {"city": "Madrid"}
     assert tool.attributes.get("tool.arguments") == '{"city": "Madrid"}'
 
-    handler.on_tool_end(output={"result": "sunny"}, run_id=tool_run_id, parent_run_id=agent_run_id)
+    handler.on_tool_end(
+        output={"result": "sunny"}, run_id=tool_run_id, parent_run_id=agent_run_id
+    )
 
     assert stub.stopped_tools and stub.stopped_tools[-1] is tool
     assert tool.attributes.get("tool.response") == '{"result": "sunny"}'
@@ -312,7 +325,9 @@ def test_step_outputs_recorded_on_chain_end(handler_with_stub):
         metadata={},
     )
 
-    handler.on_chain_end(outputs={"answer": "Sunscreen"}, run_id=step_run_id, parent_run_id=parent_run_id)
+    handler.on_chain_end(
+        outputs={"answer": "Sunscreen"}, run_id=step_run_id, parent_run_id=parent_run_id
+    )
 
     assert stub.stopped_steps, "Step end should be forwarded to util handler"
     step = stub.stopped_steps[-1]
