@@ -34,6 +34,9 @@ from .env import (
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
+from opentelemetry.semconv.attributes import (
+    error_attributes as ErrorAttributes,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,8 +110,23 @@ class Manager(CompletionCallback):
         if not self.has_evaluators:
             return
 
+        offer: bool = True
         if invocation.sample_for_evaluation:
-            self.offer(invocation)
+            # Do not evaluate if llm invocation is for tool invocation because it will not have output message for evaluations tests case.
+            if isinstance(invocation, LLMInvocation):
+                msgs = getattr(invocation, "output_messages", [])
+                if msgs:
+                    first = msgs[0]
+                    if first.parts and first.parts[0] == "ToolCall" and first.finish_reason == "tool_calls":
+                        offer = False
+
+            # Do not evaluate if error
+            error = invocation.attributes.get(ErrorAttributes.ERROR_TYPE)
+            if error:
+                offer = False
+
+            if offer:
+                self.offer(invocation)
 
     # Public API ---------------------------------------------------------
     def offer(self, invocation: GenAI) -> None:
