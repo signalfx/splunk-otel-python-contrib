@@ -113,6 +113,9 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
 )
 from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
+from opentelemetry.semconv.attributes import (
+    error_attributes as ErrorAttributes,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -920,6 +923,7 @@ class TelemetryHandler:
         entity = self.get_entity(run_id)
         if entity is None:
             return
+        entity.attributes.update({ErrorAttributes.ERROR_TYPE: getattr(error.type, "__qualname__", str(error.type))})
         if isinstance(entity, Workflow):
             self.fail_workflow(entity, error)
         elif isinstance(entity, (AgentCreation, AgentInvocation)):

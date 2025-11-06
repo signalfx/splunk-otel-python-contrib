@@ -426,9 +426,24 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if generations and generations[0] and generations[0][0].message:
             content = getattr(generations[0][0].message, "content", None)
         if content is not None:
-            inv.output_messages = [
-                OutputMessage(role="assistant", parts=[Text(content=_safe_str(content))], finish_reason="stop")
-            ]
+            finish_reason = generations[0][0].generation_info.get("finish_reason") if generations[0][
+                0].generation_info else None
+            if finish_reason == "tool_calls":
+                inv.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=["ToolCall"],
+                        finish_reason=finish_reason or "tool_calls",
+                    )
+                ]
+            else:
+                inv.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content=_safe_str(content))],
+                        finish_reason=finish_reason or "stop",
+                    )
+                ]
         llm_output = getattr(response, "llm_output", {}) or {}
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
         inv.input_tokens = usage.get("prompt_tokens")
