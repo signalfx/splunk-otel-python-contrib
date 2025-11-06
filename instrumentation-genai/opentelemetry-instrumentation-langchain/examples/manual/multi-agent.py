@@ -25,7 +25,10 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 try:  # pragma: no cover - optional dependency
     from opentelemetry.util.genai.handler import get_telemetry_handler
 except Exception:  # pragma: no cover
-    get_telemetry_handler = lambda **_: None  # type: ignore
+
+    def get_telemetry_handler(**_):
+        return None  # type: ignore
+
 
 UTILS_PATH = Path(__file__).resolve().parent
 if __package__ in (None, ""):
@@ -37,9 +40,7 @@ else:  # pragma: no cover - running as package
 
 # Configure telemetry exporters
 trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter())
-)
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
 metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
 metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
@@ -66,7 +67,8 @@ def multi_agent_demo(llm: ChatOpenAI) -> None:
     try:
         from typing import Annotated, TypedDict
 
-        from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+        from langchain_core.messages import AIMessage, BaseMessage
+        from langchain_core.runnables import RunnableLambda
         from langchain_core.tools import tool
         from langgraph.graph import END, StateGraph
         from langgraph.graph.message import add_messages
@@ -107,9 +109,7 @@ def multi_agent_demo(llm: ChatOpenAI) -> None:
         if not re.fullmatch(r"[0-9+\-*/(). ]{1,100}", expr):
             return "unsafe expression"
         try:
-            return str(
-                eval(expr, {"__builtins__": {}}, {"pi": math.pi, "e": math.e})
-            )  # noqa: S307 (controlled eval)
+            return str(eval(expr, {"__builtins__": {}}, {"pi": math.pi, "e": math.e}))  # noqa: S307 (controlled eval)
         except Exception as exc:  # pragma: no cover - demo resiliency
             return f"error: {exc}"
 
@@ -151,14 +151,18 @@ def multi_agent_demo(llm: ChatOpenAI) -> None:
 
     def _ensure_ai_message(response: Any, fallback: str) -> AIMessage:
         content = getattr(response, "content", fallback)
-        return response if isinstance(response, AIMessage) else AIMessage(content=content)
+        return (
+            response if isinstance(response, AIMessage) else AIMessage(content=content)
+        )
 
     model_label = getattr(llm, "model_name", None) or getattr(llm, "model", None)
     provider_label = getattr(llm, "provider", None)
 
     def router(state: MAState) -> MAState:
         q = state["input"].lower()
-        if any(ch in q for ch in ["+", "-", "*", "/"]) and any(ch.isdigit() for ch in q):
+        if any(ch in q for ch in ["+", "-", "*", "/"]) and any(
+            ch.isdigit() for ch in q
+        ):
             route = "math"
         elif any(key in q for key in ["capital", "city"]):
             route = "capital"
@@ -166,7 +170,10 @@ def multi_agent_demo(llm: ChatOpenAI) -> None:
             route = "sentiment"
         elif any(key in q for key in ["summary", "summarize", "shorten"]):
             route = "summarizer"
-        elif any(key in q for key in ["probe", "evaluation", "hallucination", "bias", "toxicity"]):
+        elif any(
+            key in q
+            for key in ["probe", "evaluation", "hallucination", "bias", "toxicity"]
+        ):
             route = "probe"
         else:
             route = "general"
@@ -260,7 +267,9 @@ def multi_agent_demo(llm: ChatOpenAI) -> None:
     def llm_synthesizer(state: MAState) -> MAState:
         from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-        tool_outputs = "\n".join(state.get("intermediate", [])) or "No tool outputs produced."
+        tool_outputs = (
+            "\n".join(state.get("intermediate", [])) or "No tool outputs produced."
+        )
         synthesis_prompt = (
             "You are the orchestrator for a team of specialist agents. "
             "Use the tool outputs to craft a final, helpful answer. "

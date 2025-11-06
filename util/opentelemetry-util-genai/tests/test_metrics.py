@@ -15,9 +15,6 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
-from opentelemetry.semconv._incubating.attributes import (
-    error_attributes as ErrorAttributes,
-)
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
@@ -26,7 +23,6 @@ from opentelemetry.util.genai.environment_variables import (
 from opentelemetry.util.genai.handler import get_telemetry_handler
 from opentelemetry.util.genai.types import (
     AgentInvocation,
-    Error,
     InputMessage,
     LLMInvocation,
     OutputMessage,
@@ -114,52 +110,6 @@ class TestMetricsEmission(unittest.TestCase):
             inv.output_tokens = 7
             handler.stop_llm(inv)
             # Force flush isolated meter provider
-            try:
-                self.meter_provider.force_flush()
-            except Exception:
-                pass
-            time.sleep(0.005)
-            try:
-                self.metric_reader.collect()
-            except Exception:
-                pass
-        return inv
-
-    def _invoke_failure(
-        self,
-        generator: str,
-        *,
-        error_type: type[BaseException] = RuntimeError,
-    ) -> LLMInvocation:
-        env = {
-            **STABILITY_EXPERIMENTAL,
-            OTEL_INSTRUMENTATION_GENAI_EMITTERS: generator,
-        }
-        with patch.dict(os.environ, env, clear=False):
-            _OpenTelemetrySemanticConventionStability._initialized = False
-            _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
-            handler = get_telemetry_handler(
-                tracer_provider=self.tracer_provider,
-                meter_provider=self.meter_provider,
-            )
-            inv = LLMInvocation(
-                request_model="m",
-                input_messages=[
-                    InputMessage(role="user", parts=[Text(content="hi")])
-                ],
-            )
-            inv.provider = "prov"
-            handler.start_llm(inv)
-            time.sleep(0.01)
-            handler.fail_llm(
-                inv,
-                Error(
-                    message="boom",
-                    type=error_type,
-                ),
-            )
             try:
                 self.meter_provider.force_flush()
             except Exception:
@@ -359,32 +309,6 @@ class TestMetricsEmission(unittest.TestCase):
         self.assertTrue(
             inherited,
             "Expected metrics to inherit agent identity from active agent context",
-        )
-
-    def test_llm_duration_metric_includes_error_type_on_failure(self):
-        self._invoke_failure("span_metric")
-        metrics_list = self._collect_metrics()
-        duration_points: list[Any] = []
-        for metric in metrics_list:
-            if metric.name != "gen_ai.client.operation.duration":
-                continue
-            data = getattr(metric, "data", None)
-            if not data:
-                continue
-            duration_points.extend(getattr(data, "data_points", []) or [])
-
-        self.assertTrue(
-            duration_points,
-            "Expected at least one duration datapoint for failed invocation",
-        )
-        error_key = ErrorAttributes.ERROR_TYPE
-        has_error_attr = any(
-            getattr(dp, "attributes", {}).get(error_key) == "RuntimeError"
-            for dp in duration_points
-        )
-        self.assertTrue(
-            has_error_attr,
-            f"Expected duration metric datapoint to include {error_key}",
         )
 
 

@@ -261,7 +261,6 @@ pip install -e util/opentelemetry-util-genai --no-deps
 pip install -e util/opentelemetry-util-genai-evals --no-deps
 pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
 pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
-pip install -e util/opentelemetry-util-genai-traceloop-translator --no-deps
 pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
 pip install -r dev-genai-requirements.txt
 pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/requirements.txt
