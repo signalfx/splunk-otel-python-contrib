@@ -49,6 +49,7 @@ def read_aggregation_flag(
         return None
     return raw.strip().lower() in _TRUTHY
 
+
 __all__ = [
     "read_raw_evaluators",
     "read_interval",

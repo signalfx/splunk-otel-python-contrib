@@ -26,73 +26,81 @@ def _get_vendor_rules() -> List[VendorRule]:
         VendorRule(
             exact_matches={"AzureChatOpenAI", "AzureOpenAI", "AzureOpenAIEmbeddings"},
             patterns=["azure"],
-            vendor_name="Azure"
+            vendor_name="Azure",
         ),
         VendorRule(
             exact_matches={"ChatOpenAI", "OpenAI", "OpenAIEmbeddings"},
             patterns=["openai"],
-            vendor_name="openai"
+            vendor_name="openai",
         ),
         VendorRule(
-            exact_matches={"ChatBedrock", "BedrockEmbeddings", "Bedrock", "BedrockChat"},
+            exact_matches={
+                "ChatBedrock",
+                "BedrockEmbeddings",
+                "Bedrock",
+                "BedrockChat",
+            },
             patterns=["bedrock", "aws"],
-            vendor_name="AWS"
+            vendor_name="AWS",
         ),
         VendorRule(
             exact_matches={"ChatAnthropic", "AnthropicLLM"},
             patterns=["anthropic"],
-            vendor_name="Anthropic"
+            vendor_name="Anthropic",
         ),
         VendorRule(
             exact_matches={
-                "ChatVertexAI", "VertexAI", "VertexAIEmbeddings", "ChatGoogleGenerativeAI",
-                "GoogleGenerativeAI", "GooglePaLM", "ChatGooglePaLM"
+                "ChatVertexAI",
+                "VertexAI",
+                "VertexAIEmbeddings",
+                "ChatGoogleGenerativeAI",
+                "GoogleGenerativeAI",
+                "GooglePaLM",
+                "ChatGooglePaLM",
             },
             patterns=["vertex", "google", "palm", "gemini"],
-            vendor_name="Google"
+            vendor_name="Google",
         ),
         VendorRule(
             exact_matches={"ChatCohere", "CohereEmbeddings", "Cohere"},
             patterns=["cohere"],
-            vendor_name="Cohere"
+            vendor_name="Cohere",
         ),
         VendorRule(
             exact_matches={
-                "HuggingFacePipeline", "HuggingFaceTextGenInference",
-                "HuggingFaceEmbeddings", "ChatHuggingFace"
+                "HuggingFacePipeline",
+                "HuggingFaceTextGenInference",
+                "HuggingFaceEmbeddings",
+                "ChatHuggingFace",
             },
             patterns=["huggingface"],
-            vendor_name="HuggingFace"
+            vendor_name="HuggingFace",
         ),
         VendorRule(
             exact_matches={"ChatOllama", "OllamaEmbeddings", "Ollama"},
             patterns=["ollama"],
-            vendor_name="Ollama"
+            vendor_name="Ollama",
         ),
         VendorRule(
             exact_matches={"Together", "ChatTogether"},
             patterns=["together"],
-            vendor_name="Together"
+            vendor_name="Together",
         ),
         VendorRule(
             exact_matches={"Replicate", "ChatReplicate"},
             patterns=["replicate"],
-            vendor_name="Replicate"
+            vendor_name="Replicate",
         ),
         VendorRule(
             exact_matches={"ChatFireworks", "Fireworks"},
             patterns=["fireworks"],
-            vendor_name="Fireworks"
+            vendor_name="Fireworks",
         ),
-        VendorRule(
-            exact_matches={"ChatGroq"},
-            patterns=["groq"],
-            vendor_name="Groq"
-        ),
+        VendorRule(exact_matches={"ChatGroq"}, patterns=["groq"], vendor_name="Groq"),
         VendorRule(
             exact_matches={"ChatMistralAI", "MistralAI"},
             patterns=["mistral"],
-            vendor_name="MistralAI"
+            vendor_name="MistralAI",
         ),
     ]
 

@@ -1,3 +1,5 @@
+import time
+
 from langchain.agents import create_agent
 
 
@@ -20,9 +22,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # Configure tracing/metrics/logging once per process so exported data goes to OTLP.
 trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter())
-)
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
 demo_tracer = trace.get_tracer("instrumentation.langchain.demo")
 
@@ -112,6 +112,7 @@ vscode launch configuration to run this example:
 ```
 """
 
+
 def get_weather(city: str) -> str:
     """Get weather for a given city."""
     return f"It's always sunny in {city}!"
@@ -123,18 +124,23 @@ agent = create_agent(
     tools=[get_weather],
     system_prompt="You are a helpful assistant",
     debug=True,
-).with_config({
-    "run_name": "weather-agent",
-    "tags": ["agent:weather", "agent"],
-    "metadata": {"agent_name": "weather-agent", "agent_role": "orchestrator"}
-})
+).with_config(
+    {
+        "run_name": "weather-agent",
+        "tags": ["agent:weather", "agent"],
+        "metadata": {"agent_name": "weather-agent", "agent_role": "orchestrator"},
+    }
+)
 
 # Run the agent
 agent.invoke(
-    {"messages": [{"role": "user", "content": "What is the weather in San Francisco?"}]},
+    {
+        "messages": [
+            {"role": "user", "content": "What is the weather in San Francisco?"}
+        ]
+    },
     {"session_id": "12345"},
 )
 
-# sleep for 150s to allow evals to finish 
-import time
+# sleep for 150s to allow evals to finish
 time.sleep(150)

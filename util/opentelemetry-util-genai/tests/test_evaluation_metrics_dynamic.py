@@ -108,8 +108,11 @@ def test_evaluation_metrics_emitter_error_event_attributes():
     # Check required error attributes per semantic conventions
     assert attrs["gen_ai.operation.name"] == "evaluation"
     assert attrs["gen_ai.evaluation.name"] == "toxicity"
-    assert attrs["error.message"] == "Model failed to evaluate toxicity"
-    assert attrs["error.type"] == "RuntimeError"
+    assert (
+        attrs["gen_ai.evaluation.error.message"]
+        == "Model failed to evaluate toxicity"
+    )
+    assert attrs["gen_ai.evaluation.error.type"] == "RuntimeError"
     # Units should still be set
     assert attrs.get("gen_ai.evaluation.score.units") == "score"
     # Request model should be present

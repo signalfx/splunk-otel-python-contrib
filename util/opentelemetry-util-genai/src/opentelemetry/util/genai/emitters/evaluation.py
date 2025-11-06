@@ -7,9 +7,6 @@ import os
 from typing import Any, Dict, Optional, Sequence
 
 from opentelemetry._logs import Logger, get_logger
-from opentelemetry.semconv._incubating.attributes import (
-    error_attributes as ErrorAttributes,
-)
 
 from ..attributes import (
     GEN_AI_EVALUATION_ATTRIBUTES_PREFIX,
@@ -302,9 +299,11 @@ class EvaluationMetricsEmitter(_EvaluationEmitterBase):
             attrs["gen_ai.evaluation.score.units"] = "score"
             if res.error is not None:
                 if getattr(res.error, "message", None):
-                    attrs[ErrorAttributes.ERROR_MESSAGE] = res.error.message
+                    attrs["gen_ai.evaluation.error.message"] = (
+                        res.error.message
+                    )
                 if getattr(res.error, "type", None):
-                    attrs[ErrorAttributes.ERROR_TYPE] = (
+                    attrs["gen_ai.evaluation.error.type"] = (
                         res.error.type.__qualname__
                     )
             try:
@@ -418,11 +417,11 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
                 base_attrs["gen_ai.evaluation.score.units"] = "score"
             if res.error is not None:
                 if getattr(res.error, "message", None):
-                    base_attrs[ErrorAttributes.ERROR_MESSAGE] = (
+                    base_attrs["gen_ai.evaluation.error.message"] = (
                         res.error.message
                     )
                 if getattr(res.error, "type", None):
-                    base_attrs[ErrorAttributes.ERROR_TYPE] = (
+                    base_attrs["gen_ai.evaluation.error.type"] = (
                         res.error.type.__qualname__
                     )
 
@@ -437,11 +436,11 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
                     ] = value
             if res.error is not None:
                 if getattr(res.error, "message", None):
-                    spec_attrs[ErrorAttributes.ERROR_MESSAGE] = (
+                    spec_attrs["gen_ai.evaluation.error.message"] = (
                         res.error.message
                     )
                 if getattr(res.error, "type", None):
-                    spec_attrs[ErrorAttributes.ERROR_TYPE] = (
+                    spec_attrs["gen_ai.evaluation.error.type"] = (
                         res.error.type.__qualname__
                     )
 

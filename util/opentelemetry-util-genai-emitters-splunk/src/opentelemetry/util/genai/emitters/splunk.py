@@ -479,9 +479,13 @@ class SplunkEvaluationResultsEmitter(EmitterMeta):
             if response_identifier:
                 ev["gen_ai.response.id"] = response_identifier
             if result.error is not None:
-                ev["error.type"] = result.error.type.__qualname__
+                ev["gen_ai.evaluation.error.type"] = (
+                    result.error.type.__qualname__
+                )
                 if getattr(result.error, "message", None):
-                    ev["error.message"] = result.error.message
+                    ev["gen_ai.evaluation.error.message"] = (
+                        result.error.message
+                    )
             if ev:
                 evaluations.append(ev)
 
