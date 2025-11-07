@@ -35,13 +35,14 @@ import time
 
 # Configure Python logging to DEBUG level to see our trace messages
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(levelname)s - %(name)s - %(message)s'
+    level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s"
 )
 
 # Enable debug logging for specific modules
-logging.getLogger('opentelemetry.util.genai.processor.traceloop_span_processor').setLevel(logging.DEBUG)
-logging.getLogger('opentelemetry.util.genai.handler').setLevel(logging.DEBUG)
+logging.getLogger(
+    "opentelemetry.util.genai.processor.traceloop_span_processor"
+).setLevel(logging.DEBUG)
+logging.getLogger("opentelemetry.util.genai.handler").setLevel(logging.DEBUG)
 
 # Imports after logging config to ensure logging is set up first
 from langchain_core.messages import (  # noqa: E402
@@ -59,9 +60,7 @@ try:  # LangChain >= 1.0.0
     from langchain.agents import (  # noqa: E402
         create_agent as _create_react_agent,  # type: ignore[attr-defined]
     )
-except (
-    ImportError
-):  # pragma: no cover - compatibility with older LangGraph releases
+except ImportError:  # pragma: no cover - compatibility with older LangGraph releases
     from langgraph.prebuilt import (  # noqa: E402
         create_react_agent as _create_react_agent,  # type: ignore[assignment]
     )
@@ -80,7 +79,9 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor  # noqa: E402
 from opentelemetry.sdk.resources import Resource  # noqa: E402
 
 # Get configuration from environment variables
-OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv(
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"
+)
 OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "travel-planner-traceloop")
 OTEL_RESOURCE_ATTRIBUTES = os.getenv("OTEL_RESOURCE_ATTRIBUTES", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -93,7 +94,9 @@ if not OPENAI_API_KEY:
 # Note: Kubernetes will expand $(SPLUNK_OTEL_AGENT) automatically in the YAML
 if ":4317" in OTEL_EXPORTER_OTLP_ENDPOINT:
     OTEL_EXPORTER_OTLP_ENDPOINT = OTEL_EXPORTER_OTLP_ENDPOINT.replace(":4317", ":4318")
-    print(f"Note: Converted gRPC endpoint to HTTP endpoint for Traceloop: {OTEL_EXPORTER_OTLP_ENDPOINT}")
+    print(
+        f"Note: Converted gRPC endpoint to HTTP endpoint for Traceloop: {OTEL_EXPORTER_OTLP_ENDPOINT}"
+    )
 
 print(f"Service Name: {OTEL_SERVICE_NAME}")
 print(f"OTLP Endpoint: {OTEL_EXPORTER_OTLP_ENDPOINT}")
@@ -113,7 +116,7 @@ Traceloop.init(
     disable_batch=True,
     api_endpoint=OTEL_EXPORTER_OTLP_ENDPOINT,
     app_name=OTEL_SERVICE_NAME,
-    resource_attributes=resource_attributes
+    resource_attributes=resource_attributes,
 )
 print("[INIT] Traceloop SDK initialized with zero-code translator")
 
@@ -121,12 +124,12 @@ print("[INIT] Traceloop SDK initialized with zero-code translator")
 def _configure_otlp_logging() -> None:
     """
     Initialize a logger provider that exports to the configured OTLP endpoint.
-    
+
     This is needed for evaluation results to be emitted as OTLP log records.
     Traceloop SDK handles traces, but we need to explicitly configure logs.
     """
     from opentelemetry._logs import get_logger_provider
-    
+
     # Check if already configured
     try:
         existing = get_logger_provider()
@@ -135,7 +138,7 @@ def _configure_otlp_logging() -> None:
             return
     except Exception:
         pass
-    
+
     # Parse resource attributes from environment (same as Traceloop)
     resource_attrs = {"service.name": OTEL_SERVICE_NAME}
     if OTEL_RESOURCE_ATTRIBUTES:
@@ -143,19 +146,17 @@ def _configure_otlp_logging() -> None:
             if "=" in attr:
                 key, value = attr.split("=", 1)
                 resource_attrs[key.strip()] = value.strip()
-    
+
     resource = Resource(attributes=resource_attrs)
     logger_provider = LoggerProvider(resource=resource)
-    
+
     # Use HTTP exporter since Traceloop uses HTTP/protobuf (port 4318)
     # HTTP OTLP exporter needs the full path including /v1/logs
     log_endpoint = OTEL_EXPORTER_OTLP_ENDPOINT
     if not log_endpoint.endswith("/v1/logs"):
         log_endpoint = f"{log_endpoint.rstrip('/')}/v1/logs"
-    
-    log_processor = BatchLogRecordProcessor(
-        OTLPLogExporter(endpoint=log_endpoint)
-    )
+
+    log_processor = BatchLogRecordProcessor(OTLPLogExporter(endpoint=log_endpoint))
     logger_provider.add_log_record_processor(log_processor)
     set_logger_provider(logger_provider)
     print(f"[INIT] OTLP logging configured, endpoint={log_endpoint}")
@@ -169,7 +170,7 @@ _configure_otlp_logging()
 # ---------------------------------------------------------------------------
 # NEW APPROACH: The Traceloop translator now reconstructs LangChain message objects
 # directly from Traceloop's serialized JSON data (traceloop.entity.input/output).
-# 
+#
 # This eliminates the need for LangChain instrumentation!
 #
 # How it works:
@@ -187,7 +188,9 @@ _configure_otlp_logging()
 #
 # Note: langchain-core must be installed for message reconstruction to work,
 # but LangChain instrumentation is NOT needed.
-print("[INIT] Message reconstruction enabled in translator (LangChain instrumentation not required)")
+print(
+    "[INIT] Message reconstruction enabled in translator (LangChain instrumentation not required)"
+)
 
 # ---------------------------------------------------------------------------
 # Sample data utilities
@@ -314,9 +317,7 @@ def _model_name() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
-def _create_llm(
-    agent_name: str, *, temperature: float, session_id: str
-) -> ChatOpenAI:
+def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
     """Create an LLM instance decorated with tags/metadata for tracing."""
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner-traceloop"]
@@ -344,9 +345,7 @@ def _create_llm(
 @task(name="coordinator_agent")
 def coordinator_node(state: PlannerState) -> PlannerState:
     """Coordinate the travel planning workflow."""
-    llm = _create_llm(
-        "coordinator", temperature=0.2, session_id=state["session_id"]
-    )
+    llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
     system_message = SystemMessage(
         content=(
             "You are the lead travel coordinator. Extract the key details from the "
@@ -366,17 +365,15 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "flight_specialist", temperature=0.4, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_flights]).with_config(
-            {
-                "run_name": "flight_specialist",
-                "tags": ["agent", "agent:flight_specialist"],
-                "metadata": {
-                    "agent_name": "flight_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
+        {
+            "run_name": "flight_specialist",
+            "tags": ["agent", "agent:flight_specialist"],
+            "metadata": {
+                "agent_name": "flight_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = (
         f"Find an appealing flight from {state['origin']} to {state['destination']} "
@@ -404,17 +401,15 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "hotel_specialist", temperature=0.5, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
-            {
-                "run_name": "hotel_specialist",
-                "tags": ["agent", "agent:hotel_specialist"],
-                "metadata": {
-                    "agent_name": "hotel_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
+        {
+            "run_name": "hotel_specialist",
+            "tags": ["agent", "agent:hotel_specialist"],
+            "metadata": {
+                "agent_name": "hotel_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = (
         f"Recommend a boutique hotel in {state['destination']} between {state['departure']} "
@@ -442,17 +437,15 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "activity_specialist", temperature=0.6, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_activities]).with_config(
-            {
-                "run_name": "activity_specialist",
-                "tags": ["agent", "agent:activity_specialist"],
-                "metadata": {
-                    "agent_name": "activity_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
+        {
+            "run_name": "activity_specialist",
+            "tags": ["agent", "agent:activity_specialist"],
+            "metadata": {
+                "agent_name": "activity_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = f"Curate signature activities for travellers spending a week in {state['destination']}."
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
@@ -579,7 +572,10 @@ def main() -> None:
 
     final_state: Optional[PlannerState] = None
 
-    for step in app.stream(initial_state, {"configurable": {"thread_id": session_id}, "recursion_limit": 10}):
+    for step in app.stream(
+        initial_state,
+        {"configurable": {"thread_id": session_id}, "recursion_limit": 10},
+    ):
         node_name, node_state = next(iter(step.items()))
         final_state = node_state
         print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
@@ -604,52 +600,56 @@ def main() -> None:
 def flush_telemetry():
     """Flush all OpenTelemetry providers before exit."""
     print("\n[FLUSH] Starting telemetry flush", flush=True)
-    
+
     # CRITICAL: Wait for all evaluations to complete before flushing
     # Evaluations run asynchronously in a background thread
     # With expanded coverage (all 5 agents), this needs more time
     try:
         from opentelemetry.util.genai.handler import get_telemetry_handler
+
         handler = get_telemetry_handler()
         if handler:
             handler.wait_for_evaluations(200.0)
     except Exception as e:
         print(f"[FLUSH] Warning: Could not wait for evaluations: {e}", flush=True)
-    
+
     # Flush traces (Traceloop SDK uses OTel TracerProvider under the hood)
     try:
         from opentelemetry import trace
+
         tracer_provider = trace.get_tracer_provider()
         if hasattr(tracer_provider, "force_flush"):
             print("[FLUSH] Flushing traces (timeout=30s)", flush=True)
             tracer_provider.force_flush(timeout_millis=30000)
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush traces: {e}", flush=True)
-    
+
     # Flush logs (if any emitters are using logs)
     try:
         from opentelemetry._logs import get_logger_provider
+
         logger_provider = get_logger_provider()
         if hasattr(logger_provider, "force_flush"):
             print("[FLUSH] Flushing logs (timeout=30s)", flush=True)
             logger_provider.force_flush(timeout_millis=30000)
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush logs: {e}", flush=True)
-    
+
     # Flush metrics
     try:
         from opentelemetry.metrics import get_meter_provider
+
         meter_provider = get_meter_provider()
         if hasattr(meter_provider, "force_flush"):
             print("[FLUSH] Flushing metrics (timeout=30s)", flush=True)
             meter_provider.force_flush(timeout_millis=30000)
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush metrics: {e}", flush=True)
-    
+
     # Give batch processors time to complete final export operations
     print("[FLUSH] Waiting for final batch export (5s)", flush=True)
     time.sleep(5)
-    
+
     print("[FLUSH] Telemetry flush complete\n", flush=True)
 
 
@@ -663,6 +663,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n[ERROR] Workflow failed: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         exit_code = 1
     finally:
@@ -670,4 +671,3 @@ if __name__ == "__main__":
         # This ensures both traceloop.* and translated gen_ai.* spans are exported
         flush_telemetry()
         sys.exit(exit_code)
-

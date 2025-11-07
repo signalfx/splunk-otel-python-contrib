@@ -246,7 +246,11 @@ def _derive_passed(label: str | None, success: Any) -> bool | None:
 def _apply_sentiment_postprocessing(
     ctx: _MetricContext, label: str | None
 ) -> tuple[float | None, str | None]:
-    if ctx.name not in {"sentiment", "sentiment [geval]", "sentiment [geval] [GEval]"}:
+    if ctx.name not in {
+        "sentiment",
+        "sentiment [geval]",
+        "sentiment [geval] [GEval]",
+    }:
         return ctx.score, label
     if ctx.score is None:
         return ctx.score, label

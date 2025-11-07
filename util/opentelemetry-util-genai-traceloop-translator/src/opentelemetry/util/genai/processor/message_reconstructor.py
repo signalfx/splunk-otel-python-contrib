@@ -17,8 +17,7 @@ _logger = logging.getLogger(__name__)
 
 
 def reconstruct_messages_from_traceloop(
-    input_data: Any,
-    output_data: Any
+    input_data: Any, output_data: Any
 ) -> tuple[Optional[List[Any]], Optional[List[Any]]]:
     """
     Reconstruct LangChain message objects from Traceloop serialized data.
@@ -64,7 +63,9 @@ def reconstruct_messages_from_traceloop(
         if input_data:
             try:
                 # Normalize the Traceloop data to standard format
-                normalized_input = normalize_traceloop_content(input_data, "input")
+                normalized_input = normalize_traceloop_content(
+                    input_data, "input"
+                )
                 input_messages = _convert_normalized_to_langchain(
                     normalized_input, "input"
                 )
@@ -78,7 +79,9 @@ def reconstruct_messages_from_traceloop(
         if output_data:
             try:
                 # Normalize the Traceloop data to standard format
-                normalized_output = normalize_traceloop_content(output_data, "output")
+                normalized_output = normalize_traceloop_content(
+                    output_data, "output"
+                )
                 output_messages = _convert_normalized_to_langchain(
                     normalized_output, "output"
                 )
@@ -96,8 +99,7 @@ def reconstruct_messages_from_traceloop(
 
 
 def _convert_normalized_to_langchain(
-    normalized_messages: List[Dict[str, Any]],
-    direction: str
+    normalized_messages: List[Dict[str, Any]], direction: str
 ) -> List[Any]:
     """
     Convert normalized message format to LangChain BaseMessage objects.
@@ -159,19 +161,20 @@ def _convert_normalized_to_langchain(
                 additional_kwargs["finish_reason"] = msg["finish_reason"]
             langchain_msg = AIMessage(
                 content=content,
-                additional_kwargs=additional_kwargs if additional_kwargs else {}
+                additional_kwargs=additional_kwargs
+                if additional_kwargs
+                else {},
             )
         elif role == "system":
             langchain_msg = SystemMessage(content=content)
         elif role == "tool":
             langchain_msg = ToolMessage(
                 content=content,
-                tool_call_id=msg.get("tool_call_id", "unknown")
+                tool_call_id=msg.get("tool_call_id", "unknown"),
             )
         elif role == "function":
             langchain_msg = FunctionMessage(
-                content=content,
-                name=msg.get("name", "unknown")
+                content=content, name=msg.get("name", "unknown")
             )
         else:
             # Unknown role, default to HumanMessage
@@ -214,4 +217,3 @@ def _convert_normalized_to_langchain(
 __all__ = [
     "reconstruct_messages_from_traceloop",
 ]
-
