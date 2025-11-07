@@ -171,6 +171,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "docs/**/*.*" = ["A001"]
+"instrumentation-genai/opentelemetry-instrumentation-langchain/tests/test_callback_handler_agent.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 detect-same-package = false # to not consider instrumentation packages as first-party

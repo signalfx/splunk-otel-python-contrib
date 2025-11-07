@@ -119,4 +119,3 @@ def test_langchain_call(
     assert found_duration, "Duration metric missing"
 
     # Do not fail test on absence of token usage metrics – optional.
-

@@ -26,12 +26,11 @@ from typing import Any, Callable, Dict, List, Optional
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
 from opentelemetry.trace import Span
-
-from opentelemetry.util.genai.types import LLMInvocation
 from opentelemetry.util.genai.handler import (
-    get_telemetry_handler,
     TelemetryHandler,
+    get_telemetry_handler,
 )
+from opentelemetry.util.genai.types import LLMInvocation
 
 from .content_normalizer import normalize_traceloop_content
 from .message_reconstructor import reconstruct_messages_from_traceloop
