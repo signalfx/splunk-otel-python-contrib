@@ -57,7 +57,8 @@ def test_answer_relevancy_variants_normalize(variant, expected_key):
 
     with (
         patch(
-            "opentelemetry.util.evaluator.deepeval._instantiate_metrics", fake_instantiate
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            fake_instantiate,
         ),
         patch(
             "opentelemetry.util.evaluator.deepeval._build_llm_test_case",
@@ -88,7 +89,8 @@ def test_unknown_metric_produces_error():
 
     with (
         patch(
-            "opentelemetry.util.evaluator.deepeval._instantiate_metrics", fake_instantiate
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            fake_instantiate,
         ),
         patch(
             "opentelemetry.util.evaluator.deepeval._build_llm_test_case",

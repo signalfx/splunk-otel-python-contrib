@@ -76,7 +76,7 @@ class LangchainInstrumentor(BaseInstrumentor):
         langchainCallbackHandler = LangchainCallbackHandler(
             telemetry_handler=self._telemetry_handler,
         )
-        
+
         # Store reference to callback handler so tests can update it if needed
         self._callback_handler = langchainCallbackHandler
 
@@ -287,6 +287,7 @@ class LangchainInstrumentor(BaseInstrumentor):
     def _uninstrument(self, **kwargs):
         # Unwrap all layers (in case of multiple wrappings)
         from wrapt import ObjectProxy
+
         def unwrap_all(module_name, attr_name):
             """Unwrap all wrapper layers, not just one"""
             try:
@@ -298,7 +299,9 @@ class LangchainInstrumentor(BaseInstrumentor):
                     obj = getattr(module, class_name)
                     func = getattr(obj, method_name, None)
                     if func:
-                        while isinstance(func, ObjectProxy) and hasattr(func, "__wrapped__"):
+                        while isinstance(func, ObjectProxy) and hasattr(
+                            func, "__wrapped__"
+                        ):
                             func = func.__wrapped__
                         setattr(obj, method_name, func)
                 else:
@@ -306,7 +309,7 @@ class LangchainInstrumentor(BaseInstrumentor):
                     unwrap(module_name, attr_name)
             except Exception:  # pragma: no cover
                 pass
-        
+
         unwrap_all("langchain_core.callbacks", "BaseCallbackManager.__init__")
         if not self.disable_trace_context_propagation:
             if is_package_available("langchain_community"):

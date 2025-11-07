@@ -286,7 +286,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     tool_attrs = {
                         k: v
                         for k, v in attrs.items()
-                        if not (isinstance(k, str) and k.lower().startswith("gen_ai.tool."))
+                        if not (
+                            isinstance(k, str) and k.lower().startswith("gen_ai.tool.")
+                        )
                     }
                     arguments = tool_info.get("arguments")
                     if arguments is None:
@@ -384,7 +386,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         # Build attributes from metadata and invocation_params
         attrs: dict[str, Any] = {}
         langchain_legacy: dict[str, Any] = {}
-        
+
         # Process metadata - move ls_* to langchain_legacy, keep others
         if metadata:
             for key, value in metadata.items():
@@ -392,22 +394,28 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     langchain_legacy[key] = value
                 else:
                     attrs[key] = value
-        
+
         # Add langchain_legacy if it has content
         if langchain_legacy:
             attrs["langchain_legacy"] = langchain_legacy
-        
+
         # Add tags
         if tags:
             attrs["tags"] = [str(t) for t in tags]
-        
+
         # Process invocation_params - add with request_ prefix
         if invocation_params:
             # Standard params get request_ prefix
-            for key in ("top_p", "seed", "temperature", "frequency_penalty", "presence_penalty"):
+            for key in (
+                "top_p",
+                "seed",
+                "temperature",
+                "frequency_penalty",
+                "presence_penalty",
+            ):
                 if key in invocation_params:
                     attrs[f"request_{key}"] = invocation_params[key]
-            
+
             # Handle nested model_kwargs
             if "model_kwargs" in invocation_params:
                 attrs["model_kwargs"] = invocation_params["model_kwargs"]
@@ -415,22 +423,26 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 mk = invocation_params["model_kwargs"]
                 if isinstance(mk, dict) and "max_tokens" in mk:
                     attrs["request_max_tokens"] = mk["max_tokens"]
-        
+
         # Handle max_tokens from metadata.ls_max_tokens
-        if metadata and "ls_max_tokens" in metadata and "request_max_tokens" not in attrs:
+        if (
+            metadata
+            and "ls_max_tokens" in metadata
+            and "request_max_tokens" not in attrs
+        ):
             attrs["request_max_tokens"] = metadata["ls_max_tokens"]
-        
+
         # Add callback info from serialized
         if payload.get("name"):
             attrs["callback.name"] = payload["name"]
         if payload.get("id"):
             attrs["callback.id"] = payload["id"]
-        
+
         # Set provider from ls_provider in metadata
         provider = None
         if metadata and "ls_provider" in metadata:
             provider = _safe_str(metadata["ls_provider"])
-        
+
         inv = LLMInvocation(
             request_model=request_model,
             input_messages=input_messages,
@@ -514,7 +526,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
         inv.input_tokens = usage.get("prompt_tokens")
         inv.output_tokens = usage.get("completion_tokens")
-        
+
         # Extract response model from response metadata if available
         if not inv.response_model_name and generations:
             for generation_list in generations:
@@ -524,13 +536,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         and hasattr(generation.message, "response_metadata")
                         and generation.message.response_metadata
                     ):
-                        model_name = generation.message.response_metadata.get("model_name")
+                        model_name = generation.message.response_metadata.get(
+                            "model_name"
+                        )
                         if model_name:
                             inv.response_model_name = _safe_str(model_name)
                             break
                 if inv.response_model_name:
                     break
-        
+
         self._handler.stop_llm(inv)
 
     def on_tool_start(
