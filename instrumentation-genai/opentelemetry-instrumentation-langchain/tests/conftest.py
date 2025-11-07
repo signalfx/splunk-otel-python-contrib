@@ -186,7 +186,20 @@ def instrument_with_content(
     if LangChainInstrumentor is None:  # pragma: no cover
         pytest.skip("opentelemetry-instrumentation-langchain not available")
     set_prompt_capture_enabled(True)
+    
+    # Reset util-genai singleton handler to ensure clean state
+    import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+    
+    # Create new instrumentor for each test
     instrumentor = LangChainInstrumentor()
+    
+    # If already instrumented (from previous test), uninstrument first
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+    
     instrumentor.instrument(
         tracer_provider=tracer_provider,
         event_logger_provider=event_logger_provider,
@@ -194,8 +207,14 @@ def instrument_with_content(
     )
 
     yield instrumentor
+    
     set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+    # Clean up: uninstrument and reset singleton
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+    
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.fixture(scope="function")
@@ -233,21 +252,37 @@ def instrument_with_content_util(
             OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_ONLY",  # util-genai content gate
         }
     )
+    
     # Reset singleton so new env vars are applied
     import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
 
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+    
+    # Create new instrumentor for each test
     instrumentor = LangChainInstrumentor()
+    
+    # If already instrumented (from previous test), uninstrument first
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+    
     instrumentor.instrument(
         tracer_provider=tracer_provider,
         event_logger_provider=event_logger_provider,
         meter_provider=meter_provider,
     )
+    
     yield instrumentor
+    
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
     set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+    
+    # Clean up: uninstrument and reset singleton
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+    
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 class LiteralBlockScalar(str):
