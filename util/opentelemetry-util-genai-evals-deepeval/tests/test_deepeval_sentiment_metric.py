@@ -104,7 +104,13 @@ def _install_deepeval_stubs():
     eval_cfg_mod.CacheConfig = CacheConfig
     eval_cfg_mod.DisplayConfig = DisplayConfig
 
-    def evaluate(test_cases, metrics, async_config=None, cache_config=None, display_config=None):
+    def evaluate(
+        test_cases,
+        metrics,
+        async_config=None,
+        cache_config=None,
+        display_config=None,
+    ):
         class _Eval:
             test_results = []
 

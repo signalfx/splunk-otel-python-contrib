@@ -112,7 +112,13 @@ def _install_deepeval_stubs():
     eval_cfg_mod.CacheConfig = CacheConfig
     eval_cfg_mod.DisplayConfig = DisplayConfig
 
-    def evaluate(test_cases, metrics, async_config=None, cache_config=None, display_config=None):
+    def evaluate(
+        test_cases,
+        metrics,
+        async_config=None,
+        cache_config=None,
+        display_config=None,
+    ):
         class _Eval:
             test_results = []
 
@@ -342,7 +348,9 @@ def test_evaluator_handles_instantiation_error(monkeypatch):
     def boom(specs, test_case, model):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("opentelemetry.util.evaluator.deepeval._instantiate_metrics", boom)
+    monkeypatch.setattr(
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics", boom
+    )
 
     results = evaluator.evaluate(invocation)
     assert len(results) == 1
@@ -426,7 +434,8 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "opentelemetry.util.evaluator.deepeval._instantiate_metrics", fake_instantiate
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+        fake_instantiate,
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
