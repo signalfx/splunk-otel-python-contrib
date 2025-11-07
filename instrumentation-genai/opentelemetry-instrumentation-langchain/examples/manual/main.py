@@ -40,6 +40,7 @@ except Exception:  # pragma: no cover
     def get_telemetry_handler(**_):  # type: ignore
         return None
 
+
 # configure tracing
 trace.set_tracer_provider(TracerProvider())
 trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))

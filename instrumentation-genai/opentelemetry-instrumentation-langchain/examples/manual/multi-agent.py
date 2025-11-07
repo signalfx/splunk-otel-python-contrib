@@ -29,6 +29,7 @@ except Exception:  # pragma: no cover
     def get_telemetry_handler(**_):  # type: ignore
         return None
 
+
 UTILS_PATH = Path(__file__).resolve().parent
 if __package__ in (None, ""):
     if str(UTILS_PATH) not in sys.path:

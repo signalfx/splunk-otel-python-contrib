@@ -119,7 +119,11 @@ class Manager(CompletionCallback):
                 msgs = getattr(invocation, "output_messages", [])
                 if msgs:
                     first = msgs[0]
-                    if first.parts and first.parts[0] == "ToolCall" and first.finish_reason == "tool_calls":
+                    if (
+                        first.parts
+                        and first.parts[0] == "ToolCall"
+                        and first.finish_reason == "tool_calls"
+                    ):
                         offer = False
 
             # Do not evaluate if error

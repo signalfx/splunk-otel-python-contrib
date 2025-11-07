@@ -432,8 +432,11 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if generations and generations[0] and generations[0][0].message:
             content = getattr(generations[0][0].message, "content", None)
         if content is not None:
-            finish_reason = generations[0][0].generation_info.get("finish_reason") if generations[0][
-                0].generation_info else None
+            finish_reason = (
+                generations[0][0].generation_info.get("finish_reason")
+                if generations[0][0].generation_info
+                else None
+            )
             if finish_reason == "tool_calls":
                 inv.output_messages = [
                     OutputMessage(
