@@ -108,21 +108,27 @@ class Manager(CompletionCallback):
 
     # CompletionCallback -------------------------------------------------
     def on_completion(self, invocation: GenAI) -> None:
+        # Early exit if no evaluators configured
         if not self.has_evaluators:
+            return
+        # Only evaluate LLMInvocation or AgentInvocation
+        if (
+                not isinstance(invocation, LLMInvocation)
+                and not isinstance(invocation, AgentInvocation)
+        ):
             return
 
         offer: bool = True
         if invocation.sample_for_evaluation:
-            self.offer(invocation)
             # Do not evaluate if llm invocation is for tool invocation because it will not have output message for evaluations tests case.
             if isinstance(invocation, LLMInvocation):
                 msgs = getattr(invocation, "output_messages", [])
                 if msgs:
                     first = msgs[0]
                     if (
-                        first.parts
-                        and first.parts[0] == "ToolCall"
-                        and first.finish_reason == "tool_calls"
+                            first.parts
+                            and first.parts[0] == "ToolCall"
+                            and first.finish_reason == "tool_calls"
                     ):
                         offer = False
 
