@@ -77,9 +77,6 @@ class LangchainInstrumentor(BaseInstrumentor):
             telemetry_handler=self._telemetry_handler,
         )
 
-        # Store reference to callback handler so tests can update it if needed
-        self._callback_handler = langchainCallbackHandler
-
         wrap_function_wrapper(
             module="langchain_core.callbacks",
             name="BaseCallbackManager.__init__",
@@ -285,32 +282,7 @@ class LangchainInstrumentor(BaseInstrumentor):
                     pass
 
     def _uninstrument(self, **kwargs):
-        # Unwrap all layers (in case of multiple wrappings)
-        from wrapt import ObjectProxy
-
-        def unwrap_all(module_name, attr_name):
-            """Unwrap all wrapper layers, not just one"""
-            try:
-                if "." in attr_name:
-                    # Handle class.method format
-                    module_path, class_and_method = module_name, attr_name
-                    class_name, method_name = class_and_method.rsplit(".", 1)
-                    module = __import__(module_path, fromlist=[class_name])
-                    obj = getattr(module, class_name)
-                    func = getattr(obj, method_name, None)
-                    if func:
-                        while isinstance(func, ObjectProxy) and hasattr(
-                            func, "__wrapped__"
-                        ):
-                            func = func.__wrapped__
-                        setattr(obj, method_name, func)
-                else:
-                    # Just use the normal unwrap for simple cases
-                    unwrap(module_name, attr_name)
-            except Exception:  # pragma: no cover
-                pass
-
-        unwrap_all("langchain_core.callbacks", "BaseCallbackManager.__init__")
+        unwrap("langchain_core.callbacks", "BaseCallbackManager.__init__")
         if not self.disable_trace_context_propagation:
             if is_package_available("langchain_community"):
                 unwrap("langchain_community.llms.openai", "BaseOpenAI._generate")
