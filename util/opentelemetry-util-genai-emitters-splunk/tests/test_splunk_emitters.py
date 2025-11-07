@@ -126,15 +126,15 @@ def test_conversation_event_emission() -> None:
 
 
 def test_evaluation_results_aggregation_and_metrics() -> None:
-    import os
     import importlib
+    import os
     # Enable message content inclusion for this test
     os.environ["SPLUNK_EVALUATION_RESULTS_MESSAGE_CONTENT"] = "true"
     try:
         # Reload module to pick up environment variable
         from opentelemetry.util.genai.emitters import splunk as splunk_module
         importlib.reload(splunk_module)
-        
+
         logger = _CapturingLogger()
         meter = _FakeMeter()
         specs = splunk_module.splunk_emitters()

@@ -4,7 +4,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any, Optional, Tuple
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -16,7 +15,6 @@ if _PACKAGE_SRC.exists():
 from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: E402
     LangchainCallbackHandler,
 )
-from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 from opentelemetry.util.genai.types import Step, ToolCall  # noqa: E402
 
 try:  # pragma: no cover - optional dependency in CI
