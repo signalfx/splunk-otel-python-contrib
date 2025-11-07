@@ -115,6 +115,7 @@ class Manager(CompletionCallback):
         if (
                 not isinstance(invocation, LLMInvocation)
                 and not isinstance(invocation, AgentInvocation)
+                and not isinstance(invocation, Workflow)
         ):
             return
 
