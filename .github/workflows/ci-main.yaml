@@ -27,6 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Enable long paths on Windows
+        if: runner.os == 'Windows'
+        run: |
+          git config --system core.longpaths true
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -44,7 +49,7 @@ jobs:
           pip install -e util/opentelemetry-util-genai-evals --no-deps
           pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
           pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
-          pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-langchain[instruments,test]"
 
       - name: Run tests - opentelemetry-util-genai
         run: |
