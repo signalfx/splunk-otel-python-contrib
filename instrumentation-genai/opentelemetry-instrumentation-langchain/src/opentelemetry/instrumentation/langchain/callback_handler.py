@@ -373,15 +373,11 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         for batch in messages:
             for m in batch:
                 content = getattr(m, "content", "")
-<<<<<<< HEAD
-                input_messages.append(InputMessage(role="user", parts=[Text(content=_safe_str(content))]))
-=======
                 input_messages.append(
                     InputMessage(role="user", parts=[Text(content=_safe_str(content))])
                 )
         
         # Build attributes from metadata and invocation_params
->>>>>>> 6747aab (Fix langchain instrumentation callback handler tests)
         attrs: dict[str, Any] = {}
         langchain_legacy: dict[str, Any] = {}
         
@@ -511,6 +507,23 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
         inv.input_tokens = usage.get("prompt_tokens")
         inv.output_tokens = usage.get("completion_tokens")
+        
+        # Extract response model from response metadata if available
+        if not inv.response_model_name and generations:
+            for generation_list in generations:
+                for generation in generation_list:
+                    if (
+                        hasattr(generation, "message")
+                        and hasattr(generation.message, "response_metadata")
+                        and generation.message.response_metadata
+                    ):
+                        model_name = generation.message.response_metadata.get("model_name")
+                        if model_name:
+                            inv.response_model_name = _safe_str(model_name)
+                            break
+                if inv.response_model_name:
+                    break
+        
         self._handler.stop_llm(inv)
 
     def on_tool_start(
