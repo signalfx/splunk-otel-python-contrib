@@ -222,7 +222,6 @@ def test_default_metrics_covered() -> None:
         "bias",
         "toxicity",
         "answer_relevancy",
-        "faithfulness",
         "hallucination",
         "sentiment",
     }
@@ -259,14 +258,12 @@ def test_evaluator_converts_results(monkeypatch):
     )
 
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_instantiate_metrics",
-        lambda self, specs, test_case: ([object()], []),
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+        lambda specs, test_case, model: ([object()], []),
     )
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_run_deepeval",
-        lambda self, case, metrics: fake_result,
+        "opentelemetry.util.evaluator.deepeval._run_deepeval",
+        lambda case, metrics, debug_log: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
@@ -274,7 +271,7 @@ def test_evaluator_converts_results(monkeypatch):
     result = results[0]
     assert result.metric_name == "bias"
     assert result.score == 0.8
-    assert result.label == "pass"
+    assert result.label == "Not Biased"
     assert result.explanation == "looks good"
     assert result.attributes["deepeval.threshold"] == 0.7
     assert result.attributes["deepeval.success"] is True
@@ -290,7 +287,7 @@ def test_metric_options_coercion(monkeypatch):
 
     captured = {}
 
-    def fake_instantiate(self, specs, test_case):
+    def fake_instantiate(specs, test_case, model):
         captured.update(specs[0].options)
         return [object()], []
 
@@ -315,21 +312,19 @@ def test_metric_options_coercion(monkeypatch):
     )
 
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_instantiate_metrics",
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
         fake_instantiate,
     )
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_run_deepeval",
-        lambda self, case, metrics: fake_result,
+        "opentelemetry.util.evaluator.deepeval._run_deepeval",
+        lambda case, metrics, debug_log: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
     assert captured["threshold"] == 0.9
     assert captured["strict_mode"] is True
     assert captured.get("model", evaluator._default_model()) == "gpt-4o-mini"
-    assert results[0].label == "fail"
+    assert results[0].label == "Biased"
 
 
 def test_evaluator_handles_instantiation_error(monkeypatch):
@@ -338,10 +333,10 @@ def test_evaluator_handles_instantiation_error(monkeypatch):
         ("bias",), invocation_type="LLMInvocation"
     )
 
-    def boom(self, specs, test_case):
+    def boom(specs, test_case, model):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(plugin.DeepevalEvaluator, "_instantiate_metrics", boom)
+    monkeypatch.setattr("opentelemetry.util.evaluator.deepeval._instantiate_metrics", boom)
 
     results = evaluator.evaluate(invocation)
     assert len(results) == 1
@@ -398,7 +393,7 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
 
     captured = {}
 
-    def fake_instantiate(self, specs, test_case):
+    def fake_instantiate(specs, test_case, model):
         captured["retrieval_context"] = getattr(
             test_case, "retrieval_context", None
         )
@@ -425,12 +420,11 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
     )
 
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator, "_instantiate_metrics", fake_instantiate
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics", fake_instantiate
     )
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_run_deepeval",
-        lambda self, case, metrics: fake_result,
+        "opentelemetry.util.evaluator.deepeval._run_deepeval",
+        lambda case, metrics, debug_log: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
