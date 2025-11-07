@@ -98,15 +98,21 @@ def _install_deepeval_stubs():
         def __init__(self, run_async=False):
             self.run_async = run_async
 
+    class CacheConfig:
+        def __init__(self, write_cache=False, use_cache=False):
+            self.write_cache = write_cache
+            self.use_cache = use_cache
+
     class DisplayConfig:
         def __init__(self, show_indicator=False, print_results=False):
             self.show_indicator = show_indicator
             self.print_results = print_results
 
     eval_cfg_mod.AsyncConfig = AsyncConfig
+    eval_cfg_mod.CacheConfig = CacheConfig
     eval_cfg_mod.DisplayConfig = DisplayConfig
 
-    def evaluate(test_cases, metrics, async_config=None, display_config=None):
+    def evaluate(test_cases, metrics, async_config=None, cache_config=None, display_config=None):
         class _Eval:
             test_results = []
 
