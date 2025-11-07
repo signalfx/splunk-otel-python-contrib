@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environments
@@ -12,7 +13,9 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environme
 # from openai import AsyncOpenAI, OpenAI
 try:  # pragma: no cover - optional dependency in CI
     from langchain_openai import ChatOpenAI
-except ModuleNotFoundError:  # pragma: no cover - allow minimal test runs without package
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - allow minimal test runs without package
     ChatOpenAI = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - optional dependency in CI
@@ -20,11 +23,15 @@ try:  # pragma: no cover - optional dependency in CI
     from opentelemetry.instrumentation.langchain.utils import (
         set_prompt_capture_enabled,
     )
-except ModuleNotFoundError:  # pragma: no cover - allow subset of tests without full instrumentation
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - allow subset of tests without full instrumentation
     LangChainInstrumentor = None  # type: ignore[assignment]
 
     def set_prompt_capture_enabled(_value: bool) -> None:  # type: ignore[override]
         return None
+
+
 from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import (
@@ -95,9 +102,7 @@ def fixture_meter_provider(metric_reader):
 @pytest.fixture(autouse=True)
 def environment():
     original_api_key = os.environ.get("OPENAI_API_KEY")
-    original_evals = os.environ.get(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
-    )
+    original_evals = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS")
     original_emitters = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EMITTERS")
 
     if not original_api_key:
@@ -116,9 +121,7 @@ def environment():
     if original_evals is None:
         os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
     else:
-        os.environ[
-            "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
-        ] = original_evals
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = original_evals
 
     if original_emitters is None:
         os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EMITTERS", None)
@@ -160,9 +163,7 @@ def vcr_cassette_dir():
 
 
 @pytest.fixture(scope="function")
-def instrument_no_content(
-    tracer_provider, event_logger_provider, meter_provider
-):
+def instrument_no_content(tracer_provider, event_logger_provider, meter_provider):
     if LangChainInstrumentor is None:  # pragma: no cover - skip when dependency missing
         pytest.skip("opentelemetry-instrumentation-langchain not available")
     set_prompt_capture_enabled(False)
@@ -180,9 +181,7 @@ def instrument_no_content(
 
 
 @pytest.fixture(scope="function")
-def instrument_with_content(
-    tracer_provider, event_logger_provider, meter_provider
-):
+def instrument_with_content(tracer_provider, event_logger_provider, meter_provider):
     if LangChainInstrumentor is None:  # pragma: no cover
         pytest.skip("opentelemetry-instrumentation-langchain not available")
     set_prompt_capture_enabled(True)
@@ -340,9 +339,7 @@ class PrettyPrintJSONBody:
         cassette_dict = convert_body_to_literal(cassette_dict)
         if yaml is None:
             return json.dumps(cassette_dict)
-        return yaml.dump(
-            cassette_dict, default_flow_style=False, allow_unicode=True
-        )
+        return yaml.dump(cassette_dict, default_flow_style=False, allow_unicode=True)
 
     @staticmethod
     def deserialize(cassette_string):
