@@ -39,6 +39,8 @@ class _StubTelemetryHandler:
         self.started_steps = []
         self.stopped_steps = []
         self.failed_steps = []
+        self.started_workflows = []
+        self.stopped_workflows = []
         self.entities: dict[str, Any] = {}
 
     def start_agent(self, agent):
@@ -99,18 +101,38 @@ class _StubTelemetryHandler:
         self.entities.pop(str(step.run_id), None)
         return step
 
+    def start_workflow(self, workflow):
+        self.started_workflows.append(workflow)
+        self.entities[str(workflow.run_id)] = workflow
+        return workflow
+
+    def stop_workflow(self, workflow):
+        self.stopped_workflows.append(workflow)
+        self.entities.pop(str(workflow.run_id), None)
+        return workflow
+
+    def fail_workflow(self, workflow, error):
+        self.entities.pop(str(workflow.run_id), None)
+        return workflow
+
+    def fail_by_run_id(self, run_id, error):
+        # Simplified implementation for stub - just call fail_agent
+        entity = self.entities.get(str(run_id))
+        if entity is None:
+            return
+        # For simplicity, assume it's an agent
+        self.fail_agent(entity, error)
+
     def get_entity(self, run_id):
         return self.entities.get(str(run_id))
 
 
 @pytest.fixture(name="handler_with_stub")
-def _handler_with_stub_fixture() -> Tuple[LangchainCallbackHandler, _StubTelemetryHandler]:
-    tracer = TracerProvider().get_tracer(__name__)
-    histogram = MagicMock()
-    histogram.record = MagicMock()
-    handler = LangchainCallbackHandler(tracer, histogram, histogram)
+def _handler_with_stub_fixture() -> (
+    Tuple[LangchainCallbackHandler, _StubTelemetryHandler]
+):
     stub = _StubTelemetryHandler()
-    handler._handler = stub  # type: ignore[attr-defined]
+    handler = LangchainCallbackHandler(telemetry_handler=stub)
     return handler, stub
 
 
@@ -323,12 +345,8 @@ def test_step_outputs_recorded_on_chain_end(handler_with_stub):
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 def test_llm_attributes_independent_of_emitters(monkeypatch):
     def _build_handler() -> Tuple[LangchainCallbackHandler, _StubTelemetryHandler]:
-        tracer = TracerProvider().get_tracer(__name__)
-        histogram = MagicMock()
-        histogram.record = MagicMock()
-        handler = LangchainCallbackHandler(tracer, histogram, histogram)
         stub_handler = _StubTelemetryHandler()
-        handler._telemetry_handler = stub_handler  # type: ignore[attr-defined]
+        handler = LangchainCallbackHandler(telemetry_handler=stub_handler)
         return handler, stub_handler
 
     def _invoke_with_env(env_value: Optional[str]):

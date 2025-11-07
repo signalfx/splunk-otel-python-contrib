@@ -135,7 +135,7 @@ def chatOpenAI_client():
     return ChatOpenAI()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def vcr_config():
     return {
         "filter_headers": [
@@ -146,7 +146,17 @@ def vcr_config():
         ],
         "decode_compressed_response": True,
         "before_record_response": scrub_response_headers,
+        "serializer": "yaml",
     }
+
+
+@pytest.fixture(scope="session")
+def vcr_cassette_dir():
+    """Override the default cassette directory to avoid nested subdirectories."""
+    import os
+    
+    # Return the cassettes directory path
+    return os.path.join(os.path.dirname(__file__), "cassettes")
 
 
 @pytest.fixture(scope="function")
@@ -308,6 +318,11 @@ class PrettyPrintJSONBody:
 
 try:  # pragma: no cover - optional pytest-vcr dependency
     import pytest_recording  # type: ignore # noqa: F401
+    import vcr as vcr_module  # type: ignore # noqa: F401
+    
+    # Register custom YAML serializer globally
+    vcr_module.VCR().register_serializer("yaml", PrettyPrintJSONBody)
+    
 except ModuleNotFoundError:  # pragma: no cover - provide stub when plugin missing
 
     @pytest.fixture(name="vcr", scope="module")
@@ -319,9 +334,10 @@ except ModuleNotFoundError:  # pragma: no cover - provide stub when plugin missi
         return _VCRStub()
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 def fixture_vcr(vcr):
-    vcr.register_serializer("yaml", PrettyPrintJSONBody)
+    # When pytest-recording is installed, vcr is a Cassette and we don't need to do anything
+    # The serializer is already registered on the VCR module above
     return vcr
 
 
