@@ -16,12 +16,6 @@ def run_evaluation(
     metrics: Sequence[Any],
     debug_log: Callable[..., None] | None = None,
 ) -> Any:
-    # Check if deepeval module is actually available (not patched to None in tests)
-    import sys
-
-    if sys.modules.get("deepeval") is None:
-        raise ImportError("deepeval module is not available")
-
     display_config = DisplayConfig(show_indicator=False, print_results=False)
     async_config = AsyncConfig(run_async=False)
     stdout_buffer = io.StringIO()
