@@ -14,6 +14,7 @@
 
 """Traceloop span processor and transformation utilities."""
 
+from .filtering_span_processor import FilteringSpanProcessor
 from .traceloop_span_processor import TraceloopSpanProcessor
 
-__all__ = ["TraceloopSpanProcessor"]
+__all__ = ["TraceloopSpanProcessor", "FilteringSpanProcessor"]
