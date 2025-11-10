@@ -213,7 +213,7 @@ deploy-util-genai:
     - cd util/opentelemetry-util-genai
     - mkdir -p dist
     - cp ../../dist/util-genai/* dist/
-    - hatch --no-interactive publish -vv
+    - hatch --no-interactive publish
   needs:
     - sign-util-genai
   rules:
@@ -226,7 +226,7 @@ deploy-util-genai-evals:
     - cd util/opentelemetry-util-genai-evals
     - mkdir -p dist
     - cp ../../dist/util-genai-evals/* dist/
-    - hatch --no-interactive publish -vv
+    - hatch --no-interactive publish
   needs:
     - sign-util-genai-evals
   rules:
@@ -239,7 +239,7 @@ deploy-genai-emitters-splunk:
     - cd util/opentelemetry-util-genai-emitters-splunk
     - mkdir -p dist
     - cp ../../dist/genai-emitters-splunk/* dist/
-    - hatch --no-interactive publish -vv
+    - hatch --no-interactive publish
   needs:
     - sign-genai-emitters-splunk
   rules:
@@ -252,7 +252,7 @@ deploy-genai-evals-deepeval:
     - cd util/opentelemetry-util-genai-evals-deepeval
     - mkdir -p dist
     - cp ../../dist/genai-evals-deepeval/* dist/
-    - hatch --no-interactive publish -vv
+    - hatch --no-interactive publish
   needs:
     - sign-genai-evals-deepeval
   rules:
@@ -265,7 +265,7 @@ deploy-instrumentation-langchain:
     - cd instrumentation-genai/opentelemetry-instrumentation-langchain
     - mkdir -p dist
     - cp ../../dist/instrumentation-langchain/* dist/
-    - hatch --no-interactive publish -vv
+    - hatch --no-interactive publish
   needs:
     - sign-instrumentation-langchain
   rules:
@@ -278,7 +278,7 @@ deploy-genai-translator-traceloop:
     - cd util/opentelemetry-util-genai-traceloop-translator
     - mkdir -p dist
     - cp ../../dist/genai-translator-traceloop/* dist/
-    - hatch --no-interactive publish -vv
+    - hatch --no-interactive publish
   needs:
     - sign-genai-translator-traceloop
   rules:
