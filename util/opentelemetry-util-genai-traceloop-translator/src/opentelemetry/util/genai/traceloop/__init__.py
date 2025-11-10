@@ -43,11 +43,17 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "traceloop.association.properties": "gen_ai.association.properties",
         "traceloop.entity.version": "gen_ai.workflow.version",
         "traceloop.span.kind": "gen_ai.span.kind",
+        "llm.request.type": "gen_ai.operation.name",
+        "gen_ai.completion.0.content": "gen_ai.output.message",
+        "gen_ai.prompt.0.content": "gen_ai.input.message"
     }
 }
 
 # Default span name transformation mappings
 _DEFAULT_NAME_TRANSFORMATIONS = {"chat *": "genai.chat"}
+
+# Global flag to track if processor has been registered (prevents multiple instances)
+_PROCESSOR_REGISTERED = False
 
 
 def enable_traceloop_translator(
@@ -72,6 +78,14 @@ def enable_traceloop_translator(
     Returns:
         True if the processor was registered, False if already registered or disabled.
     """
+    # CRITICAL: Check global flag first to prevent multiple processor instances
+    global _PROCESSOR_REGISTERED
+    if _PROCESSOR_REGISTERED:
+        _LOGGER.debug(
+            "TraceloopSpanProcessor already registered (global flag); skipping duplicate"
+        )
+        return False
+    
     # Import here to avoid circular imports
     from ..processor.traceloop_span_processor import TraceloopSpanProcessor
 
@@ -106,6 +120,7 @@ def enable_traceloop_translator(
             mutate_original_span=mutate_original_span,
         )
         provider.add_span_processor(processor)
+        _PROCESSOR_REGISTERED = True  # Set global flag to prevent duplicates
         _LOGGER.info(
             "TraceloopSpanProcessor registered automatically "
             "(disable with %s=true)",
@@ -184,12 +199,21 @@ def _install_deferred_registration() -> None:
                         break
 
                 if not already_registered:
+                    # Double-check global flag before registering
+                    global _PROCESSOR_REGISTERED
+                    if _PROCESSOR_REGISTERED:
+                        _LOGGER.debug(
+                            "TraceloopSpanProcessor already registered (global flag); skipping deferred registration"
+                        )
+                        return result
+                    
                     processor = TraceloopSpanProcessor(
                         attribute_transformations=_DEFAULT_ATTR_TRANSFORMATIONS,
                         name_transformations=_DEFAULT_NAME_TRANSFORMATIONS,
                         mutate_original_span=True,
                     )
                     tracer_provider.add_span_processor(processor)
+                    _PROCESSOR_REGISTERED = True  # Set global flag
                     _LOGGER.info(
                         "TraceloopSpanProcessor registered (deferred) after TracerProvider setup"
                     )

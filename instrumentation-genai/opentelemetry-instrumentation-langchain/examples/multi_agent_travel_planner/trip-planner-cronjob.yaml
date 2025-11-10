@@ -1,17 +1,19 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: travel-planner-tl
+  name: trip-planner-tl
   namespace: o11y-4-ai-admehra
   labels:
-    app: travel-planner-tl
+    app: trip-planner-tl
     component: telemetry
   annotations:
-    description: "Multi-agent travel planner with Traceloop translator and GenAI evaluations (Deepeval telemetry disabled)"
-    git-commit: "30c512d"
+    description: "Multi-agent trip planner with Traceloop translator and GenAI evaluations (Deepeval telemetry disabled)"
+    git-commit: "20251107-164153"
 spec:
-  # Run every 30 minutes from 8 AM to 5 PM PST on weekdays (Monday-Friday)
-  schedule: "*/30 8-17 * * 1-5"
+  # Run every 10 minutes from Nov 7 (Fri) through Nov 10 (Mon) 10 AM PST
+  # Covers: Fri Nov 7 (now) through Mon Nov 10 morning
+  # NOTE: Manually suspend on Monday Nov 10 at 10 AM PST
+  schedule: "*/10 * 7-10 11 *"
   timeZone: "America/Los_Angeles"
   suspend: false
   
@@ -22,21 +24,21 @@ spec:
   jobTemplate:
     metadata:
       labels:
-        app: travel-planner-tl
+        app: trip-planner-tl
         component: telemetry
     spec:
       template:
         metadata:
           labels:
-            app: travel-planner-tl
+            app: trip-planner-tl
             component: telemetry
         spec:
           restartPolicy: OnFailure
           
           containers:
-            - name: travel-planner-traceloop
+            - name: trip-planner-traceloop
               # Multi-platform image (amd64, arm64) with git commit hash tag
-              image: admehra621/travel-planner-tl:30c512d
+              image: admehra621/trip-planner-tl:20251107-164153
               imagePullPolicy: Always
               
               env:
@@ -46,11 +48,11 @@ spec:
                 
                 # === OpenTelemetry Resource Attributes ===
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=30c512d"
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=20251107-164153"
                 
                 # === Service name for telemetry ===
                 - name: OTEL_SERVICE_NAME
-                  value: "travel-planner-tl"
+                  value: "trip-planner-tl"
                 
                 # === OpenAI Configuration ===
                 - name: OPENAI_API_KEY
