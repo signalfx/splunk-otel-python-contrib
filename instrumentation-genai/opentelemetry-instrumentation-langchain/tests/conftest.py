@@ -138,7 +138,7 @@ def chatOpenAI_client():
     return ChatOpenAI()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def vcr_config():
     return {
         "filter_headers": [
@@ -149,7 +149,17 @@ def vcr_config():
         ],
         "decode_compressed_response": True,
         "before_record_response": scrub_response_headers,
+        "serializer": "yaml",
     }
+
+
+@pytest.fixture(scope="session")
+def vcr_cassette_dir():
+    """Override the default cassette directory to avoid nested subdirectories."""
+    import os
+
+    # Return the cassettes directory path
+    return os.path.join(os.path.dirname(__file__), "cassettes")
 
 
 @pytest.fixture(scope="function")
@@ -175,7 +185,20 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
     if LangChainInstrumentor is None:  # pragma: no cover
         pytest.skip("opentelemetry-instrumentation-langchain not available")
     set_prompt_capture_enabled(True)
+
+    # Reset util-genai singleton handler to ensure clean state
+    import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+
+    # Create new instrumentor for each test
     instrumentor = LangChainInstrumentor()
+
+    # If already instrumented (from previous test), uninstrument first
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
     instrumentor.instrument(
         tracer_provider=tracer_provider,
         event_logger_provider=event_logger_provider,
@@ -183,8 +206,14 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
     )
 
     yield instrumentor
+
     set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+    # Clean up: uninstrument and reset singleton
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.fixture(scope="function")
@@ -222,21 +251,37 @@ def instrument_with_content_util(
             OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_ONLY",  # util-genai content gate
         }
     )
+
     # Reset singleton so new env vars are applied
     import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
 
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+
+    # Create new instrumentor for each test
     instrumentor = LangChainInstrumentor()
+
+    # If already instrumented (from previous test), uninstrument first
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
     instrumentor.instrument(
         tracer_provider=tracer_provider,
         event_logger_provider=event_logger_provider,
         meter_provider=meter_provider,
     )
+
     yield instrumentor
+
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
     set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+
+    # Clean up: uninstrument and reset singleton
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 class LiteralBlockScalar(str):
@@ -305,6 +350,11 @@ class PrettyPrintJSONBody:
 
 try:  # pragma: no cover - optional pytest-vcr dependency
     import pytest_recording  # type: ignore # noqa: F401
+    import vcr as vcr_module  # type: ignore # noqa: F401
+
+    # Register custom YAML serializer globally
+    vcr_module.VCR().register_serializer("yaml", PrettyPrintJSONBody)
+
 except ModuleNotFoundError:  # pragma: no cover - provide stub when plugin missing
 
     @pytest.fixture(name="vcr", scope="module")
@@ -316,9 +366,10 @@ except ModuleNotFoundError:  # pragma: no cover - provide stub when plugin missi
         return _VCRStub()
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 def fixture_vcr(vcr):
-    vcr.register_serializer("yaml", PrettyPrintJSONBody)
+    # When pytest-recording is installed, vcr is a Cassette and we don't need to do anything
+    # The serializer is already registered on the VCR module above
     return vcr
 
 
