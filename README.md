@@ -2,7 +2,7 @@
 
 This software is for Alpha preview only. This code may be discontinued, include breaking changes and may require code changes to use it.
 
-## 1. Goals (Why this utility exists)
+## 1. Why this utility exists
 
 Provide a stable, extensible core abstraction (GenAI Types + TelemetryHandler + CompositeEmitter + Evaluator hooks) separating *instrumentation capture* from *telemetry flavor emission* so that:
 
@@ -274,15 +274,19 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="Deepeval(LLMInvocation(bias,
 export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
 ```
 
-Sudo-code to add manual instrumentation to your app:
+Sudo-code to create LLMInvocation for your in-code llm code
 
 ```python
 from opentelemetry.util.genai.handler import get_telemetry_handler
 from opentelemetry.util.genai.types import LLMInvocation, InputMessage, OutputMessage, Text
 
 handler = get_telemetry_handler()
-inv = LLMInvocation(request_model="gpt-4", input_messages=[InputMessage(role="user", parts=[Text("Hello")])], provider="openai")
+user_input = "Hello"
+inv = LLMInvocation(request_model="gpt-4", input_messages=[InputMessage(role="user", parts=[Text(user_input))])], provider="openai")
 handler.start_llm(inv)
+# your code which actuall invokes llm here
+# response = client.chat.completions.create(...)
+# ....
 inv.output_messages = [OutputMessage(role="assistant", parts=[Text("Hi!")], finish_reason="stop")]
 handler.stop_llm(inv)
 ```

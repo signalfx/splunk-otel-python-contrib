@@ -2,28 +2,27 @@ OpenTelemetry LangChain Instrumentation (Alpha)
 ===============================================
 
 This package provides OpenTelemetry instrumentation for LangChain LLM/chat
-workflows. It now relies solely on ``opentelemetry-util-genai`` (the earlier
-``opentelemetry-genai-sdk`` toggle and related environment switch have been removed).
+workflows. It leverages Splunk distribution of ``opentelemetry-util-genai`` 
+for producing telemetry in semantic convention. `Core concepts, high-level 
+usage and configuration  <https://github.com/signalfx/splunk-otel-python-contrib/>`_ 
 
 Status: Alpha (APIs and produced telemetry are subject to change).
 
-Features
---------
-* Automatic spans for LangChain ChatOpenAI (and compatible) invocations.
-* Metrics for LLM latency and token usage (when available from the provider).
-* (Optional) message content capture (disabled by default) for spans and logs.
-* Tool (function) definitions recorded as request attributes.
-
 Installation
 ------------
-Install from source (monorepo layout example)::
+Install from source:
 
-    pip install -e opentelemetry-instrumentation-langchain-alpha/
+    pip install -e splunk-otel-instrumentation-langchain
 
 This will pull in required OpenTelemetry core + ``opentelemetry-util-genai``.
 
+
+
 Quick Start
 -----------
+
+Manual Instrumentation (development/debugging)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: python
 
@@ -31,7 +30,7 @@ Quick Start
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    # (Optionally) configure providers/exporters before instrumentation
+    # manual instrumentation, easy to debug in your IDE
     LangChainInstrumentor().instrument()
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
@@ -42,41 +41,29 @@ Quick Start
     response = llm.invoke(messages)
     print(response.content)
 
-Environment Variables
----------------------
+Zero-code instrumentation
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Message content (prompt + completion) is NOT collected unless explicitly enabled:
+in zero-code instrumentation mode, ensure you install opentelemetry-distribution and run you 
+app with the OpenTelemetry LangChain Instrumentor enabled::
 
-``OTEL_INSTRUMENTATION_LANGCHAIN_CAPTURE_MESSAGE_CONTENT``
-  Set to ``true`` (case-insensitive) to record message text in spans/logs.
+.. code:: bash
 
-For finer-grained content handling controlled by util-genai you may also use:
+    opentelemetry-instrument python your_langchain_app.py
 
-``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT``
-  (See ``opentelemetry-util-genai`` docs) Values like ``SPAN_ONLY`` etc.
+.. code:: python
 
-Removed / Deprecated
---------------------
-* The legacy ``opentelemetry-genai-sdk`` integration and the environment flag
-  ``OTEL_INSTRUMENTATION_LANGCHAIN_USE_UTIL_GENAI`` were removed. The util-genai
-  handler is now always used.
-* Legacy evaluation framework imports (``get_telemetry_client``, ``TelemetryClient``,
-  ``get_evaluator``) are no longer re-exported here.
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage, SystemMessage
 
-Telemetry Semantics
--------------------
-Spans use incubating GenAI semantic attributes (subject to change) including:
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content="What is the capital of France?"),
+    ]
+    response = llm.invoke(messages)
+    print(response.content)
 
-* ``gen_ai.operation.name`` (e.g. ``chat``)
-* ``gen_ai.request.model`` / ``gen_ai.response.model``
-* ``gen_ai.usage.input_tokens`` / ``gen_ai.usage.output_tokens`` (if provided)
-* ``gen_ai.response.id``
-* Tool/function definitions under ``gen_ai.request.function.{i}.*``
-
-Metrics (if a MeterProvider is configured) include:
-
-* LLM duration (histogram/sum depending on pipeline)
-* Token usage counters (input / output)
 
 Testing
 -------
@@ -88,7 +75,7 @@ Run the package tests (from repository root or this directory)::
 
 Contributing
 ------------
-Issues / PRs welcome in the main opentelemetry-python-contrib repository. This
+Issues / PRs welcome in the main otel-splunk-python-contrib repository. This
 module is alpha: feedback on attribute coverage, performance, and LangChain
 surface expansion is especially helpful.
 
