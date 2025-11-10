@@ -213,7 +213,7 @@ deploy-util-genai:
     - cd util/opentelemetry-util-genai
     - mkdir -p dist
     - cp ../../dist/util-genai/* dist/
-    - hatch --no-interactive publish
+    - hatch --no-interactive publish -vv
   needs:
     - sign-util-genai
   rules:
