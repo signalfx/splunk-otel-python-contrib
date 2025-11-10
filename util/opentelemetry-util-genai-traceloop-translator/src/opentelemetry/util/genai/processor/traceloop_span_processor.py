@@ -1295,6 +1295,18 @@ class TraceloopSpanProcessor(SpanProcessor):
             )
             return None
         
+        # Check if output messages have empty parts
+        # Example: [OutputMessage(role='assistant', parts=[], finish_reason='stop')]
+        if output_messages and all(not msg.parts for msg in output_messages):
+            _logger.warning(
+                "[TL_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
+                "span=%s, span_id=%s, output_messages=%s",
+                existing_span.name,
+                span_id,
+                output_messages
+            )
+            return None
+        
         invocation = LLMInvocation(
             request_model=str(request_model),
             attributes=base_attrs,
