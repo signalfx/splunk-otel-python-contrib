@@ -190,17 +190,15 @@ Trace ID: f1d34b2cb227acbc19e5da0a3220f918
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import random
 import sys
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
 from pprint import pprint
 
-from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from langchain_core.messages import (
     AIMessage,
@@ -220,7 +218,7 @@ from langchain_core.messages import convert_to_messages
 
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
+from opentelemetry.trace import SpanKind
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
@@ -529,7 +527,7 @@ def pretty_print_message(message, indent=False):
         
         indented = "\n".join("\t" + c for c in pretty_message.split("\n"))
         print(indented, file=sys.stderr, flush=True)
-    except Exception as e:
+    except Exception:
         # Fallback if pretty_repr fails
         print(f"Message: {message}", file=sys.stderr, flush=True)
 
@@ -985,7 +983,7 @@ def plan():
             poison_config=poison_config,
         )
         
-        print(f"[SERVER] Travel plan completed successfully", file=sys.stderr, flush=True)
+        print("[SERVER] Travel plan completed successfully", file=sys.stderr, flush=True)
         print("\n" + "="*80, file=sys.stderr)
         print("TRAVEL PLAN RESULT:", file=sys.stderr)
         pprint(result, stream=sys.stderr)

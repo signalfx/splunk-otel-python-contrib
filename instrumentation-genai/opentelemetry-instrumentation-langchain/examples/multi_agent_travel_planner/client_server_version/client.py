@@ -98,7 +98,7 @@ def run_client(
     poison_config = None
     if use_poison:
         poison_config = generate_random_poison_config()
-        print(f"\n💉 Poison Configuration:")
+        print("\n💉 Poison Configuration:")
         print(f"  Probability: {poison_config['prob']}")
         print(f"  Types: {', '.join(poison_config['types'])}")
         print(f"  Max snippets: {poison_config['max']}")
@@ -106,13 +106,13 @@ def run_client(
     
     # Generate user request
     user_request = generate_travel_request(origin, destination)
-    print(f"\n✉️  User Request:")
+    print("\n✉️  User Request:")
     print(f"  {user_request}")
     
     # Get server URL from environment or default to localhost
     server_url = os.getenv("SERVER_URL", "http://localhost:8080")
     
-    print(f"\n🔌 Connecting to Flask server...")
+    print("\n🔌 Connecting to Flask server...")
     print(f"  URL: {server_url}")
     
     # Prepare request data
@@ -149,31 +149,31 @@ def run_client(
         print(f"👥 Travellers: {result['travellers']}")
         
         if result.get('poison_events'):
-            print(f"\n💉 Poison Events Triggered:")
+            print("\n💉 Poison Events Triggered:")
             for event in result['poison_events']:
                 print(f"  - {event}")
         
-        print(f"\n✈️  Flight Summary:")
+        print("\n✈️  Flight Summary:")
         print(f"  {result['flight_summary']}")
         
-        print(f"\n🏨 Hotel Summary:")
+        print("\n🏨 Hotel Summary:")
         print(f"  {result['hotel_summary']}")
         
-        print(f"\n🎭 Activities Summary:")
+        print("\n🎭 Activities Summary:")
         print(f"  {result['activities_summary']}")
         
-        print(f"\n🎉 Final Itinerary:")
+        print("\n🎉 Final Itinerary:")
         print("─" * 60)
         print(result['final_itinerary'])
         print("─" * 60)
         
         if result.get('agent_steps'):
-            print(f"\n🤖 Agent Steps:")
+            print("\n🤖 Agent Steps:")
             for step in result['agent_steps']:
                 print(f"  - {step['agent']}: {step['status']}")
     
     except requests.exceptions.Timeout:
-        print(f"\n❌ Error: Request timed out after 5 minutes")
+        print("\n❌ Error: Request timed out after 5 minutes")
         sys.exit(1)
     except requests.exceptions.RequestException as e:
         print(f"\n❌ Error: Failed to connect to server: {e}")
@@ -184,7 +184,7 @@ def run_client(
         sys.exit(1)
     except KeyError as e:
         print(f"\n❌ Error: Missing key in response: {e}")
-        print(f"Response:")
+        print("Response:")
         pprint(result)
         sys.exit(1)
 
