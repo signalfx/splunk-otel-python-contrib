@@ -731,8 +731,14 @@ class TraceloopSpanProcessor(SpanProcessor):
         _logger = logging.getLogger(__name__)
         
         # Extract Traceloop serialized data
-        original_input_data = original_attrs.get("traceloop.entity.input")
-        original_output_data = original_attrs.get("traceloop.entity.output")
+        original_input_data = (
+            original_attrs.get("traceloop.entity.input") or
+            mutated_attrs.get("gen_ai.input.messages")
+        )
+        original_output_data = (
+            original_attrs.get("traceloop.entity.output") or
+            mutated_attrs.get("gen_ai.output.messages")
+        )
         
         if not original_input_data and not original_output_data:
             return None  # Nothing to reconstruct
@@ -1033,7 +1039,24 @@ class TraceloopSpanProcessor(SpanProcessor):
                 # Extract content and convert to parts
                 content = getattr(lc_msg, "content", "")
                 
-                # CRITICAL: Ensure content is a string, not a dict or other object
+                # CRITICAL 1: Check if content is a JSON string with LangChain serialization format
+                # Basically only use the "content" of the incoming traceloop entity input/output
+                if isinstance(content, str) and content.startswith("{") and '"lc"' in content:
+                    try:
+                        parsed = json.loads(content)
+                        # LangChain serialization format: {"lc": 1, "kwargs": {"content": "..."}}
+                        if isinstance(parsed, dict) and "kwargs" in parsed and "content" in parsed["kwargs"]:
+                            content = parsed["kwargs"]["content"]
+                            logging.getLogger(__name__).debug(
+                                "[TL_PROCESSOR] Extracted content from LangChain serialization format"
+                            )
+                    except (json.JSONDecodeError, KeyError, TypeError) as e:
+                        logging.getLogger(__name__).warning(
+                            "[TL_PROCESSOR] Failed to parse LangChain serialization: %s",
+                            str(e)
+                        )
+                
+                # CRITICAL 2: Ensure content is a string, not a dict or other object
                 if isinstance(content, dict):
                     # If content is a dict, it might be already structured
                     # Try to extract the actual text from it
