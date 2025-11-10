@@ -247,7 +247,7 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 - Async emitters & dynamic hot-reload (deferred).
 - Backpressure strategies for high-volume content events.
 
-## 14. How to use (end-to-end)
+## 14. Development setup
 Get the packages installed:
 
 Setup a virtual env (Note: will erase your .venv in the current folder)
