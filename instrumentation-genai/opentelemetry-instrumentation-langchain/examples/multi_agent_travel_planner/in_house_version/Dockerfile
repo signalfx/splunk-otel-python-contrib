@@ -31,7 +31,7 @@ COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/mult
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/main.py .
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/in_house_version/main_in_house.py main.py
 # Note: .env.example is optional, only copy if needed
 # COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/.env.example .env.example
 
