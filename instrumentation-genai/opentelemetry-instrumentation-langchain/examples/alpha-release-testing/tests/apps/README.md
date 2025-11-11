@@ -89,12 +89,48 @@ export TRAVEL_POISON_MAX=2
 export TRAVEL_POISON_SEED=42
 ```
 
+**Instrumentation Modes**:
+
+This app supports **BOTH zero-code and manual instrumentation** to meet customer documentation requirements (TC-1.1, TC-2.2, TC-2.3):
+
+**🔵 Zero-Code Mode (Recommended for Production)**
+```bash
+opentelemetry-instrument python langgraph_travel_planner_app.py
+```
+**When to use**:
+- ✅ Production deployments
+- ✅ CI/CD pipelines  
+- ✅ No code changes allowed
+- ✅ Standard observability
+
+**Pros**: No code changes, automatic patching, easier deployment  
+**Cons**: Breaks IDE debuggers, less customization
+
+**🟢 Manual Mode (Development/Debug)**
+```bash
+python langgraph_travel_planner_app.py
+```
+**When to use**:
+- ✅ Development/debugging
+- ✅ IDE breakpoints needed
+- ✅ Custom instrumentation
+- ✅ Advanced use cases
+
+**Pros**: Full control, IDE debugging, custom spans  
+**Cons**: Requires code changes, more maintenance
+
+**Note**: Both modes generate identical telemetry. The app has manual instrumentation hardcoded, so zero-code mode adds a second layer (which is fine for testing comparison).
+
 **Usage**:
 ```bash
-# Basic run
+# Zero-code mode (recommended)
+opentelemetry-instrument python langgraph_travel_planner_app.py
+
+# Manual mode
 python langgraph_travel_planner_app.py
 
-# With poisoning
+# With poisoning (both modes)
+TRAVEL_POISON_PROB=0.75 TRAVEL_POISON_SEED=42 opentelemetry-instrument python langgraph_travel_planner_app.py
 TRAVEL_POISON_PROB=0.75 TRAVEL_POISON_SEED=42 python langgraph_travel_planner_app.py
 
 # Specific poison types
@@ -241,6 +277,128 @@ python traceloop_travel_planner_app.py
 
 # Direct Azure OpenAI
 python direct_azure_openai_app.py
+```
+
+---
+
+## 🐳 Docker Deployment
+
+### Build Image
+```bash
+cd alpha-release-testing
+docker build -t alpha-test-apps:latest .
+```
+
+### Run Individual Apps
+
+#### LangChain Evaluation (Zero-Code)
+```bash
+docker run --rm \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4317 \
+  alpha-test-apps:latest \
+  opentelemetry-instrument python tests/apps/langchain_evaluation_app.py
+```
+
+#### LangGraph Travel Planner (Zero-Code)
+```bash
+docker run --rm \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4317 \
+  -e TRAVEL_POISON_PROB=0.75 \
+  alpha-test-apps:latest \
+  opentelemetry-instrument python tests/apps/langgraph_travel_planner_app.py
+```
+
+#### LangGraph Travel Planner (Manual)
+```bash
+docker run --rm \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4317 \
+  alpha-test-apps:latest \
+  python tests/apps/langgraph_travel_planner_app.py
+```
+
+#### Traceloop Travel Planner
+```bash
+docker run --rm \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4317 \
+  -e DEEPEVAL_TELEMETRY_OPT_OUT=YES \
+  alpha-test-apps:latest \
+  python tests/apps/traceloop_travel_planner_app.py
+```
+
+### Kubernetes CronJob Example
+
+Create `k8s-alpha-test.yaml`:
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: alpha-test-langgraph-zerocode
+spec:
+  schedule: "*/30 * * * *"  # Every 30 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: test-runner
+            image: alpha-test-apps:latest
+            command: ["opentelemetry-instrument"]
+            args: ["python", "tests/apps/langgraph_travel_planner_app.py"]
+            env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=alpha-test,flavor=zerocode"
+            - name: OTEL_SERVICE_NAME
+              value: "alpha-test-langgraph"
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: alpha-test-langgraph-manual
+spec:
+  schedule: "*/30 * * * *"  # Every 30 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: test-runner
+            image: alpha-test-apps:latest
+            args: ["python", "tests/apps/langgraph_travel_planner_app.py"]
+            env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=alpha-test,flavor=manual"
+            - name: OTEL_SERVICE_NAME
+              value: "alpha-test-langgraph"
+          restartPolicy: OnFailure
+```
+
+Deploy:
+```bash
+kubectl apply -f k8s-alpha-test.yaml
+
+# Check status
+kubectl get cronjobs
+kubectl get jobs
+kubectl logs -l job-name=alpha-test-langgraph-zerocode-xxxxx
 ```
 
 ---
@@ -430,6 +588,119 @@ DEEPEVAL_TELEMETRY_OPT_OUT=YES
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 OTEL_SERVICE_NAME=traceloop-travel-planner-test
 ```
+
+---
+
+## 🔧 Complete Environment Variables Reference
+
+### Required Variables
+| Variable | Purpose | Example | Notes |
+|----------|---------|---------|-------|
+| `OPENAI_API_KEY` | OpenAI authentication | `sk-proj-...` | Required for all apps |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector endpoint | `http://localhost:4317` | gRPC protocol |
+| `OTEL_SERVICE_NAME` | Service identifier | `alpha-release-test` | Appears in APM |
+
+### Optional Core Configuration
+| Variable | Purpose | Default | Apps |
+|----------|---------|---------|------|
+| `OPENAI_MODEL_NAME` | Model selection | `gpt-4o-mini` | All |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Capture prompts/responses | `true` | All |
+| `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Emitter types | `span_metric_event,splunk` | All |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | Content capture mode | `SPAN_AND_EVENT` | All |
+| `OTEL_RESOURCE_ATTRIBUTES` | Resource attributes | `deployment.environment=alpha` | All |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | Metrics temporality | `DELTA` | All |
+
+### LangGraph Poisoning (Optional)
+| Variable | Purpose | Default | Range/Values |
+|----------|---------|---------|-------------|
+| `TRAVEL_POISON_PROB` | Poisoning probability | `0.8` | `0.0-1.0` |
+| `TRAVEL_POISON_TYPES` | Poison types to inject | `hallucination,bias,irrelevance,negative_sentiment,toxicity` | CSV list |
+| `TRAVEL_POISON_MAX` | Max snippets per step | `2` | `1-5` |
+| `TRAVEL_POISON_SEED` | Deterministic seed | (random) | Any integer |
+
+### Traceloop Specific
+| Variable | Purpose | Default | Notes |
+|----------|---------|---------|-------|
+| `DEEPEVAL_TELEMETRY_OPT_OUT` | Disable DeepEval telemetry | `NO` | Set to `YES` for Traceloop |
+| `TRACELOOP_BASE_URL` | Traceloop API endpoint | - | Optional |
+
+### Evaluation Configuration (Optional)
+| Variable | Purpose | Default | Notes |
+|----------|---------|---------|-------|
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` | Evaluators to use | `(Bias,Toxicity,Hallucination,Relevance,Sentiment)` | Tuple format |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION` | Aggregate results | `true` | Boolean |
+| `OTEL_GENAI_EVAL_DEBUG_SKIPS` | Debug skipped evaluations | `false` | Boolean |
+| `OTEL_GENAI_EVAL_DEBUG_EACH` | Debug each evaluation | `false` | Boolean |
+
+---
+
+## 📦 Dependencies & Requirements
+
+### Core Requirements
+```txt
+# OpenTelemetry Core
+opentelemetry-sdk>=1.38.0
+opentelemetry-api>=1.38.0
+opentelemetry-instrumentation>=0.48b0
+
+# OpenTelemetry Exporters
+opentelemetry-exporter-otlp>=1.38.0
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+
+# LangChain/LangGraph
+langchain>=1.0.0
+langchain-openai>=1.0.0
+langchain-core>=1.0.0
+langgraph>=1.0.0
+
+# OpenAI
+openai>=1.0.0
+```
+
+### Splunk Packages (Install from local)
+```bash
+# Install in this order
+pip install -e ../../../../util/opentelemetry-util-genai --no-deps
+pip install -e ../../../../util/opentelemetry-util-genai-emitters-splunk --no-deps
+pip install -e ../../../../util/opentelemetry-util-genai-evals --no-deps
+pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval
+pip install -e ../../../../instrumentation-genai/opentelemetry-instrumentation-langchain/
+```
+
+### Evaluation Requirements
+```txt
+deepeval>=0.21.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+```
+
+### Traceloop Requirements (Separate venv recommended)
+```txt
+traceloop-sdk>=0.47.4
+```
+
+### ⚠️ Dependency Conflicts
+
+**DeepEval vs Traceloop**: These packages have conflicting dependencies. Solutions:
+
+1. **Separate Virtual Environments** (Recommended):
+   ```bash
+   # For LangChain/LangGraph apps
+   python -m venv .venv-langchain
+   source .venv-langchain/bin/activate
+   pip install -r requirements-langchain.txt
+   
+   # For Traceloop app
+   python -m venv .venv-traceloop
+   source .venv-traceloop/bin/activate
+   pip install -r requirements-traceloop.txt
+   ```
+
+2. **Use run_tests.sh**: The automated test runner handles environment switching automatically.
+
+### Minimum Python Version
+- **Python 3.8+** required
+- **Python 3.10+** recommended for best compatibility
 
 ---
 
