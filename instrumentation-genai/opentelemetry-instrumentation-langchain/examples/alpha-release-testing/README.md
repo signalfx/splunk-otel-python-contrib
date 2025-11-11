@@ -45,14 +45,20 @@ vim config/.env
 ### Run Tests (Automated)
 
 ```bash
-# Run all tests once
+# Run all tests once (includes both zero-code and manual modes)
 ./run_tests.sh
 
 # Run only LangChain test
 ./run_tests.sh langchain
 
-# Run only LangGraph test
+# Run LangGraph test (both zero-code and manual modes)
 ./run_tests.sh langgraph
+
+# Run LangGraph with zero-code instrumentation only
+./run_tests.sh langgraph_zerocode
+
+# Run LangGraph with manual instrumentation only
+./run_tests.sh langgraph_manual
 
 # Run all tests continuously every 30 seconds
 ./run_tests.sh loop_30
@@ -68,6 +74,7 @@ The script automatically:
 - Activates virtual environment
 - Loads environment variables (with proper export)
 - Runs selected test application(s)
+- **LangGraph runs in BOTH modes**: Zero-code (opentelemetry-instrument) and Manual (hardcoded)
 - Shows summary of results
 - **Loop mode**: Runs continuously at specified intervals (Press Ctrl+C to stop)
 
@@ -118,8 +125,11 @@ cd tests/apps
 # LangChain evaluation (6 scenarios)
 python langchain_evaluation_app.py
 
-# LangGraph travel planner (5 agents)
+# LangGraph travel planner - Manual instrumentation (hardcoded)
 python langgraph_travel_planner_app.py
+
+# LangGraph travel planner - Zero-code instrumentation
+opentelemetry-instrument python langgraph_travel_planner_app.py
 ```
 
 ## 📊 Verify in Splunk APM

@@ -6,6 +6,7 @@
 #   ./run_tests.sh                  # Run all tests once
 #   ./run_tests.sh langchain        # Run only LangChain test
 #   ./run_tests.sh langgraph        # Run only LangGraph test
+#   ./run_tests.sh langgraph_zerocode # Run LangGraph with zero-code instrumentation
 #   ./run_tests.sh loop_30          # Run all tests every 30 seconds
 #   ./run_tests.sh langchain loop_30 # Run LangChain test every 30 seconds
 
@@ -21,7 +22,7 @@ NC='\033[0m' # No Color
 # Parse arguments
 LOOP_MODE=false
 LOOP_INTERVAL=30
-TEST_SELECTION="all"  # all, langchain, langgraph
+TEST_SELECTION="all"  # all, langchain, langgraph, langgraph_zerocode, langgraph_manual
 
 # Parse first argument
 if [ $# -gt 0 ]; then
@@ -34,18 +35,28 @@ if [ $# -gt 0 ]; then
             TEST_SELECTION="langgraph"
             shift
             ;;
+        langgraph_zerocode)
+            TEST_SELECTION="langgraph_zerocode"
+            shift
+            ;;
+        langgraph_manual)
+            TEST_SELECTION="langgraph_manual"
+            shift
+            ;;
         loop_*)
             # First arg is loop, no test selection
             ;;
         *)
             echo -e "${RED}Invalid argument: $1${NC}"
             echo "Usage:"
-            echo "  ./run_tests.sh                  # Run all tests once"
-            echo "  ./run_tests.sh langchain        # Run only LangChain test"
-            echo "  ./run_tests.sh langgraph        # Run only LangGraph test"
-            echo "  ./run_tests.sh loop_30          # Run all tests every 30 seconds"
-            echo "  ./run_tests.sh langchain loop_30 # Run LangChain test every 30 seconds"
-            echo "  ./run_tests.sh langgraph loop_60 # Run LangGraph test every 60 seconds"
+            echo "  ./run_tests.sh                     # Run all tests once"
+            echo "  ./run_tests.sh langchain           # Run only LangChain test"
+            echo "  ./run_tests.sh langgraph           # Run LangGraph (both modes)"
+            echo "  ./run_tests.sh langgraph_zerocode  # Run LangGraph (zero-code only)"
+            echo "  ./run_tests.sh langgraph_manual    # Run LangGraph (manual only)"
+            echo "  ./run_tests.sh loop_30             # Run all tests every 30 seconds"
+            echo "  ./run_tests.sh langchain loop_30   # Run LangChain test every 30 seconds"
+            echo "  ./run_tests.sh langgraph loop_60   # Run LangGraph test every 60 seconds"
             exit 1
             ;;
     esac
@@ -136,15 +147,33 @@ run_tests() {
     fi
     
     # Run Test 2: LangGraph Travel Planner (if selected)
-    if [ "$TEST_SELECTION" = "all" ] || [ "$TEST_SELECTION" = "langgraph" ]; then
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${BLUE}Test 2: LangGraph Travel Planner${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        python langgraph_travel_planner_app.py
-        TEST2_STATUS=$?
+    if [ "$TEST_SELECTION" = "all" ] || [ "$TEST_SELECTION" = "langgraph" ] || [ "$TEST_SELECTION" = "langgraph_zerocode" ] || [ "$TEST_SELECTION" = "langgraph_manual" ]; then
         
-        echo ""
-        echo ""
+        # Zero-Code Mode
+        if [ "$TEST_SELECTION" = "all" ] || [ "$TEST_SELECTION" = "langgraph" ] || [ "$TEST_SELECTION" = "langgraph_zerocode" ]; then
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${BLUE}Test 2a: LangGraph (Zero-Code Mode)${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${YELLOW}Using: opentelemetry-instrument${NC}"
+            opentelemetry-instrument python langgraph_travel_planner_app.py
+            TEST2_STATUS=$?
+            
+            echo ""
+            echo ""
+        fi
+        
+        # Manual Mode
+        if [ "$TEST_SELECTION" = "all" ] || [ "$TEST_SELECTION" = "langgraph" ] || [ "$TEST_SELECTION" = "langgraph_manual" ]; then
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${BLUE}Test 2b: LangGraph (Manual Mode)${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${YELLOW}Using: Manual instrumentation (hardcoded)${NC}"
+            python langgraph_travel_planner_app.py
+            TEST2_STATUS=$?
+            
+            echo ""
+            echo ""
+        fi
     fi
     
     # Summary
@@ -160,7 +189,7 @@ run_tests() {
         fi
     fi
     
-    if [ "$TEST_SELECTION" = "all" ] || [ "$TEST_SELECTION" = "langgraph" ]; then
+    if [ "$TEST_SELECTION" = "all" ] || [ "$TEST_SELECTION" = "langgraph" ] || [ "$TEST_SELECTION" = "langgraph_zerocode" ] || [ "$TEST_SELECTION" = "langgraph_manual" ]; then
         if [ $TEST2_STATUS -eq 0 ]; then
             echo -e "${GREEN}✓${NC} LangGraph Travel Planner: PASSED"
         else
