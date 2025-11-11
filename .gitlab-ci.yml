@@ -11,16 +11,6 @@ stages:
   - sign
   - deploy
 
-variables:
-  # Define package configurations: name, path, and PyPI package name
-  PACKAGES: |
-    util-genai:util/opentelemetry-util-genai:splunk-otel-util-genai
-    util-genai-evals:util/opentelemetry-util-genai-evals:splunk-otel-util-genai-evals
-    genai-emitters-splunk:util/opentelemetry-util-genai-emitters-splunk:splunk-otel-genai-emitters-splunk
-    genai-evals-deepeval:util/opentelemetry-util-genai-evals-deepeval:splunk-otel-genai-evals-deepeval
-    instrumentation-langchain:instrumentation-genai/opentelemetry-instrumentation-langchain:splunk-otel-instrumentation-langchain
-    genai-translator-traceloop:util/opentelemetry-util-genai-traceloop-translator:splunk-otel-util-genai-translator-traceloop
-
 # Build jobs for each package
 build-util-genai:
   stage: build

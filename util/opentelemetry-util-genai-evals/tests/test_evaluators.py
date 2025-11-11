@@ -237,7 +237,7 @@ class TestHandlerIntegration(unittest.TestCase):
     )
     def test_handler_registers_manager(self) -> None:
         with patch(
-            "opentelemetry.util.genai.handler._load_completion_callbacks",
+            "opentelemetry.util.genai.utils.load_completion_callbacks",
             side_effect=_mock_load_callbacks,
         ):
             handler = get_telemetry_handler()
@@ -263,7 +263,7 @@ class TestHandlerIntegration(unittest.TestCase):
     )
     def test_handler_evaluate_llm_returns_results(self) -> None:
         with patch(
-            "opentelemetry.util.genai.handler._load_completion_callbacks",
+            "opentelemetry.util.genai.utils.load_completion_callbacks",
             side_effect=_mock_load_callbacks,
         ):
             handler = get_telemetry_handler()
@@ -287,7 +287,7 @@ class TestHandlerIntegration(unittest.TestCase):
                 return_value={"LLMInvocation": ("static_metric",)},
             ),
             patch(
-                "opentelemetry.util.genai.handler._load_completion_callbacks",
+                "opentelemetry.util.genai.utils.load_completion_callbacks",
                 side_effect=_mock_load_callbacks,
             ),
         ):
@@ -305,7 +305,7 @@ class TestHandlerIntegration(unittest.TestCase):
     )
     def test_handler_disables_when_none(self) -> None:
         with patch(
-            "opentelemetry.util.genai.handler._load_completion_callbacks",
+            "opentelemetry.util.genai.utils.load_completion_callbacks",
             side_effect=_mock_load_callbacks,
         ):
             handler = get_telemetry_handler()

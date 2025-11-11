@@ -98,7 +98,12 @@ def _install_deepeval_stubs():
     eval_cfg_mod.AsyncConfig = AsyncConfig
     eval_cfg_mod.DisplayConfig = DisplayConfig
 
-    def evaluate(test_cases, metrics, async_config=None, display_config=None):
+    def evaluate(
+        test_cases,
+        metrics,
+        async_config=None,
+        display_config=None,
+    ):
         class _Eval:
             test_results = []
 
@@ -181,14 +186,12 @@ def test_sentiment_metric_result_attributes(monkeypatch):
 
     # Bypass instantiation logic to avoid real deepeval dependency usage
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_instantiate_metrics",
-        lambda self, specs, test_case: ([object()], []),
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+        lambda specs, test_case, model: ([object()], []),
     )
     monkeypatch.setattr(
-        plugin.DeepevalEvaluator,
-        "_run_deepeval",
-        lambda self, case, metrics: fake_result,
+        "opentelemetry.util.evaluator.deepeval._run_deepeval",
+        lambda case, metrics, debug_log: fake_result,
     )
 
     results = evaluator.evaluate(invocation)

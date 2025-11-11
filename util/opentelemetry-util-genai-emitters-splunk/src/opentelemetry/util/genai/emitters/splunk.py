@@ -645,14 +645,14 @@ def splunk_emitters() -> list[EmitterSpec]:
     def _conversation_factory(ctx: Any) -> SplunkConversationEventsEmitter:
         capture_mode = getattr(ctx, "capture_event_content", False)
         return SplunkConversationEventsEmitter(
-            event_logger=getattr(ctx, "content_logger", None),
+            event_logger=getattr(ctx, "event_logger", None),
             capture_content=cast(bool, capture_mode),
         )
 
     def _evaluation_factory(ctx: Any) -> SplunkEvaluationResultsEmitter:
         capture_mode = getattr(ctx, "capture_event_content", False)
         return SplunkEvaluationResultsEmitter(
-            event_logger=getattr(ctx, "content_logger", None),
+            event_logger=getattr(ctx, "event_logger", None),
             capture_content=cast(bool, capture_mode),
         )
 

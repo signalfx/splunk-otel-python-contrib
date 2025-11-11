@@ -1038,7 +1038,7 @@ class TraceloopSpanProcessor(SpanProcessor):
                 
                 # Extract content and convert to parts
                 content = getattr(lc_msg, "content", "")
-                
+
                 # CRITICAL 1: Check if content is a JSON string with LangChain serialization format
                 # Basically only use the "content" of the incoming traceloop entity input/output
                 if isinstance(content, str) and content.startswith("{") and '"lc"' in content:
@@ -1294,7 +1294,7 @@ class TraceloopSpanProcessor(SpanProcessor):
                 "task" in str(base_attrs.get("gen_ai.span.kind", "")).lower()
             )
             return None
-        
+
         # Check if output messages have empty parts
         # Example: [OutputMessage(role='assistant', parts=[], finish_reason='stop')]
         if output_messages and all(not msg.parts for msg in output_messages):
@@ -1306,7 +1306,7 @@ class TraceloopSpanProcessor(SpanProcessor):
                 output_messages
             )
             return None
-        
+
         invocation = LLMInvocation(
             request_model=str(request_model),
             attributes=base_attrs,
