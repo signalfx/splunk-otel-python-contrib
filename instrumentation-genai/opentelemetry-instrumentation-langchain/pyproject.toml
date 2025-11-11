@@ -44,7 +44,7 @@ test = [
 ]
 
 [project.entry-points.opentelemetry_instrumentor]
-langchain = "opentelemetry.instrumentation.langchain:LangChainInstrumentor"
+langchain = "opentelemetry.instrumentation.langchain:LangchainInstrumentor"
 
 [project.urls]
 Homepage = "https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-langchain"
