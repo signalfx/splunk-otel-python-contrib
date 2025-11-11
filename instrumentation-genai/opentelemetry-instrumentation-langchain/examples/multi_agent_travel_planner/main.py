@@ -16,13 +16,11 @@
 Multi-agent travel planner driven by LangGraph.
 
 Coordinates a set of LangChain agents (coordinator, flight, hotel, activities,
-plan synthesizer) to build a week-long city break itinerary, emitting GenAI
-traces/metrics/logs via OpenTelemetry LangChain instrumentation.
+plan synthesizer) to build a travel itinerary to demonstrate OpenTelemetry LangChain
+instrumentation. 
 
-The full telemetry workflow explanation and an example trace have been moved to
-`README.md` (see the Multi-Agent Travel Planner section). Keeping the large
-trace sample out of the source file reduces noise and keeps runtime logic
-focused.
+See README.md for more information
+
 """
 from datetime import datetime, timedelta
 import time
