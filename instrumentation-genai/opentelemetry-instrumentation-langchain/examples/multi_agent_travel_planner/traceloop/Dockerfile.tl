@@ -11,13 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy the entire instrumentation-genai and util directories to maintain package paths
 # Build context is at repo root to access both instrumentation-genai/ and util/
-# DO NOT INSTALL splunk-otel-instrumentation-langchain; If present uninstall it
-COPY instrumentation-genai/opentelemetry-instrumentation-langchain /app/opentelemetry-instrumentation-langchain
-COPY util/opentelemetry-util-genai /app/opentelemetry-util-genai
 COPY util/opentelemetry-util-genai-traceloop-translator /app/opentelemetry-util-genai-traceloop-translator
-COPY util/opentelemetry-util-genai-evals /app/opentelemetry-util-genai-evals
-COPY util/opentelemetry-util-genai-evals-deepeval /app/opentelemetry-util-genai-evals-deepeval
-COPY util/opentelemetry-util-genai-emitters-splunk /app/opentelemetry-util-genai-emitters-splunk
 
 # Set working directory to the traceloop example
 WORKDIR /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/traceloop
@@ -30,15 +24,7 @@ RUN grep -v "^-e" requirements.traceloop.txt | grep -v "git+ssh" > /tmp/requirem
 
 # Install the local packages in editable mode
 # The Traceloop translator will enable zero-code instrumentation via .pth file
-RUN cd /app/opentelemetry-util-genai && \
-    pip install --no-cache-dir --no-deps -e . && \
-    cd /app/opentelemetry-util-genai-evals && \
-    pip install --no-cache-dir --no-deps -e . && \
-    cd /app/opentelemetry-util-genai-evals-deepeval && \
-    pip install --no-cache-dir --no-deps -e . && \
-    cd /app/opentelemetry-util-genai-emitters-splunk && \
-    pip install --no-cache-dir --no-deps -e . && \
-    cd /app/opentelemetry-util-genai-traceloop-translator && \
+RUN cd /app/opentelemetry-util-genai-traceloop-translator && \
     pip install --no-cache-dir --no-deps -e .
 
 # Verify packages are installed correctly

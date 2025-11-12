@@ -44,6 +44,8 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "traceloop.entity.version": "gen_ai.workflow.version",
         "traceloop.span.kind": "gen_ai.span.kind",
         "llm.request.type": "gen_ai.operation.name",
+        # Lazily transforming these to input/output messages but proper handling of all the attributes
+        # gen_ai.completion.0.* and gen_ai.prompt.0.* required to construct input and output messages
         "gen_ai.completion.0.content": "gen_ai.output.messages",
         "gen_ai.prompt.0.content": "gen_ai.input.messages"
     }

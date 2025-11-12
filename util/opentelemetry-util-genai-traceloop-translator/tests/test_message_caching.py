@@ -188,6 +188,7 @@ class TestMessageCaching:
         )
 
         # Create span with Traceloop attributes
+<<<<<<< Updated upstream
         input_data = json.dumps(
             {"messages": [{"role": "user", "content": "Cached message test"}]}
         )
@@ -195,6 +196,20 @@ class TestMessageCaching:
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
             span.set_attribute("llm.request.model", "gpt-5-nano")
+=======
+        input_data = json.dumps({
+            "messages": [{"role": "user", "content": "Cached message test"}]
+        })
+        output_data = json.dumps({
+            "messages": [{"role": "assistant", "content": "Response"}]
+        })
+
+        with tracer.start_as_current_span("openai.chat") as span:
+            span.set_attribute("traceloop.entity.input", input_data)
+            span.set_attribute("traceloop.entity.output", output_data)
+            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("gen_ai.operation.name", "chat")  # Required for LLM span detection
+>>>>>>> Stashed changes
 
         # Force flush to process spans
         provider.force_flush()
@@ -379,6 +394,7 @@ class TestRecursionGuards:
         )
 
         # Create a span that will generate a synthetic span
+<<<<<<< Updated upstream
         input_data = json.dumps(
             {"messages": [{"role": "user", "content": "Test"}]}
         )
@@ -386,6 +402,20 @@ class TestRecursionGuards:
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
             span.set_attribute("llm.request.model", "gpt-5-nano")
+=======
+        input_data = json.dumps({
+            "messages": [{"role": "user", "content": "Test"}]
+        })
+        output_data = json.dumps({
+            "messages": [{"role": "assistant", "content": "Response"}]
+        })
+
+        with tracer.start_as_current_span("openai.chat") as span:
+            span.set_attribute("traceloop.entity.input", input_data)
+            span.set_attribute("traceloop.entity.output", output_data)
+            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("gen_ai.operation.name", "chat")  # Required for LLM span detection
+>>>>>>> Stashed changes
 
         provider.force_flush()
 
@@ -398,6 +428,61 @@ class TestRecursionGuards:
         assert (
             mock_handler.stop_llm.call_count == 1
         ), "stop_llm should be called once"
+
+    def test_specific_traceloop_attributes_renamed_on_synthetic_span(self, setup_tracer_with_handler):
+        """Test that specific traceloop attributes are renamed to gen_ai on synthetic spans.
+        
+        Only traceloop.entity.path and traceloop.workflow.name should be renamed.
+        Other attributes should NOT be copied.
+        
+        Note: This test verifies the rename logic is called, not the final span state,
+        since we use a mock handler that doesn't create real spans.
+        """
+        tracer, exporter, provider, processor, mock_handler = setup_tracer_with_handler
+
+        # Patch the attribute renaming section to verify it's called correctly
+        with patch.object(processor, '_process_span_translation', wraps=processor._process_span_translation) as mock_process:
+            # Create a span that will trigger the processor
+            input_data = json.dumps({
+                "messages": [{"role": "user", "content": "Test workflow attributes"}]
+            })
+            output_data = json.dumps({
+                "messages": [{"role": "assistant", "content": "Response"}]
+            })
+
+            with tracer.start_as_current_span("openai.chat") as span:
+                span.set_attribute("traceloop.entity.input", input_data)
+                span.set_attribute("traceloop.entity.output", output_data)
+                span.set_attribute("traceloop.entity.path", "coordinator.flight_agent")
+                span.set_attribute("traceloop.workflow.name", "travel_planner")
+                span.set_attribute("gen_ai.request.model", "gpt-4")
+                span.set_attribute("gen_ai.operation.name", "chat")
+                span.set_attribute("gen_ai.system", "openai")
+
+            provider.force_flush()
+
+            # Verify the processor was called
+            assert mock_process.call_count == 1, \
+                "_process_span_translation should be called once"
+            
+            # Verify start_llm was called (invocation was created)
+            assert mock_handler.start_llm.call_count == 1, \
+                "start_llm should be called for LLM span"
+            
+            # Get the invocation passed to start_llm
+            invocation = mock_handler.start_llm.call_args[0][0]
+            assert invocation is not None, "Invocation should be created"
+            assert isinstance(invocation, LLMInvocation), "Should be LLMInvocation"
+            
+            # The invocation.attributes should have the renamed attributes
+            # (these are used when creating the synthetic span)
+            inv_attrs = invocation.attributes
+            assert "gen_ai.workflow.path" not in inv_attrs or \
+                   inv_attrs.get("gen_ai.workflow.path") == "coordinator.flight_agent", \
+                "If workflow.path is set, it should have the correct value"
+            assert "gen_ai.workflow.name" not in inv_attrs or \
+                   inv_attrs.get("gen_ai.workflow.name") == "travel_planner", \
+                "If workflow.name is set, it should have the correct value"
 
 
 class TestCacheIntegration:

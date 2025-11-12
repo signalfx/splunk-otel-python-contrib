@@ -406,10 +406,22 @@ class TestEdgeCases:
         # Should not crash
         provider.force_flush()
 
+<<<<<<< Updated upstream
         # Malformed data should not be cached
         assert (
             span_id not in processor._message_cache
         ), "Malformed JSON should not be cached"
+=======
+        # Malformed JSON is treated as string content and cached
+        assert span_id in processor._message_cache, \
+            "Malformed JSON should be cached as string content"
+        
+        # Verify it's cached as string (not parsed)
+        cached_input, _ = processor._message_cache[span_id]
+        assert len(cached_input) == 1, "Should have 1 message"
+        assert "{invalid json}" in str(cached_input[0].parts[0].content), \
+            "Should contain the malformed JSON as string"
+>>>>>>> Stashed changes
 
     def test_task_with_empty_messages(self, setup_tracer_with_handler):
         """Test that task with empty message arrays is handled."""

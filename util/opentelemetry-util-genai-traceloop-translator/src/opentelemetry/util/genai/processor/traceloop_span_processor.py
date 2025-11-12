@@ -302,14 +302,6 @@ class TraceloopSpanProcessor(SpanProcessor):
             logger.debug("[TL_PROCESSOR] Span filtered: name=%s", span.name)
             return None
 
-        logger.debug(
-            "[TL_PROCESSOR] Translating span: name=%s, kind=%s",
-            span.name,
-            span.attributes.get("traceloop.span.kind")
-            if span.attributes
-            else None,
-        )
-
         # avoid emitting multiple synthetic spans if on_end invoked repeatedly.
         span_id_int = getattr(getattr(span, "context", None), "span_id", None)
         if span_id_int is not None:
@@ -516,35 +508,6 @@ class TraceloopSpanProcessor(SpanProcessor):
 
             # STEP 1: Always mutate immediately (ALL spans get attribute translation)
             self._mutate_span_if_needed(span)
-
-            # STEP 1.5: Skip evaluation-related spans entirely (don't buffer AND don't export)
-            # These are Deepeval's internal spans that should never be processed or exported
-            span_name = span.name or ""
-            for exclude_pattern in _EXCLUDE_SPAN_PATTERNS:
-                if exclude_pattern.lower() in span_name.lower():
-                    _logger.debug(
-                        "[TL_PROCESSOR] Span excluded (will not export): pattern='%s', span=%s",
-                        exclude_pattern,
-                        span_name,
-                    )
-                    # CRITICAL: Mark span as non-sampled to prevent export
-                    # This prevents the span from being sent to the backend
-                    if hasattr(span, "_context") and hasattr(
-                        span._context, "_trace_flags"
-                    ):  # type: ignore
-                        try:
-                            # Set trace flags to 0 (not sampled)
-                            span._context._trace_flags = 0  # type: ignore
-                            _logger.debug(
-                                "[TL_PROCESSOR] Marked span as non-sampled: %s",
-                                span_name,
-                            )
-                        except Exception as e:
-                            _logger.debug(
-                                "[TL_PROCESSOR] Could not mark span as non-sampled: %s",
-                                e,
-                            )
-                    return
 
             # STEP 2: Check if this is an LLM span that needs evaluation
             if self._is_llm_span(span):
