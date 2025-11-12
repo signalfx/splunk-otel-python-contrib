@@ -150,7 +150,7 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
         inputs={"input": "plan my trip"},
         run_id=agent_run_id,
         tags=["agent"],
-        metadata={"ls_agent_type": "react", "ls_model_name": "gpt-4"},
+        metadata={"ls_agent_type": "react", "ls_model_name": "gpt-5-nano"},
     )
 
     assert stub.started_agents, "Agent start was not forwarded to util handler"
@@ -164,7 +164,7 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
         messages=[[HumanMessage(content="hello")]],
         run_id=llm_run_id,
         parent_run_id=agent_run_id,
-        invocation_params={"model_name": "gpt-4"},
+        invocation_params={"model_name": "gpt-5-nano"},
         metadata={"ls_provider": "openai"},
     )
 
@@ -372,7 +372,7 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
             messages=[[HumanMessage(content="hi")]],
             run_id=run_id,
             invocation_params={
-                "model_name": "gpt-4",
+                "model_name": "gpt-5-nano",
                 "top_p": 0.5,
                 "seed": 42,
                 "model_kwargs": {"user": "abc"},
@@ -394,7 +394,7 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     ), "Emitter env toggle should not change recorded attributes"
 
     attrs = invocation_default.attributes
-    assert invocation_default.request_model == "gpt-4"
+    assert invocation_default.request_model == "gpt-5-nano"
     assert invocation_default.provider == "openai"
     assert attrs["request_top_p"] == 0.5
     assert attrs["request_seed"] == 42

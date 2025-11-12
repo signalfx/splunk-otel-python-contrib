@@ -9,21 +9,25 @@ Tests verify:
 
 import json
 import os
-import pytest
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock
 
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider, ReadableSpan
+import pytest
+
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
-
+from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.processor.traceloop_span_processor import (
     TraceloopSpanProcessor,
 )
-from opentelemetry.util.genai.types import InputMessage, OutputMessage, Text, LLMInvocation
-from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.types import (
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -80,29 +84,26 @@ class TestMessageCaching:
         tracer, exporter, provider, processor, _ = setup_tracer_with_handler
 
         # Create Traceloop-style input/output (normalized format)
-        input_data = json.dumps({
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Hello, how are you?"
-                }
-            ]
-        })
-        
-        output_data = json.dumps({
-            "messages": [
-                {
-                    "role": "assistant",
-                    "content": "I'm doing great, thanks!"
-                }
-            ]
-        })
+        input_data = json.dumps(
+            {"messages": [{"role": "user", "content": "Hello, how are you?"}]}
+        )
+
+        output_data = json.dumps(
+            {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "I'm doing great, thanks!",
+                    }
+                ]
+            }
+        )
 
         # Create span with Traceloop attributes
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
             span.set_attribute("traceloop.entity.output", output_data)
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         # Force flush to process spans
@@ -110,45 +111,59 @@ class TestMessageCaching:
 
         # Check that messages were cached
         assert span_id in processor._message_cache, "Messages should be cached"
-        
+
         cached_input, cached_output = processor._message_cache[span_id]
-        
+
         # Verify cached messages are in correct format
         assert len(cached_input) == 1, "Should have 1 input message"
         assert len(cached_output) == 1, "Should have 1 output message"
-        
+
         # Verify input message format
         input_msg = cached_input[0]
-        assert isinstance(input_msg, InputMessage), "Should be InputMessage object"
+        assert isinstance(
+            input_msg, InputMessage
+        ), "Should be InputMessage object"
         assert input_msg.role == "user", "Should have user role"
         assert len(input_msg.parts) == 1, "Should have 1 part"
-        assert isinstance(input_msg.parts[0], Text), "Part should be Text object"
+        assert isinstance(
+            input_msg.parts[0], Text
+        ), "Part should be Text object"
         assert input_msg.parts[0].content == "Hello, how are you?"
-        
+
         # Verify output message format
         output_msg = cached_output[0]
-        assert isinstance(output_msg, OutputMessage), "Should be OutputMessage object"
+        assert isinstance(
+            output_msg, OutputMessage
+        ), "Should be OutputMessage object"
         assert output_msg.role == "assistant", "Should have assistant role"
         assert len(output_msg.parts) == 1, "Should have 1 part"
-        assert isinstance(output_msg.parts[0], Text), "Part should be Text object"
+        assert isinstance(
+            output_msg.parts[0], Text
+        ), "Part should be Text object"
         assert output_msg.parts[0].content == "I'm doing great, thanks!"
 
-    def test_reconstruction_not_repeated_unnecessarily(self, setup_tracer_with_handler):
+    def test_reconstruction_not_repeated_unnecessarily(
+        self, setup_tracer_with_handler
+    ):
         """Test that message reconstruction uses cache when available."""
         tracer, exporter, provider, processor, _ = setup_tracer_with_handler
 
         # Use real data instead of mocking to test the actual flow
-        input_data = json.dumps({
-            "messages": [{"role": "user", "content": "Real test input"}]
-        })
-        output_data = json.dumps({
-            "messages": [{"role": "assistant", "content": "Real test output"}]
-        })
+        input_data = json.dumps(
+            {"messages": [{"role": "user", "content": "Real test input"}]}
+        )
+        output_data = json.dumps(
+            {
+                "messages": [
+                    {"role": "assistant", "content": "Real test output"}
+                ]
+            }
+        )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
             span.set_attribute("traceloop.entity.output", output_data)
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         # Force flush to process spans
@@ -156,7 +171,7 @@ class TestMessageCaching:
 
         # Verify cache was populated (this means reconstruction happened and was cached)
         assert span_id in processor._message_cache, "Messages should be cached"
-        
+
         # Verify cached data is correct
         cached_input, cached_output = processor._message_cache[span_id]
         assert len(cached_input) > 0, "Should have cached input messages"
@@ -164,39 +179,47 @@ class TestMessageCaching:
         assert cached_input[0].parts[0].content == "Real test input"
         assert cached_output[0].parts[0].content == "Real test output"
 
-    def test_cached_messages_used_in_invocation(self, setup_tracer_with_handler):
+    def test_cached_messages_used_in_invocation(
+        self, setup_tracer_with_handler
+    ):
         """Test that cached messages are used in invocation build."""
-        tracer, exporter, provider, processor, mock_handler = setup_tracer_with_handler
+        tracer, exporter, provider, processor, mock_handler = (
+            setup_tracer_with_handler
+        )
 
         # Create span with Traceloop attributes
-        input_data = json.dumps({
-            "messages": [{"role": "user", "content": "Cached message test"}]
-        })
+        input_data = json.dumps(
+            {"messages": [{"role": "user", "content": "Cached message test"}]}
+        )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("llm.request.model", "gpt-5-nano")
 
         # Force flush to process spans
         provider.force_flush()
 
         # Check that start_llm was called
         assert mock_handler.start_llm.called, "start_llm should be called"
-        
+
         # Get the invocation passed to start_llm
         call_args = mock_handler.start_llm.call_args
         invocation = call_args[0][0]
-        
+
         # Verify invocation has messages
         assert isinstance(invocation, LLMInvocation), "Should be LLMInvocation"
         assert len(invocation.input_messages) > 0, "Should have input messages"
-        
+
         # Verify messages are in correct format (not reconstructed again)
         input_msg = invocation.input_messages[0]
-        assert isinstance(input_msg, InputMessage), "Should be InputMessage object"
-        assert hasattr(input_msg, 'parts'), "Should have parts attribute"
+        assert isinstance(
+            input_msg, InputMessage
+        ), "Should be InputMessage object"
+        assert hasattr(input_msg, "parts"), "Should have parts attribute"
         assert len(input_msg.parts) > 0, "Should have parts"
-        assert isinstance(input_msg.parts[0], Text), "Part should be Text object"
+        assert isinstance(
+            input_msg.parts[0], Text
+        ), "Part should be Text object"
         assert input_msg.parts[0].content == "Cached message test"
 
 
@@ -208,18 +231,22 @@ class TestDeepEvalFormat:
         tracer, exporter, provider, processor, _ = setup_tracer_with_handler
 
         # Create span
-        input_data = json.dumps({
-            "messages": [{"role": "user", "content": "Test for DeepEval"}]
-        })
-        
-        output_data = json.dumps({
-            "messages": [{"role": "assistant", "content": "Response for DeepEval"}]
-        })
+        input_data = json.dumps(
+            {"messages": [{"role": "user", "content": "Test for DeepEval"}]}
+        )
+
+        output_data = json.dumps(
+            {
+                "messages": [
+                    {"role": "assistant", "content": "Response for DeepEval"}
+                ]
+            }
+        )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
             span.set_attribute("traceloop.entity.output", output_data)
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         # Force flush
@@ -246,19 +273,23 @@ class TestDeepEvalFormat:
         output_text = extract_text_from_messages(cached_output)
 
         assert input_text == "Test for DeepEval", "Should extract input text"
-        assert output_text == "Response for DeepEval", "Should extract output text"
+        assert (
+            output_text == "Response for DeepEval"
+        ), "Should extract output text"
 
-    def test_messages_have_required_attributes(self, setup_tracer_with_handler):
+    def test_messages_have_required_attributes(
+        self, setup_tracer_with_handler
+    ):
         """Test that messages have all attributes DeepEval expects."""
         tracer, exporter, provider, processor, _ = setup_tracer_with_handler
 
-        input_data = json.dumps({
-            "messages": [{"role": "user", "content": "Attribute test"}]
-        })
+        input_data = json.dumps(
+            {"messages": [{"role": "user", "content": "Attribute test"}]}
+        )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         provider.force_flush()
@@ -267,14 +298,14 @@ class TestDeepEvalFormat:
         msg = cached_input[0]
 
         # Check required attributes
-        assert hasattr(msg, 'role'), "Message should have role"
-        assert hasattr(msg, 'parts'), "Message should have parts"
+        assert hasattr(msg, "role"), "Message should have role"
+        assert hasattr(msg, "parts"), "Message should have parts"
         assert isinstance(msg.parts, list), "Parts should be a list"
         assert len(msg.parts) > 0, "Should have at least one part"
-        
+
         part = msg.parts[0]
         assert isinstance(part, Text), "Part should be Text object"
-        assert hasattr(part, 'content'), "Text should have content"
+        assert hasattr(part, "content"), "Text should have content"
         assert isinstance(part.content, str), "Content should be string"
 
 
@@ -286,13 +317,17 @@ class TestRecursionGuards:
         _, _, _, processor, _ = setup_tracer_with_handler
 
         # Test None span
-        assert processor._should_skip_span(None) is True, "Should skip None span"
+        assert (
+            processor._should_skip_span(None) is True
+        ), "Should skip None span"
 
         # Test span without name
         mock_span = Mock(spec=ReadableSpan)
         mock_span.name = None
         mock_span.attributes = {}
-        assert processor._should_skip_span(mock_span) is True, "Should skip span without name"
+        assert (
+            processor._should_skip_span(mock_span) is True
+        ), "Should skip span without name"
 
     def test_should_skip_synthetic_span(self, setup_tracer_with_handler):
         """Test that synthetic spans are skipped."""
@@ -303,8 +338,9 @@ class TestRecursionGuards:
         mock_span.attributes = {"_traceloop_translated": True}
 
         # Should skip by attribute
-        assert processor._should_skip_span(mock_span) is True, \
-            "Should skip span with _traceloop_translated attribute"
+        assert (
+            processor._should_skip_span(mock_span) is True
+        ), "Should skip span with _traceloop_translated attribute"
 
     def test_should_skip_by_span_id(self, setup_tracer_with_handler):
         """Test that spans are skipped by ID in set."""
@@ -319,8 +355,9 @@ class TestRecursionGuards:
         mock_span.attributes = {}
 
         # Should skip by ID
-        assert processor._should_skip_span(mock_span, test_span_id) is True, \
-            "Should skip span with ID in synthetic set"
+        assert (
+            processor._should_skip_span(mock_span, test_span_id) is True
+        ), "Should skip span with ID in synthetic set"
 
     def test_should_not_skip_normal_span(self, setup_tracer_with_handler):
         """Test that normal spans are not skipped."""
@@ -331,54 +368,67 @@ class TestRecursionGuards:
         mock_span.attributes = {}
 
         # Should not skip
-        assert processor._should_skip_span(mock_span, 99999) is False, \
-            "Should not skip normal span"
+        assert (
+            processor._should_skip_span(mock_span, 99999) is False
+        ), "Should not skip normal span"
 
     def test_synthetic_span_not_reprocessed(self, setup_tracer_with_handler):
         """Test that synthetic spans created by processor are not reprocessed."""
-        tracer, exporter, provider, processor, mock_handler = setup_tracer_with_handler
+        tracer, exporter, provider, processor, mock_handler = (
+            setup_tracer_with_handler
+        )
 
         # Create a span that will generate a synthetic span
-        input_data = json.dumps({
-            "messages": [{"role": "user", "content": "Test"}]
-        })
+        input_data = json.dumps(
+            {"messages": [{"role": "user", "content": "Test"}]}
+        )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", input_data)
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute("llm.request.model", "gpt-5-nano")
 
         provider.force_flush()
 
         # start_llm should be called once (for the synthetic span)
-        assert mock_handler.start_llm.call_count == 1, \
-            "start_llm should be called once for synthetic span"
+        assert (
+            mock_handler.start_llm.call_count == 1
+        ), "start_llm should be called once for synthetic span"
 
         # stop_llm should be called once
-        assert mock_handler.stop_llm.call_count == 1, \
-            "stop_llm should be called once"
+        assert (
+            mock_handler.stop_llm.call_count == 1
+        ), "stop_llm should be called once"
 
 
 class TestCacheIntegration:
     """Test cache integration with full flow."""
 
-    def test_multiple_spans_have_separate_caches(self, setup_tracer_with_handler):
+    def test_multiple_spans_have_separate_caches(
+        self, setup_tracer_with_handler
+    ):
         """Test that different spans have separate cache entries."""
         tracer, exporter, provider, processor, _ = setup_tracer_with_handler
 
         # Create first span
         with tracer.start_as_current_span("openai.chat") as span1:
-            span1.set_attribute("traceloop.entity.input", json.dumps({
-                "messages": [{"role": "user", "content": "Message 1"}]
-            }))
-            span1.set_attribute("llm.request.model", "gpt-4")
+            span1.set_attribute(
+                "traceloop.entity.input",
+                json.dumps(
+                    {"messages": [{"role": "user", "content": "Message 1"}]}
+                ),
+            )
+            span1.set_attribute("llm.request.model", "gpt-5-nano")
             span1_id = span1.get_span_context().span_id
 
         # Create second span
         with tracer.start_as_current_span("openai.chat") as span2:
-            span2.set_attribute("traceloop.entity.input", json.dumps({
-                "messages": [{"role": "user", "content": "Message 2"}]
-            }))
-            span2.set_attribute("llm.request.model", "gpt-4")
+            span2.set_attribute(
+                "traceloop.entity.input",
+                json.dumps(
+                    {"messages": [{"role": "user", "content": "Message 2"}]}
+                ),
+            )
+            span2.set_attribute("llm.request.model", "gpt-5-nano")
             span2_id = span2.get_span_context().span_id
 
         provider.force_flush()
@@ -400,16 +450,21 @@ class TestCacheIntegration:
 
         # Create span
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute("traceloop.entity.input", json.dumps({
-                "messages": [{"role": "user", "content": "Test"}]
-            }))
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute(
+                "traceloop.entity.input",
+                json.dumps(
+                    {"messages": [{"role": "user", "content": "Test"}]}
+                ),
+            )
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         provider.force_flush()
 
         # Cache should exist
-        assert span_id in processor._message_cache, "Cache should exist after processing"
+        assert (
+            span_id in processor._message_cache
+        ), "Cache should exist after processing"
 
         # Note: Cache is not automatically cleared - this is intentional
         # as spans might be accessed later for debugging/evaluation
@@ -423,8 +478,8 @@ class TestEdgeCases:
         tracer, exporter, provider, processor, _ = setup_tracer_with_handler
 
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute("llm.request.model", "gpt-4")
-            span_id = span.get_span_context().span_id
+            span.set_attribute("llm.request.model", "gpt-5-nano")
+            span.get_span_context().span_id
 
         provider.force_flush()
 
@@ -438,8 +493,8 @@ class TestEdgeCases:
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("traceloop.entity.input", "invalid json {{{")
-            span.set_attribute("llm.request.model", "gpt-4")
-            span_id = span.get_span_context().span_id
+            span.set_attribute("llm.request.model", "gpt-5-nano")
+            span.get_span_context().span_id
 
         # Should not crash
         provider.force_flush()
@@ -450,4 +505,3 @@ class TestEdgeCases:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

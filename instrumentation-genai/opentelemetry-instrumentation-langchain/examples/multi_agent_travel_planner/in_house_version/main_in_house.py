@@ -495,7 +495,7 @@ class PlannerState(TypedDict):
 
 
 def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4.1")
+    return os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
 def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:

@@ -12,7 +12,7 @@ Example usage for LLM Invocation.
   from opentelemetry.util.genai.handler import get_telemetry_handler
   handler = get_telemetry_handler()
   user_input = "Hello"
-  inv = LLMInvocation(request_model="gpt-4", provider="openai",
+  inv = LLMInvocation(request_model="gpt-5-nano", provider="openai",
     input_messages=[InputMessage(role="user", parts=[Text(user_input)])])
   handler.start_llm(inv)
   # your code which actuall invokes llm here
