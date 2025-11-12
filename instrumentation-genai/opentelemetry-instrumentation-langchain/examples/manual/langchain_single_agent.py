@@ -118,7 +118,7 @@ def get_weather(city: str) -> str:
 
 agent = create_agent(
     name="weather-agent",
-    model="openai:gpt-5-mini",
+    model="openai:gpt-5-nano",
     tools=[get_weather],
     system_prompt="You are a helpful assistant",
     debug=True,

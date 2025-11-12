@@ -113,7 +113,7 @@ def build_token_manager(cache_file: str = DEFAULT_CACHE_FILE) -> TokenManager:
 def create_cisco_chat_llm(
     *,
     cache_file: str = DEFAULT_CACHE_FILE,
-    model: str = "gpt-4.1",
+    model: str = "gpt-5-nano",
     temperature: float = 0.1,
     top_p: float = 0.9,
     frequency_penalty: float = 0.5,
