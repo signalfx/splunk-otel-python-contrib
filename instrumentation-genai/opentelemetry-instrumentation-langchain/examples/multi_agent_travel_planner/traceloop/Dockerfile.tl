@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Define Traceloop SDK version as build arg (also used for opentelemetry-instrumentation-* packages)
+ARG TRACELOOP_VERSION=0.47.5
+
 WORKDIR /app
 
 # Install git for pip dependencies
