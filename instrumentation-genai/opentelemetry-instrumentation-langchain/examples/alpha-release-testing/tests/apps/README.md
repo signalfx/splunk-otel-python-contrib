@@ -238,37 +238,53 @@ DEEPEVAL_TELEMETRY_OPT_OUT=YES python traceloop_travel_planner_app.py
 
 ---
 
-### 4. **Direct Azure OpenAI App** (`direct_azure_openai_app.py`)
+### 4. **Direct Azure OpenAI App** (`direct_azure_openai_app.py`) ⭐ ENHANCED
 
-**Purpose**: Direct Azure OpenAI usage without LangChain/LangGraph frameworks
+**Purpose**: Multi-department organizational workflow with manual GenAI instrumentation
 
 **Features**:
-- ✅ **LLMInvocation**: Direct LLM call instrumentation
-- ✅ **AgentInvocation**: Agent-level instrumentation
-- ✅ **No Framework**: Pure OpenAI client usage
-- ✅ **Manual Instrumentation**: Explicit telemetry control
+- ✅ **4-Department Hierarchy**: Customer Service, Legal, Research, HR (all reporting to parent)
+- ✅ **Manual GenAI Instrumentation**: Uses `LLMInvocation` and `AgentInvocation` directly
+- ✅ **2 Scenarios**: Billing inquiry + Market analysis (both normal content)
+- ✅ **Enhanced Telemetry**: 300s wait time for async evaluations, dual force flush
+- ✅ **Azure OpenAI**: Direct Azure OpenAI client usage without frameworks
+
+**Recent Enhancements (Nov 12)**:
+- Increased telemetry wait time: 120s → 300s (matching langgraph app)
+- Simplified scenarios to normal content for consistent evaluation metrics
+- Added dual force flush mechanism for reliable telemetry export
+- Verified all 5 evaluation metrics appear on all agents
+
+**Architecture**:
+```
+Parent Agent (Organizational Coordinator)
+├─ Customer Service Agent
+├─ Legal Compliance Agent
+├─ Research Analysis Agent
+└─ HR Agent
+```
 
 **Usage**:
 ```bash
-# Test LLMInvocation
-python direct_azure_openai_app.py --mode llm
+# Run both scenarios
+python direct_azure_openai_app.py
 
-# Test AgentInvocation
-python direct_azure_openai_app.py --mode agent
-
-# Test both
-python direct_azure_openai_app.py --mode all
+# Verify in Splunk APM
+# Service: direct-azure-openai-test
+# Environment: From OTEL_DEPLOYMENT_ENVIRONMENT
 ```
 
-**Configuration**: `config/.env.lab0` (uses Azure OpenAI credentials)
+**Configuration**: `config/.env` (uses Azure OpenAI credentials)
 
 **Validates**:
-- ✅ LLMInvocation usage
-- ✅ AgentInvocation usage
-- ✅ Direct OpenAI client
-- ✅ Manual span creation
+- ✅ Manual GenAI instrumentation (LLMInvocation, AgentInvocation)
+- ✅ Multi-agent hierarchical workflows
+- ✅ Direct Azure OpenAI client usage
+- ✅ Manual span creation and management
 - ✅ Token usage tracking
 - ✅ Message content capture
+- ✅ Evaluation metrics on all agents
+- ✅ Async evaluation completion with proper wait times
 
 ---
 
@@ -783,6 +799,22 @@ pip list | grep -E "langchain|opentelemetry|traceloop"
 
 ---
 
+## 📊 Application Comparison Matrix
+
+| Feature | Retail Shop | LangChain Eval | LangGraph Travel | Direct Azure | Traceloop |
+|---------|-------------|----------------|------------------|--------------|-----------|
+| **Instrumentation** | LangChain Auto | LangChain Auto | LangGraph | Manual GenAI | Traceloop SDK |
+| **Agent Count** | 3 (1+2) | 2 | 5 | 5 (1+4) | 5 |
+| **Scenarios** | 2 | 6 | 1 | 2 | 1 |
+| **Unified Traces** | ✅ Root span | ❌ Separate | ✅ Workflow | ✅ Parent span | ✅ Workflow |
+| **Tool Usage** | ✅ 3 tools | ❌ No tools | ✅ Mock tools | ❌ No tools | ✅ Mock tools |
+| **Content Type** | Normal | Problematic | Normal/Poisoned | Normal | Normal |
+| **Eval Metrics** | ✅ All 5 | ✅ All 5 | ✅ All 5 | ✅ All 5 | ✅ All 5 |
+| **Use Case** | Unified traces | Metric testing | Workflow orchestration | Manual instrumentation | SDK translation |
+| **Status** | ⭐ NEW | Reference | Existing | ⭐ ENHANCED | Existing |
+
+---
+
 ## ✅ Success Criteria
 
 Each application should:
@@ -796,6 +828,25 @@ Each application should:
 
 ---
 
+## 🎯 Key Takeaways
+
+### **For Unified Traces**
+Use **Retail Shop App** or **Direct Azure App** - both demonstrate root span patterns for single trace per workflow.
+
+### **For Evaluation Metrics Testing**
+Use **LangChain Eval App** - 6 scenarios specifically designed to trigger different evaluation metrics.
+
+### **For Workflow Orchestration**
+Use **LangGraph Travel App** - demonstrates complex state management and conditional routing.
+
+### **For Manual Instrumentation**
+Use **Direct Azure App** - shows how to use `LLMInvocation` and `AgentInvocation` directly without frameworks.
+
+### **For SDK Integration**
+Use **Traceloop App** - validates attribute translation from Traceloop SDK to GenAI conventions.
+
+---
+
 **Status**: Ready for Testing  
-**Last Updated**: November 2025  
-**Environment**: lab0 (Splunk Observability Cloud)
+**Last Updated**: November 12, 2025  
+**Environment**: RC0 (ai-test-val) & Lab0 (Splunk Observability Cloud)

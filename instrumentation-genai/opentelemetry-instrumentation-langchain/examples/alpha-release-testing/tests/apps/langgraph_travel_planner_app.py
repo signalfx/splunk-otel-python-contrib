@@ -197,6 +197,12 @@ from datetime import datetime, timedelta
 import time
 from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load environment variables
+env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+load_dotenv(dotenv_path=env_path)
 
 from langchain_core.messages import (
     AIMessage,

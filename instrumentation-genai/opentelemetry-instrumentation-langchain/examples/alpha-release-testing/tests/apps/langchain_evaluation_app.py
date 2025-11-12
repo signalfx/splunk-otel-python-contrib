@@ -12,9 +12,15 @@ Each run cycles through different scenarios to test the evaluation pipeline.
 
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 import os
 import logging
 import time
+
+# Load environment variables from .env file
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+load_dotenv(dotenv_path=env_path)
 
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
@@ -33,9 +39,6 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-# Environment variables are expected to be set via shell (source config/.env)
-# No automatic .env file loading - keeps behavior consistent with other test apps
 
 # Configure resource (shared between traces, metrics, and logs)
 resource = Resource.create({
