@@ -78,40 +78,40 @@ opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry
 opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/opentelemetry-python.git@1f68134481c46e476a127b61a36dc69889275d15#subdirectory=exporter/opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http==1.38.0
 opentelemetry-instrumentation @ git+https://github.com/open-telemetry/opentelemetry-python-contrib.git@071f68697432e7e57b31238a5998dc4c1325855c#subdirectory=opentelemetry-instrumentation
-opentelemetry-instrumentation-alephalpha==0.47.5
-opentelemetry-instrumentation-anthropic==0.47.5
-opentelemetry-instrumentation-bedrock==0.47.5
-opentelemetry-instrumentation-chromadb==0.47.5
-opentelemetry-instrumentation-cohere==0.47.5
-opentelemetry-instrumentation-crewai==0.47.5
-opentelemetry-instrumentation-google-generativeai==0.47.5
-opentelemetry-instrumentation-groq==0.47.5
-opentelemetry-instrumentation-haystack==0.47.5
-opentelemetry-instrumentation-lancedb==0.47.5
-opentelemetry-instrumentation-llamaindex==0.47.5
+opentelemetry-instrumentation-alephalpha==0.48.0
+opentelemetry-instrumentation-anthropic==0.48.0
+opentelemetry-instrumentation-bedrock==0.48.0
+opentelemetry-instrumentation-chromadb==0.48.0
+opentelemetry-instrumentation-cohere==0.48.0
+opentelemetry-instrumentation-crewai==0.48.0
+opentelemetry-instrumentation-google-generativeai==0.48.0
+opentelemetry-instrumentation-groq==0.48.0
+opentelemetry-instrumentation-haystack==0.48.0
+opentelemetry-instrumentation-lancedb==0.48.0
+opentelemetry-instrumentation-llamaindex==0.48.0
 opentelemetry-instrumentation-logging==0.59b0
-opentelemetry-instrumentation-marqo==0.47.5
-opentelemetry-instrumentation-mcp==0.47.5
-opentelemetry-instrumentation-milvus==0.47.5
-opentelemetry-instrumentation-mistralai==0.47.5
-opentelemetry-instrumentation-ollama==0.47.5
-opentelemetry-instrumentation-openai==0.47.5
-opentelemetry-instrumentation-openai-agents==0.47.5
-opentelemetry-instrumentation-pinecone==0.47.5
-opentelemetry-instrumentation-qdrant==0.47.5
+opentelemetry-instrumentation-marqo==0.48.0
+opentelemetry-instrumentation-mcp==0.48.0
+opentelemetry-instrumentation-milvus==0.48.0
+opentelemetry-instrumentation-mistralai==0.48.0
+opentelemetry-instrumentation-ollama==0.48.0
+opentelemetry-instrumentation-openai==0.48.0
+opentelemetry-instrumentation-openai-agents==0.48.0
+opentelemetry-instrumentation-pinecone==0.48.0
+opentelemetry-instrumentation-qdrant==0.48.0
 opentelemetry-instrumentation-redis==0.59b0
-opentelemetry-instrumentation-replicate==0.47.5
+opentelemetry-instrumentation-replicate==0.48.0
 opentelemetry-instrumentation-requests==0.59b0
-opentelemetry-instrumentation-sagemaker==0.47.5
+opentelemetry-instrumentation-sagemaker==0.48.0
 opentelemetry-instrumentation-sqlalchemy==0.59b0
 opentelemetry-instrumentation-threading==0.59b0
-opentelemetry-instrumentation-together==0.47.5
-opentelemetry-instrumentation-transformers==0.47.5
+opentelemetry-instrumentation-together==0.48.0
+opentelemetry-instrumentation-transformers==0.48.0
 opentelemetry-instrumentation-urllib3==0.59b0
-opentelemetry-instrumentation-vertexai==0.47.5
-opentelemetry-instrumentation-watsonx==0.47.5
-opentelemetry-instrumentation-weaviate==0.47.5
-opentelemetry-instrumentation-writer==0.47.5
+opentelemetry-instrumentation-vertexai==0.48.0
+opentelemetry-instrumentation-watsonx==0.48.0
+opentelemetry-instrumentation-weaviate==0.48.0
+opentelemetry-instrumentation-writer==0.48.0
 opentelemetry-proto @ git+https://github.com/open-telemetry/opentelemetry-python.git@1f68134481c46e476a127b61a36dc69889275d15#subdirectory=opentelemetry-proto
 opentelemetry-sdk @ git+https://github.com/open-telemetry/opentelemetry-python.git@1f68134481c46e476a127b61a36dc69889275d15#subdirectory=opentelemetry-sdk
 opentelemetry-semantic-conventions @ git+https://github.com/open-telemetry/opentelemetry-python.git@1f68134481c46e476a127b61a36dc69889275d15#subdirectory=opentelemetry-semantic-conventions
@@ -170,7 +170,7 @@ sphinxcontrib-jquery==4.1
 sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-qthelp==2.0.0
 sphinxcontrib-serializinghtml==2.0.0
-splunk-otel-genai-evals-deepeval
+# splunk-otel-genai-evals-deepeval
 splunk-otel-instrumentation-langchain
 splunk-otel-util-genai
 splunk-otel-util-genai-evals
@@ -181,7 +181,7 @@ tiktoken==0.12.0
 tokenizers==0.22.1
 tomlkit==0.13.3
 tqdm==4.67.1
-traceloop-sdk==0.47.5
+traceloop-sdk==0.48.0
 typer==0.20.0
 typer-slim==0.20.0
 typing-inspection==0.4.2
