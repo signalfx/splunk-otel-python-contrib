@@ -975,14 +975,22 @@ class TraceloopSpanProcessor(SpanProcessor):
 
                     # Mark as processed
                     mutated["_traceloop_processed"] = True
+                    # CRITICAL: Remove all remaining traceloop.* attributes before setting on span
+                    # Some traceloop.* attributes might not be in the rename mapping and would leak through
+                    cleaned_mutated = {
+                        k: v for k, v in mutated.items() 
+                        if not k.startswith("traceloop.")
+                    }
+
                     # Clear and update the underlying _attributes dict
                     span._attributes.clear()  # type: ignore[attr-defined]
-                    span._attributes.update(mutated)  # type: ignore[attr-defined]
+                    span._attributes.update(cleaned_mutated)  # type: ignore[attr-defined]
                     logging.getLogger(__name__).debug(
-                        "Mutated span %s attributes: %s -> %s keys",
+                        "Mutated span %s attributes: %s -> %s keys (removed %d traceloop.* keys)",
                         span.name,
                         len(original),
-                        len(mutated),
+                        len(cleaned_mutated),
+                        len(mutated) - len(cleaned_mutated),
                     )
                 else:
                     logging.getLogger(__name__).warning(
