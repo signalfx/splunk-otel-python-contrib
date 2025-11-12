@@ -7,11 +7,12 @@ Manual testing framework for validating Alpha release AI observability features 
 ```
 alpha-release-testing/
 ├── config/
-│   ├── .env                         # Main configuration
-│   └── .env.{realm}.template        # Realm templates (lab0, rc0, us1)
+│   └── .env                         # Single configuration file (edit this)
 ├── tests/apps/                      # Test applications
+│   ├── retail_shop_langchain_app.py # NEW: Retail multi-agent (unified traces)
 │   ├── langchain_evaluation_app.py  # LangChain multi-agent (6 scenarios)
 │   ├── langgraph_travel_planner_app.py  # LangGraph workflow (5 agents)
+│   ├── direct_azure_openai_app.py   # Manual GenAI instrumentation
 │   └── traceloop_travel_planner_app.py  # Traceloop translator
 ├── docs/
 │   ├── ALPHA_RELEASE_TEST_PLAN.md   # Test plan with all use cases
@@ -107,9 +108,8 @@ pip install -e ../../../../instrumentation-genai/opentelemetry-instrumentation-l
 ### 2. Configure Environment
 
 ```bash
-# Copy template and edit
-cp config/.env.lab0.template config/.env
-vim config/.env  # Add your OPENAI_API_KEY
+# Edit the single .env file
+vim config/.env  # Update OPENAI_API_KEY, SPLUNK_REALM, SPLUNK_ACCESS_TOKEN
 
 # Export environment variables (important!)
 set -a
@@ -134,9 +134,12 @@ opentelemetry-instrument python langgraph_travel_planner_app.py
 
 ## 📊 Verify in Splunk APM
 
-1. Navigate to Splunk APM (lab0: https://app.lab0.signalfx.com)
-2. Go to **APM → Agents**
-3. Find your service: `alpha-release-test`
+1. Navigate to Splunk APM (check your `SPLUNK_REALM` in config/.env)
+   - rc0: https://app.rc0.signalfx.com
+   - us1: https://app.us1.signalfx.com
+   - lab0: https://app.lab0.signalfx.com
+2. Go to **APM → Traces**
+3. Search for service: `sf_service:alpha-release-test`
 4. Verify:
    - Agent names appear correctly
    - Evaluation metrics visible
@@ -178,5 +181,5 @@ pip install -e ../../../../instrumentation-genai/opentelemetry-instrumentation-l
 ---
 
 **Status**: Ready for manual testing  
-**Environment**: lab0 (Splunk Observability Cloud)  
-**Last Updated**: November 11, 2025
+**Configuration**: Single `config/.env` file (no templates)  
+**Last Updated**: November 12, 2025

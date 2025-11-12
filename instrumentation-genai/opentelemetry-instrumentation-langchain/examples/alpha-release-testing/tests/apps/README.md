@@ -8,7 +8,44 @@ This directory contains production-ready test applications for validating Alpha 
 
 ## 📱 Available Applications
 
-### 1. **LangChain Evaluation App** (`langchain_evaluation_app.py`)
+### 1. **Retail Shop LangChain App** (`retail_shop_langchain_app.py`) ⭐ NEW
+
+**Purpose**: Multi-agent retail system with unified trace validation
+
+**Features**:
+- ✅ **3-Agent Hierarchy**: Store Manager (parent) → Inventory Agent + Customer Service Agent (children)
+- ✅ **LangChain Auto-Instrumentation**: Uses `create_agent()` and `LangchainInstrumentor().instrument()`
+- ✅ **Unified Traces**: Root span wrapper ensures single trace per scenario
+- ✅ **Tool Functions**: `check_inventory()`, `get_return_policy()`, `format_response()`
+- ✅ **Normal Content**: Demonstrates passing evaluation metrics
+
+**Test Scenarios**:
+1. **Product Availability** - Customer inquires about iPhone 15 Pro stock
+2. **Return Request** - Customer requests laptop return process
+
+**Usage**:
+```bash
+# Run both scenarios
+python retail_shop_langchain_app.py
+
+# Verify in Splunk APM
+# Service: retail-shop-langchain
+# Environment: From OTEL_DEPLOYMENT_ENVIRONMENT
+```
+
+**Configuration**: `config/.env`
+
+**Validates**:
+- ✅ LangChain automatic instrumentation
+- ✅ Unified trace structure with root spans
+- ✅ Multi-agent coordination
+- ✅ Evaluation metrics on all agents
+- ✅ Environment variable configuration
+- ✅ Tool execution tracking
+
+---
+
+### 2. **LangChain Evaluation App** (`langchain_evaluation_app.py`)
 
 **Source**: `qse-evaluation-harness/multi-agent-openai-metrics-trigger.py`
 
