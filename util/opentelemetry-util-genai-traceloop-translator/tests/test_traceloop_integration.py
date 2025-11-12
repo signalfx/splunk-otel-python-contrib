@@ -464,7 +464,7 @@ class TestModelInference:
         tracer, exporter, _ = setup_tracer
 
         with tracer.start_as_current_span("chat completion") as span:
-            span.set_attribute("gen_ai.request.model", "gpt-4")
+            span.set_attribute("gen_ai.request.model", "gpt-5-nano")
             span.set_attribute("gen_ai.system", "openai")
 
         spans = exporter.get_finished_spans()
@@ -474,7 +474,7 @@ class TestModelInference:
             s
             for s in spans
             if s.attributes
-            and s.attributes.get("gen_ai.request.model") == "gpt-4"
+            and s.attributes.get("gen_ai.request.model") == "gpt-5-nano"
         ]
 
         assert (
@@ -545,7 +545,7 @@ class TestOperationInference:
 
         with tracer.start_as_current_span("chat gpt-4") as span:
             span.set_attribute("gen_ai.system", "openai")
-            span.set_attribute("gen_ai.request.model", "gpt-4")
+            span.set_attribute("gen_ai.request.model", "gpt-5-nano")
 
         spans = exporter.get_finished_spans()
 

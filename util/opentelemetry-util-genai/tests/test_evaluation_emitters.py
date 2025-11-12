@@ -39,7 +39,7 @@ def test_spec_event_emission_uses_semconv_attributes() -> None:
         score=0.75,
         label="medium",
         explanation="Detected mild bias",
-        attributes={"judge_model": "gpt-4", 1: "int-key"},
+        attributes={"judge_model": "gpt-5-nano", 1: "int-key"},
         error=Error(message="timeout", type=TimeoutError),
     )
 
@@ -54,7 +54,7 @@ def test_spec_event_emission_uses_semconv_attributes() -> None:
     assert attrs["gen_ai.evaluation.name"] == "bias"
     assert attrs["gen_ai.evaluation.score.value"] == 0.75
     assert attrs["gen_ai.evaluation.explanation"] == "Detected mild bias"
-    assert attrs["gen_ai.evaluation.attributes.judge_model"] == "gpt-4"
+    assert attrs["gen_ai.evaluation.attributes.judge_model"] == "gpt-5-nano"
     assert attrs["gen_ai.evaluation.attributes.1"] == "int-key"
     assert attrs["error.message"] == "timeout"
     assert attrs["error.type"] == "TimeoutError"
@@ -62,7 +62,7 @@ def test_spec_event_emission_uses_semconv_attributes() -> None:
         "score": 0.75,
         "label": "medium",
         "explanation": "Detected mild bias",
-        "attributes": {"judge_model": "gpt-4", 1: "int-key"},
+        "attributes": {"judge_model": "gpt-5-nano", 1: "int-key"},
         "error": {"type": "TimeoutError", "message": "timeout"},
     }
 

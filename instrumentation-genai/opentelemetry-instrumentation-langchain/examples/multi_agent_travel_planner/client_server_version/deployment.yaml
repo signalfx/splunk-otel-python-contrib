@@ -31,7 +31,7 @@ spec:
                   key: openai-api-key
             # OpenAI Model
             - name: OPENAI_MODEL
-              value: "gpt-4o"
+              value: "gpt-5-nano"
             # Service Name
             - name: OTEL_SERVICE_NAME
               value: "travel-planner-langchain"
