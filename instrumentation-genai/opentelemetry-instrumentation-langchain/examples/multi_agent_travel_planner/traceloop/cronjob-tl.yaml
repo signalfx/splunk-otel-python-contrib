@@ -8,7 +8,7 @@ metadata:
     component: telemetry
   annotations:
     description: "Multi-agent travel planner with Traceloop translator and GenAI evaluations. splunk-otel-instrumentation-langchain is NOT installed"
-    git-commit: "b1b42fb"
+    git-commit: "adc36a2"
 spec:
   # Run every 30 minutes from 8 AM to 5 PM PST on weekdays (Monday-Friday)
   schedule: "*/30 8-17 * * 1-5"
@@ -36,7 +36,7 @@ spec:
           containers:
             - name: travel-planner-traceloop
               # Multi-platform image (amd64, arm64) with git commit hash tag
-              image: admehra621/travel-planner-tl:b1b42fb
+              image: admehra621/travel-planner-tl:adc36a2
               imagePullPolicy: Always
               
               env:
@@ -46,7 +46,7 @@ spec:
                 
                 # === OpenTelemetry Resource Attributes ===
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=b1b42fb"
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=adc36a2"
                 
                 # === Service name for telemetry ===
                 - name: OTEL_SERVICE_NAME

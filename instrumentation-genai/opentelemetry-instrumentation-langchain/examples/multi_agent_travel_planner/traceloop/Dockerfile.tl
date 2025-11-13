@@ -12,17 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy required packages (build context is repo root)
 COPY util/opentelemetry-util-genai-traceloop-translator /app/opentelemetry-util-genai-traceloop-translator
-COPY util/opentelemetry-util-genai-evals-deepeval /app/opentelemetry-util-genai-evals-deepeval
 COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner
 
 WORKDIR /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/traceloop
 
 # Install Python dependencies (excluding local -e packages and git+ssh dependencies)
 RUN pip install --no-cache-dir -r requirements.traceloop.txt
-
-# Install local utility packages with updated dependencies
-RUN cd /app/opentelemetry-util-genai-traceloop-translator && pip install --no-cache-dir --no-deps -e . && \
-    cd /app/opentelemetry-util-genai-evals-deepeval && pip install --no-cache-dir -e .
 
 # Verify packages are installed correctly
 RUN python3 -c "from opentelemetry.util.genai.handler import get_telemetry_handler; print('✓ GenAI handler available')" && \
