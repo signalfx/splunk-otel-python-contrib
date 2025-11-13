@@ -7,13 +7,12 @@ metadata:
     app: trip-planner-tl
     component: telemetry
   annotations:
-    description: "Multi-agent trip planner with Traceloop translator and GenAI evaluations (Deepeval telemetry disabled)"
-    git-commit: "20251107-164153"
+    description: "Multi-agent trip planner with Traceloop translator and GenAI evaluations. splunk-otel-instrumentation-langchain is installed"
+    git-commit: "1b4045e"
 spec:
-  # Run every 10 minutes from Nov 7 (Fri) through Nov 10 (Mon) 10 AM PST
-  # Covers: Fri Nov 7 (now) through Mon Nov 10 morning
-  # NOTE: Manually suspend on Monday Nov 10 at 10 AM PST
-  schedule: "*/10 * 7-10 11 *"
+  # Run every 30 minutes from 8 AM to 5 PM PST on weekdays (Monday-Friday)
+  # Offset from travel-planner-tl by 45 minutes (runs at :15 and :45)
+  schedule: "15,45 8-17 * * 1-5"
   timeZone: "America/Los_Angeles"
   suspend: false
   
@@ -38,7 +37,7 @@ spec:
           containers:
             - name: trip-planner-traceloop
               # Multi-platform image (amd64, arm64) with git commit hash tag
-              image: admehra621/trip-planner-tl:20251107-164153
+              image: admehra621/trip-planner-tl-lc:1b4045e
               imagePullPolicy: Always
               
               env:
@@ -48,7 +47,7 @@ spec:
                 
                 # === OpenTelemetry Resource Attributes ===
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=20251107-164153"
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=1b4045e"
                 
                 # === Service name for telemetry ===
                 - name: OTEL_SERVICE_NAME

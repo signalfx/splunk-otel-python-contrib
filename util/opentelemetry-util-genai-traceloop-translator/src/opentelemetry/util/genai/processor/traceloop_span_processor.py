@@ -302,14 +302,6 @@ class TraceloopSpanProcessor(SpanProcessor):
             logger.debug("[TL_PROCESSOR] Span filtered: name=%s", span.name)
             return None
 
-        logger.debug(
-            "[TL_PROCESSOR] Translating span: name=%s, kind=%s",
-            span.name,
-            span.attributes.get("traceloop.span.kind")
-            if span.attributes
-            else None,
-        )
-
         # avoid emitting multiple synthetic spans if on_end invoked repeatedly.
         span_id_int = getattr(getattr(span, "context", None), "span_id", None)
         if span_id_int is not None:
@@ -516,35 +508,6 @@ class TraceloopSpanProcessor(SpanProcessor):
 
             # STEP 1: Always mutate immediately (ALL spans get attribute translation)
             self._mutate_span_if_needed(span)
-
-            # STEP 1.5: Skip evaluation-related spans entirely (don't buffer AND don't export)
-            # These are Deepeval's internal spans that should never be processed or exported
-            span_name = span.name or ""
-            for exclude_pattern in _EXCLUDE_SPAN_PATTERNS:
-                if exclude_pattern.lower() in span_name.lower():
-                    _logger.debug(
-                        "[TL_PROCESSOR] Span excluded (will not export): pattern='%s', span=%s",
-                        exclude_pattern,
-                        span_name,
-                    )
-                    # CRITICAL: Mark span as non-sampled to prevent export
-                    # This prevents the span from being sent to the backend
-                    if hasattr(span, "_context") and hasattr(
-                        span._context, "_trace_flags"
-                    ):  # type: ignore
-                        try:
-                            # Set trace flags to 0 (not sampled)
-                            span._context._trace_flags = 0  # type: ignore
-                            _logger.debug(
-                                "[TL_PROCESSOR] Marked span as non-sampled: %s",
-                                span_name,
-                            )
-                        except Exception as e:
-                            _logger.debug(
-                                "[TL_PROCESSOR] Could not mark span as non-sampled: %s",
-                                e,
-                            )
-                    return
 
             # STEP 2: Check if this is an LLM span that needs evaluation
             if self._is_llm_span(span):
@@ -789,8 +752,14 @@ class TraceloopSpanProcessor(SpanProcessor):
         _logger = logging.getLogger(__name__)
 
         # Extract Traceloop serialized data
-        original_input_data = original_attrs.get("traceloop.entity.input")
-        original_output_data = original_attrs.get("traceloop.entity.output")
+        original_input_data = (
+            original_attrs.get("traceloop.entity.input") or
+            mutated_attrs.get("gen_ai.input.messages")
+        )
+        original_output_data = (
+            original_attrs.get("traceloop.entity.output") or
+            mutated_attrs.get("gen_ai.output.messages")
+        )
 
         if not original_input_data and not original_output_data:
             return None  # Nothing to reconstruct
@@ -1006,14 +975,22 @@ class TraceloopSpanProcessor(SpanProcessor):
 
                     # Mark as processed
                     mutated["_traceloop_processed"] = True
+                    # CRITICAL: Remove all remaining traceloop.* attributes before setting on span
+                    # Some traceloop.* attributes might not be in the rename mapping and would leak through
+                    cleaned_mutated = {
+                        k: v for k, v in mutated.items() 
+                        if not k.startswith("traceloop.")
+                    }
+
                     # Clear and update the underlying _attributes dict
                     span._attributes.clear()  # type: ignore[attr-defined]
-                    span._attributes.update(mutated)  # type: ignore[attr-defined]
+                    span._attributes.update(cleaned_mutated)  # type: ignore[attr-defined]
                     logging.getLogger(__name__).debug(
-                        "Mutated span %s attributes: %s -> %s keys",
+                        "Mutated span %s attributes: %s -> %s keys (removed %d traceloop.* keys)",
                         span.name,
                         len(original),
-                        len(mutated),
+                        len(cleaned_mutated),
+                        len(mutated) - len(cleaned_mutated),
                     )
                 else:
                     logging.getLogger(__name__).warning(
@@ -1142,7 +1119,24 @@ class TraceloopSpanProcessor(SpanProcessor):
                 # Extract content and convert to parts
                 content = getattr(lc_msg, "content", "")
 
-                # CRITICAL: Ensure content is a string, not a dict or other object
+                # CRITICAL 1: Check if content is a JSON string with LangChain serialization format
+                # Basically only use the "content" of the incoming traceloop entity input/output
+                if isinstance(content, str) and content.startswith("{") and '"lc"' in content:
+                    try:
+                        parsed = json.loads(content)
+                        # LangChain serialization format: {"lc": 1, "kwargs": {"content": "..."}}
+                        if isinstance(parsed, dict) and "kwargs" in parsed and "content" in parsed["kwargs"]:
+                            content = parsed["kwargs"]["content"]
+                            logging.getLogger(__name__).debug(
+                                "[TL_PROCESSOR] Extracted content from LangChain serialization format"
+                            )
+                    except (json.JSONDecodeError, KeyError, TypeError) as e:
+                        logging.getLogger(__name__).warning(
+                            "[TL_PROCESSOR] Failed to parse LangChain serialization: %s",
+                            str(e)
+                        )
+                
+                # CRITICAL 2: Ensure content is a string, not a dict or other object
                 if isinstance(content, dict):
                     # If content is a dict, it might be already structured
                     # Try to extract the actual text from it
@@ -1392,6 +1386,18 @@ class TraceloopSpanProcessor(SpanProcessor):
                 in str(base_attrs.get("gen_ai.operation.name", "")).lower(),
                 "agent" in str(base_attrs.get("gen_ai.span.kind", "")).lower(),
                 "task" in str(base_attrs.get("gen_ai.span.kind", "")).lower(),
+            )
+            return None
+
+        # Check if output messages have empty parts
+        # Example: [OutputMessage(role='assistant', parts=[], finish_reason='stop')]
+        if output_messages and all(not msg.parts for msg in output_messages):
+            _logger.warning(
+                "[TL_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
+                "span=%s, span_id=%s, output_messages=%s",
+                existing_span.name,
+                span_id,
+                output_messages
             )
             return None
 
