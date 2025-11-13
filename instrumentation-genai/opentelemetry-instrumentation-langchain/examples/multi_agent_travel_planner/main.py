@@ -17,11 +17,12 @@ Multi-agent travel planner driven by LangGraph.
 
 Coordinates a set of LangChain agents (coordinator, flight, hotel, activities,
 plan synthesizer) to build a travel itinerary to demonstrate OpenTelemetry LangChain
-instrumentation. 
+instrumentation.
 
 See README.md for more information
 
 """
+
 import argparse
 import os
 import random
@@ -291,6 +292,7 @@ def maybe_add_quality_noise(
     injected = base_prompt + "\n\n" + "\n".join(snippets) + "\n"
     return injected
 
+
 # ---------------------------------------------------------------------------
 # LangGraph nodes
 # ---------------------------------------------------------------------------
@@ -504,6 +506,7 @@ def build_workflow() -> StateGraph:
 # instrumentation is useful for debugging and development of instrumentation in IDE
 # ---------------------------------------------------------------------------
 
+
 def _configure_manual_instrumentation() -> None:
     """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
     from opentelemetry.sdk.trace import TracerProvider
@@ -523,9 +526,11 @@ def _configure_manual_instrumentation() -> None:
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    
+
     trace.set_tracer_provider(TracerProvider())
-    trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    trace.get_tracer_provider().add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter())
+    )
 
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
@@ -613,6 +618,7 @@ def main(manual_instrumentation: bool = False) -> None:
         print("❌ No itinerary was generated.")
 
     time.sleep(300)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

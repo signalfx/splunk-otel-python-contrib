@@ -18,14 +18,21 @@ class TestMessageSerialization:
         """Test that InputMessage content is not double-encoded."""
         msg = InputMessage(
             role="user",
-            parts=[Text(content="Hello, how are you?", type="text")]
+            parts=[Text(content="Hello, how are you?", type="text")],
         )
 
         # Serialize as we do in the processor
-        serialized = json.dumps([{
-            "role": msg.role,
-            "parts": [{"type": "text", "content": part.content} for part in msg.parts]
-        }])
+        serialized = json.dumps(
+            [
+                {
+                    "role": msg.role,
+                    "parts": [
+                        {"type": "text", "content": part.content}
+                        for part in msg.parts
+                    ],
+                }
+            ]
+        )
 
         # Parse back
         parsed = json.loads(serialized)
@@ -40,7 +47,9 @@ class TestMessageSerialization:
         # CRITICAL: Content should be a STRING, not nested JSON
         content = parsed[0]["parts"][0]["content"]
         assert isinstance(content, str), "Content must be string"
-        assert not content.startswith('{"'), "Content should NOT be JSON string"
+        assert not content.startswith(
+            '{"'
+        ), "Content should NOT be JSON string"
         assert content == "Hello, how are you?", "Content should be plain text"
 
     def test_output_message_not_double_encoded(self):
@@ -48,15 +57,22 @@ class TestMessageSerialization:
         msg = OutputMessage(
             role="assistant",
             parts=[Text(content="I'm doing great, thanks!", type="text")],
-            finish_reason="stop"
+            finish_reason="stop",
         )
 
         # Serialize as we do in the processor
-        serialized = json.dumps([{
-            "role": msg.role,
-            "parts": [{"type": "text", "content": part.content} for part in msg.parts],
-            "finish_reason": msg.finish_reason
-        }])
+        serialized = json.dumps(
+            [
+                {
+                    "role": msg.role,
+                    "parts": [
+                        {"type": "text", "content": part.content}
+                        for part in msg.parts
+                    ],
+                    "finish_reason": msg.finish_reason,
+                }
+            ]
+        )
 
         # Parse back
         parsed = json.loads(serialized)
@@ -70,32 +86,49 @@ class TestMessageSerialization:
         # CRITICAL: Content should be plain text, not JSON
         content = parsed[0]["parts"][0]["content"]
         assert isinstance(content, str), "Content must be string"
-        assert not content.startswith('{"'), "Content should NOT be JSON string"
-        assert content == "I'm doing great, thanks!", "Content should be plain text"
+        assert not content.startswith(
+            '{"'
+        ), "Content should NOT be JSON string"
+        assert (
+            content == "I'm doing great, thanks!"
+        ), "Content should be plain text"
 
     def test_deepeval_can_parse_serialized_messages(self):
         """Test that DeepEval can parse our serialized format."""
         # Create messages
         input_msg = InputMessage(
-            role="user",
-            parts=[Text(content="Test input", type="text")]
+            role="user", parts=[Text(content="Test input", type="text")]
         )
         output_msg = OutputMessage(
             role="assistant",
             parts=[Text(content="Test output", type="text")],
-            finish_reason="stop"
+            finish_reason="stop",
         )
 
         # Serialize to JSON string (as stored in span attributes)
-        input_json = json.dumps([{
-            "role": input_msg.role,
-            "parts": [{"type": "text", "content": part.content} for part in input_msg.parts]
-        }])
-        output_json = json.dumps([{
-            "role": output_msg.role,
-            "parts": [{"type": "text", "content": part.content} for part in output_msg.parts],
-            "finish_reason": output_msg.finish_reason
-        }])
+        input_json = json.dumps(
+            [
+                {
+                    "role": input_msg.role,
+                    "parts": [
+                        {"type": "text", "content": part.content}
+                        for part in input_msg.parts
+                    ],
+                }
+            ]
+        )
+        output_json = json.dumps(
+            [
+                {
+                    "role": output_msg.role,
+                    "parts": [
+                        {"type": "text", "content": part.content}
+                        for part in output_msg.parts
+                    ],
+                    "finish_reason": output_msg.finish_reason,
+                }
+            ]
+        )
 
         # Simulate what DeepEval does: parse JSON and extract text
         input_parsed = json.loads(input_json)
@@ -124,26 +157,34 @@ class TestMessageSerialization:
         msg = OutputMessage(
             role="assistant",
             parts=[Text(content=complex_content, type="text")],
-            finish_reason="stop"
+            finish_reason="stop",
         )
 
         # Serialize
-        serialized = json.dumps([{
-            "role": msg.role,
-            "parts": [{"type": "text", "content": part.content} for part in msg.parts],
-            "finish_reason": msg.finish_reason
-        }])
+        serialized = json.dumps(
+            [
+                {
+                    "role": msg.role,
+                    "parts": [
+                        {"type": "text", "content": part.content}
+                        for part in msg.parts
+                    ],
+                    "finish_reason": msg.finish_reason,
+                }
+            ]
+        )
 
         # Parse back
         parsed = json.loads(serialized)
         content = parsed[0]["parts"][0]["content"]
 
         # Verify content is unchanged
-        assert content == complex_content, "Complex content should be preserved"
+        assert (
+            content == complex_content
+        ), "Complex content should be preserved"
         assert "\n" in content, "Newlines should be preserved"
         assert "$" in content, "Special characters should be preserved"
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

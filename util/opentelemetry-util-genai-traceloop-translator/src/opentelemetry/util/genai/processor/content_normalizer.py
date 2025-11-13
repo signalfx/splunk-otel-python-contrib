@@ -51,7 +51,9 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
             return []
 
         # Check for "outputs" wrapper (common in workflow outputs)
-        if "outputs" in content_val and isinstance(content_val["outputs"], dict):
+        if "outputs" in content_val and isinstance(
+            content_val["outputs"], dict
+        ):
             content_val = content_val["outputs"]
 
         # Look for "messages" array
@@ -83,10 +85,9 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
                             # Infer from message position
                             role = "user" if not extracted else "assistant"
 
-                        extracted.append({
-                            "content": msg_content,
-                            "role": role
-                        })
+                        extracted.append(
+                            {"content": msg_content, "role": role}
+                        )
 
         return extracted
 
@@ -128,9 +129,16 @@ def normalize_traceloop_content(
                 # We found nested LangChain messages - extract their content
                 for lc_msg in langchain_messages:
                     parts = [_coerce_text_part(lc_msg["content"])]
-                    msg: Dict[str, Any] = {"role": lc_msg["role"], "parts": parts}
+                    msg: Dict[str, Any] = {
+                        "role": lc_msg["role"],
+                        "parts": parts,
+                    }
                     if direction == "output":
-                        fr = m.get("finish_reason") or m.get("finishReason") or "stop"
+                        fr = (
+                            m.get("finish_reason")
+                            or m.get("finishReason")
+                            or "stop"
+                        )
                         msg["finish_reason"] = fr
                     normalized.append(msg)
             else:
@@ -138,7 +146,11 @@ def normalize_traceloop_content(
                 parts = [_coerce_text_part(content_val)]
                 msg: Dict[str, Any] = {"role": role, "parts": parts}
                 if direction == "output":
-                    fr = m.get("finish_reason") or m.get("finishReason") or "stop"
+                    fr = (
+                        m.get("finish_reason")
+                        or m.get("finishReason")
+                        or "stop"
+                    )
                     msg["finish_reason"] = fr
                 normalized.append(msg)
 
@@ -221,7 +233,11 @@ def normalize_traceloop_content(
         if "messages" in raw and isinstance(raw["messages"], list):
             return normalize_traceloop_content(raw["messages"], direction)
         # wrapper args (LangGraph/Traceloop format with function call args)
-        if "args" in raw and isinstance(raw["args"], list) and len(raw["args"]) > 0:
+        if (
+            "args" in raw
+            and isinstance(raw["args"], list)
+            and len(raw["args"]) > 0
+        ):
             # Extract first arg (usually contains messages and other params)
             first_arg = raw["args"][0]
             if isinstance(first_arg, dict):
