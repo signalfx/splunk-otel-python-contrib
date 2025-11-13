@@ -46,14 +46,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 
-try:  # LangChain >= 1.0.0
-    from langchain.agents import (
-        create_agent as _create_react_agent,  # type: ignore[attr-defined]
-    )
-except ImportError:  # pragma: no cover - compatibility with older LangGraph releases
-    from langgraph.prebuilt import (
-        create_react_agent as _create_react_agent,  # type: ignore[assignment]
-    )
+
+from langchain.agents import create_agent  # type: ignore[attr-defined]
 
 from opentelemetry import trace, metrics
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
@@ -64,7 +58,6 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
 )
 
 # from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk._logs import LoggerProvider  # type: ignore[attr-defined]
 from opentelemetry._logs import set_logger_provider  # type: ignore[attr-defined]
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor  # type: ignore[attr-defined]
@@ -72,15 +65,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-try:  # Prefer new semconv attributes module (>=1.25)
-    from opentelemetry.semconv.attributes import SERVICE_NAME  # type: ignore
-except Exception:  # fallback for older versions
-    from opentelemetry.semconv.resource import ResourceAttributes  # type: ignore
-
-    SERVICE_NAME = ResourceAttributes.SERVICE_NAME  # type: ignore[attr-defined]
-
-import sys  # noqa: F401  # retained for potential future debugging/CLI extensions
 
 # GenAI Utils imports - our in-house instrumentation framework
 from opentelemetry.util.genai.handler import get_telemetry_handler, TelemetryHandler
@@ -93,17 +77,9 @@ from opentelemetry.util.genai.types import (
     Text,
 )
 
-# LangChain callback imports for token extraction
-## Removed BaseCallbackHandler (callback-based telemetry disabled)
-
-
-## TelemetryCallback removed: instrumentation now relies solely on manual handler API calls.
-
-
 # ---------------------------------------------------------------------------
 # Health check endpoint for Kubernetes
 # ---------------------------------------------------------------------------
-
 
 class HealthHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"  # Use HTTP/1.1 instead of HTTP/1.0
@@ -147,54 +123,16 @@ class HealthHandler(BaseHTTPRequestHandler):
                 session_id = str(uuid4())
                 handler = get_telemetry_handler()
 
-                # Build workflow span as child of HTTP SERVER span (current context)
-                workflow = Workflow(
-                    name="travel_multi_agent_planner",
-                    workflow_type="graph",
-                    description="Multi-agent travel planner workflow",
-                    initial_input=user_request,
-                )
-                # Attach desired gen_ai attributes via workflow.attributes
-                workflow.attributes.update(
-                    {
-                        "gen_ai.operation.name": "invoke_agent",
-                        "gen_ai.request.model": _model_name(),
-                        "gen_ai.agent.name": "travel_multi_agent_planner",
-                        "gen_ai.agent.id": f"travel_planner_{session_id}",
-                        "gen_ai.conversation.id": session_id,
-                        "gen_ai.request.temperature": 0.4,
-                        "gen_ai.request.top_p": 1.0,
-                        "gen_ai.request.max_tokens": 1024,
-                        "gen_ai.request.frequency_penalty": 0.0,
-                        "gen_ai.request.presence_penalty": 0.0,
-                        "service.name": os.getenv(
-                            "OTEL_SERVICE_NAME",
-                            "opentelemetry-python-langchain-multi-agent-in-house",
-                        ),
-                        "server.address": os.getenv("OPENAI_BASE_URL", "api.openai.com")
-                        .replace("https://", "")
-                        .replace("http://", "")
-                        .rstrip("/"),
-                        "server.port": "443",
-                    }
-                )
-                handler.start_workflow(workflow)
-
-                # Run travel planner (will create agent + LLM spans under workflow)
+                # Run travel planner – it will instantiate and manage its own Workflow span.
                 result = run_travel_planner(
                     session_id=session_id,
                     user_request=user_request,
                     destination_override=destination,
                     handler=handler,
-                    workflow=workflow,
                 )
 
-                # Finalize workflow span
-                workflow.final_output = result.get("final_itinerary")
-                handler.stop_workflow(workflow)
-
                 # Allow asynchronous evaluations to finish before responding
-                wait_seconds = int(os.getenv("EVAL_WAIT_SECONDS", "150"))
+                wait_seconds = int(os.getenv("EVAL_WAIT_SECONDS", "300"))
                 if wait_seconds > 0:
                     print(
                         f"⏳ Waiting {wait_seconds}s for evaluations (session {session_id})"
@@ -251,14 +189,24 @@ def run_travel_planner(
     session_id: str,
     user_request: str,
     destination_override: Optional[str] = None,
-    handler: TelemetryHandler,
-    workflow: Workflow,
+    handler: Optional[TelemetryHandler] = None,
 ) -> Dict[str, Any]:
     """Run the travel planner workflow and return results.
 
     Expects a started workflow span (child of HTTP SERVER span). Creates AgentInvocation
     and LLMInvocation spans as children. Populates messages for agents/LLM invocations.
     """
+    # Instantiate workflow internally; do not append custom attributes.
+    workflow = Workflow(
+        name="travel_multi_agent_planner",
+        workflow_type="graph",
+        description="Multi-agent travel planner workflow",
+        initial_input=user_request,
+    )
+    if not handler:
+        handler = get_telemetry_handler()
+    handler.start_workflow(workflow)
+
     origin = _pick_origin(user_request)
     destination = destination_override or _pick_destination(user_request)
     departure, return_date = _compute_dates()
@@ -314,31 +262,17 @@ def run_travel_planner(
         print("\n🎉 Final itinerary\n" + "-" * 40)
         print(final_plan)
 
-    # Attach final output to workflow attributes for completeness
+    # Set final_output and stop the internally-created workflow (no extra attributes added).
     if final_plan:
-        workflow.attributes["gen_ai.output.messages"] = json.dumps(
-            [
-                {
-                    "role": "assistant",
-                    "parts": [{"type": "text", "content": final_plan[:4000]}],
-                    "finish_reason": "stop",
-                }
-            ]
-        )
         workflow.final_output = final_plan
-        workflow.attributes["metadata.final_plan.preview"] = final_plan[:500] + (
-            "..." if len(final_plan) > 500 else ""
-        )
-    workflow.attributes["metadata.session_id"] = session_id
+    handler.stop_workflow(workflow)
 
     return {
         "session_id": session_id,
         "final_itinerary": final_plan,
         "flight_summary": final_state.get("flight_summary") if final_state else None,
         "hotel_summary": final_state.get("hotel_summary") if final_state else None,
-        "activities_summary": final_state.get("activities_summary")
-        if final_state
-        else None,
+        "activities_summary": final_state.get("activities_summary") if final_state else None,
     }
 
 
@@ -432,6 +366,69 @@ def _coerce_content(raw: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
+# LLM metadata extraction helper
+# ---------------------------------------------------------------------------
+
+def _apply_llm_response_metadata(message: Any, llm_invocation: LLMInvocation) -> None:
+    """Populate LLMInvocation from a LangChain response message.
+
+    Responsibilities:
+      1. If output_messages not already set, create a single assistant OutputMessage from message.content.
+      2. Extract token usage from either:
+         - message.usage_metadata => {input_tokens|prompt_tokens, output_tokens|completion_tokens}
+         - message.response_metadata.token_usage OR .usage => {prompt_tokens, completion_tokens, total_tokens}
+      3. Set llm_invocation.input_tokens / output_tokens when available.
+
+    Safe to call multiple times; existing output_messages are preserved and not overwritten.
+    Silently ignores missing metadata attributes.
+    """
+    if message is None:
+        return
+
+    # 1. Populate output_messages if absent.
+    if not getattr(llm_invocation, "output_messages", None):
+        raw_content = getattr(message, "content", None)
+        # Some LangChain wrappers put text under .content; if absent, coerce entire message.
+        coerced = _coerce_content(raw_content if raw_content is not None else message)
+        llm_invocation.output_messages = [
+            OutputMessage(
+                role="assistant", parts=[Text(content=coerced)], finish_reason="stop"
+            )
+        ]
+
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+    usage_meta: Any = getattr(message, "usage_metadata", None)
+    if isinstance(usage_meta, dict) and usage_meta:
+        in_val = usage_meta.get("input_tokens") or usage_meta.get("prompt_tokens")
+        out_val = usage_meta.get("output_tokens") or usage_meta.get("completion_tokens")
+        if isinstance(in_val, int):
+            input_tokens = in_val
+        if isinstance(out_val, int):
+            output_tokens = out_val
+
+    if input_tokens is None or output_tokens is None:
+        resp_meta: Any = getattr(message, "response_metadata", None)
+        if isinstance(resp_meta, dict) and resp_meta:
+            token_usage: Any = resp_meta.get("token_usage") or resp_meta.get("usage")
+            if isinstance(token_usage, dict):
+                if input_tokens is None:
+                    prompt_val = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
+                    if isinstance(prompt_val, int):
+                        input_tokens = prompt_val
+                if output_tokens is None:
+                    completion_val = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
+                    if isinstance(completion_val, int):
+                        output_tokens = completion_val
+
+    if input_tokens is not None:
+        llm_invocation.input_tokens = input_tokens
+    if output_tokens is not None:
+        llm_invocation.output_tokens = output_tokens
+
+
+# ---------------------------------------------------------------------------
 # Tools exposed to agents
 # ---------------------------------------------------------------------------
 
@@ -518,72 +515,39 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
     )
 
 
-def _configure_otlp_tracing() -> None:
+def _configure_manual_instrumentation() -> None:
     """Initialise trace and metric providers that export to the configured OTLP endpoint."""
-    if isinstance(trace.get_tracer_provider(), TracerProvider):
-        return
+    """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.trace import SpanKind
 
-    # Create resource with service name from environment
-    service_name = os.getenv("OTEL_SERVICE_NAME", "unknown_service")
-    resource = Resource.create({SERVICE_NAME: service_name})
-
-    # Configure trace provider
-    tracer_provider = TracerProvider(resource=resource)
-    trace_processor = BatchSpanProcessor(OTLPSpanExporter())
-    tracer_provider.add_span_processor(trace_processor)
-    trace.set_tracer_provider(tracer_provider)
-
-    # Configure metrics provider
-    metric_exporter = OTLPMetricExporter()
-    metric_reader = PeriodicExportingMetricReader(
-        exporter=metric_exporter,
-        export_interval_millis=5000,  # Export every 5 seconds
+    from opentelemetry import _events, _logs, metrics, trace
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter,
     )
-    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
-    metrics.set_meter_provider(meter_provider)
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        OTLPSpanExporter,
+    )
+    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+    from opentelemetry.sdk._events import EventLoggerProvider
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    
+    trace.set_tracer_provider(TracerProvider())
+    trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
-    # Configure logs provider (OTLP) - optional, guarded import for environments without log exporter
-    try:  # pragma: no cover - defensive import
-        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter  # type: ignore
+    metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
 
-        log_provider = LoggerProvider(resource=resource)
-        set_logger_provider(log_provider)
-        log_exporter = OTLPLogExporter()
-        log_processor = BatchLogRecordProcessor(log_exporter)
-        log_provider.add_log_record_processor(log_processor)
-    except Exception:
-        # Non-fatal if logs exporter unavailable or experimental API missing
-        pass
-
-
-def _trace_attributes_for_root(
-    state: PlannerState,
-) -> Dict[str, Any]:  # widen value types
-    """Attributes attached to the root GenAI span."""
-    provider_name = "openai"
-    server_address = os.getenv("OPENAI_BASE_URL", "api.openai.com")
-    return {
-        "gen_ai.operation.name": "invoke_agent",
-        "gen_ai.provider.name": provider_name,
-        "gen_ai.request.model": _model_name(),
-        "gen_ai.agent.name": "travel_multi_agent_planner",
-        "gen_ai.agent.id": f"travel_planner_{state['session_id']}",
-        "gen_ai.conversation.id": state["session_id"],
-        "gen_ai.request.temperature": 0.4,
-        "gen_ai.request.top_p": 1.0,
-        "gen_ai.request.max_tokens": 1024,
-        "gen_ai.request.frequency_penalty": 0.0,
-        "gen_ai.request.presence_penalty": 0.0,
-        "server.address": server_address.replace("https://", "")
-        .replace("http://", "")
-        .rstrip("/"),
-        "server.port": "443",
-        "service.name": os.getenv(
-            "OTEL_SERVICE_NAME",
-            "opentelemetry-python-langchain-multi-agent-in-house",
-        ),
-    }
-
+    _logs.set_logger_provider(LoggerProvider())
+    _logs.get_logger_provider().add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter())
+    )
+    _events.set_event_logger_provider(EventLoggerProvider())
 
 # ---------------------------------------------------------------------------
 # LangGraph nodes
@@ -591,7 +555,7 @@ def _trace_attributes_for_root(
 
 
 def coordinator_node(state: PlannerState) -> PlannerState:
-    handler = state.get("telemetry_handler")
+    handler: TelemetryHandler = state["telemetry_handler"]
     agent = AgentInvocation(
         name="coordinator",
         agent_type="coordinator",
@@ -602,30 +566,7 @@ def coordinator_node(state: PlannerState) -> PlannerState:
         ),
         input_context=state.get("user_request"),
     )
-    if handler:
-        handler.start_agent(agent)
-        # Attach invoke_agent input messages (consistent with chat instrumentation)
-        span = getattr(agent, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.input.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "type": "text",
-                                        "content": state.get("user_request", ""),
-                                    }
-                                ],
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass  # non-fatal
+    handler.start_agent(agent)
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -639,8 +580,7 @@ def coordinator_node(state: PlannerState) -> PlannerState:
     )
     llm_invocation.provider = "openai"
     llm_invocation.framework = "langgraph"
-    if handler:
-        handler.start_llm(llm_invocation)
+    handler.start_llm(llm_invocation)
 
     llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
     system_message = SystemMessage(
@@ -652,44 +592,23 @@ def coordinator_node(state: PlannerState) -> PlannerState:
     response = llm.invoke([system_message] + state["messages"])
     response_text = _coerce_content(response.content)
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=response_text)], finish_reason="stop"
-        )
-    ]
-    if handler:
-        handler.stop_llm(llm_invocation)
+    # Populate output messages + token usage via helper.
+    _apply_llm_response_metadata(response, llm_invocation)
+    handler.stop_llm(llm_invocation)
 
     agent.output_result = response_text
     state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "flight_specialist"
-    if handler:
-        # Attach invoke_agent output messages prior to stopping span
-        span = getattr(agent, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.output.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "assistant",
-                                "parts": [
-                                    {"type": "text", "content": response_text},
-                                ],
-                                "finish_reason": "stop",
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
-        handler.stop_agent(agent)
+    handler.stop_agent(agent)
     return state
 
 
 def flight_specialist_node(state: PlannerState) -> PlannerState:
-    handler = state.get("telemetry_handler")
+    handler: TelemetryHandler = state["telemetry_handler"]
+    step_input = (
+        f"Find an appealing flight from {state['origin']} to {state['destination']} "
+        f"departing {state['departure']} for {state['travellers']} travellers."
+    )
     agent_invocation = AgentInvocation(
         name="flight_specialist",
         agent_type="specialist",
@@ -700,61 +619,26 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
             "recommend the most appealing flight option with concise justification."
         ),
     )
-    if handler:
-        handler.start_agent(agent_invocation)
-        # Record agent input message
-        step_input = (
-            f"Find an appealing flight from {state['origin']} to {state['destination']} "
-            f"departing {state['departure']} for {state['travellers']} travellers."
-        )
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.input.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "type": "text",
-                                        "content": step_input,
-                                    }
-                                ],
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
-
+    handler.start_agent(agent_invocation)
+    
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
         operation="chat",
         input_messages=[
             InputMessage(
                 role="user",
-                parts=[
-                    Text(
-                        content=(
-                            f"Find an appealing flight from {state['origin']} to {state['destination']} "
-                            f"departing {state['departure']} for {state['travellers']} travellers."
-                        )
-                    )
-                ],
+                parts=[Text(content=step_input)],
             )
         ],
     )
     llm_invocation.provider = "openai"
     llm_invocation.framework = "langgraph"
-    if handler:
-        handler.start_llm(llm_invocation)
+    handler.start_llm(llm_invocation)
 
     llm = _create_llm(
         "flight_specialist", temperature=0.4, session_id=state["session_id"]
     )
-    react_agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
+    react_agent = create_agent(llm, tools=[mock_search_flights]).with_config(
         {
             "run_name": "flight_specialist",
             "tags": ["agent", "agent:flight_specialist"],
@@ -778,13 +662,8 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     )
     state["flight_summary"] = summary
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=summary)], finish_reason="stop"
-        )
-    ]
-    if handler:
-        handler.stop_llm(llm_invocation)
+    _apply_llm_response_metadata(final_message, llm_invocation)
+    handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = summary
     state["messages"].append(
@@ -796,33 +675,19 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "hotel_specialist"
-    if handler:
         # Attach agent output messages
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.output.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "assistant",
-                                "parts": [
-                                    {"type": "text", "content": summary},
-                                ],
-                                "finish_reason": "stop",
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
-        handler.stop_agent(agent_invocation)
+    # No direct output messages attribute assignment; output_result contains summary
+
+    handler.stop_agent(agent_invocation)
     return state
 
 
 def hotel_specialist_node(state: PlannerState) -> PlannerState:
-    handler = state.get("telemetry_handler")
+    handler: TelemetryHandler = state["telemetry_handler"]
+    step_input = (
+        f"Recommend hotels in {state['destination']} for {state['travellers']} "
+        f"travellers from {state['departure']} to {state['return_date']}."
+    )
     agent_invocation = AgentInvocation(
         name="hotel_specialist",
         agent_type="specialist",
@@ -833,33 +698,7 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
             "highlighting style, location and approximate nightly rate."
         ),
     )
-    if handler:
-        handler.start_agent(agent_invocation)
-        step_input = (
-            f"Recommend hotels in {state['destination']} for {state['travellers']} "
-            f"travellers from {state['departure']} to {state['return_date']}."
-        )
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.input.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "type": "text",
-                                        "content": step_input,
-                                    }
-                                ],
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
+    handler.start_agent(agent_invocation)
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -867,26 +706,18 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
         input_messages=[
             InputMessage(
                 role="user",
-                parts=[
-                    Text(
-                        content=(
-                            f"Recommend hotels in {state['destination']} for {state['travellers']} "
-                            f"travellers from {state['departure']} to {state['return_date']}."
-                        )
-                    )
-                ],
+                parts=[Text(content=step_input)],
             )
         ],
     )
     llm_invocation.provider = "openai"
     llm_invocation.framework = "langgraph"
-    if handler:
-        handler.start_llm(llm_invocation)
+    handler.start_llm(llm_invocation)
 
     llm = _create_llm(
         "hotel_specialist", temperature=0.3, session_id=state["session_id"]
     )
-    react_agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
+    react_agent = create_agent(llm, tools=[mock_search_hotels]).with_config(
         {
             "run_name": "hotel_specialist",
             "tags": ["agent", "agent:hotel_specialist"],
@@ -910,13 +741,8 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     )
     state["hotel_summary"] = summary
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=summary)], finish_reason="stop"
-        )
-    ]
-    if handler:
-        handler.stop_llm(llm_invocation)
+    _apply_llm_response_metadata(final_message, llm_invocation)
+    handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = summary
     state["messages"].append(
@@ -928,32 +754,17 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "activity_specialist"
-    if handler:
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.output.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "assistant",
-                                "parts": [
-                                    {"type": "text", "content": summary},
-                                ],
-                                "finish_reason": "stop",
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
-        handler.stop_agent(agent_invocation)
+    # No direct output messages attribute assignment; output_result contains summary
+    handler.stop_agent(agent_invocation)
     return state
 
 
 def activity_specialist_node(state: PlannerState) -> PlannerState:
-    handler = state.get("telemetry_handler")
+    handler: TelemetryHandler = state["telemetry_handler"]
+    step_input = (
+        f"Recommend activities in {state['destination']} for {state['travellers']} "
+        f"travellers from {state['departure']} to {state['return_date']}."
+    )
     agent_invocation = AgentInvocation(
         name="activity_specialist",
         agent_type="specialist",
@@ -963,33 +774,7 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
             "You are an activity specialist. Suggest signature destination activities that fit the trip goals and dates."
         ),
     )
-    if handler:
-        handler.start_agent(agent_invocation)
-        step_input = (
-            f"Recommend activities in {state['destination']} for {state['travellers']} "
-            f"travellers from {state['departure']} to {state['return_date']}."
-        )
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.input.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "type": "text",
-                                        "content": step_input,
-                                    }
-                                ],
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
+    handler.start_agent(agent_invocation)
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -997,26 +782,18 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
         input_messages=[
             InputMessage(
                 role="user",
-                parts=[
-                    Text(
-                        content=(
-                            f"Recommend activities in {state['destination']} for {state['travellers']} "
-                            f"travellers from {state['departure']} to {state['return_date']}."
-                        )
-                    )
-                ],
+                parts=[Text(content=step_input)],
             )
         ],
     )
     llm_invocation.provider = "openai"
     llm_invocation.framework = "langgraph"
-    if handler:
-        handler.start_llm(llm_invocation)
+    handler.start_llm(llm_invocation)
 
     llm = _create_llm(
         "activity_specialist", temperature=0.5, session_id=state["session_id"]
     )
-    react_agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
+    react_agent = create_agent(llm, tools=[mock_search_activities]).with_config(
         {
             "run_name": "activity_specialist",
             "tags": ["agent", "agent:activity_specialist"],
@@ -1041,13 +818,8 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     # Store under activities_summary key (TypedDict field)
     state["activities_summary"] = summary
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=summary)], finish_reason="stop"
-        )
-    ]
-    if handler:
-        handler.stop_llm(llm_invocation)
+    _apply_llm_response_metadata(final_message, llm_invocation)
+    handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = summary
     state["messages"].append(
@@ -1059,32 +831,13 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "plan_synthesizer"
-    if handler:
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.output.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "assistant",
-                                "parts": [
-                                    {"type": "text", "content": summary},
-                                ],
-                                "finish_reason": "stop",
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
-        handler.stop_agent(agent_invocation)
+    # No direct output messages attribute assignment; output_result contains summary
+    handler.stop_agent(agent_invocation)
     return state
 
 
 def plan_synthesizer_node(state: PlannerState) -> PlannerState:
-    handler = state.get("telemetry_handler")
+    handler: TelemetryHandler = state["telemetry_handler"]
     agent_invocation = AgentInvocation(
         name="plan_synthesizer",
         agent_type="synthesizer",
@@ -1093,30 +846,7 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
             "You synthesize the specialist outputs into a cohesive, structured itinerary (flights, hotel, activities)."
         ),
     )
-    if handler:
-        handler.start_agent(agent_invocation)
-        # Input is a summarization instruction
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.input.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "type": "text",
-                                        "content": "Combine specialist insights into itinerary",
-                                    }
-                                ],
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
+    handler.start_agent(agent_invocation)
 
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
@@ -1131,8 +861,7 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
     )
     llm_invocation.provider = "openai"
     llm_invocation.framework = "langgraph"
-    if handler:
-        handler.start_llm(llm_invocation)
+    handler.start_llm(llm_invocation)
 
     llm = _create_llm(
         "plan_synthesizer", temperature=0.3, session_id=state["session_id"]
@@ -1169,36 +898,12 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
     state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "completed"
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=response_text)], finish_reason="stop"
-        )
-    ]
-    if handler:
-        handler.stop_llm(llm_invocation)
+    _apply_llm_response_metadata(response, llm_invocation)
+    handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = response_text
-    if handler:
-        span = getattr(agent_invocation, "span", None)
-        if span is not None:
-            try:
-                span.set_attribute(
-                    "gen_ai.output.messages",
-                    json.dumps(
-                        [
-                            {
-                                "role": "assistant",
-                                "parts": [
-                                    {"type": "text", "content": response_text},
-                                ],
-                                "finish_reason": "stop",
-                            }
-                        ]
-                    ),
-                )
-            except Exception:
-                pass
-        handler.stop_agent(agent_invocation)
+    # No direct output messages attribute assignment; output_result contains summary
+    handler.stop_agent(agent_invocation)
     return state
 
 
@@ -1260,7 +965,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Load environment variables from .env file
     load_dotenv()
 
-    _configure_otlp_tracing()
+    _configure_manual_instrumentation()
     # Using GenAI Utils manual instrumentation (in-house framework)
     # To compare with auto-instrumentation, you can enable this instead:
     # LangchainInstrumentor().instrument()
@@ -1277,10 +982,10 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "and a few unique experiences."
             )
             print(f"🚀 Running single request: {user_request}")
-            result = run_travel_planner(user_request)
+            result = run_travel_planner(user_request=user_request, session_id="fake-session-001")
             print(f"✅ Planning completed for session: {result['session_id']}")
 
-            wait_seconds = int(os.getenv("EVAL_WAIT_SECONDS", "150"))
+            wait_seconds = int(os.getenv("EVAL_WAIT_SECONDS", "300"))
             if wait_seconds > 0:
                 print(
                     f"\n⏳ Waiting {wait_seconds} seconds for evaluations to finish..."
