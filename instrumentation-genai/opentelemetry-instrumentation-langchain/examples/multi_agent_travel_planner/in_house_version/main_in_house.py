@@ -366,6 +366,69 @@ def _coerce_content(raw: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
+# LLM metadata extraction helper
+# ---------------------------------------------------------------------------
+
+def _apply_llm_response_metadata(message: Any, llm_invocation: LLMInvocation) -> None:
+    """Populate LLMInvocation from a LangChain response message.
+
+    Responsibilities:
+      1. If output_messages not already set, create a single assistant OutputMessage from message.content.
+      2. Extract token usage from either:
+         - message.usage_metadata => {input_tokens|prompt_tokens, output_tokens|completion_tokens}
+         - message.response_metadata.token_usage OR .usage => {prompt_tokens, completion_tokens, total_tokens}
+      3. Set llm_invocation.input_tokens / output_tokens when available.
+
+    Safe to call multiple times; existing output_messages are preserved and not overwritten.
+    Silently ignores missing metadata attributes.
+    """
+    if message is None:
+        return
+
+    # 1. Populate output_messages if absent.
+    if not getattr(llm_invocation, "output_messages", None):
+        raw_content = getattr(message, "content", None)
+        # Some LangChain wrappers put text under .content; if absent, coerce entire message.
+        coerced = _coerce_content(raw_content if raw_content is not None else message)
+        llm_invocation.output_messages = [
+            OutputMessage(
+                role="assistant", parts=[Text(content=coerced)], finish_reason="stop"
+            )
+        ]
+
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+    usage_meta: Any = getattr(message, "usage_metadata", None)
+    if isinstance(usage_meta, dict) and usage_meta:
+        in_val = usage_meta.get("input_tokens") or usage_meta.get("prompt_tokens")
+        out_val = usage_meta.get("output_tokens") or usage_meta.get("completion_tokens")
+        if isinstance(in_val, int):
+            input_tokens = in_val
+        if isinstance(out_val, int):
+            output_tokens = out_val
+
+    if input_tokens is None or output_tokens is None:
+        resp_meta: Any = getattr(message, "response_metadata", None)
+        if isinstance(resp_meta, dict) and resp_meta:
+            token_usage: Any = resp_meta.get("token_usage") or resp_meta.get("usage")
+            if isinstance(token_usage, dict):
+                if input_tokens is None:
+                    prompt_val = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
+                    if isinstance(prompt_val, int):
+                        input_tokens = prompt_val
+                if output_tokens is None:
+                    completion_val = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
+                    if isinstance(completion_val, int):
+                        output_tokens = completion_val
+
+    if input_tokens is not None:
+        llm_invocation.input_tokens = input_tokens
+    if output_tokens is not None:
+        llm_invocation.output_tokens = output_tokens
+
+
+# ---------------------------------------------------------------------------
 # Tools exposed to agents
 # ---------------------------------------------------------------------------
 
@@ -529,11 +592,8 @@ def coordinator_node(state: PlannerState) -> PlannerState:
     response = llm.invoke([system_message] + state["messages"])
     response_text = _coerce_content(response.content)
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=response_text)], finish_reason="stop"
-        )
-    ]
+    # Populate output messages + token usage via helper.
+    _apply_llm_response_metadata(response, llm_invocation)
     handler.stop_llm(llm_invocation)
 
     agent.output_result = response_text
@@ -602,11 +662,7 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     )
     state["flight_summary"] = summary
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=summary)], finish_reason="stop"
-        )
-    ]
+    _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = summary
@@ -685,11 +741,7 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     )
     state["hotel_summary"] = summary
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=summary)], finish_reason="stop"
-        )
-    ]
+    _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = summary
@@ -766,11 +818,7 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     # Store under activities_summary key (TypedDict field)
     state["activities_summary"] = summary
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=summary)], finish_reason="stop"
-        )
-    ]
+    _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = summary
@@ -850,11 +898,7 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
     state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "completed"
 
-    llm_invocation.output_messages = [
-        OutputMessage(
-            role="assistant", parts=[Text(content=response_text)], finish_reason="stop"
-        )
-    ]
+    _apply_llm_response_metadata(response, llm_invocation)
     handler.stop_llm(llm_invocation)
 
     agent_invocation.output_result = response_text
