@@ -4,7 +4,7 @@ metadata:
   name: travel-planner-load-generator
   namespace: travel-planner
 spec:
-  schedule: "*/15 * * * *" # Every 15 minutes
+  schedule: "0,30 16-23,0-2 * * 1-5"  # Every 30 min, 8am-6pm PST Mon-Fri (16:00-02:00 UTC)
   jobTemplate:
     spec:
       template:

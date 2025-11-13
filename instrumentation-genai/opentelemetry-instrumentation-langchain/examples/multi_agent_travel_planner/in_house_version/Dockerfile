@@ -11,20 +11,15 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the local OpenTelemetry packages first
-# Note: Build context should be the repository root for this to work
-COPY util/opentelemetry-util-genai /app/util/opentelemetry-util-genai
-COPY util/opentelemetry-util-genai-evals /app/util/opentelemetry-util-genai-evals
-COPY util/opentelemetry-util-genai-evals-deepeval /app/util/opentelemetry-util-genai-evals-deepeval
-COPY util/opentelemetry-util-genai-emitters-splunk /app/util/opentelemetry-util-genai-emitters-splunk
+# Install Splunk OpenTelemetry packages from PyPI
+RUN pip install --no-cache-dir \
+    splunk-otel-util-genai \
+    splunk-otel-genai-emitters-splunk \
+    splunk-otel-util-genai-evals \
+    splunk-otel-genai-evals-deepeval \
+    splunk-otel-instrumentation-langchain
 
-# Install the local OpenTelemetry packages
-RUN pip install --no-cache-dir -e /app/util/opentelemetry-util-genai \
-    && pip install --no-cache-dir -e /app/util/opentelemetry-util-genai-evals \
-    && pip install --no-cache-dir -e /app/util/opentelemetry-util-genai-evals-deepeval \
-    && pip install --no-cache-dir -e /app/util/opentelemetry-util-genai-emitters-splunk
-
-# Copy requirements file (for other dependencies)
+# Copy requirements file (for other dependencies like langchain, langgraph, etc.)
 COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/requirements.txt .
 
 # Install Python dependencies
