@@ -1,6 +1,9 @@
 # Use Python 3.12 slim image
 FROM python:3.12-slim
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
 # Set working directory
 WORKDIR /app
 
@@ -13,11 +16,11 @@ RUN apt-get update && apt-get install -y \
 
 # Install Splunk OpenTelemetry packages from PyPI
 RUN pip install --no-cache-dir \
-    splunk-otel-util-genai \
-    splunk-otel-genai-emitters-splunk \
-    splunk-otel-util-genai-evals \
-    splunk-otel-genai-evals-deepeval \
-    splunk-otel-instrumentation-langchain
+    splunk-otel-util-genai==0.1.4 \
+    splunk-otel-genai-emitters-splunk==0.1.4 \
+    splunk-otel-util-genai-evals==0.1.4 \
+    splunk-otel-genai-evals-deepeval==0.1.6 \
+    splunk-otel-instrumentation-langchain==0.1.4
 
 # Copy requirements file (for other dependencies like langchain, langgraph, etc.)
 COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/requirements.txt .
