@@ -45,7 +45,7 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "traceloop.span.kind": "gen_ai.span.kind",
         "llm.request.type": "gen_ai.operation.name",
         "gen_ai.completion.0.content": "gen_ai.output.messages",
-        "gen_ai.prompt.0.content": "gen_ai.input.messages"
+        "gen_ai.prompt.0.content": "gen_ai.input.messages",
     }
 }
 
@@ -85,7 +85,7 @@ def enable_traceloop_translator(
             "TraceloopSpanProcessor already registered (global flag); skipping duplicate"
         )
         return False
-    
+
     # Import here to avoid circular imports
     from ..processor.traceloop_span_processor import TraceloopSpanProcessor
 
@@ -206,7 +206,7 @@ def _install_deferred_registration() -> None:
                             "TraceloopSpanProcessor already registered (global flag); skipping deferred registration"
                         )
                         return result
-                    
+
                     processor = TraceloopSpanProcessor(
                         attribute_transformations=_DEFAULT_ATTR_TRANSFORMATIONS,
                         name_transformations=_DEFAULT_NAME_TRANSFORMATIONS,

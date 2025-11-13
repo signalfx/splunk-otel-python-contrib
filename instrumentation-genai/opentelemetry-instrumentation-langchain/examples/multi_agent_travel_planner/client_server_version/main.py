@@ -27,7 +27,7 @@ week-long city break itinerary.
 [Coord] --> [Flight] --> [Hotel] --> [Act.] --> [Synth] --> END
     |          |          |          |          |
     └──────────┼──────────┼──────────┼──────────┘
-               |          |          | 
+               |          |          |
           (OTEL Spans/Metrics)
 
 
@@ -236,9 +236,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
 # Configure tracing/metrics/logging once per process so exported data goes to OTLP.
 trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter())
-)
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
 demo_tracer = trace.get_tracer("instrumentation.langchain.demo")
 
@@ -365,9 +363,7 @@ def _model_name() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
-def _create_llm(
-    agent_name: str, *, temperature: float, session_id: str
-) -> ChatOpenAI:
+def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
     """Create an LLM instance decorated with tags/metadata for tracing."""
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner"]
@@ -392,7 +388,9 @@ def _create_llm(
 # ---------------------------------------------------------------------------
 
 
-def _poison_config(custom_config: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+def _poison_config(
+    custom_config: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
     """Read environment variables or custom config controlling prompt poisoning.
 
     TRAVEL_POISON_PROB: Base probability (0-1) that a given agent step is poisoned.
@@ -404,13 +402,16 @@ def _poison_config(custom_config: Optional[Dict[str, object]] = None) -> Dict[st
     """
     if custom_config:
         prob = float(custom_config.get("prob", 0.8))
-        types = custom_config.get("types", [
-            "hallucination",
-            "bias",
-            "irrelevance",
-            "negative_sentiment",
-            "toxicity",
-        ])
+        types = custom_config.get(
+            "types",
+            [
+                "hallucination",
+                "bias",
+                "irrelevance",
+                "negative_sentiment",
+                "toxicity",
+            ],
+        )
         max_snippets = int(custom_config.get("max", 2))
         seed = custom_config.get("seed")
         if seed:
@@ -425,7 +426,9 @@ def _poison_config(custom_config: Optional[Dict[str, object]] = None) -> Dict[st
             "hallucination,bias,irrelevance,negative_sentiment,toxicity",
         )
         # Proper comma split
-        types = [t.strip() for t in types_raw.split(",") if t.strip()] if types_raw else []
+        types = (
+            [t.strip() for t in types_raw.split(",") if t.strip()] if types_raw else []
+        )
         if not types:  # fallback if split logic above produced empty list
             types = [
                 "hallucination",
@@ -475,25 +478,26 @@ def _generate_poison_snippet(kind: str, agent_name: str) -> str:
             "could easily disappoint them."  # negative framing
         )
     if kind == "toxicity":
-        return (
-            "Remark: The coordination process feels messy and slightly chaotic."  # mild critical tone
-        )
+        return "Remark: The coordination process feels messy and slightly chaotic."  # mild critical tone
     return f"(poison:{kind})"
 
 
 def maybe_add_quality_noise(
-    agent_name: str, base_prompt: str, state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+    agent_name: str,
+    base_prompt: str,
+    state: PlannerState,
+    custom_poison_config: Optional[Dict[str, object]] = None,
 ) -> str:
     """Randomly inject one or more poisoning snippets into the prompt.
 
     Records injected types into state['poison_events'] for later tracing context.
-    
+
     If custom_poison_config is explicitly None, no poisoning is applied.
     """
     # If explicitly None, disable poisoning
     if custom_poison_config is None:
         return base_prompt
-    
+
     cfg = _poison_config(custom_poison_config)
     if random.random() > cfg["prob"]:
         return base_prompt
@@ -502,13 +506,9 @@ def maybe_add_quality_noise(
     random.shuffle(available)
     count = random.randint(1, min(cfg["max"], len(available)))
     chosen = available[:count]
-    snippets = [
-        _generate_poison_snippet(kind, agent_name) for kind in chosen
-    ]
+    snippets = [_generate_poison_snippet(kind, agent_name) for kind in chosen]
     # Record events
-    state["poison_events"].extend(
-        [f"{agent_name}:{kind}" for kind in chosen]
-    )
+    state["poison_events"].extend([f"{agent_name}:{kind}" for kind in chosen])
     injected = base_prompt + "\n\n" + "\n".join(snippets) + "\n"
     return injected
 
@@ -517,6 +517,7 @@ def maybe_add_quality_noise(
 # Pretty Printing Utilities
 # ---------------------------------------------------------------------------
 
+
 def pretty_print_message(message, indent=False):
     """Pretty print a single langchain message."""
     try:
@@ -524,7 +525,7 @@ def pretty_print_message(message, indent=False):
         if not indent:
             print(pretty_message, file=sys.stderr, flush=True)
             return
-        
+
         indented = "\n".join("\t" + c for c in pretty_message.split("\n"))
         print(indented, file=sys.stderr, flush=True)
     except Exception:
@@ -540,30 +541,34 @@ def pretty_print_messages(update, last_message=False):
         # skip parent graph updates in the printouts
         if len(ns) == 0:
             return
-        
+
         graph_id = ns[-1].split(":")[0]
         print(f"\n🔹 Update from subgraph {graph_id}:", file=sys.stderr, flush=True)
         is_subgraph = True
-    
+
     for node_name, node_update in update.items():
         update_label = f"📍 Update from node {node_name}:"
         if is_subgraph:
             update_label = "\t" + update_label
-        
+
         print(f"\n{update_label}", file=sys.stderr, flush=True)
-        
+
         # Check if node_update has messages
         if "messages" in node_update:
             try:
                 messages = convert_to_messages(node_update["messages"])
                 if last_message:
                     messages = messages[-1:]
-                
+
                 for m in messages:
                     pretty_print_message(m, indent=is_subgraph)
             except Exception as e:
-                print(f"  (Could not pretty print messages: {e})", file=sys.stderr, flush=True)
-        
+                print(
+                    f"  (Could not pretty print messages: {e})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
         print("", file=sys.stderr, flush=True)
 
 
@@ -604,22 +609,19 @@ def _http_root_attributes(state: PlannerState) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def coordinator_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
-    llm = _create_llm(
-        "coordinator", temperature=0.2, session_id=state["session_id"]
-    )
-    agent = (
-        _create_react_agent(llm, tools=[])
-        .with_config(
-            {
-                "run_name": "coordinator",
-                "tags": ["agent", "agent:coordinator"],
-                "metadata": {
-                    "agent_name": "coordinator",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+def coordinator_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
+    llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
+    agent = _create_react_agent(llm, tools=[]).with_config(
+        {
+            "run_name": "coordinator",
+            "tags": ["agent", "agent:coordinator"],
+            "metadata": {
+                "agent_name": "coordinator",
+                "session_id": state["session_id"],
+            },
+        }
     )
     system_message = SystemMessage(
         content=(
@@ -643,27 +645,29 @@ def coordinator_node(state: PlannerState, custom_poison_config: Optional[Dict[st
     return state
 
 
-def flight_specialist_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
+def flight_specialist_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
     llm = _create_llm(
         "flight_specialist", temperature=0.4, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_flights]).with_config(
-            {
-                "run_name": "flight_specialist",
-                "tags": ["agent", "agent:flight_specialist"],
-                "metadata": {
-                    "agent_name": "flight_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
+        {
+            "run_name": "flight_specialist",
+            "tags": ["agent", "agent:flight_specialist"],
+            "metadata": {
+                "agent_name": "flight_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = (
         f"Find an appealing flight from {state['origin']} to {state['destination']} "
         f"departing {state['departure']} for {state['travellers']} travellers."
     )
-    step = maybe_add_quality_noise("flight_specialist", step, state, custom_poison_config)
+    step = maybe_add_quality_noise(
+        "flight_specialist", step, state, custom_poison_config
+    )
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
     state["flight_summary"] = (
@@ -680,27 +684,29 @@ def flight_specialist_node(state: PlannerState, custom_poison_config: Optional[D
     return state
 
 
-def hotel_specialist_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
+def hotel_specialist_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
     llm = _create_llm(
         "hotel_specialist", temperature=0.5, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
-            {
-                "run_name": "hotel_specialist",
-                "tags": ["agent", "agent:hotel_specialist"],
-                "metadata": {
-                    "agent_name": "hotel_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
+        {
+            "run_name": "hotel_specialist",
+            "tags": ["agent", "agent:hotel_specialist"],
+            "metadata": {
+                "agent_name": "hotel_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = (
         f"Recommend a boutique hotel in {state['destination']} between {state['departure']} "
         f"and {state['return_date']} for {state['travellers']} travellers."
     )
-    step = maybe_add_quality_noise("hotel_specialist", step, state, custom_poison_config)
+    step = maybe_add_quality_noise(
+        "hotel_specialist", step, state, custom_poison_config
+    )
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
     state["hotel_summary"] = (
@@ -717,24 +723,26 @@ def hotel_specialist_node(state: PlannerState, custom_poison_config: Optional[Di
     return state
 
 
-def activity_specialist_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
+def activity_specialist_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
     llm = _create_llm(
         "activity_specialist", temperature=0.6, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_activities]).with_config(
-            {
-                "run_name": "activity_specialist",
-                "tags": ["agent", "agent:activity_specialist"],
-                "metadata": {
-                    "agent_name": "activity_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
+        {
+            "run_name": "activity_specialist",
+            "tags": ["agent", "agent:activity_specialist"],
+            "metadata": {
+                "agent_name": "activity_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = f"Curate signature activities for travellers spending a week in {state['destination']}."
-    step = maybe_add_quality_noise("activity_specialist", step, state, custom_poison_config)
+    step = maybe_add_quality_noise(
+        "activity_specialist", step, state, custom_poison_config
+    )
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
     state["activities_summary"] = (
@@ -751,7 +759,9 @@ def activity_specialist_node(state: PlannerState, custom_poison_config: Optional
     return state
 
 
-def plan_synthesizer_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
+def plan_synthesizer_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
     llm = _create_llm(
         "plan_synthesizer", temperature=0.3, session_id=state["session_id"]
     )
@@ -801,14 +811,30 @@ def should_continue(state: PlannerState) -> str:
     return mapping.get(state["current_agent"], END)
 
 
-def build_workflow(custom_poison_config: Optional[Dict[str, object]] = None) -> StateGraph:
+def build_workflow(
+    custom_poison_config: Optional[Dict[str, object]] = None,
+) -> StateGraph:
     graph = StateGraph(PlannerState)
     # Wrap nodes to pass custom_poison_config
-    graph.add_node("coordinator", lambda state: coordinator_node(state, custom_poison_config))
-    graph.add_node("flight_specialist", lambda state: flight_specialist_node(state, custom_poison_config))
-    graph.add_node("hotel_specialist", lambda state: hotel_specialist_node(state, custom_poison_config))
-    graph.add_node("activity_specialist", lambda state: activity_specialist_node(state, custom_poison_config))
-    graph.add_node("plan_synthesizer", lambda state: plan_synthesizer_node(state, custom_poison_config))
+    graph.add_node(
+        "coordinator", lambda state: coordinator_node(state, custom_poison_config)
+    )
+    graph.add_node(
+        "flight_specialist",
+        lambda state: flight_specialist_node(state, custom_poison_config),
+    )
+    graph.add_node(
+        "hotel_specialist",
+        lambda state: hotel_specialist_node(state, custom_poison_config),
+    )
+    graph.add_node(
+        "activity_specialist",
+        lambda state: activity_specialist_node(state, custom_poison_config),
+    )
+    graph.add_node(
+        "plan_synthesizer",
+        lambda state: plan_synthesizer_node(state, custom_poison_config),
+    )
     graph.add_conditional_edges(START, should_continue)
     graph.add_conditional_edges("coordinator", should_continue)
     graph.add_conditional_edges("flight_specialist", should_continue)
@@ -875,15 +901,13 @@ def plan_travel_internal(
             ],
         }
     ]
-    
+
     with tracer.start_as_current_span(
         name="POST /travel/plan",
         kind=SpanKind.SERVER,
         attributes=attributes,
     ) as root_span:
-        root_span.set_attribute(
-            "gen_ai.input.messages", json.dumps(root_input)
-        )
+        root_span.set_attribute("gen_ai.input.messages", json.dumps(root_input))
 
         config = {
             "configurable": {"thread_id": session_id},
@@ -896,10 +920,7 @@ def plan_travel_internal(
         for step in compiled_app.stream(initial_state, config):
             node_name, node_state = next(iter(step.items()))
             final_state = node_state
-            agent_steps.append({
-                "agent": node_name,
-                "status": "completed"
-            })
+            agent_steps.append({"agent": node_name, "status": "completed"})
 
         if not final_state:
             final_plan = ""
@@ -907,9 +928,7 @@ def plan_travel_internal(
             final_plan = final_state.get("final_itinerary") or ""
 
         if final_plan:
-            preview = final_plan[:500] + (
-                "..." if len(final_plan) > 500 else ""
-            )
+            preview = final_plan[:500] + ("..." if len(final_plan) > 500 else "")
             root_span.set_attribute("travel.plan.preview", preview)
         if final_state and final_state.get("poison_events"):
             root_span.set_attribute(
@@ -946,35 +965,41 @@ def plan_travel_internal(
         "travellers": travellers,
         "flight_summary": final_state.get("flight_summary") if final_state else None,
         "hotel_summary": final_state.get("hotel_summary") if final_state else None,
-        "activities_summary": final_state.get("activities_summary") if final_state else None,
+        "activities_summary": final_state.get("activities_summary")
+        if final_state
+        else None,
         "final_itinerary": final_plan,
         "poison_events": final_state.get("poison_events") if final_state else [],
         "agent_steps": agent_steps,
     }
 
 
-@app.route('/travel/plan', methods=['POST'])
+@app.route("/travel/plan", methods=["POST"])
 def plan():
     """Handle travel planning requests via HTTP POST."""
     try:
         data = request.get_json()
-        
+
         origin = data.get("origin", "Seattle")
         destination = data.get("destination", "Paris")
         user_request = data.get(
             "user_request",
             f"Planning a week-long trip from {origin} to {destination}. "
-            "Looking for boutique hotel, flights and unique experiences."
+            "Looking for boutique hotel, flights and unique experiences.",
         )
         travellers = int(data.get("travellers", 2))
-        
+
         # Parse poison config from client
         poison_config = None
         if "poison_config" in data:
             poison_config = data["poison_config"]
 
-        print(f"[SERVER] Processing travel plan: {origin} -> {destination}", file=sys.stderr, flush=True)
-        
+        print(
+            f"[SERVER] Processing travel plan: {origin} -> {destination}",
+            file=sys.stderr,
+            flush=True,
+        )
+
         result = plan_travel_internal(
             origin=origin,
             destination=destination,
@@ -982,28 +1007,37 @@ def plan():
             travellers=travellers,
             poison_config=poison_config,
         )
-        
-        print("[SERVER] Travel plan completed successfully", file=sys.stderr, flush=True)
-        print("\n" + "="*80, file=sys.stderr)
+
+        print(
+            "[SERVER] Travel plan completed successfully", file=sys.stderr, flush=True
+        )
+        print("\n" + "=" * 80, file=sys.stderr)
         print("TRAVEL PLAN RESULT:", file=sys.stderr)
         pprint(result, stream=sys.stderr)
-        print("="*80 + "\n", file=sys.stderr, flush=True)
+        print("=" * 80 + "\n", file=sys.stderr, flush=True)
 
         return jsonify(result), 200
-        
+
     except Exception as e:
-        print(f"[SERVER] Error processing travel plan: {e}", file=sys.stderr, flush=True)
+        print(
+            f"[SERVER] Error processing travel plan: {e}", file=sys.stderr, flush=True
+        )
         import traceback
+
         traceback.print_exc(file=sys.stderr)
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/health', methods=['GET'])
+@app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint for k8s."""
     return jsonify({"status": "healthy", "service": "travel-planner-flask"}), 200
 
 
 if __name__ == "__main__":
-    print("[INFO] Starting Flask server on http://0.0.0.0:8080", file=sys.stderr, flush=True)
+    print(
+        "[INFO] Starting Flask server on http://0.0.0.0:8080",
+        file=sys.stderr,
+        flush=True,
+    )
     app.run(host="0.0.0.0", port=8080, debug=False)

@@ -48,14 +48,14 @@ def generate_random_poison_config() -> dict:
     """Generate a random poison configuration for testing."""
     # Random probability between 0.5 and 1.0
     prob = round(random.uniform(0.5, 1.0), 2)
-    
+
     # Random subset of poison types
     num_types = random.randint(1, len(POISON_TYPES))
     types = random.sample(POISON_TYPES, num_types)
-    
+
     # Random max snippets
     max_snippets = random.randint(1, 3)
-    
+
     return {
         "prob": prob,
         "types": types,
@@ -88,12 +88,12 @@ def run_client(
     # Select random or custom cities
     origin = custom_origin or random.choice(ORIGINS)
     destination = custom_destination or random.choice(DESTINATIONS)
-    
+
     print("🌍 Travel Planner HTTP Client")
     print("=" * 60)
     print(f"📍 Origin: {origin}")
     print(f"🎯 Destination: {destination}")
-    
+
     # Generate poison config if requested
     poison_config = None
     if use_poison:
@@ -103,18 +103,18 @@ def run_client(
         print(f"  Types: {', '.join(poison_config['types'])}")
         print(f"  Max snippets: {poison_config['max']}")
         print(f"  Seed: {poison_config['seed']}")
-    
+
     # Generate user request
     user_request = generate_travel_request(origin, destination)
     print("\n✉️  User Request:")
     print(f"  {user_request}")
-    
+
     # Get server URL from environment or default to localhost
     server_url = os.getenv("SERVER_URL", "http://localhost:8080")
-    
+
     print("\n🔌 Connecting to Flask server...")
     print(f"  URL: {server_url}")
-    
+
     # Prepare request data
     data = {
         "origin": origin,
@@ -122,56 +122,56 @@ def run_client(
         "user_request": user_request,
         "travellers": random.randint(1, 4),
     }
-    
+
     if poison_config:
         data["poison_config"] = poison_config
-    
+
     print("\n📤 Sending request to server...")
-    
+
     try:
         # Make HTTP POST request to /travel/plan endpoint
         response = requests.post(
             f"{server_url}/travel/plan",
             json=data,
             timeout=300,  # 5 minutes timeout for long-running travel planning
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         response.raise_for_status()
-        
+
         result = response.json()
-        
+
         print("\n✅ Received response from server!")
         print("=" * 60)
-        
+
         # Display the result
         print(f"\n📋 Session ID: {result['session_id']}")
         print(f"📅 Travel Dates: {result['departure']} → {result['return_date']}")
         print(f"👥 Travellers: {result['travellers']}")
-        
-        if result.get('poison_events'):
+
+        if result.get("poison_events"):
             print("\n💉 Poison Events Triggered:")
-            for event in result['poison_events']:
+            for event in result["poison_events"]:
                 print(f"  - {event}")
-        
+
         print("\n✈️  Flight Summary:")
         print(f"  {result['flight_summary']}")
-        
+
         print("\n🏨 Hotel Summary:")
         print(f"  {result['hotel_summary']}")
-        
+
         print("\n🎭 Activities Summary:")
         print(f"  {result['activities_summary']}")
-        
+
         print("\n🎉 Final Itinerary:")
         print("─" * 60)
-        print(result['final_itinerary'])
+        print(result["final_itinerary"])
         print("─" * 60)
-        
-        if result.get('agent_steps'):
+
+        if result.get("agent_steps"):
             print("\n🤖 Agent Steps:")
-            for step in result['agent_steps']:
+            for step in result["agent_steps"]:
                 print(f"  - {step['agent']}: {step['status']}")
-    
+
     except requests.exceptions.Timeout:
         print("\n❌ Error: Request timed out after 5 minutes")
         sys.exit(1)
@@ -192,7 +192,7 @@ def run_client(
 def main():
     """Main entry point for the client."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(
         description="Travel Planner MCP Client - Request travel itineraries with optional quality evaluation"
     )
@@ -211,9 +211,9 @@ def main():
         type=str,
         help=f"Destination city (default: random from {DESTINATIONS})",
     )
-    
+
     args = parser.parse_args()
-    
+
     try:
         run_client(
             use_poison=not args.no_poison,
@@ -226,6 +226,7 @@ def main():
     except Exception as e:
         print(f"\n\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
