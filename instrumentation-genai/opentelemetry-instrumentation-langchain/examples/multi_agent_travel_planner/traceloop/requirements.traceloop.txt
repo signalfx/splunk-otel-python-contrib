@@ -78,6 +78,7 @@ opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry
 opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/opentelemetry-python.git@1f68134481c46e476a127b61a36dc69889275d15#subdirectory=exporter/opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http==1.38.0
 opentelemetry-instrumentation @ git+https://github.com/open-telemetry/opentelemetry-python-contrib.git@071f68697432e7e57b31238a5998dc4c1325855c#subdirectory=opentelemetry-instrumentation
+# OpenTelemetry instrumentation packages - version must match traceloop-sdk version (0.47.5)
 opentelemetry-instrumentation-alephalpha==0.47.5
 opentelemetry-instrumentation-anthropic==0.47.5
 opentelemetry-instrumentation-bedrock==0.47.5
@@ -170,11 +171,12 @@ sphinxcontrib-jquery==4.1
 sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-qthelp==2.0.0
 sphinxcontrib-serializinghtml==2.0.0
--e git+ssh://git@github.com/signalfx/splunk-otel-python-contrib.git@2b4a41abac7725b53c82f480833c874aca0af072#egg=splunk_otel_genai_evals_deepeval&subdirectory=util/opentelemetry-util-genai-evals-deepeval
--e git+ssh://git@github.com/signalfx/splunk-otel-python-contrib.git@2b4a41abac7725b53c82f480833c874aca0af072#egg=splunk_otel_instrumentation_langchain&subdirectory=instrumentation-genai/opentelemetry-instrumentation-langchain
--e git+ssh://git@github.com/signalfx/splunk-otel-python-contrib.git@2b4a41abac7725b53c82f480833c874aca0af072#egg=splunk_otel_util_genai&subdirectory=util/opentelemetry-util-genai
--e git+ssh://git@github.com/signalfx/splunk-otel-python-contrib.git@2b4a41abac7725b53c82f480833c874aca0af072#egg=splunk_otel_util_genai_evals&subdirectory=util/opentelemetry-util-genai-evals
--e git+ssh://git@github.com/signalfx/splunk-otel-python-contrib.git@2b4a41abac7725b53c82f480833c874aca0af072#egg=splunk_otel_util_genai_translator_traceloop&subdirectory=util/opentelemetry-util-genai-traceloop-translator
+splunk-otel-genai-evals-deepeval>=0.1.6
+splunk-otel-util-genai
+splunk-otel-util-genai-evals
+splunk-otel-genai-emitters-splunk
+# Editable install with no version control (splunk-otel-util-genai-translator-traceloop==0.0.0.dev0)
+-e /app/opentelemetry-util-genai-traceloop-translator
 tabulate==0.9.0
 tenacity==9.1.2
 tiktoken==0.12.0
