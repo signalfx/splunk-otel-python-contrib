@@ -11,13 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy required packages (build context is repo root)
-COPY util/opentelemetry-util-genai-traceloop-translator /app/opentelemetry-util-genai-traceloop-translator
+# COPY util/opentelemetry-util-genai-traceloop-translator /app/opentelemetry-util-genai-traceloop-translator
 COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner
 
 WORKDIR /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/traceloop
 
 # Install Python dependencies (excluding local -e packages and git+ssh dependencies)
-RUN pip install --no-cache-dir -r requirements.traceloop.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Verify packages are installed correctly
 RUN python3 -c "from opentelemetry.util.genai.handler import get_telemetry_handler; print('✓ GenAI handler available')" && \
@@ -28,7 +28,7 @@ RUN python3 -c "from opentelemetry.util.genai.handler import get_telemetry_handl
     python3 -c "from opentelemetry.util.genai.traceloop import enable_traceloop_translator; print('✓ Traceloop translator available')"
 
 # Make the script executable
-RUN chmod +x main_traceloop.py
+RUN chmod +x main.py
 
 # Set default environment variables
 ENV OTEL_PYTHON_LOG_CORRELATION=true \
@@ -37,4 +37,4 @@ ENV OTEL_PYTHON_LOG_CORRELATION=true \
     PYTHONUNBUFFERED=1
 
 # Run the Traceloop version
-CMD ["python3", "main_traceloop.py"]
+CMD ["python3", "main.py"]

@@ -1,0 +1,13 @@
+langchain>=1.0.0
+langchain-openai>=1.0.0
+langgraph>=1.0.0
+python-dotenv>=1.0.0
+traceloop-sdk==0.47.5
+deepeval
+splunk-otel-genai-evals-deepeval>=0.1.6
+splunk-otel-util-genai
+splunk-otel-util-genai-evals
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-translator-traceloop
+python-dotenv
+openai

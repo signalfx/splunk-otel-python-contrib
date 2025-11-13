@@ -127,8 +127,13 @@ def _configure_otlp_logging() -> None:
 
     This is needed for evaluation results to be emitted as OTLP log records.
     Traceloop SDK handles traces, but we need to explicitly configure logs.
+    
+    CRITICAL: Also configures EventLoggerProvider to use the same LoggerProvider,
+    since Events are just LogRecords and need the same exporter.
     """
     from opentelemetry._logs import get_logger_provider
+    from opentelemetry import _events
+    from opentelemetry.sdk._events import EventLoggerProvider
 
     # Check if already configured
     try:
@@ -160,6 +165,13 @@ def _configure_otlp_logging() -> None:
     logger_provider.add_log_record_processor(log_processor)
     set_logger_provider(logger_provider)
     print(f"[INIT] OTLP logging configured, endpoint={log_endpoint}")
+    
+    # CRITICAL FIX: Configure EventLoggerProvider to use the same LoggerProvider
+    # Events are just LogRecords under the hood, so they need to go through the
+    # same LoggerProvider with the OTLP exporter. Without this, events go to
+    # a default/NoOp provider and never reach the collector!
+    _events.set_event_logger_provider(EventLoggerProvider(logger_provider))
+    print(f"[INIT] EventLoggerProvider configured (uses same OTLP exporter)")
 
 
 # Configure logging for evaluation results
