@@ -1,9 +1,10 @@
 """Test handling of args wrapper format from LangGraph/Traceloop."""
 
-import json
 import pytest
 
-from opentelemetry.util.genai.processor.content_normalizer import normalize_traceloop_content
+from opentelemetry.util.genai.processor.content_normalizer import (
+    normalize_traceloop_content,
+)
 
 
 class TestArgsWrapperFormat:
@@ -45,16 +46,16 @@ class TestArgsWrapperFormat:
 
         # Verify
         assert len(result) == 1, f"Should have 1 message, got {len(result)}"
-        
+
         message = result[0]
         assert message["role"] == "user", f"Role should be 'user', got {message['role']}"
         assert len(message["parts"]) == 1, f"Should have 1 part, got {len(message['parts'])}"
-        
+
         part = message["parts"][0]
         assert part["type"] == "text", f"Part type should be 'text', got {part['type']}"
-        assert "Paris" in part["content"], f"Content should mention Paris"
-        assert "Seattle" in part["content"], f"Content should mention Seattle"
-        assert "boutique hotel" in part["content"], f"Content should mention boutique hotel"
+        assert "Paris" in part["content"], "Content should mention Paris"
+        assert "Seattle" in part["content"], "Content should mention Seattle"
+        assert "boutique hotel" in part["content"], "Content should mention boutique hotel"
 
     def test_args_wrapper_with_multiple_messages(self):
         """Test args wrapper with conversation history."""
@@ -87,11 +88,11 @@ class TestArgsWrapperFormat:
         result = normalize_traceloop_content(input_data, "input")
 
         assert len(result) == 2, f"Should have 2 messages, got {len(result)}"
-        
+
         # System message
         assert result[0]["role"] == "system"
         assert result[0]["parts"][0]["content"] == "You are a helpful assistant."
-        
+
         # Human message
         assert result[1]["role"] == "user"
         assert result[1]["parts"][0]["content"] == "Hello!"
@@ -107,7 +108,7 @@ class TestArgsWrapperFormat:
 
         result = normalize_traceloop_content(input_data, "input")
 
-        assert result == [], f"Should return empty list for empty messages"
+        assert result == [], "Should return empty list for empty messages"
 
     def test_args_wrapper_output_format(self):
         """Test args wrapper for output (response) format."""

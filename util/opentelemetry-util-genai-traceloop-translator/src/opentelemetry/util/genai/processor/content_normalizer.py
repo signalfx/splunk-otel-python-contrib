@@ -30,15 +30,15 @@ def _coerce_text_part(content: Any) -> Dict[str, Any]:
 def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
     """
     Extract actual message content from nested LangChain message objects.
-    
+
     Handles formats like:
     - {"messages": [{"lc": 1, "kwargs": {"content": "text", "type": "human"}}]}
     - {"outputs": {"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}}
-    
+
     Returns list of extracted messages with their content and role.
     """
     extracted = []
-    
+
     try:
         # Parse if it's a JSON string
         if isinstance(content_val, str):
@@ -46,31 +46,31 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
                 content_val = json.loads(content_val)
             except Exception:
                 return []  # Not JSON, let caller handle it
-        
+
         if not isinstance(content_val, dict):
             return []
-        
+
         # Check for "outputs" wrapper (common in workflow outputs)
         if "outputs" in content_val and isinstance(content_val["outputs"], dict):
             content_val = content_val["outputs"]
-        
+
         # Look for "messages" array
         messages = content_val.get("messages", [])
         if not isinstance(messages, list):
             return []
-        
+
         # Extract content from each LangChain message
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
-            
+
             # Check if this is a LangChain message (has "lc": 1 and "kwargs")
             if msg.get("lc") == 1 and "kwargs" in msg:
                 kwargs = msg["kwargs"]
                 if isinstance(kwargs, dict):
                     msg_content = kwargs.get("content")
                     msg_type = kwargs.get("type", "unknown")
-                    
+
                     if msg_content:
                         # Map LangChain types to roles
                         if msg_type == "human":
@@ -82,14 +82,14 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
                         else:
                             # Infer from message position
                             role = "user" if not extracted else "assistant"
-                        
+
                         extracted.append({
                             "content": msg_content,
                             "role": role
                         })
-        
+
         return extracted
-    
+
     except Exception:
         return []
 
@@ -118,12 +118,12 @@ def normalize_traceloop_content(
                     if k not in ("role", "finish_reason", "finishReason")
                 }
                 content_val = temp or ""
-            
+
             # CRITICAL FIX: Check if content contains nested LangChain messages
             # This handles the format where Traceloop serializes workflow inputs/outputs
             # with LangChain message objects embedded in JSON
             langchain_messages = _extract_langchain_messages(content_val)
-            
+
             if langchain_messages:
                 # We found nested LangChain messages - extract their content
                 for lc_msg in langchain_messages:
@@ -141,7 +141,7 @@ def normalize_traceloop_content(
                     fr = m.get("finish_reason") or m.get("finishReason") or "stop"
                     msg["finish_reason"] = fr
                 normalized.append(msg)
-        
+
         return normalized
 
     # Dict variants

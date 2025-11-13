@@ -58,7 +58,6 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
 )
 
 from opentelemetry.sdk._logs import LoggerProvider  # type: ignore[attr-defined]
-from opentelemetry._logs import set_logger_provider  # type: ignore[attr-defined]
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor  # type: ignore[attr-defined]
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -517,23 +516,10 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
 def _configure_manual_instrumentation() -> None:
     """Initialise trace and metric providers that export to the configured OTLP endpoint."""
     """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.trace import SpanKind
 
-    from opentelemetry import _events, _logs, metrics, trace
+    from opentelemetry import _events, _logs, trace
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
-        OTLPMetricExporter,
-    )
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-        OTLPSpanExporter,
-    )
     from opentelemetry.sdk._events import EventLoggerProvider
-    from opentelemetry.sdk._logs import LoggerProvider
-    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     
     trace.set_tracer_provider(TracerProvider())
     trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))

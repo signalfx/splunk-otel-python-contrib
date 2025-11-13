@@ -85,7 +85,7 @@ def enable_traceloop_translator(
             "TraceloopSpanProcessor already registered (global flag); skipping duplicate"
         )
         return False
-    
+
     # Import here to avoid circular imports
     from ..processor.traceloop_span_processor import TraceloopSpanProcessor
 
@@ -206,7 +206,7 @@ def _install_deferred_registration() -> None:
                             "TraceloopSpanProcessor already registered (global flag); skipping deferred registration"
                         )
                         return result
-                    
+
                     processor = TraceloopSpanProcessor(
                         attribute_transformations=_DEFAULT_ATTR_TRANSFORMATIONS,
                         name_transformations=_DEFAULT_NAME_TRANSFORMATIONS,

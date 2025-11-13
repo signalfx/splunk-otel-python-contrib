@@ -508,7 +508,6 @@ def _configure_manual_instrumentation() -> None:
     """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.trace import SpanKind
 
     from opentelemetry import _events, _logs, metrics, trace
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter

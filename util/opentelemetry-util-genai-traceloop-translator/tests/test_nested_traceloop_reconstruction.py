@@ -5,9 +5,15 @@ LangChain messages with escaped JSON inside the content field.
 """
 
 import json
+
 import pytest
-from opentelemetry.util.genai.processor.content_normalizer import normalize_traceloop_content
-from opentelemetry.util.genai.processor.message_reconstructor import reconstruct_messages_from_traceloop
+
+from opentelemetry.util.genai.processor.content_normalizer import (
+    normalize_traceloop_content,
+)
+from opentelemetry.util.genai.processor.message_reconstructor import (
+    reconstruct_messages_from_traceloop,
+)
 
 
 class TestNestedTraceloopReconstruction:
@@ -66,10 +72,10 @@ class TestNestedTraceloopReconstruction:
         assert "Paris" in content, "Should contain destination"
         assert "Seattle" in content, "Should contain origin"
         assert "romantic" in content, "Should contain user request text"
-        
+
         # Should NOT contain escaped JSON artifacts
         assert '\\"' not in content, "Should not have escaped quotes"
-        assert "lc\": 1" not in content, "Should not contain LangChain metadata"
+        assert 'lc": 1' not in content, "Should not contain LangChain metadata"
         assert "kwargs" not in content or "romantic" in content, \
             "Should extract actual content, not just wrapper metadata"
 
@@ -107,7 +113,7 @@ class TestNestedTraceloopReconstruction:
         # Verify content extraction
         parts = normalized[0]["parts"]
         assert len(parts) > 0, "Should have at least one part"
-        
+
         content = parts[0].get("content", "")
         # The content should ideally be the actual message text, not nested JSON
         # If it's still nested JSON, we need to improve the normalizer
@@ -139,14 +145,14 @@ class TestNestedTraceloopReconstruction:
         # Parse the structure to extract the actual message content
         # This logic should be in the normalizer or reconstructor
         extracted = self._extract_message_content(nested_content)
-        
+
         assert extracted == expected_content, \
             f"Should extract actual message content, got: {extracted}"
 
     def _extract_message_content(self, nested_structure):
         """
         Helper to extract actual message content from nested Traceloop structure.
-        
+
         This logic should be incorporated into the content normalizer.
         """
         # Try to find LangChain message in args
@@ -164,7 +170,7 @@ class TestNestedTraceloopReconstruction:
                                 content = kwargs.get("content")
                                 if content:
                                     return content
-        
+
         # Fallback: return as-is
         return json.dumps(nested_structure)
 
@@ -187,16 +193,16 @@ class TestNestedTraceloopReconstruction:
 
         assert input_messages is not None, "Should reconstruct messages"
         assert len(input_messages) > 0, "Should have messages"
-        
+
         # Check if content is clean
         actual_content = input_messages[0].content
-        
+
         # The content should be the clean user request, not nested JSON
         # If this fails, we need to enhance the content normalizer
         if expected_content not in actual_content:
             print(f"Expected: {expected_content}")
             print(f"Actual: {actual_content}")
-            
+
             # For now, just verify it's not completely broken
             assert "Paris" in actual_content, "Should at least contain Paris"
             assert "Seattle" in actual_content, "Should at least contain Seattle"
@@ -220,22 +226,22 @@ class TestNestedTraceloopReconstruction:
 
         assert output_messages is not None, "Should reconstruct output messages"
         assert len(output_messages) > 0, "Should have messages"
-        
+
         # Get the content - should be the AIMessage content, not the wrapper JSON
         content = output_messages[0].content if len(output_messages) == 1 else output_messages[-1].content
-        
+
         # The content should be the actual travel plan, not nested JSON
         assert "Travel Plan for Paris Trip" in content or "Paris" in content, \
             "Should contain the actual AI response content"
         assert "Accommodation" in content or "Flight" in content or "Paris" in content, \
             "Should contain travel planning content"
-        
+
         # Should NOT contain escaped quotes or JSON metadata
         # Note: The actual content has \\n which is fine (markdown formatting)
         # but should not have \\" (escaped JSON quotes)
         if '\\"' in content:
             print(f"WARNING: Content still has escaped quotes: {content[:200]}")
-        
+
         # Should not contain LangChain metadata in the final content
         if '"lc": 1' in content or '"kwargs"' in content:
             print(f"WARNING: Content still contains LangChain metadata: {content[:200]}")

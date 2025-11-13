@@ -5,6 +5,7 @@ nested JSON encoding issues.
 """
 
 import json
+
 import pytest
 
 from opentelemetry.util.genai.types import InputMessage, OutputMessage, Text
@@ -35,7 +36,7 @@ class TestMessageSerialization:
         assert len(parsed[0]["parts"]) == 1
         assert parsed[0]["parts"][0]["type"] == "text"
         assert parsed[0]["parts"][0]["content"] == "Hello, how are you?"
-        
+
         # CRITICAL: Content should be a STRING, not nested JSON
         content = parsed[0]["parts"][0]["content"]
         assert isinstance(content, str), "Content must be string"
@@ -65,7 +66,7 @@ class TestMessageSerialization:
         assert parsed[0]["role"] == "assistant"
         assert parsed[0]["finish_reason"] == "stop"
         assert len(parsed[0]["parts"]) == 1
-        
+
         # CRITICAL: Content should be plain text, not JSON
         content = parsed[0]["parts"][0]["content"]
         assert isinstance(content, str), "Content must be string"
@@ -118,8 +119,8 @@ class TestMessageSerialization:
 
     def test_complex_content_not_double_encoded(self):
         """Test that complex content with special characters is not double-encoded."""
-        complex_content = 'I found a flight:\n- Airline: AeroJet\n- Price: $1044\nWould you like more information?'
-        
+        complex_content = "I found a flight:\n- Airline: AeroJet\n- Price: $1044\nWould you like more information?"
+
         msg = OutputMessage(
             role="assistant",
             parts=[Text(content=complex_content, type="text")],

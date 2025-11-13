@@ -414,7 +414,9 @@ class TraceloopSpanProcessor(SpanProcessor):
                 if not synthetic_span_id:
                     # Try alternative way to get span ID
                     try:
-                        from opentelemetry.util.genai.span_context import extract_span_context
+                        from opentelemetry.util.genai.span_context import (
+                            extract_span_context,
+                        )
                         span_ctx = extract_span_context(synthetic_span)
                         synthetic_span_id = span_ctx.span_id if span_ctx else None
                     except Exception:
@@ -1014,7 +1016,11 @@ class TraceloopSpanProcessor(SpanProcessor):
         LangChain messages have .content directly, but GenAI SDK expects
         messages with .parts containing Text/ToolCall objects.
         """
-        from opentelemetry.util.genai.types import InputMessage, OutputMessage, Text
+        from opentelemetry.util.genai.types import (
+            InputMessage,
+            OutputMessage,
+            Text,
+        )
 
         if not langchain_messages:
             return []
