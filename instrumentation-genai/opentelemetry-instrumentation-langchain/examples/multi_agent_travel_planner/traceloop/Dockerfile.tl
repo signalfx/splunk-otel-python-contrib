@@ -25,10 +25,7 @@ RUN pip install --no-cache-dir -r requirements.traceloop.txt
 
 # Install local utility packages with updated dependencies
 RUN cd /app/opentelemetry-util-genai-traceloop-translator && pip install --no-cache-dir --no-deps -e . && \
-    cd /app/opentelemetry-util-genai && pip install --no-cache-dir -e . && \
-    cd /app/opentelemetry-util-genai-evals && pip install --no-cache-dir -e . && \
-    cd /app/opentelemetry-util-genai-evals-deepeval && pip install --no-cache-dir -e . && \
-    cd /app/opentelemetry-util-genai-emitters-splunk && pip install --no-cache-dir -e .
+    cd /app/opentelemetry-util-genai-evals-deepeval && pip install --no-cache-dir -e .
 
 # Verify packages are installed correctly
 RUN python3 -c "from opentelemetry.util.genai.handler import get_telemetry_handler; print('✓ GenAI handler available')" && \
