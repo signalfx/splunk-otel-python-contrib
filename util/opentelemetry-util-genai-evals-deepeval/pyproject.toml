@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
   "splunk-otel-util-genai>=0.1.4",
   "splunk-otel-util-genai-evals>=0.1.4",
-  "deepeval>=3.7.0",
+  "deepeval>=3.3.9,<3.8.0",
   "openai>=1.0.0",
 ]
 
