@@ -172,7 +172,6 @@ sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-qthelp==2.0.0
 sphinxcontrib-serializinghtml==2.0.0
 # splunk-otel-genai-evals-deepeval
-splunk-otel-instrumentation-langchain
 splunk-otel-util-genai
 splunk-otel-util-genai-evals
 splunk-otel-genai-emitters-splunk

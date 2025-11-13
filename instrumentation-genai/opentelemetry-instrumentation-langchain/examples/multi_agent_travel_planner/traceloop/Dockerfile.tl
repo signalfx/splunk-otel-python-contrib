@@ -12,10 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy required packages (build context is repo root)
 COPY util/opentelemetry-util-genai-traceloop-translator /app/opentelemetry-util-genai-traceloop-translator
-COPY util/opentelemetry-util-genai /app/opentelemetry-util-genai
-COPY util/opentelemetry-util-genai-evals /app/opentelemetry-util-genai-evals
 COPY util/opentelemetry-util-genai-evals-deepeval /app/opentelemetry-util-genai-evals-deepeval
-COPY util/opentelemetry-util-genai-emitters-splunk /app/opentelemetry-util-genai-emitters-splunk
 COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner
 
 WORKDIR /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/traceloop
