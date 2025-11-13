@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: travel-planner
-          image: shuniche855/travel-planner:0.0.3
+          image: shuniche855/travel-planner:0.0.4
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
