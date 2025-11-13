@@ -44,8 +44,8 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "traceloop.entity.version": "gen_ai.workflow.version",
         "traceloop.span.kind": "gen_ai.span.kind",
         "llm.request.type": "gen_ai.operation.name",
-        "gen_ai.completion.0.content": "gen_ai.output.message",
-        "gen_ai.prompt.0.content": "gen_ai.input.message"
+        "gen_ai.completion.0.content": "gen_ai.output.messages",
+        "gen_ai.prompt.0.content": "gen_ai.input.messages"
     }
 }
 

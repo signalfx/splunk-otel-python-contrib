@@ -366,7 +366,7 @@ def run_agent_with_telemetry(question: str):
         agent_type="react",
         description="ReAct agent that can look up capital cities",
         framework="langgraph",
-        model="gpt-4",
+        model="gpt-5-nano",
         tools=["get_capital"],
         system_instructions="You are a helpful assistant that answers questions about capital cities. Use the get_capital tool when needed.",
     )
@@ -377,7 +377,7 @@ def run_agent_with_telemetry(question: str):
 
     # Create the LangGraph agent with callback
     llm = ChatOpenAI(
-        model="gpt-4", temperature=0, callbacks=[telemetry_callback]
+        model="gpt-5-nano", temperature=0, callbacks=[telemetry_callback]
     )
     tools = [get_capital]
     graph = create_react_agent(llm, tools)
@@ -392,7 +392,7 @@ def run_agent_with_telemetry(question: str):
         name="capital_agent",
         agent_type="react",
         framework="langgraph",
-        model="gpt-4",
+        model="gpt-5-nano",
         input_context=question,
         run_id=agent_obj.run_id,
     )
@@ -496,7 +496,7 @@ def run_agent_with_telemetry(question: str):
 
                 # Get actual model name from response
                 actual_model = llm_call_data.get(
-                    "response_model", llm_call_data.get("model", "gpt-4")
+                    "response_model", llm_call_data.get("model", "gpt-5-nano")
                 )
 
                 if (
@@ -509,7 +509,7 @@ def run_agent_with_telemetry(question: str):
 
                 # Create LLM invocation with real data from callbacks
                 llm_invocation = LLMInvocation(
-                    request_model="gpt-4",
+                    request_model="gpt-5-nano",
                     response_model_name=actual_model,
                     provider="openai",
                     framework="langgraph",

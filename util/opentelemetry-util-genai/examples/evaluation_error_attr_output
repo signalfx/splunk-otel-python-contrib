@@ -30,7 +30,7 @@ Starting successful LLM invocation...
     "attributes": {
         "event.name": "gen_ai.client.inference.operation.details",
         "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.usage.input_tokens": 12,
         "gen_ai.usage.output_tokens": 18
     },
@@ -68,7 +68,7 @@ Starting successful LLM invocation...
     },
     "attributes": {
         "gen_ai.input.messages": "[{\"role\": \"user\", \"parts\": [{\"type\": \"text\", \"content\": \"Hello, how can I track my order?\"}]}]",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.operation.name": "chat",
         "gen_ai.usage.input_tokens": 12,
         "gen_ai.usage.output_tokens": 18,
@@ -105,7 +105,7 @@ LLM invocation completed successfully.
     "attributes": {
         "gen_ai.operation.name": "evaluation",
         "gen_ai.evaluation.name": "bias",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.evaluation.score.label": "unknown",
         "error.type": "AuthenticationError",
         "gen_ai.evaluation.explanation": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: invalid_key. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}",
@@ -146,7 +146,7 @@ LLM invocation completed successfully.
     "attributes": {
         "gen_ai.operation.name": "evaluation",
         "gen_ai.evaluation.name": "toxicity",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.evaluation.score.label": "unknown",
         "error.type": "AuthenticationError",
         "gen_ai.evaluation.explanation": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: invalid_key. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}",
@@ -187,7 +187,7 @@ LLM invocation completed successfully.
     "attributes": {
         "gen_ai.operation.name": "evaluation",
         "gen_ai.evaluation.name": "relevance",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.evaluation.score.label": "unknown",
         "error.type": "AuthenticationError",
         "gen_ai.evaluation.explanation": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: invalid_key. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}",
@@ -228,7 +228,7 @@ LLM invocation completed successfully.
     "attributes": {
         "gen_ai.operation.name": "evaluation",
         "gen_ai.evaluation.name": "hallucination",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.evaluation.score.label": "unknown",
         "error.type": "AuthenticationError",
         "gen_ai.evaluation.explanation": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: invalid_key. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}",
@@ -269,7 +269,7 @@ LLM invocation completed successfully.
     "attributes": {
         "gen_ai.operation.name": "evaluation",
         "gen_ai.evaluation.name": "sentiment",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.evaluation.score.label": "unknown",
         "error.type": "AuthenticationError",
         "gen_ai.evaluation.explanation": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: invalid_key. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}",
@@ -334,7 +334,7 @@ LLM invocation completed successfully.
     "attributes": {
         "event.name": "gen_ai.evaluation.results",
         "gen_ai.operation.name": "data_evaluation_results",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.usage.input_tokens": 12,
         "gen_ai.usage.output_tokens": 18,
         "gen_ai.evaluation.aggregated": true,
@@ -394,7 +394,7 @@ LLM invocation completed successfully.
                                         "attributes": {
                                             "gen_ai.token.type": "input",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278208287301000,
                                         "time_unix_nano": 1762278211794969000,
@@ -451,7 +451,7 @@ LLM invocation completed successfully.
                                         "attributes": {
                                             "gen_ai.token.type": "output",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278208287342000,
                                         "time_unix_nano": 1762278211794969000,
@@ -517,7 +517,7 @@ LLM invocation completed successfully.
                                     {
                                         "attributes": {
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278208287369000,
                                         "time_unix_nano": 1762278211794969000,
@@ -614,7 +614,7 @@ LLM invocation completed successfully.
                                         "attributes": {
                                             "gen_ai.token.type": "input",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278208287301000,
                                         "time_unix_nano": 1762278214647261000,
@@ -663,7 +663,7 @@ LLM invocation completed successfully.
                                         "attributes": {
                                             "gen_ai.token.type": "output",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278208287342000,
                                         "time_unix_nano": 1762278214647261000,
@@ -721,7 +721,7 @@ LLM invocation completed successfully.
                                     {
                                         "attributes": {
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278208287369000,
                                         "time_unix_nano": 1762278214647261000,

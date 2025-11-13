@@ -282,7 +282,7 @@ from opentelemetry.util.genai.types import LLMInvocation, InputMessage, OutputMe
 
 handler = get_telemetry_handler()
 user_input = "Hello"
-inv = LLMInvocation(request_model="gpt-4", input_messages=[InputMessage(role="user", parts=[Text(user_input))])], provider="openai")
+inv = LLMInvocation(request_model="gpt-5-nano", input_messages=[InputMessage(role="user", parts=[Text(user_input))])], provider="openai")
 handler.start_llm(inv)
 # your code which actuall invokes llm here
 # response = client.chat.completions.create(...)

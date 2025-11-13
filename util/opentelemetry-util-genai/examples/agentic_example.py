@@ -107,7 +107,7 @@ def simulate_multi_agent_workflow():
         agent_type="classifier",
         description="Classifies customer intents",
         framework="custom",
-        model="gpt-4",
+        model="gpt-5-nano",
         tools=["intent_classifier"],
         system_instructions="You are a customer intent classifier. Categorize queries into: order_status, refund, technical_support, or general.",
     )
@@ -121,7 +121,7 @@ def simulate_multi_agent_workflow():
         name="classifier_agent",
         agent_type="classifier",
         framework="custom",
-        model="gpt-4",
+        model="gpt-5-nano",
         input_context="User query: My order hasn't arrived yet",
         run_id=classifier_agent.run_id,  # Link to created agent
     )
@@ -144,7 +144,7 @@ def simulate_multi_agent_workflow():
     # 5. LLM Call within Step (with agent context)
     print("LLM call with agent context")
     llm_invocation = LLMInvocation(
-        request_model="gpt-4",
+        request_model="gpt-5-nano",
         provider="openai",
         framework="custom",
         input_messages=[
@@ -192,7 +192,7 @@ def simulate_multi_agent_workflow():
         agent_type="support",
         description="Handles customer support requests",
         framework="custom",
-        model="gpt-4",
+        model="gpt-5-nano",
         tools=["order_lookup", "shipping_tracker"],
         system_instructions="You are a helpful customer support agent. Assist with order status inquiries.",
     )
@@ -206,7 +206,7 @@ def simulate_multi_agent_workflow():
         name="support_agent",
         agent_type="support",
         framework="custom",
-        model="gpt-4",
+        model="gpt-5-nano",
         input_context="Handle order_status query: My order hasn't arrived yet",
         run_id=support_agent.run_id,
     )
@@ -230,7 +230,7 @@ def simulate_multi_agent_workflow():
     # 9. LLM Call for Support Response
     print("LLM call with agent context")
     support_llm = LLMInvocation(
-        request_model="gpt-4",
+        request_model="gpt-5-nano",
         provider="openai",
         framework="custom",
         input_messages=[

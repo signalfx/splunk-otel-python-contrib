@@ -18,17 +18,18 @@ COPY util/opentelemetry-util-genai-evals /app/opentelemetry-util-genai-evals
 COPY util/opentelemetry-util-genai-evals-deepeval /app/opentelemetry-util-genai-evals-deepeval
 COPY util/opentelemetry-util-genai-emitters-splunk /app/opentelemetry-util-genai-emitters-splunk
 
-# Set working directory to the example
-WORKDIR /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner
+# Set working directory to the traceloop example
+WORKDIR /app/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner/traceloop
 
-# Install Python dependencies from requirements.traceloop.txt (excluding local -e packages)
-# First, create a temporary requirements file without the local editable packages
-RUN grep -v "^-e \.\." requirements.traceloop.txt > /tmp/requirements_external.txt && \
+# Install Python dependencies from requirements.traceloop.txt (excluding local -e packages and git+ssh)
+# First, create a temporary requirements file without the local editable packages and SSH git dependencies
+RUN grep -v "^-e" requirements.traceloop.txt | grep -v "git+ssh" > /tmp/requirements_external.txt && \
     pip install --no-cache-dir -r /tmp/requirements_external.txt && \
     rm /tmp/requirements_external.txt
 
 # Install the local packages in editable mode
 # The Traceloop translator will enable zero-code instrumentation via .pth file
+# splunk-otel-instrumentation-langchain IS installed
 RUN cd /app/opentelemetry-util-genai && \
     pip install --no-cache-dir --no-deps -e . && \
     cd /app/opentelemetry-util-genai-evals && \

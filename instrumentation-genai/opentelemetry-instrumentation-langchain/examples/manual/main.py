@@ -864,7 +864,7 @@ def main():
     # ChatOpenAI setup
     user_md = {"appkey": cisco_app_key} if cisco_app_key else {}
     llm = ChatOpenAI(
-        model="gpt-4.1",
+        model="gpt-5-nano",
         temperature=0.1,
         top_p=0.9,
         frequency_penalty=0.5,

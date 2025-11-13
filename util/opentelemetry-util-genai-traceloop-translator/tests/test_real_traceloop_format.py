@@ -8,15 +8,14 @@ This test uses the actual format that Traceloop SDK produces, with:
 
 import json
 import os
+
 import pytest
 
-from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
-
 from opentelemetry.util.genai.processor.traceloop_span_processor import (
     TraceloopSpanProcessor,
 )
@@ -77,27 +76,29 @@ class TestRealTraceloopFormat:
                     {
                         "lc": 1,
                         "type": "constructor",
-                        "id": ["langchain", "schema", "messages", "HumanMessage"],
+                        "id": [
+                            "langchain",
+                            "schema",
+                            "messages",
+                            "HumanMessage",
+                        ],
                         "kwargs": {
                             "content": "hi! I'm Lance",
-                            "type": "human"
-                        }
+                            "type": "human",
+                        },
                     }
                 ]
             },
             "tags": [],
-            "metadata": {
-                "custom_field1": "value1",
-                "thread_id": "1"
-            },
-            "kwargs": {
-                "name": "ChatbotSummarizationAgent"
-            }
+            "metadata": {"custom_field1": "value1", "thread_id": "1"},
+            "kwargs": {"name": "ChatbotSummarizationAgent"},
         }
 
         # Create span with real format
         with tracer.start_as_current_span("ChatbotSummarizationAgent") as span:
-            span.set_attribute("traceloop.entity.input", json.dumps(input_data))
+            span.set_attribute(
+                "traceloop.entity.input", json.dumps(input_data)
+            )
             span.set_attribute("llm.request.model", "gemini-1.5-flash")
             span_id = span.get_span_context().span_id
 
@@ -110,12 +111,19 @@ class TestRealTraceloopFormat:
 
         # Verify correct extraction
         assert len(cached_input) == 1, "Should have 1 input message"
-        assert isinstance(cached_input[0], InputMessage), "Should be InputMessage"
-        assert cached_input[0].role == "user", "Should map HumanMessage to user"
+        assert isinstance(
+            cached_input[0], InputMessage
+        ), "Should be InputMessage"
+        assert (
+            cached_input[0].role == "user"
+        ), "Should map HumanMessage to user"
         assert len(cached_input[0].parts) == 1, "Should have 1 part"
-        assert isinstance(cached_input[0].parts[0], Text), "Part should be Text"
-        assert cached_input[0].parts[0].content == "hi! I'm Lance", \
-            "Should extract content from kwargs"
+        assert isinstance(
+            cached_input[0].parts[0], Text
+        ), "Part should be Text"
+        assert (
+            cached_input[0].parts[0].content == "hi! I'm Lance"
+        ), "Should extract content from kwargs"
 
     def test_real_nested_output_format(self, setup_tracer):
         """Test with real Traceloop nested output format."""
@@ -134,10 +142,10 @@ class TestRealTraceloopFormat:
                             "response_metadata": {
                                 "prompt_feedback": {
                                     "block_reason": 0,
-                                    "safety_ratings": []
+                                    "safety_ratings": [],
                                 },
                                 "finish_reason": "STOP",
-                                "safety_ratings": []
+                                "safety_ratings": [],
                             },
                             "type": "ai",
                             "id": "run-d7f042aa-b7a9-48ec-9adc-d59df02be09c-0",
@@ -145,24 +153,22 @@ class TestRealTraceloopFormat:
                                 "input_tokens": 6,
                                 "output_tokens": 10,
                                 "total_tokens": 16,
-                                "input_token_details": {
-                                    "cache_read": 0
-                                }
+                                "input_token_details": {"cache_read": 0},
                             },
                             "tool_calls": [],
-                            "invalid_tool_calls": []
-                        }
+                            "invalid_tool_calls": [],
+                        },
                     }
                 ]
             },
-            "kwargs": {
-                "tags": []
-            }
+            "kwargs": {"tags": []},
         }
 
         # Create span with real format
         with tracer.start_as_current_span("ChatbotSummarizationAgent") as span:
-            span.set_attribute("traceloop.entity.output", json.dumps(output_data))
+            span.set_attribute(
+                "traceloop.entity.output", json.dumps(output_data)
+            )
             span.set_attribute("llm.request.model", "gemini-1.5-flash")
             span_id = span.get_span_context().span_id
 
@@ -175,14 +181,23 @@ class TestRealTraceloopFormat:
 
         # Verify correct extraction
         assert len(cached_output) == 1, "Should have 1 output message"
-        assert isinstance(cached_output[0], OutputMessage), "Should be OutputMessage"
-        assert cached_output[0].role == "assistant", "Should map AIMessage to assistant"
+        assert isinstance(
+            cached_output[0], OutputMessage
+        ), "Should be OutputMessage"
+        assert (
+            cached_output[0].role == "assistant"
+        ), "Should map AIMessage to assistant"
         assert len(cached_output[0].parts) == 1, "Should have 1 part"
-        assert isinstance(cached_output[0].parts[0], Text), "Part should be Text"
-        assert cached_output[0].parts[0].content == "Hi Lance! Nice to meet you.\n", \
-            "Should extract content from kwargs"
-        assert cached_output[0].finish_reason == "stop", \
-            "Should normalize finish_reason to lowercase"
+        assert isinstance(
+            cached_output[0].parts[0], Text
+        ), "Part should be Text"
+        assert (
+            cached_output[0].parts[0].content
+            == "Hi Lance! Nice to meet you.\n"
+        ), "Should extract content from kwargs"
+        assert (
+            cached_output[0].finish_reason == "stop"
+        ), "Should normalize finish_reason to lowercase"
 
     def test_real_full_conversation(self, setup_tracer):
         """Test with complete conversation including input and output."""
@@ -195,11 +210,16 @@ class TestRealTraceloopFormat:
                     {
                         "lc": 1,
                         "type": "constructor",
-                        "id": ["langchain", "schema", "messages", "HumanMessage"],
+                        "id": [
+                            "langchain",
+                            "schema",
+                            "messages",
+                            "HumanMessage",
+                        ],
                         "kwargs": {
                             "content": "What is the capital of France?",
-                            "type": "human"
-                        }
+                            "type": "human",
+                        },
                     }
                 ]
             }
@@ -212,12 +232,17 @@ class TestRealTraceloopFormat:
                     {
                         "lc": 1,
                         "type": "constructor",
-                        "id": ["langchain", "schema", "messages", "HumanMessage"],
+                        "id": [
+                            "langchain",
+                            "schema",
+                            "messages",
+                            "HumanMessage",
+                        ],
                         "kwargs": {
                             "content": "What is the capital of France?",
                             "type": "human",
-                            "id": "user-msg-123"
-                        }
+                            "id": "user-msg-123",
+                        },
                     },
                     {
                         "lc": 1,
@@ -227,20 +252,22 @@ class TestRealTraceloopFormat:
                             "content": "The capital of France is Paris.",
                             "type": "ai",
                             "id": "ai-msg-456",
-                            "response_metadata": {
-                                "finish_reason": "STOP"
-                            }
-                        }
-                    }
+                            "response_metadata": {"finish_reason": "STOP"},
+                        },
+                    },
                 ]
             }
         }
 
         # Create span
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute("traceloop.entity.input", json.dumps(input_data))
-            span.set_attribute("traceloop.entity.output", json.dumps(output_data))
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute(
+                "traceloop.entity.input", json.dumps(input_data)
+            )
+            span.set_attribute(
+                "traceloop.entity.output", json.dumps(output_data)
+            )
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         provider.force_flush()
@@ -251,12 +278,21 @@ class TestRealTraceloopFormat:
 
         # Verify input
         assert len(cached_input) == 1
-        assert cached_input[0].parts[0].content == "What is the capital of France?"
+        assert (
+            cached_input[0].parts[0].content
+            == "What is the capital of France?"
+        )
 
         # Verify output (should have 2 messages: echoed input + AI response)
         assert len(cached_output) == 2
-        assert cached_output[0].parts[0].content == "What is the capital of France?"
-        assert cached_output[1].parts[0].content == "The capital of France is Paris."
+        assert (
+            cached_output[0].parts[0].content
+            == "What is the capital of France?"
+        )
+        assert (
+            cached_output[1].parts[0].content
+            == "The capital of France is Paris."
+        )
 
     def test_deepeval_extraction_with_real_format(self, setup_tracer):
         """Test that DeepEval can extract text from real Traceloop format."""
@@ -269,19 +305,26 @@ class TestRealTraceloopFormat:
                     {
                         "lc": 1,
                         "type": "constructor",
-                        "id": ["langchain", "schema", "messages", "HumanMessage"],
+                        "id": [
+                            "langchain",
+                            "schema",
+                            "messages",
+                            "HumanMessage",
+                        ],
                         "kwargs": {
                             "content": "Test DeepEval extraction",
-                            "type": "human"
-                        }
+                            "type": "human",
+                        },
                     }
                 ]
             }
         }
 
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute("traceloop.entity.input", json.dumps(input_data))
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute(
+                "traceloop.entity.input", json.dumps(input_data)
+            )
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         provider.force_flush()
@@ -302,8 +345,9 @@ class TestRealTraceloopFormat:
 
         # Test extraction
         extracted_text = extract_text_from_messages(cached_input)
-        assert extracted_text == "Test DeepEval extraction", \
-            "DeepEval should extract text correctly from real format"
+        assert (
+            extracted_text == "Test DeepEval extraction"
+        ), "DeepEval should extract text correctly from real format"
 
     def test_multiple_messages_in_real_format(self, setup_tracer):
         """Test with multiple messages in real Traceloop format."""
@@ -316,28 +360,37 @@ class TestRealTraceloopFormat:
                     {
                         "lc": 1,
                         "type": "constructor",
-                        "id": ["langchain", "schema", "messages", "SystemMessage"],
+                        "id": [
+                            "langchain",
+                            "schema",
+                            "messages",
+                            "SystemMessage",
+                        ],
                         "kwargs": {
                             "content": "You are a helpful assistant.",
-                            "type": "system"
-                        }
+                            "type": "system",
+                        },
                     },
                     {
                         "lc": 1,
                         "type": "constructor",
-                        "id": ["langchain", "schema", "messages", "HumanMessage"],
-                        "kwargs": {
-                            "content": "Hello!",
-                            "type": "human"
-                        }
-                    }
+                        "id": [
+                            "langchain",
+                            "schema",
+                            "messages",
+                            "HumanMessage",
+                        ],
+                        "kwargs": {"content": "Hello!", "type": "human"},
+                    },
                 ]
             }
         }
 
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute("traceloop.entity.input", json.dumps(input_data))
-            span.set_attribute("llm.request.model", "gpt-4")
+            span.set_attribute(
+                "traceloop.entity.input", json.dumps(input_data)
+            )
+            span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
         provider.force_flush()
@@ -348,7 +401,9 @@ class TestRealTraceloopFormat:
 
         # Verify system message
         assert cached_input[0].role == "system"
-        assert cached_input[0].parts[0].content == "You are a helpful assistant."
+        assert (
+            cached_input[0].parts[0].content == "You are a helpful assistant."
+        )
 
         # Verify human message
         assert cached_input[1].role == "user"
@@ -357,4 +412,3 @@ class TestRealTraceloopFormat:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
