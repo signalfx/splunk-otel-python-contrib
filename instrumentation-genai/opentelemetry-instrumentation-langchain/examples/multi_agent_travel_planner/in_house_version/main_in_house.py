@@ -57,7 +57,6 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
     OTLPMetricExporter,
 )
 
-# from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider  # type: ignore[attr-defined]
 from opentelemetry._logs import set_logger_provider  # type: ignore[attr-defined]
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor  # type: ignore[attr-defined]
@@ -530,7 +529,6 @@ def _configure_manual_instrumentation() -> None:
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
         OTLPSpanExporter,
     )
-    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
     from opentelemetry.sdk._events import EventLoggerProvider
     from opentelemetry.sdk._logs import LoggerProvider
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
