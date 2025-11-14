@@ -442,8 +442,6 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
         lambda case, metrics, debug_log: fake_result,
-"opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics, debug_log: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
