@@ -84,6 +84,8 @@ def _missing_required_params(metric_cls: Any, test_case: Any) -> list[str]:
 def build_hallucination_metric(
     options: Mapping[str, Any], default_model: str | None
 ) -> Any:
+    if GEval is None or LLMTestCaseParams is None:
+        raise ImportError("deepeval is not installed")
     criteria = (
         "Assess if the output hallucinates by introducing facts, details, or claims not directly supported "
         "or implied by the input. Score 1 for fully grounded outputs (no fabrications) and 0 for severe hallucination."
@@ -118,6 +120,8 @@ def build_hallucination_metric(
 def build_sentiment_metric(
     options: Mapping[str, Any], default_model: str | None
 ) -> Any:
+    if GEval is None or LLMTestCaseParams is None:
+        raise ImportError("deepeval is not installed")
     criteria = "Determine the overall sentiment polarity of the output text: -1 very negative, 0 neutral, +1 very positive."
     steps = [
         "Read the text and note words/phrases indicating sentiment.",
