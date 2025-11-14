@@ -171,7 +171,7 @@ def _configure_otlp_logging() -> None:
     # same LoggerProvider with the OTLP exporter. Without this, events go to
     # a default/NoOp provider and never reach the collector!
     _events.set_event_logger_provider(EventLoggerProvider(logger_provider))
-    print(f"[INIT] EventLoggerProvider configured (uses same OTLP exporter)")
+    print("[INIT] EventLoggerProvider configured (uses same OTLP exporter)")
 
 
 # Configure logging for evaluation results
