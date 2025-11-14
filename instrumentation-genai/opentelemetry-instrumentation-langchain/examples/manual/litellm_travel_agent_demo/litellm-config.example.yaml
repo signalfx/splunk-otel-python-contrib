@@ -1,0 +1,29 @@
+# Example LiteLLM configuration forwarding to Cisco CircuIT's OpenAI-compatible endpoint.
+# Replace the ${...} placeholders via envsubst or manual editing before launching LiteLLM.
+
+general_settings:
+  master_key: ${LITELLM_PROXY_KEY:-litellm-demo-key}
+
+litellm_settings:
+  set_verbose: true
+
+model_list:
+  - model_name: ${LITELLM_MODEL_NAME:-gpt-4o-mini}
+    litellm_params:
+      model: ${LITELLM_UPSTREAM_MODEL:-gpt-4o-mini}
+      custom_llm_provider: openai
+      api_base: ${CIRCUIT_API_BASE:-https://chat-ai.cisco.com/}
+      api_key: ${CIRCUIT_ACCESS_TOKEN}
+      timeout: ${LITELLM_UPSTREAM_TIMEOUT:-60}
+      max_retries: ${LITELLM_UPSTREAM_RETRIES:-2}
+      # NOTE: `custom_headers` is intentionally omitted here because some
+      # OpenAI-compatible SDK clients (or their wrappers) do not accept
+      # a `custom_headers` kwarg on model calls and will raise
+      # "unexpected keyword argument 'custom_headers'". If your upstream
+      # endpoint requires an additional header like `api-key`, run a small
+      # header-shim proxy that converts Authorization -> api-key, or
+      # configure the upstream to accept Bearer tokens via `api_key`.
+
+server_settings:
+  host: 0.0.0.0
+  port: ${LITELLM_PORT:-4000}

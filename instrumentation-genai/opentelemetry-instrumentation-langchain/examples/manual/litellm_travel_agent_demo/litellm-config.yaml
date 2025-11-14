@@ -1,0 +1,32 @@
+# Example LiteLLM configuration forwarding to Cisco CircuIT's OpenAI-compatible endpoint.
+# Replace the  placeholders via envsubst or manual editing before launching LiteLLM.
+
+general_settings:
+  master_key: litellm-demo-key
+
+litellm_settings:
+  set_verbose: true
+
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: gpt-4o-mini
+      custom_llm_provider: openai
+      # Point LiteLLM at the shim's OpenAI-compatible v1 prefix so incoming
+      # requests use paths like /v1/chat/completions which the shim remaps to
+      # Circuit's deployment-style endpoints.
+      api_base: http://host.docker.internal:5001/v1/
+      api_key: eyJraWQiOiJqNHJGLWx1WW5jRjF1d0VQU01OVDd5OHV2Q1NDMGRXM2xRSFJra3QxM3JBIiwiYWxnIjoiUlMyNTYifQ.eyJ2ZXIiOjEsImp0aSI6IkFULnFCUGZLZVoyV3FncnllaFk1b2JYdWg5bE5JR1VIcUtla3FVcDY2UjI0UlUiLCJpc3MiOiJodHRwczovL2lkLmNpc2NvLmNvbS9vYXV0aDIvZGVmYXVsdCIsImF1ZCI6ImFwaTovL2RlZmF1bHQiLCJpYXQiOjE3NjI1NTEwMzEsImV4cCI6MTc2MjU1NDYzMSwiY2lkIjoiMG9hcHJvdGx6OGNKVWtKUkQ1ZDciLCJzY3AiOlsiY3VzdG9tc2NvcGUiXSwic3ViIjoiMG9hcHJvdGx6OGNKVWtKUkQ1ZDciLCJhenAiOiIwb2Fwcm90bHo4Y0pVa0pSRDVkNyJ9.LcjRKaJDusvOxOLWK1UPlM9FP7PQUoCB90lTVVZgWFL-fRALbjieOluKBumXaxATc5edmaSop9dCjKn5V83NSd10Obkc0yS_ASaDFpWKdVysanCnJUMMN88mT8CK2Y439BsaFNAE7x9400wMWtmWfuXGoYwy3qUTzZfIm3oZtaj1Ml0Hkv8B17T6qRIjGwx-CF73Ake8lV4X1kqtWRJESUFpeVz1iWTKjuSE2qdLH_JYLrcDwKynZdl60HXvFEe-j4M8rVVF8Qrv8D-45n9kT3XMh0ING0O9ZQc9wN_w2dW18NCFvgmfVKomZnOEmm3bhti68Pe2NkfJ1OP2gAhhaw
+      timeout: 60
+      max_retries: 2
+      # NOTE: `custom_headers` is intentionally omitted here because some
+      # OpenAI-compatible SDK clients (or their wrappers) do not accept
+      # a `custom_headers` kwarg on model calls and will raise
+      # "unexpected keyword argument 'custom_headers'". If your upstream
+      # endpoint requires an additional header like `api-key`, run a small
+      # header-shim proxy that converts Authorization -> api-key, or
+      # configure the upstream to accept Bearer tokens via `api_key`.
+
+server_settings:
+  host: 0.0.0.0
+  port: 4000
