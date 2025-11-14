@@ -58,7 +58,6 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
 )
 
 from opentelemetry.sdk._logs import LoggerProvider  # type: ignore[attr-defined]
-from opentelemetry._logs import set_logger_provider  # type: ignore[attr-defined]
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor  # type: ignore[attr-defined]
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -79,6 +78,7 @@ from opentelemetry.util.genai.types import (
 # ---------------------------------------------------------------------------
 # Health check endpoint for Kubernetes
 # ---------------------------------------------------------------------------
+
 
 class HealthHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"  # Use HTTP/1.1 instead of HTTP/1.0
@@ -271,7 +271,9 @@ def run_travel_planner(
         "final_itinerary": final_plan,
         "flight_summary": final_state.get("flight_summary") if final_state else None,
         "hotel_summary": final_state.get("hotel_summary") if final_state else None,
-        "activities_summary": final_state.get("activities_summary") if final_state else None,
+        "activities_summary": final_state.get("activities_summary")
+        if final_state
+        else None,
     }
 
 
@@ -368,6 +370,7 @@ def _coerce_content(raw: Any) -> str:
 # LLM metadata extraction helper
 # ---------------------------------------------------------------------------
 
+
 def _apply_llm_response_metadata(message: Any, llm_invocation: LLMInvocation) -> None:
     """Populate LLMInvocation from a LangChain response message.
 
@@ -413,11 +416,15 @@ def _apply_llm_response_metadata(message: Any, llm_invocation: LLMInvocation) ->
             token_usage: Any = resp_meta.get("token_usage") or resp_meta.get("usage")
             if isinstance(token_usage, dict):
                 if input_tokens is None:
-                    prompt_val = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
+                    prompt_val = token_usage.get("prompt_tokens") or token_usage.get(
+                        "input_tokens"
+                    )
                     if isinstance(prompt_val, int):
                         input_tokens = prompt_val
                 if output_tokens is None:
-                    completion_val = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
+                    completion_val = token_usage.get(
+                        "completion_tokens"
+                    ) or token_usage.get("output_tokens")
                     if isinstance(completion_val, int):
                         output_tokens = completion_val
 
@@ -517,26 +524,15 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
 def _configure_manual_instrumentation() -> None:
     """Initialise trace and metric providers that export to the configured OTLP endpoint."""
     """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.trace import SpanKind
 
-    from opentelemetry import _events, _logs, metrics, trace
+    from opentelemetry import _events, _logs, trace
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
-        OTLPMetricExporter,
-    )
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-        OTLPSpanExporter,
-    )
     from opentelemetry.sdk._events import EventLoggerProvider
-    from opentelemetry.sdk._logs import LoggerProvider
-    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    
+
     trace.set_tracer_provider(TracerProvider())
-    trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    trace.get_tracer_provider().add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter())
+    )
 
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
@@ -546,6 +542,7 @@ def _configure_manual_instrumentation() -> None:
         BatchLogRecordProcessor(OTLPLogExporter())
     )
     _events.set_event_logger_provider(EventLoggerProvider())
+
 
 # ---------------------------------------------------------------------------
 # LangGraph nodes
@@ -618,7 +615,7 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         ),
     )
     handler.start_agent(agent_invocation)
-    
+
     llm_invocation = LLMInvocation(
         request_model=_model_name(),
         operation="chat",
@@ -673,7 +670,7 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "hotel_specialist"
-        # Attach agent output messages
+    # Attach agent output messages
     # No direct output messages attribute assignment; output_result contains summary
 
     handler.stop_agent(agent_invocation)
@@ -980,7 +977,9 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "and a few unique experiences."
             )
             print(f"🚀 Running single request: {user_request}")
-            result = run_travel_planner(user_request=user_request, session_id="fake-session-001")
+            result = run_travel_planner(
+                user_request=user_request, session_id="fake-session-001"
+            )
             print(f"✅ Planning completed for session: {result['session_id']}")
 
             wait_seconds = int(os.getenv("EVAL_WAIT_SECONDS", "300"))
