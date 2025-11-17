@@ -1,0 +1,24 @@
+services:
+  circuit-shim:
+    build:
+      context: .
+      dockerfile: Dockerfile.circuit-shim
+    environment:
+      CISCO_APP_KEY: ${CISCO_APP_KEY}
+      CIRCUIT_UPSTREAM_BASE: ${CIRCUIT_UPSTREAM_BASE:-https://chat-ai.cisco.com}
+      CIRCUIT_SHIM_PORT: ${CIRCUIT_SHIM_PORT:-5001}
+      CIRCUIT_SHIM_HOST: 0.0.0.0
+    ports:
+      - "${CIRCUIT_SHIM_PORT:-5001}:5001"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main
+    depends_on:
+      - circuit-shim
+    environment:
+      CIRCUIT_ACCESS_TOKEN: ${CIRCUIT_ACCESS_TOKEN}
+      LITELLM_PROXY_KEY: ${LITELLM_PROXY_KEY:-litellm-demo-key}
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/proxy_server_config.yaml:ro

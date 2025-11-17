@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY circuit_shim.py ./
+
+RUN pip install --no-cache-dir flask requests
+
+EXPOSE 5001
+
+CMD ["python", "circuit_shim.py"]

@@ -12,7 +12,7 @@ model_list:
     litellm_params:
       model: ${LITELLM_UPSTREAM_MODEL:-gpt-4o-mini}
       custom_llm_provider: openai
-      api_base: ${CIRCUIT_API_BASE:-https://chat-ai.cisco.com/}
+      api_base: ${CIRCUIT_API_BASE:-http://circuit-shim:5001/}
       api_key: ${CIRCUIT_ACCESS_TOKEN}
       timeout: ${LITELLM_UPSTREAM_TIMEOUT:-60}
       max_retries: ${LITELLM_UPSTREAM_RETRIES:-2}
