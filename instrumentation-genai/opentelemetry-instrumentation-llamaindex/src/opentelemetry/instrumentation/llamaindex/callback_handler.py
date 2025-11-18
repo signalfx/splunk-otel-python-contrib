@@ -1,0 +1,222 @@
+from typing import Any, Dict, Optional
+
+from llama_index.core.callbacks.base_handler import BaseCallbackHandler
+from llama_index.core.callbacks.schema import CBEventType
+
+from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.types import (
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+)
+
+
+def _safe_str(value: Any) -> str:
+    """Safely convert value to string."""
+    try:
+        return str(value)
+    except (TypeError, ValueError):
+        return "<unrepr>"
+
+
+class LlamaindexCallbackHandler(BaseCallbackHandler):
+    """Simplified LlamaIndex callback handler - LLM invocation only."""
+
+    def __init__(
+        self,
+        telemetry_handler: Optional[TelemetryHandler] = None,
+    ) -> None:
+        super().__init__(
+            event_starts_to_ignore=[],
+            event_ends_to_ignore=[],
+        )
+        self._handler = telemetry_handler
+
+    def start_trace(self, trace_id: Optional[str] = None) -> None:
+        """Start a trace - required by BaseCallbackHandler."""
+        pass
+
+    def end_trace(
+        self,
+        trace_id: Optional[str] = None,
+        trace_map: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """End a trace - required by BaseCallbackHandler."""
+        pass
+
+    def on_event_start(
+        self,
+        event_type: CBEventType,
+        payload: Optional[Dict[str, Any]] = None,
+        event_id: str = "",
+        parent_id: str = "",
+        **kwargs: Any,
+    ) -> str:
+        """Handle event start - only processing LLM events."""
+        if event_type == CBEventType.LLM:
+            self._handle_llm_start(event_id, parent_id, payload, **kwargs)
+        return event_id
+
+    def on_event_end(
+        self,
+        event_type: CBEventType,
+        payload: Optional[Dict[str, Any]] = None,
+        event_id: str = "",
+        **kwargs: Any,
+    ) -> None:
+        """Handle event end - only processing LLM events."""
+        if event_type == CBEventType.LLM:
+            self._handle_llm_end(event_id, payload, **kwargs)
+
+    def _handle_llm_start(
+        self,
+        event_id: str,
+        parent_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Handle LLM invocation start."""
+        if not self._handler or not payload:
+            return
+
+        # Extract model information from payload
+        serialized = payload.get("serialized", {})
+        model_name = (
+            serialized.get("model")
+            or serialized.get("model_name")
+            or "unknown"
+        )
+
+        # Extract messages from payload
+        # LlamaIndex messages are ChatMessage objects with .content and .role properties
+        messages = payload.get("messages", [])
+        input_messages = []
+
+        for msg in messages:
+            # Handle ChatMessage objects (has .content property and .role attribute)
+            if hasattr(msg, "content") and hasattr(msg, "role"):
+                # Extract role - could be MessageRole enum
+                role_value = (
+                    str(msg.role.value)
+                    if hasattr(msg.role, "value")
+                    else str(msg.role)
+                )
+                # Extract content - this is a property that pulls from blocks[0].text
+                content = _safe_str(msg.content)
+                input_messages.append(
+                    InputMessage(
+                        role=role_value, parts=[Text(content=content)]
+                    )
+                )
+            elif isinstance(msg, dict):
+                # Handle serialized messages (dict format)
+                role = msg.get("role", "user")
+                # Try to extract from blocks first (LlamaIndex format)
+                blocks = msg.get("blocks", [])
+                if blocks and isinstance(blocks[0], dict):
+                    content = blocks[0].get("text", "")
+                else:
+                    # Fallback to direct content field
+                    content = msg.get("content", "")
+
+                role_value = (
+                    str(role.value) if hasattr(role, "value") else str(role)
+                )
+                input_messages.append(
+                    InputMessage(
+                        role=role_value,
+                        parts=[Text(content=_safe_str(content))],
+                    )
+                )
+
+        # Create LLM invocation with event_id as run_id
+        llm_inv = LLMInvocation(
+            request_model=_safe_str(model_name),
+            input_messages=input_messages,
+            attributes={},
+            run_id=event_id,  # Use event_id as run_id for registry lookup
+        )
+        llm_inv.framework = "llamaindex"
+
+        # Start the LLM invocation (handler stores it in _entity_registry)
+        self._handler.start_llm(llm_inv)
+
+    def _handle_llm_end(
+        self,
+        event_id: str,
+        payload: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> None:
+        """Handle LLM invocation end."""
+        if not self._handler:
+            return
+
+        # Get the LLM invocation from handler's registry using event_id
+        llm_inv = self._handler.get_entity(event_id)
+        if not llm_inv or not isinstance(llm_inv, LLMInvocation):
+            return
+
+        if payload:
+            # Extract response from payload
+            response = payload.get("response")
+
+            # Handle both dict and object types for response
+            if response:
+                # Get message - could be dict or object
+                if isinstance(response, dict):
+                    message = response.get("message", {})
+                    raw_response = response.get("raw")
+                else:
+                    # response is a ChatResponse object
+                    message = getattr(response, "message", None)
+                    raw_response = getattr(response, "raw", None)
+
+                # Extract content from message
+                if message:
+                    if isinstance(message, dict):
+                        # Message is dict
+                        blocks = message.get("blocks", [])
+                        if blocks and isinstance(blocks[0], dict):
+                            content = blocks[0].get("text", "")
+                        else:
+                            content = message.get("content", "")
+                    else:
+                        # Message is ChatMessage object
+                        blocks = getattr(message, "blocks", [])
+                        if blocks and len(blocks) > 0:
+                            content = getattr(blocks[0], "text", "")
+                        else:
+                            content = getattr(message, "content", "")
+
+                    # Create output message
+                    llm_inv.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=_safe_str(content))],
+                            finish_reason="stop",
+                        )
+                    ]
+
+                # Extract token usage from response.raw (OpenAI format)
+                # LlamaIndex stores the raw API response (e.g., OpenAI response) in response.raw
+                # raw_response could be a dict or an object (e.g., ChatCompletion from OpenAI)
+                if raw_response:
+                    # Try to get usage from dict or object
+                    if isinstance(raw_response, dict):
+                        usage = raw_response.get("usage", {})
+                    else:
+                        # It's an object, try to get usage attribute
+                        usage = getattr(raw_response, "usage", None)
+                    
+                    if usage:
+                        # usage could also be dict or object
+                        if isinstance(usage, dict):
+                            llm_inv.input_tokens = usage.get("prompt_tokens")
+                            llm_inv.output_tokens = usage.get("completion_tokens")
+                        else:
+                            llm_inv.input_tokens = getattr(usage, "prompt_tokens", None)
+                            llm_inv.output_tokens = getattr(usage, "completion_tokens", None)
+
+        # Stop the LLM invocation
+        self._handler.stop_llm(llm_inv)
