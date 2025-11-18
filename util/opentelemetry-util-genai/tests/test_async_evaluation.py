@@ -49,7 +49,7 @@ class TestAsyncEvaluation(unittest.TestCase):
             }
 
         with patch(
-            "opentelemetry.util.genai.handler._load_completion_callbacks",
+            "opentelemetry.util.genai.utils.load_completion_callbacks",
             side_effect=_mock_load_callbacks,
         ):
             handler = get_telemetry_handler()

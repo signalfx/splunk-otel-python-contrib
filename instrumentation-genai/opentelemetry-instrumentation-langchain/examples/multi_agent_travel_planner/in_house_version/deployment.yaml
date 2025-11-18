@@ -17,12 +17,15 @@ spec:
     spec:
       containers:
         - name: travel-planner
-          image: shuniche855/travel-planner:0.0.2
+          image: shuniche855/travel-planner:0.0.5
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
               name: http
           env:
+            # Python unbuffered output for real-time logging
+            - name: PYTHONUNBUFFERED
+              value: "1"
             # Load OpenAI API key from secret
             - name: OPENAI_API_KEY
               valueFrom:
@@ -64,7 +67,7 @@ spec:
             - name: OTEL_GENAI_EVAL_DEBUG_SKIPS
               value: "true"
             - name: OTEL_GENAI_EVAL_DEBUG_EACH
-              value: "true"
+              value: "false"
             - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
               value: "true"
             - name: SPLUNK_PROFILER_ENABLED
@@ -92,9 +95,9 @@ spec:
               path: /health
               port: 8080
             initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
           readinessProbe:
             httpGet:
               path: /health

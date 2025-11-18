@@ -1,3 +1,3 @@
 """Version metadata for opentelemetry-util-genai-evals."""
 
-__version__ = "0.1b0.dev"
+__version__ = "0.1.4"

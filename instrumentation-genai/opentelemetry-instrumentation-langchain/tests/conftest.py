@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environments
@@ -12,7 +13,9 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environme
 # from openai import AsyncOpenAI, OpenAI
 try:  # pragma: no cover - optional dependency in CI
     from langchain_openai import ChatOpenAI
-except ModuleNotFoundError:  # pragma: no cover - allow minimal test runs without package
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - allow minimal test runs without package
     ChatOpenAI = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - optional dependency in CI
@@ -20,11 +23,15 @@ try:  # pragma: no cover - optional dependency in CI
     from opentelemetry.instrumentation.langchain.utils import (
         set_prompt_capture_enabled,
     )
-except ModuleNotFoundError:  # pragma: no cover - allow subset of tests without full instrumentation
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - allow subset of tests without full instrumentation
     LangChainInstrumentor = None  # type: ignore[assignment]
 
     def set_prompt_capture_enabled(_value: bool) -> None:  # type: ignore[override]
         return None
+
+
 from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import (
@@ -95,9 +102,7 @@ def fixture_meter_provider(metric_reader):
 @pytest.fixture(autouse=True)
 def environment():
     original_api_key = os.environ.get("OPENAI_API_KEY")
-    original_evals = os.environ.get(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
-    )
+    original_evals = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS")
     original_emitters = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EMITTERS")
 
     if not original_api_key:
@@ -116,9 +121,7 @@ def environment():
     if original_evals is None:
         os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
     else:
-        os.environ[
-            "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
-        ] = original_evals
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = original_evals
 
     if original_emitters is None:
         os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EMITTERS", None)
@@ -135,7 +138,7 @@ def chatOpenAI_client():
     return ChatOpenAI()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def vcr_config():
     return {
         "filter_headers": [
@@ -146,13 +149,21 @@ def vcr_config():
         ],
         "decode_compressed_response": True,
         "before_record_response": scrub_response_headers,
+        "serializer": "yaml",
     }
 
 
+@pytest.fixture(scope="session")
+def vcr_cassette_dir():
+    """Override the default cassette directory to avoid nested subdirectories."""
+    import os
+
+    # Return the cassettes directory path
+    return os.path.join(os.path.dirname(__file__), "cassettes")
+
+
 @pytest.fixture(scope="function")
-def instrument_no_content(
-    tracer_provider, event_logger_provider, meter_provider
-):
+def instrument_no_content(tracer_provider, event_logger_provider, meter_provider):
     if LangChainInstrumentor is None:  # pragma: no cover - skip when dependency missing
         pytest.skip("opentelemetry-instrumentation-langchain not available")
     set_prompt_capture_enabled(False)
@@ -170,13 +181,24 @@ def instrument_no_content(
 
 
 @pytest.fixture(scope="function")
-def instrument_with_content(
-    tracer_provider, event_logger_provider, meter_provider
-):
+def instrument_with_content(tracer_provider, event_logger_provider, meter_provider):
     if LangChainInstrumentor is None:  # pragma: no cover
         pytest.skip("opentelemetry-instrumentation-langchain not available")
     set_prompt_capture_enabled(True)
+
+    # Reset util-genai singleton handler to ensure clean state
+    import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+
+    # Create new instrumentor for each test
     instrumentor = LangChainInstrumentor()
+
+    # If already instrumented (from previous test), uninstrument first
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
     instrumentor.instrument(
         tracer_provider=tracer_provider,
         event_logger_provider=event_logger_provider,
@@ -184,8 +206,14 @@ def instrument_with_content(
     )
 
     yield instrumentor
+
     set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+    # Clean up: uninstrument and reset singleton
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.fixture(scope="function")
@@ -223,21 +251,37 @@ def instrument_with_content_util(
             OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_ONLY",  # util-genai content gate
         }
     )
+
     # Reset singleton so new env vars are applied
     import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
 
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+
+    # Create new instrumentor for each test
     instrumentor = LangChainInstrumentor()
+
+    # If already instrumented (from previous test), uninstrument first
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
     instrumentor.instrument(
         tracer_provider=tracer_provider,
         event_logger_provider=event_logger_provider,
         meter_provider=meter_provider,
     )
+
     yield instrumentor
+
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
     set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+
+    # Clean up: uninstrument and reset singleton
+    if instrumentor._is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
+    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 class LiteralBlockScalar(str):
@@ -295,9 +339,7 @@ class PrettyPrintJSONBody:
         cassette_dict = convert_body_to_literal(cassette_dict)
         if yaml is None:
             return json.dumps(cassette_dict)
-        return yaml.dump(
-            cassette_dict, default_flow_style=False, allow_unicode=True
-        )
+        return yaml.dump(cassette_dict, default_flow_style=False, allow_unicode=True)
 
     @staticmethod
     def deserialize(cassette_string):
@@ -308,6 +350,11 @@ class PrettyPrintJSONBody:
 
 try:  # pragma: no cover - optional pytest-vcr dependency
     import pytest_recording  # type: ignore # noqa: F401
+    import vcr as vcr_module  # type: ignore # noqa: F401
+
+    # Register custom YAML serializer globally
+    vcr_module.VCR().register_serializer("yaml", PrettyPrintJSONBody)
+
 except ModuleNotFoundError:  # pragma: no cover - provide stub when plugin missing
 
     @pytest.fixture(name="vcr", scope="module")
@@ -319,9 +366,10 @@ except ModuleNotFoundError:  # pragma: no cover - provide stub when plugin missi
         return _VCRStub()
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 def fixture_vcr(vcr):
-    vcr.register_serializer("yaml", PrettyPrintJSONBody)
+    # When pytest-recording is installed, vcr is a Cassette and we don't need to do anything
+    # The serializer is already registered on the VCR module above
     return vcr
 
 

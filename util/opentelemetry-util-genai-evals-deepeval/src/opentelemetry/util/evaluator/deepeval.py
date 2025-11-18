@@ -82,8 +82,9 @@ _LOGGER = logging.getLogger(__name__)
 # it does not emit extra spans or events when running inside the GenAI
 # instrumentation stack. Users can re-enable it by explicitly setting
 # ``DEEPEVAL_TELEMETRY_OPT_OUT`` to ``0`` before importing this module.
+# "YES" works with deepeval>=3.3.9,<3.8.0
 if os.environ.get("DEEPEVAL_TELEMETRY_OPT_OUT") is None:
-    os.environ["DEEPEVAL_TELEMETRY_OPT_OUT"] = "1"
+    os.environ["DEEPEVAL_TELEMETRY_OPT_OUT"] = "YES"
 
 
 @dataclass(frozen=True)
@@ -246,7 +247,11 @@ def _derive_passed(label: str | None, success: Any) -> bool | None:
 def _apply_sentiment_postprocessing(
     ctx: _MetricContext, label: str | None
 ) -> tuple[float | None, str | None]:
-    if ctx.name not in {"sentiment", "sentiment [geval]", "sentiment [geval] [GEval]"}:
+    if ctx.name not in {
+        "sentiment",
+        "sentiment [geval]",
+        "sentiment [geval] [GEval]",
+    }:
         return ctx.score, label
     if ctx.score is None:
         return ctx.score, label

@@ -90,7 +90,9 @@ class TokenManager:
         os.remove(self.cache_file)
 
 
-def _assert_credentials(client_id: Optional[str], client_secret: Optional[str]) -> Tuple[str, str]:
+def _assert_credentials(
+    client_id: Optional[str], client_secret: Optional[str]
+) -> Tuple[str, str]:
     if not client_id or not client_secret:
         raise RuntimeError(
             "CISCO_CLIENT_ID and CISCO_CLIENT_SECRET must be set in the environment."
@@ -111,7 +113,7 @@ def build_token_manager(cache_file: str = DEFAULT_CACHE_FILE) -> TokenManager:
 def create_cisco_chat_llm(
     *,
     cache_file: str = DEFAULT_CACHE_FILE,
-    model: str = "gpt-4.1",
+    model: str = "gpt-5-nano",
     temperature: float = 0.1,
     top_p: float = 0.9,
     frequency_penalty: float = 0.5,

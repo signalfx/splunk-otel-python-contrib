@@ -29,7 +29,7 @@ Creating ReAct agent...
         "gen_ai.agent.type": "react",
         "gen_ai.agent.description": "ReAct agent that can look up capital cities",
         "gen_ai.framework": "langgraph",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.agent.tools": [
             "get_capital"
         ]
@@ -130,7 +130,7 @@ Model: gpt-4-0613, Finish Reason: tool_calls
     "attributes": {
         "event.name": "gen_ai.client.inference.operation.details",
         "gen_ai.provider.name": "openai",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.response.model": "gpt-4-0613",
         "gen_ai.usage.input_tokens": 78,
         "gen_ai.usage.output_tokens": 16,
@@ -174,7 +174,7 @@ Model: gpt-4-0613, Finish Reason: tool_calls
     },
     "attributes": {
         "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.provider.name": "openai",
         "gen_ai.framework": "langgraph",
         "gen_ai.agent.name": "capital_agent",
@@ -328,7 +328,7 @@ Model: gpt-4-0613, Finish Reason: stop
     "attributes": {
         "event.name": "gen_ai.client.inference.operation.details",
         "gen_ai.provider.name": "openai",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.response.model": "gpt-4-0613",
         "gen_ai.usage.input_tokens": 103,
         "gen_ai.usage.output_tokens": 9,
@@ -372,7 +372,7 @@ Model: gpt-4-0613, Finish Reason: stop
     },
     "attributes": {
         "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.provider.name": "openai",
         "gen_ai.framework": "langgraph",
         "gen_ai.agent.name": "capital_agent",
@@ -447,7 +447,7 @@ Model: gpt-4-0613, Finish Reason: stop
         "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3",
         "gen_ai.agent.type": "react",
         "gen_ai.framework": "langgraph",
-        "gen_ai.request.model": "gpt-4"
+        "gen_ai.request.model": "gpt-5-nano"
     },
     "events": [],
     "links": [],
@@ -914,7 +914,7 @@ Waiting for metrics export...
                                             "gen_ai.token.type": "input",
                                             "gen_ai.provider.name": "openai",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "gen_ai.response.model": "gpt-4-0613",
                                             "gen_ai.agent.name": "capital_agent",
                                             "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3"
@@ -982,7 +982,7 @@ Waiting for metrics export...
                                             "gen_ai.token.type": "output",
                                             "gen_ai.provider.name": "openai",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "gen_ai.response.model": "gpt-4-0613",
                                             "gen_ai.agent.name": "capital_agent",
                                             "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3"
@@ -1059,7 +1059,7 @@ Waiting for metrics export...
                                         "attributes": {
                                             "gen_ai.provider.name": "openai",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "gen_ai.response.model": "gpt-4-0613",
                                             "gen_ai.agent.name": "capital_agent",
                                             "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3"
@@ -1548,7 +1548,7 @@ Waiting for metrics export...
                                             "gen_ai.token.type": "input",
                                             "gen_ai.provider.name": "openai",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "gen_ai.response.model": "gpt-4-0613",
                                             "gen_ai.agent.name": "capital_agent",
                                             "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3"
@@ -1601,7 +1601,7 @@ Waiting for metrics export...
                                             "gen_ai.token.type": "output",
                                             "gen_ai.provider.name": "openai",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "gen_ai.response.model": "gpt-4-0613",
                                             "gen_ai.agent.name": "capital_agent",
                                             "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3"
@@ -1663,7 +1663,7 @@ Waiting for metrics export...
                                         "attributes": {
                                             "gen_ai.provider.name": "openai",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "gen_ai.response.model": "gpt-4-0613",
                                             "gen_ai.agent.name": "capital_agent",
                                             "gen_ai.agent.id": "30f52b9e-b80b-4465-8779-6d48d8fd4bb3"

@@ -15,184 +15,18 @@
 """
 Multi-agent travel planner driven by LangGraph.
 
-The example coordinates a set of LangChain agents that collaborate to build a
-week-long city break itinerary.
+Coordinates a set of LangChain agents (coordinator, flight, hotel, activities,
+plan synthesizer) to build a travel itinerary to demonstrate OpenTelemetry LangChain
+instrumentation.
 
-[User Request] --> [Pre-Parse: origin/dest/dates] --> START
-                    |
-                    v
-              [LangGraph Workflow]
-    ┌──────────┼──────────┼──────────┼──────────┐
-    |          |          |          |          |
-[Coord] --> [Flight] --> [Hotel] --> [Act.] --> [Synth] --> END
-    |          |          |          |          |
-    └──────────┼──────────┼──────────┼──────────┘
-               |          |          | 
-          (OTEL Spans/Metrics)
+See README.md for more information
 
-
-
-Below is a sample of telemetry produced by running this app with LangChain instrumentation
-Trace ID: f1d34b2cb227acbc19e5da0a3220f918
-└── Span ID: f3a3e0925fad8651 (Parent: none) - Name: POST /travel/plan (Type: span)
-    └── Span ID: 5aa2668c4849b7c3 (Parent: f3a3e0925fad8651) - Name: gen_ai.workflow LangGraph (Type: span)
-        ├── Metric: gen_ai.workflow.duration (Type: metric)
-        ├── Span ID: d11f7da6fcb2de10 (Parent: 5aa2668c4849b7c3) - Name: gen_ai.step __start__ (Type: span)
-        │   └── Span ID: a07099710d602a07 (Parent: d11f7da6fcb2de10) - Name: gen_ai.step should_continue (Type: span)
-        ├── Span ID: 8fc40405bf54317b (Parent: 5aa2668c4849b7c3) - Name: gen_ai.step coordinator (Type: span)
-        │   ├── Span ID: e52114886351ebb2 (Parent: 8fc40405bf54317b) - Name: invoke_agent coordinator [op:invoke_agent] (Type: span)
-        │   │   ├── Log: gen_ai.client.agent.operation.details (Type: log)
-        │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   ├── Metric: gen_ai.agent.duration [op:invoke_agent] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │   └── Span ID: c04e1101b33486b3 (Parent: e52114886351ebb2) - Name: gen_ai.step model (Type: span)
-        │   │       └── Span ID: 844ad794646fee29 (Parent: c04e1101b33486b3) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │           ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │           ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │           ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
-        │   │           ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │           ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │           ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │           ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │           ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │           ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │           └── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   └── Span ID: e5b90f3d5b7eb0f7 (Parent: 8fc40405bf54317b) - Name: gen_ai.step should_continue (Type: span)
-        ├── Span ID: b4839fa3deff9ac2 (Parent: 5aa2668c4849b7c3) - Name: gen_ai.step flight_specialist (Type: span)
-        │   ├── Span ID: fc31b6561ef63f63 (Parent: b4839fa3deff9ac2) - Name: invoke_agent flight_specialist [op:invoke_agent] (Type: span)
-        │   │   ├── Log: gen_ai.client.agent.operation.details [op:invoke_agent] (Type: log)
-        │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   ├── Metric: gen_ai.agent.duration [op:invoke_agent] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │   ├── Span ID: 29b7d0300541bd68 (Parent: fc31b6561ef63f63) - Name: gen_ai.step model (Type: span)
-        │   │   │   ├── Span ID: a06777a06033e5bc (Parent: 29b7d0300541bd68) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │   │   │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │   │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   │   │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │   │   │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │   │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   │   │   └── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   │   └── Span ID: 9c71b8c4ca1bd428 (Parent: 29b7d0300541bd68) - Name: gen_ai.step model_to_tools (Type: span)
-        │   │   ├── Span ID: fbe064db82335672 (Parent: fc31b6561ef63f63) - Name: gen_ai.step tools (Type: span)
-        │   │   │   ├── Span ID: e6ad104468515a7f (Parent: fbe064db82335672) - Name: tool mock_search_flights [op:execute_tool] (Type: span)
-        │   │   │   │   └── Metric: gen_ai.client.operation.duration [op:execute_tool] (Type: metric)
-        │   │   │   └── Span ID: 0a93af6cba5a3e24 (Parent: fbe064db82335672) - Name: gen_ai.step tools_to_model (Type: span)
-        │   │   └── Span ID: 09683ac4d477f30b (Parent: fc31b6561ef63f63) - Name: gen_ai.step model (Type: span)
-        │   │       ├── Span ID: fe7362569246cab1 (Parent: 09683ac4d477f30b) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │       │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │       │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │       │   ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │       │   └── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │       └── Span ID: 8eb6db6447db85c4 (Parent: 09683ac4d477f30b) - Name: gen_ai.step model_to_tools (Type: span)
-        │   └── Span ID: a2cc673460c0cc52 (Parent: b4839fa3deff9ac2) - Name: gen_ai.step should_continue (Type: span)
-        ├── Span ID: fc8da26047610879 (Parent: 5aa2668c4849b7c3) - Name: gen_ai.step hotel_specialist (Type: span)
-        │   ├── Span ID: 4220fc3ae5570334 (Parent: fc8da26047610879) - Name: invoke_agent hotel_specialist [op:invoke_agent] (Type: span)
-        │   │   ├── Log: gen_ai.client.agent.operation.details (Type: log)
-        │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   ├── Metric: gen_ai.agent.duration [op:invoke_agent] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │   ├── Span ID: 64df5b5bbaebce2c (Parent: 4220fc3ae5570334) - Name: gen_ai.step model (Type: span)
-        │   │   │   ├── Span ID: cafd1fc9ec9df451 (Parent: 64df5b5bbaebce2c) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │   │   │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │   │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   │   │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │   │   │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │   │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   │   │   └── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   │   └── Span ID: 8e522e28e7598f74 (Parent: 64df5b5bbaebce2c) - Name: gen_ai.step model_to_tools (Type: span)
-        │   │   ├── Span ID: 4c95c491704bb7f6 (Parent: 4220fc3ae5570334) - Name: gen_ai.step tools (Type: span)
-        │   │   │   ├── Span ID: 977317c56a07a0fe (Parent: 4c95c491704bb7f6) - Name: tool mock_search_hotels [op:execute_tool] (Type: span)
-        │   │   │   │   └── Metric: gen_ai.client.operation.duration [op:execute_tool] (Type: metric)
-        │   │   │   └── Span ID: b9789de4ffc99edb (Parent: 4c95c491704bb7f6) - Name: gen_ai.step tools_to_model (Type: span)
-        │   │   └── Span ID: b8547bad26c0bad0 (Parent: 4220fc3ae5570334) - Name: gen_ai.step model (Type: span)
-        │   │       ├── Span ID: f62ea3a84ba86dfe (Parent: b8547bad26c0bad0) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │       │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │       │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │       │   ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │       │   └── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │       └── Span ID: dc4b36aae85206db (Parent: b8547bad26c0bad0) - Name: gen_ai.step model_to_tools (Type: span)
-        │   └── Span ID: 8514726a735a4af7 (Parent: fc8da26047610879) - Name: gen_ai.step should_continue (Type: span)
-        ├── Span ID: 8ed13d6187dc4594 (Parent: 5aa2668c4849b7c3) - Name: gen_ai.step activity_specialist (Type: span)
-        │   ├── Span ID: 82f41b6c2cc66679 (Parent: 8ed13d6187dc4594) - Name: invoke_agent activity_specialist [op:invoke_agent] (Type: span)
-        │   │   ├── Log: gen_ai.client.agent.operation.details (Type: log)
-        │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   ├── Metric: gen_ai.agent.duration [op:invoke_agent] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   ├── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │   ├── Span ID: b5c4c317f63b7c15 (Parent: 82f41b6c2cc66679) - Name: gen_ai.step model (Type: span)
-        │   │   │   ├── Span ID: 0de74f1cee338c41 (Parent: b5c4c317f63b7c15) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │   │   │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │   │   │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │   │   │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │   │   │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │   │   │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │   │   │   └── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │   │   └── Span ID: 13e1b37c596bd8ac (Parent: b5c4c317f63b7c15) - Name: gen_ai.step model_to_tools (Type: span)
-        │   │   ├── Span ID: f37d91d6729b9468 (Parent: 82f41b6c2cc66679) - Name: gen_ai.step tools (Type: span)
-        │   │   │   ├── Span ID: b721b2d16d0cf4e2 (Parent: f37d91d6729b9468) - Name: tool mock_search_activities [op:execute_tool] (Type: span)
-        │   │   │   │   └── Metric: gen_ai.client.operation.duration [op:execute_tool] (Type: metric)
-        │   │   │   └── Span ID: 98a3561d2d74f8bb (Parent: f37d91d6729b9468) - Name: gen_ai.step tools_to_model (Type: span)
-        │   │   └── Span ID: 4415b4fec3b41958 (Parent: 82f41b6c2cc66679) - Name: gen_ai.step model (Type: span)
-        │   │       ├── Span ID: 58bf6a5275fd003e (Parent: 4415b4fec3b41958) - Name: chat ChatOpenAI [op:chat] (Type: span)
-        │   │       │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-        │   │       │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-        │   │       │   ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-        │   │       │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-        │   │       │   └── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-        │   │       └── Span ID: 19c40de6d52f2ae5 (Parent: 4415b4fec3b41958) - Name: gen_ai.step model_to_tools (Type: span)
-        │   └── Span ID: ae61ceb8c1487bf0 (Parent: 8ed13d6187dc4594) - Name: gen_ai.step should_continue (Type: span)
-        └── Span ID: c11d3fcb34435f9b (Parent: 5aa2668c4849b7c3) - Name: gen_ai.step plan_synthesizer (Type: span)
-            ├── Span ID: 54cdd32f3561261a (Parent: c11d3fcb34435f9b) - Name: chat ChatOpenAI [op:chat] (Type: span)
-            │   ├── Log: gen_ai.client.inference.operation.details [op:chat] (Type: log)
-            │   ├── Log: gen_ai.evaluation.results [op:data_evaluation_results] (Type: log)
-            │   ├── Metric: gen_ai.client.operation.duration [op:chat] (Type: metric)
-            │   ├── Metric: gen_ai.client.token.usage (input) [op:chat] (Type: metric)
-            │   ├── Metric: gen_ai.client.token.usage (output) [op:chat] (Type: metric)
-            │   ├── Metric: gen_ai.evaluation.bias [op:evaluation] (Type: metric)
-            │   ├── Metric: gen_ai.evaluation.hallucination [op:evaluation] (Type: metric)
-            │   ├── Metric: gen_ai.evaluation.relevance [op:evaluation] (Type: metric)
-            │   ├── Metric: gen_ai.evaluation.sentiment [op:evaluation] (Type: metric)
-            │   └── Metric: gen_ai.evaluation.toxicity [op:evaluation] (Type: metric)
-            └── Span ID: abb9838ba0eb836a (Parent: c11d3fcb34435f9b) - Name: gen_ai.step should_continue (Type: span)
 """
 
-from __future__ import annotations
-
-import json
+import argparse
 import os
 import random
+import json
 from datetime import datetime, timedelta
 import time
 from typing import Annotated, Dict, List, Optional, TypedDict
@@ -214,44 +48,6 @@ from langchain.agents import (
     create_agent as _create_react_agent,  # type: ignore[attr-defined]
 )
 
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import SpanKind
-
-from opentelemetry import _events, _logs, metrics, trace
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
-    OTLPMetricExporter,
-)
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-    OTLPSpanExporter,
-)
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-from opentelemetry.sdk._events import EventLoggerProvider
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-# Configure tracing/metrics/logging once per process so exported data goes to OTLP.
-trace.set_tracer_provider(TracerProvider())
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter())
-)
-
-demo_tracer = trace.get_tracer("instrumentation.langchain.demo")
-
-metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
-
-_logs.set_logger_provider(LoggerProvider())
-_logs.get_logger_provider().add_log_record_processor(
-    BatchLogRecordProcessor(OTLPLogExporter())
-)
-_events.set_event_logger_provider(EventLoggerProvider())
-
-instrumentor = LangchainInstrumentor()
-instrumentor.instrument()
 
 # ---------------------------------------------------------------------------
 # Sample data utilities
@@ -377,12 +173,10 @@ class PlannerState(TypedDict):
 
 
 def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4.1")
+    return os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
-def _create_llm(
-    agent_name: str, *, temperature: float, session_id: str
-) -> ChatOpenAI:
+def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
     """Create an LLM instance decorated with tags/metadata for tracing."""
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner"]
@@ -473,9 +267,7 @@ def _generate_poison_snippet(kind: str, agent_name: str) -> str:
             "could easily disappoint them."  # negative framing
         )
     if kind == "toxicity":
-        return (
-            "Remark: The coordination process feels messy and slightly chaotic."  # mild critical tone
-        )
+        return "Remark: The coordination process feels messy and slightly chaotic."  # mild critical tone
     return f"(poison:{kind})"
 
 
@@ -494,47 +286,11 @@ def maybe_add_quality_noise(
     random.shuffle(available)
     count = random.randint(1, min(cfg["max"], len(available)))
     chosen = available[:count]
-    snippets = [
-        _generate_poison_snippet(kind, agent_name) for kind in chosen
-    ]
+    snippets = [_generate_poison_snippet(kind, agent_name) for kind in chosen]
     # Record events
-    state["poison_events"].extend(
-        [f"{agent_name}:{kind}" for kind in chosen]
-    )
+    state["poison_events"].extend([f"{agent_name}:{kind}" for kind in chosen])
     injected = base_prompt + "\n\n" + "\n".join(snippets) + "\n"
     return injected
-
-
-def _configure_otlp_tracing() -> None:
-    """Initialise a tracer provider that exports to the configured OTLP endpoint."""
-    if isinstance(trace.get_tracer_provider(), TracerProvider):
-        return
-    provider = TracerProvider()
-    processor = BatchSpanProcessor(OTLPSpanExporter())
-    provider.add_span_processor(processor)
-    trace.set_tracer_provider(provider)
-
-
-def _http_root_attributes(state: PlannerState) -> Dict[str, str]:
-    """Attributes for the synthetic HTTP request root span."""
-    service_name = os.getenv(
-        "OTEL_SERVICE_NAME",
-        "opentelemetry-python-langchain-multi-agent",
-    )
-    # server_address available for future expansion but not used directly now
-    os.getenv("TRAVEL_PLANNER_HOST", "travel.example.com")
-    route = os.getenv("TRAVEL_PLANNER_ROUTE", "/travel/plan")
-    scheme = os.getenv("TRAVEL_PLANNER_SCHEME", "https")
-    port = os.getenv("TRAVEL_PLANNER_PORT", "443" if scheme == "https" else "80")
-    return {
-        "http.request.method": "POST",
-        "http.route": route,
-        "http.target": route,
-        "http.scheme": scheme,
-        "server.port": port,
-        "service.name": service_name,
-        "enduser.id": state["session_id"],
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -543,21 +299,16 @@ def _http_root_attributes(state: PlannerState) -> Dict[str, str]:
 
 
 def coordinator_node(state: PlannerState) -> PlannerState:
-    llm = _create_llm(
-        "coordinator", temperature=0.2, session_id=state["session_id"]
-    )
-    agent = (
-        _create_react_agent(llm, tools=[])
-        .with_config(
-            {
-                "run_name": "coordinator",
-                "tags": ["agent", "agent:coordinator"],
-                "metadata": {
-                    "agent_name": "coordinator",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
+    agent = _create_react_agent(llm, tools=[]).with_config(
+        {
+            "run_name": "coordinator",
+            "tags": ["agent", "agent:coordinator"],
+            "metadata": {
+                "agent_name": "coordinator",
+                "session_id": state["session_id"],
+            },
+        }
     )
     system_message = SystemMessage(
         content=(
@@ -585,17 +336,15 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "flight_specialist", temperature=0.4, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_flights]).with_config(
-            {
-                "run_name": "flight_specialist",
-                "tags": ["agent", "agent:flight_specialist"],
-                "metadata": {
-                    "agent_name": "flight_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
+        {
+            "run_name": "flight_specialist",
+            "tags": ["agent", "agent:flight_specialist"],
+            "metadata": {
+                "agent_name": "flight_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = (
         f"Find an appealing flight from {state['origin']} to {state['destination']} "
@@ -622,17 +371,15 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "hotel_specialist", temperature=0.5, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
-            {
-                "run_name": "hotel_specialist",
-                "tags": ["agent", "agent:hotel_specialist"],
-                "metadata": {
-                    "agent_name": "hotel_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
+        {
+            "run_name": "hotel_specialist",
+            "tags": ["agent", "agent:hotel_specialist"],
+            "metadata": {
+                "agent_name": "hotel_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = (
         f"Recommend a boutique hotel in {state['destination']} between {state['departure']} "
@@ -659,17 +406,15 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     llm = _create_llm(
         "activity_specialist", temperature=0.6, session_id=state["session_id"]
     )
-    agent = (
-        _create_react_agent(llm, tools=[mock_search_activities]).with_config(
-            {
-                "run_name": "activity_specialist",
-                "tags": ["agent", "agent:activity_specialist"],
-                "metadata": {
-                    "agent_name": "activity_specialist",
-                    "session_id": state["session_id"],
-                },
-            }
-        )
+    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
+        {
+            "run_name": "activity_specialist",
+            "tags": ["agent", "agent:activity_specialist"],
+            "metadata": {
+                "agent_name": "activity_specialist",
+                "session_id": state["session_id"],
+            },
+        }
     )
     step = f"Curate signature activities for travellers spending a week in {state['destination']}."
     step = maybe_add_quality_noise("activity_specialist", step, state)
@@ -697,9 +442,7 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
         "You are the travel plan synthesiser. Combine the specialist insights into a "
         "concise, structured itinerary covering flights, accommodation and activities."
     )
-    system_content = maybe_add_quality_noise(
-        "plan_synthesizer", system_content, state
-    )
+    system_content = maybe_add_quality_noise("plan_synthesizer", system_content, state)
     system_prompt = SystemMessage(content=system_content)
     content = json.dumps(
         {
@@ -756,14 +499,60 @@ def build_workflow() -> StateGraph:
 
 
 # ---------------------------------------------------------------------------
+# Telemetry set up for manual instrumentation (debug/development)
+#
+# Note: use --manual-instrumentation to enable this mode. Zero-code instrumentation
+# is the default and preferred approach for most users in production, but manual
+# instrumentation is useful for debugging and development of instrumentation in IDE
+# ---------------------------------------------------------------------------
+
+
+def _configure_manual_instrumentation() -> None:
+    """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    from opentelemetry import _events, _logs, metrics, trace
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        OTLPSpanExporter,
+    )
+    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+    from opentelemetry.sdk._events import EventLoggerProvider
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+    trace.set_tracer_provider(TracerProvider())
+    trace.get_tracer_provider().add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter())
+    )
+
+    metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
+
+    _logs.set_logger_provider(LoggerProvider())
+    _logs.get_logger_provider().add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter())
+    )
+    _events.set_event_logger_provider(EventLoggerProvider())
+
+    instrumentor = LangchainInstrumentor()
+    instrumentor.instrument()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
-    _configure_otlp_tracing()
-    # LangChainInstrumentor().instrument()
-    LangchainInstrumentor().instrument()
+def main(manual_instrumentation: bool = False) -> None:
+    if manual_instrumentation:
+        _configure_manual_instrumentation()
 
     session_id = str(uuid4())
     user_request = (
@@ -795,94 +584,50 @@ def main() -> None:
     workflow = build_workflow()
     app = workflow.compile()
 
-    tracer = trace.get_tracer(__name__)
-    attributes = _http_root_attributes(initial_state)
+    config = {
+        "configurable": {"thread_id": session_id},
+        "recursion_limit": 10,
+    }
 
-    root_input = [
-        {
-            "role": "user",
-            "parts": [
-                {
-                    "type": "text",
-                    "content": user_request,
-                }
-            ],
-        }
-    ]
-    with tracer.start_as_current_span(
-        name="POST /travel/plan",
-        kind=SpanKind.SERVER,
-        attributes=attributes,
-    ) as root_span:
-        root_span.set_attribute(
-            "gen_ai.input.messages", json.dumps(root_input)
-        )
+    print("🌍 Multi-Agent Travel Planner")
+    print("=" * 60)
 
-        config = {
-            "configurable": {"thread_id": session_id},
-            "recursion_limit": 10,
-        }
+    final_state: Optional[PlannerState] = None
 
-        print("🌍 Multi-Agent Travel Planner")
-        print("=" * 60)
+    for step in app.stream(initial_state, config):
+        node_name, node_state = next(iter(step.items()))
+        final_state = node_state
+        print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
+        if node_state.get("messages"):
+            last = node_state["messages"][-1]
+            if isinstance(last, BaseMessage):
+                preview = last.content
+                if len(preview) > 400:
+                    preview = preview[:400] + "... [truncated]"
+                print(preview)
 
-        final_state: Optional[PlannerState] = None
+    if not final_state:
+        final_plan = ""
+    else:
+        final_plan = final_state.get("final_itinerary") or ""
 
-        for step in app.stream(initial_state, config):
-            node_name, node_state = next(iter(step.items()))
-            final_state = node_state
-            print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
-            if node_state.get("messages"):
-                last = node_state["messages"][-1]
-                if isinstance(last, BaseMessage):
-                    preview = last.content
-                    if len(preview) > 400:
-                        preview = preview[:400] + "... [truncated]"
-                    print(preview)
+    if final_plan:
+        print("\n🎉 Final itinerary\n" + "-" * 40)
+        print(final_plan)
+    else:
+        print("❌ No itinerary was generated.")
 
-        if not final_state:
-            final_plan = ""
-        else:
-            final_plan = final_state.get("final_itinerary") or ""
-
-        if final_plan:
-            print("\n🎉 Final itinerary\n" + "-" * 40)
-            print(final_plan)
-
-        if final_plan:
-            preview = final_plan[:500] + (
-                "..." if len(final_plan) > 500 else ""
-            )
-            root_span.set_attribute("travel.plan.preview", preview)
-        if final_state and final_state.get("poison_events"):
-            root_span.set_attribute(
-                "travel.plan.poison_events",
-                ",".join(final_state["poison_events"]),
-            )
-        root_span.set_attribute("travel.session_id", session_id)
-        root_span.set_attribute(
-            "travel.agents_used",
-            len(
-                [
-                    key
-                    for key in [
-                        "flight_summary",
-                        "hotel_summary",
-                        "activities_summary",
-                    ]
-                    if final_state and final_state.get(key)
-                ]
-            ),
-        )
-        root_span.set_attribute("http.response.status_code", 200)
-
-    provider = trace.get_tracer_provider()
-    if hasattr(provider, "force_flush"):
-        provider.force_flush()
     time.sleep(300)
-    if hasattr(provider, "shutdown"):
-        provider.shutdown()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Multi-agent travel planner with optional manual instrumentation"
+    )
+    parser.add_argument(
+        "--manual-instrumentation",
+        action="store_true",
+        help="Enable manual OpenTelemetry instrumentation configuration",
+    )
+    args = parser.parse_args()
+    main(manual_instrumentation=args.manual_instrumentation)

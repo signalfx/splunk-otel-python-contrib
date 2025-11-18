@@ -81,7 +81,7 @@ def successful_llm_call():
     handler = get_telemetry_handler()
     print("Starting successful LLM invocation...")
     llm = LLMInvocation(
-        request_model="gpt-4",
+        request_model="gpt-5-nano",
         input_messages=[
             InputMessage(
                 role="user",
@@ -112,7 +112,7 @@ def failed_llm_call():
     handler = get_telemetry_handler()
     print("Starting failed LLM invocation...")
     llm = LLMInvocation(
-        request_model="gpt-4",
+        request_model="gpt-5-nano",
         input_messages=[
             InputMessage(
                 role="user",

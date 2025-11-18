@@ -4,28 +4,25 @@ import logging
 from typing import Collection
 
 from opentelemetry import context as context_api
-
-
-from opentelemetry._events import get_event_logger
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.langchain.callback_handler import (
     LangchainCallbackHandler,
 )
 from opentelemetry.instrumentation.langchain.config import Config
 from opentelemetry.instrumentation.langchain.utils import is_package_available
-from opentelemetry.instrumentation.langchain.version import __version__
 from opentelemetry.instrumentation.utils import unwrap
-from .semconv_ai import Meters, SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY
+from opentelemetry.util.genai.handler import get_telemetry_handler
 from opentelemetry.util.genai.types import (
     EmbeddingInvocation as UtilEmbeddingInvocation,
     Error as UtilError,
 )
 from wrapt import wrap_function_wrapper
-from opentelemetry.util.genai.handler import get_telemetry_handler
+
+from .semconv_ai import SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY
 
 logger = logging.getLogger(__name__)
 
-_instruments = ("langchain-core > 0.1.0", )
+_instruments = ("langchain-core > 0.1.0",)
 
 # Embedding patches configuration
 EMBEDDING_PATCHES = [
@@ -73,7 +70,7 @@ class LangchainInstrumentor(BaseInstrumentor):
         self._telemetry_handler = get_telemetry_handler(
             tracer_provider=tracer_provider,
             meter_provider=meter_provider,
-            logger_provider=logger_provider
+            logger_provider=logger_provider,
         )
 
         langchainCallbackHandler = LangchainCallbackHandler(
@@ -360,7 +357,7 @@ class _OpenAITracingWrapper:
         args,
         kwargs,
     ) -> None:
-        run_manager = kwargs.get("run_manager")
+        _run_manager = kwargs.get("run_manager")
 
         ### FIXME: this was disabled to allow migration to util-genai and needs to be fixed
         # if run_manager:

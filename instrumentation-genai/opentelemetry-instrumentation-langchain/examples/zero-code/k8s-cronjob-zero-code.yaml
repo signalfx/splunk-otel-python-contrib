@@ -1,0 +1,111 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: travel-planner-zero-code-config
+  namespace: travel-agent
+data:
+  OPENAI_MODEL: "gpt-4o-mini"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "DELTA"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_AND_EVENT"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event,splunk"
+  OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION: "true"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION: "replace-category:SplunkEvaluationResults"
+  OTEL_INSTRUMENTATION_GENAI_DEBUG: "false"
+  DEEPEVAL_FILE_SYSTEM: "READ_ONLY"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: travel-planner-zero-code
+  namespace: travel-agent
+  labels:
+    app: travel-planner-zero-code
+    component: cronjob
+    instrumentation: zero-code-auto
+spec:
+  schedule: "*/30 8-17 * * 1-5"
+  timeZone: "America/Los_Angeles"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: travel-planner-zero-code
+        component: job
+        instrumentation: zero-code-auto
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 2
+      
+      template:
+        metadata:
+          labels:
+            app: travel-planner-zero-code
+            component: pod
+            instrumentation: zero-code-auto
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+          
+          containers:
+          - name: travel-planner-zero-code
+            image: ertserendavga918/travel-agent-zero-code:v1.0.17
+            imagePullPolicy: Always
+            
+            args:
+            - "opentelemetry-instrument"
+            - "python"
+            - "main.py"
+            
+            envFrom:
+            - configMapRef:
+                name: travel-planner-zero-code-config
+            
+            env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-keys
+                  key: openai-api-key
+            - name: OTEL_SERVICE_NAME
+              value: "travel-planner-zero-code"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=o11y-inframon-ai"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+            
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: false

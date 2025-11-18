@@ -32,10 +32,10 @@ def test_dynamic_aggregation_env_toggle(monkeypatch):  # type: ignore[no-untyped
         [EvaluationResult(metric_name="bias", score=0.1)],
         [EvaluationResult(metric_name="toxicity", score=0.3)],
     ]
-    # Disable internal aggregate flag
-    manager._aggregate_results = False
+    # Set internal aggregate flag to None to enable dynamic env var reading
+    manager._aggregate_results = None
     manager._publish_results(invocation, buckets)
-    assert len(handler.calls) == 2  # two separate batches
+    assert len(handler.calls) == 2  # two separate batches (env var not set)
 
     # Now enable aggregation via env and emit again -> should aggregate
     monkeypatch.setenv(  # type: ignore[attr-defined]

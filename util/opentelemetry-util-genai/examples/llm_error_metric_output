@@ -30,7 +30,7 @@ Starting successful LLM invocation...
     "attributes": {
         "event.name": "gen_ai.client.inference.operation.details",
         "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.usage.input_tokens": 12,
         "gen_ai.usage.output_tokens": 18
     },
@@ -68,7 +68,7 @@ Starting successful LLM invocation...
     },
     "attributes": {
         "gen_ai.input.messages": "[{\"role\": \"user\", \"parts\": [{\"type\": \"text\", \"content\": \"Hello, how can I track my order?\"}]}]",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.operation.name": "chat",
         "gen_ai.usage.input_tokens": 12,
         "gen_ai.usage.output_tokens": 18,
@@ -108,7 +108,7 @@ Starting failed LLM invocation...
     "attributes": {
         "error.type": "RuntimeError",
         "gen_ai.input.messages": "[{\"role\": \"user\", \"parts\": [{\"type\": \"text\", \"content\": \"Tell me about the weather in Atlantis.\"}]}]",
-        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.model": "gpt-5-nano",
         "gen_ai.operation.name": "chat"
     },
     "events": [],
@@ -158,7 +158,7 @@ LLM invocation failed.
                                         "attributes": {
                                             "gen_ai.token.type": "input",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278163328992000,
                                         "time_unix_nano": 1762278167942421000,
@@ -215,7 +215,7 @@ LLM invocation failed.
                                         "attributes": {
                                             "gen_ai.token.type": "output",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278163329027000,
                                         "time_unix_nano": 1762278167942421000,
@@ -281,7 +281,7 @@ LLM invocation failed.
                                     {
                                         "attributes": {
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278163329084000,
                                         "time_unix_nano": 1762278167942421000,
@@ -337,7 +337,7 @@ LLM invocation failed.
                                     {
                                         "attributes": {
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "error.type": "RuntimeError"
                                         },
                                         "start_time_unix_nano": 1762278163436526000,
@@ -435,7 +435,7 @@ LLM invocation failed.
                                         "attributes": {
                                             "gen_ai.token.type": "input",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278163328992000,
                                         "time_unix_nano": 1762278169437730000,
@@ -484,7 +484,7 @@ LLM invocation failed.
                                         "attributes": {
                                             "gen_ai.token.type": "output",
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278163329027000,
                                         "time_unix_nano": 1762278169437730000,
@@ -542,7 +542,7 @@ LLM invocation failed.
                                     {
                                         "attributes": {
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4"
+                                            "gen_ai.request.model": "gpt-5-nano"
                                         },
                                         "start_time_unix_nano": 1762278163329084000,
                                         "time_unix_nano": 1762278169437730000,
@@ -590,7 +590,7 @@ LLM invocation failed.
                                     {
                                         "attributes": {
                                             "gen_ai.operation.name": "chat",
-                                            "gen_ai.request.model": "gpt-4",
+                                            "gen_ai.request.model": "gpt-5-nano",
                                             "error.type": "RuntimeError"
                                         },
                                         "start_time_unix_nano": 1762278163436526000,

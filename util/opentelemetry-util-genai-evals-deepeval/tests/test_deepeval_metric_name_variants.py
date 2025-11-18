@@ -49,25 +49,24 @@ def _build_invocation():
 def test_answer_relevancy_variants_normalize(variant, expected_key):
     captured = {}
 
-    def fake_instantiate(self, specs, test_case):
+    def fake_instantiate(specs, test_case, model):
         # capture the normalized internal spec names
         captured["spec_names"] = [s.name for s in specs]
         # return a dummy metric instance so evaluation proceeds to conversion path (which will produce no data)
         return [object()], []
 
     with (
-        patch.object(
-            plugin.DeepevalEvaluator, "_instantiate_metrics", fake_instantiate
+        patch(
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            fake_instantiate,
         ),
-        patch.object(
-            plugin.DeepevalEvaluator,
-            "_build_test_case",
-            lambda self, inv, t: object(),
+        patch(
+            "opentelemetry.util.evaluator.deepeval._build_llm_test_case",
+            lambda inv: object(),
         ),
-        patch.object(
-            plugin.DeepevalEvaluator,
-            "_run_deepeval",
-            lambda self, case, metrics: type(
+        patch(
+            "opentelemetry.util.evaluator.deepeval._run_deepeval",
+            lambda case, metrics, debug_log: type(
                 "_DummyEval", (), {"test_results": []}
             )(),
         ),
@@ -85,17 +84,17 @@ def test_unknown_metric_produces_error():
     invalid = "nonexistent-metric"
 
     # Patch _instantiate_metrics to raise the same ValueError pattern used by evaluator for unknown metric registry key
-    def fake_instantiate(self, specs, test_case):
+    def fake_instantiate(specs, test_case, model):
         raise ValueError(f"Unknown Deepeval metric '{invalid}'")
 
     with (
-        patch.object(
-            plugin.DeepevalEvaluator, "_instantiate_metrics", fake_instantiate
+        patch(
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            fake_instantiate,
         ),
-        patch.object(
-            plugin.DeepevalEvaluator,
-            "_build_test_case",
-            lambda self, inv, t: object(),
+        patch(
+            "opentelemetry.util.evaluator.deepeval._build_llm_test_case",
+            lambda inv: object(),
         ),
     ):
         evaluator = plugin.DeepevalEvaluator(

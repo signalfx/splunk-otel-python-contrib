@@ -4,24 +4,25 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any, Optional, Tuple
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-try:  # pragma: no cover - optional dependency in CI
-    from langchain_core.messages import HumanMessage
-except ModuleNotFoundError:  # pragma: no cover - allow running subset without langchain_core
-    HumanMessage = None  # type: ignore[assignment]
+
 _PACKAGE_SRC = Path(__file__).resolve().parents[1] / "src"
 if _PACKAGE_SRC.exists():
     sys.path.insert(0, str(_PACKAGE_SRC))
 
-from opentelemetry.sdk.trace import TracerProvider
-
-from opentelemetry.instrumentation.langchain.callback_handler import (
+from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: E402
     LangchainCallbackHandler,
 )
-from opentelemetry.util.genai.types import Step, ToolCall
+from opentelemetry.util.genai.types import Step, ToolCall  # noqa: E402
+
+try:  # pragma: no cover - optional dependency in CI
+    from langchain_core.messages import HumanMessage  # noqa: E402
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - allow running subset without langchain_core
+    HumanMessage = None  # type: ignore[assignment]
 
 LANGCHAIN_CORE_AVAILABLE = HumanMessage is not None
 
@@ -39,6 +40,8 @@ class _StubTelemetryHandler:
         self.started_steps = []
         self.stopped_steps = []
         self.failed_steps = []
+        self.started_workflows = []
+        self.stopped_workflows = []
         self.entities: dict[str, Any] = {}
 
     def start_agent(self, agent):
@@ -99,18 +102,38 @@ class _StubTelemetryHandler:
         self.entities.pop(str(step.run_id), None)
         return step
 
+    def start_workflow(self, workflow):
+        self.started_workflows.append(workflow)
+        self.entities[str(workflow.run_id)] = workflow
+        return workflow
+
+    def stop_workflow(self, workflow):
+        self.stopped_workflows.append(workflow)
+        self.entities.pop(str(workflow.run_id), None)
+        return workflow
+
+    def fail_workflow(self, workflow, error):
+        self.entities.pop(str(workflow.run_id), None)
+        return workflow
+
+    def fail_by_run_id(self, run_id, error):
+        # Simplified implementation for stub - just call fail_agent
+        entity = self.entities.get(str(run_id))
+        if entity is None:
+            return
+        # For simplicity, assume it's an agent
+        self.fail_agent(entity, error)
+
     def get_entity(self, run_id):
         return self.entities.get(str(run_id))
 
 
 @pytest.fixture(name="handler_with_stub")
-def _handler_with_stub_fixture() -> Tuple[LangchainCallbackHandler, _StubTelemetryHandler]:
-    tracer = TracerProvider().get_tracer(__name__)
-    histogram = MagicMock()
-    histogram.record = MagicMock()
-    handler = LangchainCallbackHandler(tracer, histogram, histogram)
+def _handler_with_stub_fixture() -> (
+    Tuple[LangchainCallbackHandler, _StubTelemetryHandler]
+):
     stub = _StubTelemetryHandler()
-    handler._handler = stub  # type: ignore[attr-defined]
+    handler = LangchainCallbackHandler(telemetry_handler=stub)
     return handler, stub
 
 
@@ -120,11 +143,14 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
 
     agent_run_id = uuid4()
     handler.on_chain_start(
-        serialized={"name": "AgentExecutor", "id": ["langchain", "agents", "AgentExecutor"]},
+        serialized={
+            "name": "AgentExecutor",
+            "id": ["langchain", "agents", "AgentExecutor"],
+        },
         inputs={"input": "plan my trip"},
         run_id=agent_run_id,
         tags=["agent"],
-        metadata={"ls_agent_type": "react", "ls_model_name": "gpt-4"},
+        metadata={"ls_agent_type": "react", "ls_model_name": "gpt-5-nano"},
     )
 
     assert stub.started_agents, "Agent start was not forwarded to util handler"
@@ -138,7 +164,7 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
         messages=[[HumanMessage(content="hello")]],
         run_id=llm_run_id,
         parent_run_id=agent_run_id,
-        invocation_params={"model_name": "gpt-4"},
+        invocation_params={"model_name": "gpt-5-nano"},
         metadata={"ls_provider": "openai"},
     )
 
@@ -214,7 +240,9 @@ def test_chain_metadata_maps_to_tool_call(handler_with_stub):
     assert tool.agent_id == str(agent_run_id)
     assert tool.attributes.get("gen_ai.tool.arguments") is None
 
-    handler.on_chain_end(outputs={"temperature": 20}, run_id=tool_run_id, parent_run_id=agent_run_id)
+    handler.on_chain_end(
+        outputs={"temperature": 20}, run_id=tool_run_id, parent_run_id=agent_run_id
+    )
 
     assert stub.stopped_tools and stub.stopped_tools[-1] is tool
     assert tool.attributes.get("tool.response") == '{"temperature": 20}'
@@ -252,7 +280,9 @@ def test_tool_callbacks_use_tool_call(handler_with_stub):
     assert tool.arguments == {"city": "Madrid"}
     assert tool.attributes.get("tool.arguments") == '{"city": "Madrid"}'
 
-    handler.on_tool_end(output={"result": "sunny"}, run_id=tool_run_id, parent_run_id=agent_run_id)
+    handler.on_tool_end(
+        output={"result": "sunny"}, run_id=tool_run_id, parent_run_id=agent_run_id
+    )
 
     assert stub.stopped_tools and stub.stopped_tools[-1] is tool
     assert tool.attributes.get("tool.response") == '{"result": "sunny"}'
@@ -312,7 +342,9 @@ def test_step_outputs_recorded_on_chain_end(handler_with_stub):
         metadata={},
     )
 
-    handler.on_chain_end(outputs={"answer": "Sunscreen"}, run_id=step_run_id, parent_run_id=parent_run_id)
+    handler.on_chain_end(
+        outputs={"answer": "Sunscreen"}, run_id=step_run_id, parent_run_id=parent_run_id
+    )
 
     assert stub.stopped_steps, "Step end should be forwarded to util handler"
     step = stub.stopped_steps[-1]
@@ -323,12 +355,8 @@ def test_step_outputs_recorded_on_chain_end(handler_with_stub):
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 def test_llm_attributes_independent_of_emitters(monkeypatch):
     def _build_handler() -> Tuple[LangchainCallbackHandler, _StubTelemetryHandler]:
-        tracer = TracerProvider().get_tracer(__name__)
-        histogram = MagicMock()
-        histogram.record = MagicMock()
-        handler = LangchainCallbackHandler(tracer, histogram, histogram)
         stub_handler = _StubTelemetryHandler()
-        handler._telemetry_handler = stub_handler  # type: ignore[attr-defined]
+        handler = LangchainCallbackHandler(telemetry_handler=stub_handler)
         return handler, stub_handler
 
     def _invoke_with_env(env_value: Optional[str]):
@@ -344,7 +372,7 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
             messages=[[HumanMessage(content="hi")]],
             run_id=run_id,
             invocation_params={
-                "model_name": "gpt-4",
+                "model_name": "gpt-5-nano",
                 "top_p": 0.5,
                 "seed": 42,
                 "model_kwargs": {"user": "abc"},
@@ -366,7 +394,7 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     ), "Emitter env toggle should not change recorded attributes"
 
     attrs = invocation_default.attributes
-    assert invocation_default.request_model == "gpt-4"
+    assert invocation_default.request_model == "gpt-5-nano"
     assert invocation_default.provider == "openai"
     assert attrs["request_top_p"] == 0.5
     assert attrs["request_seed"] == 42

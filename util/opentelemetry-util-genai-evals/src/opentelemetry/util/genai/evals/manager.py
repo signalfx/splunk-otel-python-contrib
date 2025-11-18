@@ -12,10 +12,13 @@ from ..callbacks import CompletionCallback
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..handler import TelemetryHandler
 
+from opentelemetry.semconv.attributes import (
+    error_attributes as ErrorAttributes,
+)
+
 from ..environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
 )
-from ..span_context import extract_span_context, store_span_context
 from ..types import (
     AgentCreation,
     AgentInvocation,
@@ -35,9 +38,6 @@ from .env import (
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
-from opentelemetry.semconv.attributes import (
-    error_attributes as ErrorAttributes,
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,18 +108,29 @@ class Manager(CompletionCallback):
 
     # CompletionCallback -------------------------------------------------
     def on_completion(self, invocation: GenAI) -> None:
+        # Early exit if no evaluators configured
         if not self.has_evaluators:
+            return
+        # Only evaluate LLMInvocation or AgentInvocation
+        if (
+            not isinstance(invocation, LLMInvocation)
+            and not isinstance(invocation, AgentInvocation)
+            and not isinstance(invocation, Workflow)
+        ):
             return
 
         offer: bool = True
         if invocation.sample_for_evaluation:
-            self.offer(invocation)
             # Do not evaluate if llm invocation is for tool invocation because it will not have output message for evaluations tests case.
             if isinstance(invocation, LLMInvocation):
                 msgs = getattr(invocation, "output_messages", [])
                 if msgs:
                     first = msgs[0]
-                    if first.parts and first.parts[0] == "ToolCall" and first.finish_reason == "tool_calls":
+                    if (
+                        first.parts
+                        and first.parts[0] == "ToolCall"
+                        and first.finish_reason == "tool_calls"
+                    ):
                         offer = False
 
             # Do not evaluate if error
