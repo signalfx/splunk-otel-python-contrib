@@ -65,6 +65,8 @@ Quick Start
 Running Tests
 -------------
 
+**LLM Tests**:
+
 .. code-block:: bash
 
     # Set environment variables
@@ -75,11 +77,23 @@ Running Tests
     cd tests
     python test_llm_instrumentation.py
 
+**Embedding Tests**:
+
+.. code-block:: bash
+
+    # Set environment variables
+    export OPENAI_API_KEY=your-api-key
+    export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric
+    
+    # Run the test
+    cd tests
+    python test_embedding_instrumentation.py
+
 
 Expected Output
 ---------------
 
-**Span Attributes**::
+**LLM Span Attributes**::
 
     {
         "gen_ai.framework": "llamaindex",
@@ -87,6 +101,15 @@ Expected Output
         "gen_ai.operation.name": "chat",
         "gen_ai.usage.input_tokens": 24,
         "gen_ai.usage.output_tokens": 7
+    }
+
+**Embedding Span Attributes**::
+
+    {
+        "gen_ai.operation.name": "embeddings",
+        "gen_ai.request.model": "text-embedding-3-small",
+        "gen_ai.provider.name": "openai",
+        "gen_ai.embeddings.dimension.count": 1536
     }
 
 **Metrics**::
@@ -110,9 +133,9 @@ instead of LangChain's method-based callbacks (``on_llm_start``, ``on_llm_end``)
 
 Event types are dispatched via ``CBEventType`` enum::
 
-    CBEventType.LLM       # LLM invocations
-    CBEventType.AGENT     # Agent steps  
-    CBEventType.EMBEDDING # Embedding operations
+    CBEventType.LLM       # LLM invocations (chat, complete)
+    CBEventType.AGENT     # Agent steps (not yet instrumented)
+    CBEventType.EMBEDDING # Embedding operations (get_text_embedding, get_text_embedding_batch)
 
 **2. Handler Registration**
 
@@ -145,6 +168,45 @@ LangChain returns dicts::
 
     response["usage"]["prompt_tokens"]      # Dict key
     response["usage"]["completion_tokens"]  # Dict key
+
+
+Supported Features
+------------------
+
+**LLM Operations**
+
+* ✅ Chat completion (``llm.chat()``, ``llm.stream_chat()``)
+* ✅ Text completion (``llm.complete()``, ``llm.stream_complete()``)
+* ✅ Token usage tracking
+* ✅ Model name detection
+* ✅ Framework attribution
+
+**Embedding Operations**
+
+* ✅ Single text embedding (``embed_model.get_text_embedding()``)
+* ✅ Batch embedding (``embed_model.get_text_embedding_batch()``)
+* ✅ Query embedding (``embed_model.get_query_embedding()``)
+* ✅ Provider detection (OpenAI, Azure, AWS Bedrock, Google, Cohere, HuggingFace, Ollama, and more)
+* ✅ Dimension count tracking
+* ✅ Input text capture
+
+**Provider Detection**
+
+Embedding instrumentation automatically detects the provider from class names:
+
+* **OpenAI**: ``OpenAIEmbedding``
+* **Azure**: ``AzureOpenAIEmbedding``
+* **AWS**: ``BedrockEmbedding``
+* **Google**: ``GeminiEmbedding``, ``VertexTextEmbedding``, ``GooglePaLMEmbedding``
+* **Cohere**: ``CohereEmbedding``
+* **HuggingFace**: ``HuggingFaceEmbedding``, ``HuggingFaceInferenceAPIEmbedding``
+* **Ollama**: ``OllamaEmbedding``
+* **Anthropic**: ``AnthropicEmbedding``
+* **MistralAI**: ``MistralAIEmbedding``
+* **Together**: ``TogetherEmbedding``
+* **Fireworks**: ``FireworksEmbedding``
+* **Voyage**: ``VoyageEmbedding``
+* **Jina**: ``JinaEmbedding``
 
 
 References

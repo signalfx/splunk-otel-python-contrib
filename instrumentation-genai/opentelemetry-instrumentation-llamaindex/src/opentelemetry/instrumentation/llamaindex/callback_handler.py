@@ -5,11 +5,14 @@ from llama_index.core.callbacks.schema import CBEventType
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
+    EmbeddingInvocation,
     InputMessage,
     LLMInvocation,
     OutputMessage,
     Text,
 )
+
+from .vendor_detection import detect_vendor_from_class
 
 
 def _safe_str(value: Any) -> str:
@@ -21,7 +24,7 @@ def _safe_str(value: Any) -> str:
 
 
 class LlamaindexCallbackHandler(BaseCallbackHandler):
-    """Simplified LlamaIndex callback handler - LLM invocation only."""
+    """LlamaIndex callback handler supporting LLM and Embedding instrumentation."""
 
     def __init__(
         self,
@@ -53,9 +56,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         parent_id: str = "",
         **kwargs: Any,
     ) -> str:
-        """Handle event start - only processing LLM events."""
+        """Handle event start - processing LLM and EMBEDDING events."""
         if event_type == CBEventType.LLM:
             self._handle_llm_start(event_id, parent_id, payload, **kwargs)
+        elif event_type == CBEventType.EMBEDDING:
+            self._handle_embedding_start(event_id, parent_id, payload, **kwargs)
         return event_id
 
     def on_event_end(
@@ -65,9 +70,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         event_id: str = "",
         **kwargs: Any,
     ) -> None:
-        """Handle event end - only processing LLM events."""
+        """Handle event end - processing LLM and EMBEDDING events."""
         if event_type == CBEventType.LLM:
             self._handle_llm_end(event_id, payload, **kwargs)
+        elif event_type == CBEventType.EMBEDDING:
+            self._handle_embedding_end(event_id, payload, **kwargs)
 
     def _handle_llm_start(
         self,
@@ -220,3 +227,79 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Stop the LLM invocation
         self._handler.stop_llm(llm_inv)
+
+    def _handle_embedding_start(
+        self,
+        event_id: str,
+        parent_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Handle embedding invocation start."""
+        if not self._handler or not payload:
+            return
+
+        # Extract model information from payload
+        serialized = payload.get("serialized", {})
+        model_name = (
+            serialized.get("model_name")
+            or serialized.get("model")
+            or "unknown"
+        )
+
+        # Detect provider from class name
+        class_name = serialized.get("class_name", "")
+        provider = detect_vendor_from_class(class_name)
+
+        # Note: input texts are not available at start time in LlamaIndex
+        # They will be available in the end event payload
+
+        # Create embedding invocation with event_id as run_id
+        emb_inv = EmbeddingInvocation(
+            request_model=_safe_str(model_name),
+            input_texts=[],  # Will be populated on end event
+            provider=provider,
+            attributes={},
+            run_id=event_id,
+        )
+        emb_inv.framework = "llamaindex"
+
+        # Start the embedding invocation
+        self._handler.start_embedding(emb_inv)
+
+    def _handle_embedding_end(
+        self,
+        event_id: str,
+        payload: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> None:
+        """Handle embedding invocation end."""
+        if not self._handler:
+            return
+
+        # Get the embedding invocation from handler's registry using event_id
+        emb_inv = self._handler.get_entity(event_id)
+        if not emb_inv or not isinstance(emb_inv, EmbeddingInvocation):
+            return
+
+        if payload:
+            # Extract input chunks (texts) from response
+            # chunks is the list of input texts that were embedded
+            chunks = payload.get("chunks", [])
+            if chunks:
+                emb_inv.input_texts = [_safe_str(chunk) for chunk in chunks]
+            
+            # Extract embedding vectors from response
+            # embeddings is the list of output vectors
+            embeddings = payload.get("embeddings", [])
+            
+            # Determine dimension from first embedding vector
+            if embeddings and len(embeddings) > 0:
+                first_embedding = embeddings[0]
+                if isinstance(first_embedding, list):
+                    emb_inv.dimension_count = len(first_embedding)
+                elif hasattr(first_embedding, "__len__"):
+                    emb_inv.dimension_count = len(first_embedding)
+
+        # Stop the embedding invocation
+        self._handler.stop_embedding(emb_inv)
