@@ -4,7 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile.circuit-shim
     environment:
+      CISCO_CLIENT_ID: ${CISCO_CLIENT_ID}
+      CISCO_CLIENT_SECRET: ${CISCO_CLIENT_SECRET}
       CISCO_APP_KEY: ${CISCO_APP_KEY}
+      CISCO_TOKEN_URL: ${CISCO_TOKEN_URL:-https://id.cisco.com/oauth2/default/v1/token}
+      CIRCUIT_TOKEN_CACHE: ${CIRCUIT_TOKEN_CACHE:-/tmp/circuit_shim_token.json}
       CIRCUIT_UPSTREAM_BASE: ${CIRCUIT_UPSTREAM_BASE:-https://chat-ai.cisco.com}
       CIRCUIT_SHIM_PORT: ${CIRCUIT_SHIM_PORT:-5001}
       CIRCUIT_SHIM_HOST: 0.0.0.0
@@ -16,7 +20,6 @@ services:
     depends_on:
       - circuit-shim
     environment:
-      CIRCUIT_ACCESS_TOKEN: ${CIRCUIT_ACCESS_TOKEN}
       LITELLM_PROXY_KEY: ${LITELLM_PROXY_KEY:-litellm-demo-key}
     ports:
       - "${LITELLM_PORT:-4000}:4000"

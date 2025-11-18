@@ -10,9 +10,9 @@ apps or deepeval runs at LiteLLM and let the proxy manage Cisco CircuIT OAuth.
    ```bash
    pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/requirements.txt
    ```
-2. A running LiteLLM proxy that already knows how to mint CircuIT tokens (see
-   project-level docs/plan). For local testing we assume it listens on
-   `http://localhost:4000/v1` and accepts a static key like
+2. A running LiteLLM proxy. The shim now manages CircuIT tokens internally, so
+   LiteLLM only needs to reach the shim (default `http://localhost:5001`) and
+   expect a static key from demo clients such as
    `Authorization: Bearer litellm-demo-key`.
 
 ## Bringing up LiteLLM
@@ -21,22 +21,14 @@ apps or deepeval runs at LiteLLM and let the proxy manage Cisco CircuIT OAuth.
    ```bash
    cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/litellm_travel_agent_demo
    ```
-2. Export your Cisco credentials (fill them in `.env` or export manually).
-3. Mint a CircuIT token for LiteLLM to forward to the upstream endpoint:
-   ```bash
-   export CIRCUIT_ACCESS_TOKEN=$(./circuit_token_helper.py)
-   ```
-   The helper reads `CISCO_CLIENT_ID`, `CISCO_CLIENT_SECRET` and `CISCO_APP_KEY` from the
-   environment (or you can pass them with `--client-id`, `--client-secret`, and `--app-key`).
-   The helper builds the HTTP Basic auth header exactly as the CircuIT API requires by
-   base64-encoding the string "${CISCO_CLIENT_SECRET}:${CISCO_APP_KEY}" and setting
-   `Authorization: Basic <base64>` for the token request. It then prints the bearer token.
-   Re-run it whenever the token expires (update your shell env or `.env`).
-4. Render the config with your environment values:
+2. Export your Cisco credentials (fill them in `.env` or export manually) so the
+   shim can mint and refresh tokens on demand. Optional overrides:
+   `CISCO_TOKEN_URL`, `CIRCUIT_TOKEN_CACHE`.
+3. Render the config with your environment values:
    ```bash
    ./scripts/render_config.py litellm-config.example.yaml litellm-config.yaml
    ```
-5. Start the local CircuIT shim + LiteLLM stack (docker compose v2):
+4. Start the local CircuIT shim + LiteLLM stack (docker compose v2):
    ```bash
    docker compose up --build
    ```
@@ -49,12 +41,12 @@ apps or deepeval runs at LiteLLM and let the proxy manage Cisco CircuIT OAuth.
 Verify the proxy is up:
 ```bash
 curl -H "Authorization: Bearer ${LITELLM_API_KEY:-litellm-demo-key}" \
-  http://localhost:${LITELLM_PORT:-4000}/v1/models
+  "http://localhost:${LITELLM_PORT:-4000}/v1/models"
 ```
 
-> Note: For production you would bake the token minting/refresh logic directly
-> into the LiteLLM deployment. These steps are intentionally manual to keep the
-> demo lightweight.
+> Note: The shim caches CircuIT tokens and refreshes on demand. Production
+> deployments should embed similar logic directly in the proxy service instead
+> of relying on this lightweight reference shim.
 
 ## Quick LangChain smoke test
 
@@ -71,6 +63,32 @@ model, timeout) and falls back to `LITELLM_SMOKE_PROMPT` if you omit the CLI
 argument. Seeing a friendly assistant response confirms LiteLLM and the shim are
 reachable from your workstation.
 
+## Refreshing the CircuIT token
+
+No manual refresh loop is necessary anymore. The shim stores the CircuIT access
+token in `CIRCUIT_TOKEN_CACHE`, refreshes it a few minutes before it expires,
+and retries once with a forced refresh whenever CircuIT responds with HTTP 401.
+Delete the cache file (or change your client secret) if you need to force a
+refresh outside of the shim.
+
+## Basic multi-agent planner
+
+Need something richer than the smoke test but lighter than the full LangGraph
+supervisor? Run the simplified planner which orchestrates separate flight and
+hotel agents via LiteLLM:
+
+```bash
+python instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/litellm_travel_agent_demo/multi_agent_basic.py \\
+  "book a trip from SFO to CDG and a boutique hotel near the Louvre"
+```
+
+The script streams intermediate agent updates and prints the final itinerary. To
+avoid the upstream `parallel_tool_calls` incompatibility, this basic planner
+keeps the agents purely conversational (no Python tool execution) but still runs
+the full multi-agent routing loop. It reads the same `.env` values
+(`LITELLM_BASE_URL`, `LITELLM_API_KEY`, etc.) and falls back to
+`TRAVEL_DEMO_PROMPT` when no CLI argument is provided.
+
 ## Configuration
 
 1. Copy the example environment file:
@@ -78,21 +96,22 @@ reachable from your workstation.
    cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/litellm_travel_agent_demo
    cp .env.example .env
    ```
-2. Edit `.env` to point to your LiteLLM proxy base URL and API key (and to store
-   the CircuIT token if you prefer file-based env instead of exporting). When
-   using a remote proxy, make sure the networking rules allow connections from
-   your workstation/container.
+2. Edit `.env` to point to your LiteLLM proxy base URL, API key, and Cisco
+   credentials. When using a remote proxy, make sure the networking rules allow
+   connections from your workstation/container.
 
 Environment variables:
 
 - `CISCO_CLIENT_ID`, `CISCO_CLIENT_SECRET`, `CISCO_APP_KEY` – Cisco CircuIT creds
-  consumed by `circuit_token_helper.py` and passed downstream in user metadata.
-- `CIRCUIT_ACCESS_TOKEN` – bearer token returned by `circuit_token_helper.py`. The
-  token expires; refresh and update this value before re-running `docker compose`.
+  consumed by the shim to mint OAuth tokens and passed downstream in user metadata.
+- `CISCO_TOKEN_URL`, `CIRCUIT_TOKEN_CACHE` – optional overrides for the token
+  endpoint and cache path used by the shim.
 - `CIRCUIT_UPSTREAM_BASE` – the real Cisco CircuIT base URL (defaults to
   `https://chat-ai.cisco.com`).
 - `CIRCUIT_API_BASE` – where LiteLLM reaches the shim (defaults to
   `http://circuit-shim:5001/`). Change this if you host the shim elsewhere.
+- `CIRCUIT_SHIM_API_KEY` – placeholder API key LiteLLM sends to the shim (not
+  forwarded upstream).
 - `CIRCUIT_SHIM_PORT` / `LITELLM_PORT` – exposed ports for each container.
 - `LITELLM_PROXY_KEY`, `LITELLM_API_KEY` – key LiteLLM expects in the
   `Authorization` header.

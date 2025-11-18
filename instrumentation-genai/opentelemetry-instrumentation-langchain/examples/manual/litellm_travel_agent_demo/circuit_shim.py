@@ -10,8 +10,10 @@ Purpose:
 Usage:
 1. Install deps: pip install flask requests
 2. Set environment variables:
+    - CISCO_CLIENT_ID / CISCO_CLIENT_SECRET (required for auto token refresh)
     - CISCO_APP_KEY (required)
     - CIRCUIT_UPSTREAM_BASE (optional, default: https://chat-ai.cisco.com)
+    - CISCO_TOKEN_URL, CIRCUIT_TOKEN_CACHE (optional overrides)
 3. Run: python circuit_shim.py
 4. Point LiteLLM's `api_base` to the shim from inside Docker, for example:
    http://host.docker.internal:5001
@@ -19,13 +21,15 @@ Usage:
 Note: This is intentionally lightweight for local development only.
 """
 
-import os
+import base64
+import json
 import logging
+import os
+from datetime import datetime, timedelta
 from urllib.parse import urljoin
 
-from flask import Flask, request, Response, jsonify
+from flask import Flask, Response, jsonify, request
 import requests
-import json
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("circuit_shim")
@@ -34,12 +38,93 @@ app = Flask(__name__)
 
 # Upstream Circuit base (where we forward requests)
 CIRCUIT_UPSTREAM_BASE = os.getenv("CIRCUIT_UPSTREAM_BASE", "https://chat-ai.cisco.com")
-# Local appkey to include in the `user` JSON
-# Local appkey to include in the `user` JSON (CISCO_APP_KEY per project examples)
+
+# Cisco OAuth credentials used to mint/refresh CircuIT tokens
+CISCO_CLIENT_ID = os.getenv("CISCO_CLIENT_ID")
+CISCO_CLIENT_SECRET = os.getenv("CISCO_CLIENT_SECRET")
 CISCO_APP_KEY = os.getenv("CISCO_APP_KEY")
+CISCO_TOKEN_URL = os.getenv("CISCO_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token")
+CIRCUIT_TOKEN_CACHE = os.getenv("CIRCUIT_TOKEN_CACHE", "/tmp/circuit_shim_token.json")
 
 
-def extract_token(auth_header: str) -> str | None:
+class TokenManager:
+    """Cache-aware client credentials manager for Cisco CircuIT tokens."""
+
+    def __init__(self, client_id: str, client_secret: str, cache_file: str, token_url: str) -> None:
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.cache_file = cache_file
+        self.token_url = token_url
+
+    def _get_cached_token(self) -> str | None:
+        if not self.cache_file or not os.path.exists(self.cache_file):
+            return None
+        try:
+            with open(self.cache_file, "r", encoding="utf-8") as handle:
+                cache_data = json.load(handle)
+            expires_at = datetime.fromisoformat(cache_data["expires_at"])
+            if datetime.now() < expires_at - timedelta(minutes=5):
+                return cache_data["access_token"]
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+            return None
+        return None
+
+    def _fetch_new_token(self) -> str:
+        payload = "grant_type=client_credentials"
+        basic_value = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode("utf-8")).decode("utf-8")
+        headers = {
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": f"Basic {basic_value}",
+        }
+        response = requests.post(self.token_url, headers=headers, data=payload, timeout=30)
+        response.raise_for_status()
+        token_data = response.json()
+        expires_in = int(token_data.get("expires_in", 3600))
+        expires_at = datetime.now() + timedelta(seconds=expires_in)
+
+        cache_data = {
+            "access_token": token_data["access_token"],
+            "expires_at": expires_at.isoformat(),
+        }
+        if self.cache_file:
+            with open(self.cache_file, "w", encoding="utf-8") as handle:
+                json.dump(cache_data, handle, indent=2)
+            os.chmod(self.cache_file, 0o600)
+        return token_data["access_token"]
+
+    def get_token(self, force_refresh: bool = False) -> str:
+        if force_refresh:
+            return self._fetch_new_token()
+        token = self._get_cached_token()
+        if token:
+            return token
+        return self._fetch_new_token()
+
+    def invalidate_cache(self) -> None:
+        if not self.cache_file or not os.path.exists(self.cache_file):
+            return
+        try:
+            os.remove(self.cache_file)
+        except OSError:
+            pass
+
+
+TOKEN_MANAGER: TokenManager | None = None
+if CISCO_CLIENT_ID and CISCO_CLIENT_SECRET:
+    TOKEN_MANAGER = TokenManager(
+        client_id=CISCO_CLIENT_ID,
+        client_secret=CISCO_CLIENT_SECRET,
+        cache_file=CIRCUIT_TOKEN_CACHE,
+        token_url=CISCO_TOKEN_URL,
+    )
+else:
+    log.warning(
+        "CISCO_CLIENT_ID/SECRET not set; shim will rely on Authorization headers for CircuIT tokens"
+    )
+
+
+def extract_token(auth_header: str | None) -> str | None:
     if not auth_header:
         return None
     parts = auth_header.split()
@@ -69,11 +154,27 @@ def build_upstream_headers(incoming_headers, token: str | None):
     return headers
 
 
+def resolve_circuit_token(auth_header: str | None) -> str | None:
+    if TOKEN_MANAGER:
+        try:
+            return TOKEN_MANAGER.get_token()
+        except Exception as exc:  # pragma: no cover - defensive
+            log.error("Failed to mint CircuIT token via client credentials: %s", exc)
+    return extract_token(auth_header)
+
+
 @app.route("/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE"]) 
 @app.route("/<path:path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"]) 
 def proxy(path):
     auth_header = request.headers.get("Authorization")
-    token = extract_token(auth_header)
+    token = resolve_circuit_token(auth_header)
+    if not token:
+        msg = {
+            "error": "missing_token",
+            "message": "Shim could not determine a CircuIT token. Set CISCO_CLIENT_ID/CISCO_CLIENT_SECRET (preferred) or include an Authorization header with a CircuIT bearer token.",
+        }
+        log.error("No CircuIT token available for request %s", request.path)
+        return jsonify(msg), 500
 
     # Build headers for upstream
     headers = build_upstream_headers(request.headers, token)
@@ -206,7 +307,33 @@ def proxy(path):
 
         log.info("Forwarding to upstream URL=%s headers=%s body=%s", upstream_url, debug_headers, debug_body)
 
-        resp = requests.request(request.method, upstream_url, headers=headers, json=body if isinstance(body, dict) else None, data=None if isinstance(body, dict) else body, timeout=60)
+        json_body = body if isinstance(body, dict) else None
+        data_body = None if isinstance(body, dict) else body
+        resp = requests.request(
+            request.method,
+            upstream_url,
+            headers=headers,
+            json=json_body,
+            data=data_body,
+            timeout=60,
+        )
+        # If the cached token expired between refreshes, retry once with a forced refresh
+        if resp.status_code == 401 and TOKEN_MANAGER:
+            log.warning("CircuIT returned 401; forcing token refresh and retrying once")
+            try:
+                fresh_token = TOKEN_MANAGER.get_token(force_refresh=True)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.error("Failed to refresh CircuIT token after 401: %s", exc)
+            else:
+                headers = build_upstream_headers(request.headers, fresh_token)
+                resp = requests.request(
+                    request.method,
+                    upstream_url,
+                    headers=headers,
+                    json=json_body,
+                    data=data_body,
+                    timeout=60,
+                )
     except requests.RequestException as exc:
         log.exception("Upstream request failed: %s", exc)
         return jsonify({"error": "upstream request failed", "detail": str(exc)}), 502
