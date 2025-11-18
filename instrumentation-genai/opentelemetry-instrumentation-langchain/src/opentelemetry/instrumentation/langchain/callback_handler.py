@@ -168,14 +168,27 @@ class LangchainCallbackHandler(BaseCallbackHandler):
 
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
-        visited = set()
+        visited: set[UUID] = set()
         while current is not None and current not in visited:
             visited.add(current)
             entity = self._handler.get_entity(current)
             if isinstance(entity, AgentInvocation):
                 return entity
-            if entity is None:
-                break
+            current = getattr(entity, "parent_run_id", None)
+        return None
+
+    def _find_nearest_model(self, run_id: Optional[UUID]) -> Optional[str]:
+        """Find the nearest entity (agent or LLM) with a model attribute."""
+        current = run_id
+        visited: set[UUID] = set()
+        while current is not None and current not in visited:
+            visited.add(current)
+            entity = self._handler.get_entity(current)
+            if entity is not None:
+                if hasattr(entity, "model") and entity.model:
+                    return entity.model
+                if hasattr(entity, "request_model") and entity.request_model:
+                    return entity.request_model
             current = getattr(entity, "parent_run_id", None)
         return None
 
@@ -202,8 +215,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if metadata:
             if metadata.get("agent_type"):
                 agent.agent_type = _safe_str(metadata["agent_type"])
-            if metadata.get("model_name"):
-                agent.model = _safe_str(metadata["model_name"])
+            model_name = metadata.get("model_name") or metadata.get("ls_model_name")
+            if model_name:
+                agent.model = _safe_str(model_name)
             if metadata.get("system"):
                 agent.system = _safe_str(metadata["system"])
         self._handler.start_agent(agent)
@@ -357,12 +371,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         **extra: Any,
     ) -> None:
         payload = serialized or {}
-        model_source = (
-            payload.get("name")
-            or payload.get("id")
-            or (metadata.get("model_name") if metadata else None)
-            or extra.get("name")
-        )
+        model_source = None
+        if metadata:
+            model_source = metadata.get("model_name") or metadata.get("ls_model_name")
+        if not model_source:
+            model_source = extra.get("model") or extra.get("name")
+        if not model_source:
+            model_source = payload.get("id") or payload.get("name")
         request_model = _safe_str(model_source or "model")
         input_messages: list[InputMessage] = []
         for batch in messages:
@@ -389,6 +404,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 agent_name_value = context_agent.agent_name or context_agent.name
                 inv.agent_name = _safe_str(agent_name_value)
                 inv.agent_id = str(context_agent.run_id)
+                if request_model:
+                    context_agent.model = request_model
         self._handler.start_llm(inv)
 
     def on_llm_start(
@@ -489,6 +506,11 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if context_agent
             else None
         )
+        context_agent_model = (
+            self._find_nearest_model(parent_run_id)
+            if parent_run_id is not None
+            else None
+        )
         id_source = payload.get("id") or extra.get("id")
         if isinstance(id_source, (list, tuple)):
             id_value = ".".join(_safe_str(part) for part in id_source)
@@ -511,6 +533,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     existing.agent_name = context_agent_name
                 if not getattr(existing, "agent_id", None):
                     existing.agent_id = str(context_agent.run_id)
+            if context_agent_model:
+                existing.attributes["_agent_model"] = context_agent_model
             if existing.framework is None:
                 existing.framework = "langchain"
             return
@@ -526,6 +550,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if context_agent is not None and context_agent_name is not None:
             tool.agent_name = context_agent_name
             tool.agent_id = str(context_agent.run_id)
+        if context_agent_model:
+            tool.attributes["_agent_model"] = context_agent_model
         if arguments is not None:
             serialized_args = _serialize(arguments)
             if serialized_args is not None:
