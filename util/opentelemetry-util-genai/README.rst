@@ -39,3 +39,7 @@ GenAI semantic conventions are incubating.
 License
 -------
 Apache 2.0 (see ``LICENSE``).
+
+Test
+----
+This is a test.
