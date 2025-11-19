@@ -366,15 +366,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         payload = serialized or {}
         invocation_params = extra.get("invocation_params", {})
-        # Priority: invocation_params.model_name > metadata.model_name > serialized.name
+        # Priority: invocation_params.model_name > metadata.model_name.
+        # Removed fallback to payload name/id to avoid misreporting implementation class as model.
         model_source = (
             invocation_params.get("model_name")
             or (metadata.get("model_name") if metadata else None)
-            or payload.get("name")
-            or payload.get("id")
-            or extra.get("name")
         )
-        request_model = _safe_str(model_source or "model")
+        request_model = _safe_str(model_source or "unknown_model")
         input_messages: list[InputMessage] = []
         for batch in messages:
             for m in batch:
@@ -385,19 +383,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
 
         # Build attributes from metadata and invocation_params
         attrs: dict[str, Any] = {}
-        langchain_legacy: dict[str, Any] = {}
 
-        # Process metadata - move ls_* to langchain_legacy, keep others
+        # Process metadata - skip ls_* fields as they're extracted to dedicated fields
         if metadata:
             for key, value in metadata.items():
-                if isinstance(key, str) and key.startswith("ls_"):
-                    langchain_legacy[key] = value
-                else:
+                if isinstance(key, str) and not key.startswith("ls_"):
                     attrs[key] = value
-
-        # Add langchain_legacy if it has content
-        if langchain_legacy:
-            attrs["langchain_legacy"] = langchain_legacy
 
         # Add tags
         if tags:
