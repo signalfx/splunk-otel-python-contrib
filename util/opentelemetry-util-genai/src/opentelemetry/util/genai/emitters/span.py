@@ -163,7 +163,6 @@ class SpanEmitter(EmitterMeta):
             semconv_attrs[GenAI.GEN_AI_OPERATION_NAME] = (
                 enum_val.value if enum_val else "execute_tool"
             )
-            semconv_attrs[GenAI.GEN_AI_REQUEST_MODEL] = invocation.name
         elif isinstance(invocation, EmbeddingInvocation):
             semconv_attrs.setdefault(
                 GenAI.GEN_AI_REQUEST_MODEL, invocation.request_model
