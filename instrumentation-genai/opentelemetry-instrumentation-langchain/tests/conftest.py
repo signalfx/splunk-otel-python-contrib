@@ -192,25 +192,22 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
-    # Create new instrumentor for each test
+    # Use class-level check to prevent double instrumentation
     instrumentor = LangChainInstrumentor()
-
-    # If already instrumented (from previous test), uninstrument first
-    if instrumentor._is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
-
-    instrumentor.instrument(
-        tracer_provider=tracer_provider,
-        event_logger_provider=event_logger_provider,
-        meter_provider=meter_provider,
-    )
+    
+    # Only instrument if not already done (class-level singleton check)
+    if not LangChainInstrumentor()._is_instrumented_by_opentelemetry:
+        instrumentor.instrument(
+            tracer_provider=tracer_provider,
+            event_logger_provider=event_logger_provider,
+            meter_provider=meter_provider,
+        )
 
     yield instrumentor
 
     set_prompt_capture_enabled(True)
     # Clean up: uninstrument and reset singleton
-    if instrumentor._is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
+    instrumentor.uninstrument()
 
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
@@ -258,18 +255,16 @@ def instrument_with_content_util(
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
-    # Create new instrumentor for each test
+    # Use class-level check to prevent double instrumentation
     instrumentor = LangChainInstrumentor()
-
-    # If already instrumented (from previous test), uninstrument first
-    if instrumentor._is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
-
-    instrumentor.instrument(
-        tracer_provider=tracer_provider,
-        event_logger_provider=event_logger_provider,
-        meter_provider=meter_provider,
-    )
+    
+    # Only instrument if not already done (class-level singleton check)
+    if not LangChainInstrumentor()._is_instrumented_by_opentelemetry:
+        instrumentor.instrument(
+            tracer_provider=tracer_provider,
+            event_logger_provider=event_logger_provider,
+            meter_provider=meter_provider,
+        )
 
     yield instrumentor
 
@@ -277,8 +272,7 @@ def instrument_with_content_util(
     set_prompt_capture_enabled(True)
 
     # Clean up: uninstrument and reset singleton
-    if instrumentor._is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
+    instrumentor.uninstrument()
 
     if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
         setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
