@@ -113,9 +113,9 @@ class Manager(CompletionCallback):
             return
         # Only evaluate LLMInvocation or AgentInvocation
         if (
-                not isinstance(invocation, LLMInvocation)
-                and not isinstance(invocation, AgentInvocation)
-                and not isinstance(invocation, Workflow)
+            not isinstance(invocation, LLMInvocation)
+            and not isinstance(invocation, AgentInvocation)
+            and not isinstance(invocation, Workflow)
         ):
             return
 
@@ -127,9 +127,9 @@ class Manager(CompletionCallback):
                 if msgs:
                     first = msgs[0]
                     if (
-                            first.parts
-                            and first.parts[0] == "ToolCall"
-                            and first.finish_reason == "tool_calls"
+                        first.parts
+                        and first.parts[0] == "ToolCall"
+                        and first.finish_reason == "tool_calls"
                     ):
                         offer = False
 

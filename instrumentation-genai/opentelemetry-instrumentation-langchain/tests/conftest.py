@@ -194,7 +194,7 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
 
     # Use class-level check to prevent double instrumentation
     instrumentor = LangChainInstrumentor()
-    
+
     # Only instrument if not already done (class-level singleton check)
     if not LangChainInstrumentor()._is_instrumented_by_opentelemetry:
         instrumentor.instrument(
@@ -257,7 +257,7 @@ def instrument_with_content_util(
 
     # Use class-level check to prevent double instrumentation
     instrumentor = LangChainInstrumentor()
-    
+
     # Only instrument if not already done (class-level singleton check)
     if not LangChainInstrumentor()._is_instrumented_by_opentelemetry:
         instrumentor.instrument(

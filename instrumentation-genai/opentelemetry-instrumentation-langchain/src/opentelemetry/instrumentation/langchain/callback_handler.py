@@ -368,9 +368,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         invocation_params = extra.get("invocation_params", {})
         # Priority: invocation_params.model_name > metadata.model_name.
         # Removed fallback to payload name/id to avoid misreporting implementation class as model.
-        model_source = (
-            invocation_params.get("model_name")
-            or (metadata.get("model_name") if metadata else None)
+        model_source = invocation_params.get("model_name") or (
+            metadata.get("model_name") if metadata else None
         )
         request_model = _safe_str(model_source or "unknown_model")
         input_messages: list[InputMessage] = []
