@@ -56,6 +56,27 @@ from opentelemetry.util.genai.environment_variables import (
 from opentelemetry.util.genai.handler import get_telemetry_handler
 
 
+def _fully_unwrap_callback_manager():
+    """Fully unwrap BaseCallbackManager.__init__ to handle multiple wrapper layers.
+
+    This is necessary because tests may run in sequence and each test creates
+    a new wrapper. The standard unwrap() only removes one layer at a time.
+    This is test-only cleanup code to ensure proper isolation between tests.
+    """
+    try:
+        from wrapt import ObjectProxy
+        import langchain_core.callbacks
+
+        func = langchain_core.callbacks.BaseCallbackManager.__init__
+        # Keep unwrapping until we reach the original function
+        while isinstance(func, ObjectProxy) and hasattr(func, "__wrapped__"):
+            func = func.__wrapped__
+        # Set back to fully unwrapped version
+        langchain_core.callbacks.BaseCallbackManager.__init__ = func
+    except Exception:  # pragma: no cover
+        pass
+
+
 @pytest.fixture(scope="function", name="span_exporter")
 def fixture_span_exporter():
     exporter = InMemorySpanExporter()
@@ -175,9 +196,12 @@ def instrument_no_content(tracer_provider, event_logger_provider, meter_provider
         meter_provider=meter_provider,
     )
 
-    yield instrumentor
-    set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+    try:
+        yield instrumentor
+    finally:
+        # Ensure cleanup happens even if test fails
+        set_prompt_capture_enabled(True)
+        instrumentor.uninstrument()
 
 
 @pytest.fixture(scope="function")
@@ -203,14 +227,18 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
             meter_provider=meter_provider,
         )
 
-    yield instrumentor
+    try:
+        yield instrumentor
+    finally:
+        # Ensure cleanup happens even if test fails
+        set_prompt_capture_enabled(True)
+        # Clean up: uninstrument and reset singleton
+        instrumentor.uninstrument()
+        # Fully unwrap to handle multiple test runs
+        _fully_unwrap_callback_manager()
 
-    set_prompt_capture_enabled(True)
-    # Clean up: uninstrument and reset singleton
-    instrumentor.uninstrument()
-
-    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
-        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+        if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+            setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.fixture(scope="function")
@@ -231,9 +259,12 @@ def instrument_with_content_unsampled(
         meter_provider=meter_provider,
     )
 
-    yield instrumentor
-    set_prompt_capture_enabled(True)
-    instrumentor.uninstrument()
+    try:
+        yield instrumentor
+    finally:
+        # Ensure cleanup happens even if test fails
+        set_prompt_capture_enabled(True)
+        instrumentor.uninstrument()
 
 
 @pytest.fixture(scope="function")
@@ -266,16 +297,20 @@ def instrument_with_content_util(
             meter_provider=meter_provider,
         )
 
-    yield instrumentor
+    try:
+        yield instrumentor
+    finally:
+        # Ensure cleanup happens even if test fails
+        os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+        set_prompt_capture_enabled(True)
 
-    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
-    set_prompt_capture_enabled(True)
+        # Clean up: uninstrument and reset singleton
+        instrumentor.uninstrument()
+        # Fully unwrap to handle multiple test runs
+        _fully_unwrap_callback_manager()
 
-    # Clean up: uninstrument and reset singleton
-    instrumentor.uninstrument()
-
-    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
-        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+        if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
+            setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 class LiteralBlockScalar(str):
