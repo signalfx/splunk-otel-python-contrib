@@ -413,18 +413,28 @@ class DeepevalEvaluator(Evaluator):
                 "GENAI_OPENAI_API_KEY"
             )
             api_key = candidate or env_key
+            base_url = os.getenv("OPENAI_API_BASE") or os.getenv(
+                "GENAI_OPENAI_API_BASE"
+            )
             if api_key:
-                # Attempt to configure Deepeval/OpenAI client.
                 try:  # pragma: no cover - external dependency
-                    # Support legacy openai<1 and new openai>=1 semantics.
                     if not getattr(openai, "api_key", None):  # type: ignore[attr-defined]
                         try:
-                            setattr(openai, "api_key", api_key)  # legacy style
-                        except Exception:  # pragma: no cover
+                            setattr(openai, "api_key", api_key)
+                        except Exception:
                             pass
-                    # Ensure env var set for client() style usage.
                     if not os.getenv("OPENAI_API_KEY"):
                         os.environ["OPENAI_API_KEY"] = api_key
+                    if base_url:
+                        try:
+                            setattr(openai, "base_url", base_url)
+                        except Exception:
+                            pass
+                        try:
+                            setattr(openai, "api_base", base_url)
+                        except Exception:
+                            os.environ.setdefault("OPENAI_API_BASE", base_url)
+                        os.environ.setdefault("OPENAI_BASE_URL", base_url)
                 except Exception:
                     pass
         except Exception:  # pragma: no cover - defensive

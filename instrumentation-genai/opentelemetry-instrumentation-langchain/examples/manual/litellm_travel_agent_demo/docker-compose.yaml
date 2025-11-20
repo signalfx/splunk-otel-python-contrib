@@ -21,6 +21,9 @@ services:
       - circuit-shim
     environment:
       LITELLM_PROXY_KEY: ${LITELLM_PROXY_KEY:-litellm-demo-key}
+      # Force LiteLLM to use its HTTP handler instead of the OpenAI SDK so
+      # unsupported params like `logprobs` are still sent to our shim
+      EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER: "true"
     ports:
       - "${LITELLM_PORT:-4000}:4000"
     volumes:

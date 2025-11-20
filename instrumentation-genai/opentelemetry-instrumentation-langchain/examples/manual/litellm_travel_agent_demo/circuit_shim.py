@@ -199,6 +199,14 @@ def proxy(path):
     # so accept both. Try to extract the deployment/model name from multiple possible keys.
     log.debug("normalized_path for remap check: '%s'", normalized_path)
     if "chat/completions" in normalized_path:
+        # CircuIT does not currently support OpenAI's logprob params - drop them early.
+        if isinstance(body, dict):
+            removed = {}
+            for unsupported_key in ("logprobs", "top_logprobs"):
+                if unsupported_key in body:
+                    removed[unsupported_key] = body.pop(unsupported_key)
+            if removed:
+                log.info("Removing unsupported params for CircuIT chat/completions: %s", list(removed))
         # Prefer common keys: 'model', 'deployment', or 'model_name'
         model_name = None
         if isinstance(body, dict):
