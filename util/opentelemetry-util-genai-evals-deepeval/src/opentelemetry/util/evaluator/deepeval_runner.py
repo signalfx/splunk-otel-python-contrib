@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Callable, Sequence
 
 from deepeval import evaluate as deepeval_evaluate
-from deepeval.evaluate.configs import AsyncConfig, CacheConfig, DisplayConfig
+from deepeval.evaluate.configs import AsyncConfig, DisplayConfig
 
 
 def run_evaluation(
@@ -18,8 +18,6 @@ def run_evaluation(
 ) -> Any:
     display_config = DisplayConfig(show_indicator=False, print_results=False)
     async_config = AsyncConfig(run_async=False)
-    # Keep CacheConfig disabled for compatibility with traceloop translator package
-    cache_config = CacheConfig(write_cache=False, use_cache=False)
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
@@ -28,7 +26,6 @@ def run_evaluation(
             list(metrics),
             async_config=async_config,
             display_config=display_config,
-            cache_config=cache_config,
         )
     if debug_log is not None:
         out = stdout_buffer.getvalue().strip()
