@@ -404,11 +404,9 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert attrs["callback.name"] == "ChatOpenAI"
     assert attrs["callback.id"] == ["langchain", "ChatOpenAI"]
     assert "traceloop.callback_name" not in attrs
+    # ls_* fields are excluded from attributes - extracted to dedicated fields instead
     assert "ls_provider" not in attrs
     assert "ls_max_tokens" not in attrs
     assert "ls_model_name" not in attrs
-    ls_meta = attrs.get("langchain_legacy")
-    assert isinstance(ls_meta, dict)
-    assert ls_meta["ls_provider"] == "openai"
-    assert ls_meta["ls_max_tokens"] == 256
+    assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
