@@ -29,6 +29,10 @@ Requirements
   To override the model, set ``DEEPEVAL_EVALUATION_MODEL`` (or ``DEEPEVAL_MODEL`` /
   ``OPENAI_MODEL``) to a different deployment along with the corresponding
   provider credentials.
+  Custom Deepeval evaluation models can be contributed by external packages via
+  the ``opentelemetry_util_genai_evals.deepeval_models`` entry-point group. When a
+  package registers a model under a specific name you can select it by setting
+  ``DEEPEVAL_MODEL`` to that name.
 * (Optional) ``DEEPEVAL_API_KEY`` if your Deepeval account requires it.
 
 Configuration

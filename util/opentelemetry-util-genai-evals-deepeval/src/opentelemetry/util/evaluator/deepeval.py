@@ -15,9 +15,11 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import re as _re
+import sys
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
@@ -47,6 +49,7 @@ from .deepeval_metrics import (
 from .deepeval_metrics import (
     instantiate_metrics as _instantiate_metrics,
 )
+from .deepeval_models import resolve_model as _resolve_model
 from .deepeval_runner import run_evaluation as _run_deepeval
 
 try:  # Optional debug logging import
@@ -364,6 +367,17 @@ class DeepevalEvaluator(Evaluator):
             )
         except Exception:  # pragma: no cover
             pass
+
+        module = sys.modules.get("deepeval")
+        if module is None:
+            try:
+                module = importlib.import_module("deepeval")
+            except Exception:
+                module = None
+        if module is None:
+            return self._error_results(
+                "Deepeval dependency is not available", ModuleNotFoundError
+            )
         metric_specs = self._build_metric_specs()
         if not metric_specs:
             genai_debug_log(
@@ -624,14 +638,17 @@ class DeepevalEvaluator(Evaluator):
     # per-metric param check handled in deepeval_metrics
 
     @staticmethod
-    def _default_model() -> str | None:
-        model = (
+    def _default_model() -> Any:
+        model_setting = (
             os.getenv("DEEPEVAL_EVALUATION_MODEL")
             or os.getenv("DEEPEVAL_MODEL")
             or os.getenv("OPENAI_MODEL")
         )
-        if model:
-            return model
+        if model_setting:
+            custom_model = _resolve_model(model_setting)
+            if custom_model is not None:
+                return custom_model
+            return model_setting
         return "gpt-4o-mini"
 
 
