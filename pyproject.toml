@@ -149,7 +149,11 @@ members = [
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
 line-length = 79
-extend-exclude = ["_template", "*_pb2*.py*"]
+extend-exclude = [
+  "_template",
+  "*_pb2*.py*",
+  "**/examples/**",
+]
 output-format = "concise"
 
 [tool.ruff.lint]
@@ -172,6 +176,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "docs/**/*.*" = ["A001"]
 "instrumentation-genai/opentelemetry-instrumentation-langchain/tests/test_callback_handler_agent.py" = ["E402"]
+"instrumentation-genai/opentelemetry-instrumentation-langchain/examples/**/*.py" = ["E402", "F541", "F841"]
 
 [tool.ruff.lint.isort]
 detect-same-package = false # to not consider instrumentation packages as first-party
