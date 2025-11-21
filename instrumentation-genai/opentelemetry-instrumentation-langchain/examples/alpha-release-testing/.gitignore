@@ -1,0 +1,86 @@
+# Alpha Release Testing - Git Ignore
+
+# Environment files with credentials
+.env
+.env.*
+!.env.*.template
+config/.env.*
+!config/.env.*.template
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+logs/*.log
+logs/*.html
+logs/*.xml
+logs/*.json
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+temp/
+tmp/
+
+# Test data
+test_data/
+*.db
+*.sqlite
+
+# Screenshots (UI tests)
+screenshots/
+*.png
+!docs/*.png
+
+# Credentials and secrets
+secrets/
+*.pem
+*.key
+*.crt
+credentials.json
