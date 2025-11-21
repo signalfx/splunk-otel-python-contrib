@@ -1,0 +1,65 @@
+# Alpha Release Testing - Python Dependencies
+# 
+# ⚠️ IMPORTANT: DeepEval and Traceloop SDK are INCOMPATIBLE
+# 
+# Use separate environments:
+# - requirements-langchain.txt  (with DeepEval, without Traceloop)
+# - requirements-traceloop.txt  (with Traceloop, without DeepEval)
+# 
+# See SETUP_GUIDE.md for details
+#
+# ============================================================================
+
+# ============================================================================
+# Core OpenTelemetry
+# ============================================================================
+opentelemetry-sdk>=1.38.0
+opentelemetry-api>=1.38.0
+opentelemetry-exporter-otlp>=1.38.0
+
+# Splunk OpenTelemetry Utilities
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-genai-evals-deepeval
+splunk-otel-util-genai-processor-traceloop
+
+# LangChain Instrumentation
+opentelemetry-instrumentation-langchain
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-core>=0.1.0
+
+# Azure OpenAI
+openai>=1.0.0
+azure-identity
+
+# Traceloop (for Traceloop tests)
+traceloop-sdk>=0.47.4
+
+# Testing Framework
+pytest>=7.4.0
+pytest-html>=3.2.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-timeout>=2.1.0
+
+# UI Testing
+playwright>=1.40.0
+pytest-playwright>=0.4.0
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+pyyaml>=6.0.1
+
+# DeepEval (for evaluation tests)
+deepeval>=0.20.0
+
+# Logging and Monitoring
+structlog>=23.1.0
+
+# Data Validation
+pydantic>=2.0.0
+
+# HTTP Client
+httpx>=0.24.0
