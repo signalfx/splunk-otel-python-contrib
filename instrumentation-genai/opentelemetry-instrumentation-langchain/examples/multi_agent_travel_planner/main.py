@@ -24,11 +24,11 @@ See README.md for more information
 """
 
 import argparse
+import json
 import os
 import random
-import json
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
 from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
 
@@ -47,6 +47,8 @@ from langgraph.graph.message import AnyMessage, add_messages
 from langchain.agents import (
     create_agent as _create_react_agent,  # type: ignore[attr-defined]
 )
+
+from circuit_support import create_chat_openai, resolve_model_name
 
 
 # ---------------------------------------------------------------------------
@@ -172,13 +174,19 @@ class PlannerState(TypedDict):
     poison_events: List[str]
 
 
-def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-5-nano")
+class PoisonConfig(TypedDict):
+    prob: float
+    types: List[str]
+    max: int
 
+
+def _provider_setting() -> str:
+    return os.getenv("TRAVEL_LLM_PROVIDER", "").strip().lower()
 
 def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
     """Create an LLM instance decorated with tags/metadata for tracing."""
-    model = _model_name()
+    provider_setting = _provider_setting()
+    model = resolve_model_name(provider_setting, default_openai_model="gpt-5-nano")
     tags = [f"agent:{agent_name}", "travel-planner"]
     metadata = {
         "agent_name": agent_name,
@@ -188,11 +196,16 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "ls_model_name": model,
         "ls_temperature": temperature,
     }
-    return ChatOpenAI(
-        model=model,
+    return create_chat_openai(
+        agent_name,
+        session_id=session_id,
         temperature=temperature,
+        provider_setting=provider_setting,
+        default_openai_model="gpt-5-nano",
+        default_cache_filename="circuit_travel_demo_token.json",
         tags=tags,
         metadata=metadata,
+        model_override=model,
     )
 
 
@@ -201,7 +214,7 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
 # ---------------------------------------------------------------------------
 
 
-def _poison_config() -> Dict[str, object]:
+def _poison_config() -> PoisonConfig:
     """Read environment variables controlling prompt poisoning.
 
     TRAVEL_POISON_PROB: Base probability (0-1) that a given agent step is poisoned.
@@ -233,8 +246,9 @@ def _poison_config() -> Dict[str, object]:
             random.seed(int(seed))
         except ValueError:
             random.seed(seed)
+    bounded_prob = max(0.0, min(prob, 1.0))
     return {
-        "prob": max(0.0, min(prob, 1.0)),
+        "prob": bounded_prob,
         "types": types,
         "max": max_snippets,
     }
@@ -282,7 +296,7 @@ def maybe_add_quality_noise(
     if random.random() > cfg["prob"]:
         return base_prompt
     # choose subset
-    available = cfg["types"]
+    available = list(cfg["types"])
     random.shuffle(available)
     count = random.randint(1, min(cfg["max"], len(available)))
     chosen = available[:count]
