@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: travel-planner-langchain
-          image: travel-planner-langchain-server:latest
+          image: ertserendavga918/travel-planner-langchain-server:v1.0.2
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -74,9 +74,12 @@ spec:
               value: "false"
             - name: SPLUNK_PROFILER_ENABLED
               value: "true"
-            # Set evaluation wait time to 10 seconds
-            - name: EVAL_WAIT_SECONDS
-              value: "10"
+            - name: DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE
+              value: "300"
+            - name: DEEPEVAL_RETRY_MAX_ATTEMPTS
+              value: "2"
+            - name: DEEPEVAL_FILE_SYSTEM
+              value: "READ_ONLY"
           resources:
             requests:
               memory: "512Mi"

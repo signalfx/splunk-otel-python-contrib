@@ -450,7 +450,16 @@ def test_dependency_missing(monkeypatch):
     evaluator = plugin.DeepevalEvaluator(
         ("bias",), invocation_type="LLMInvocation"
     )
-    with patch.dict(sys.modules, {"deepeval": None}):
+    # Patch all deepeval modules to ensure import_module("deepeval.metrics") fails
+    # The test file installs stub modules, so we must patch submodules too
+    with patch.dict(
+        sys.modules,
+        {
+            "deepeval": None,
+            "deepeval.metrics": None,
+            "deepeval.test_case": None,
+        },
+    ):
         results = evaluator.evaluate(invocation)
     assert len(results) == 1
     assert results[0].error is not None
