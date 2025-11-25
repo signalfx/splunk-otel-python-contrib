@@ -183,6 +183,7 @@ class PoisonConfig(TypedDict):
 def _provider_setting() -> str:
     return os.getenv("TRAVEL_LLM_PROVIDER", "").strip().lower()
 
+
 def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
     """Create an LLM instance decorated with tags/metadata for tracing."""
     provider_setting = _provider_setting()

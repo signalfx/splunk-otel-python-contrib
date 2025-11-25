@@ -145,11 +145,15 @@ def _write_cached_token(cache_path: Path | None, token: str, expires_in: int) ->
         _debug_token_message("Unable to persist CircuIT token cache")
 
 
-def _fetch_circuit_token(client_id: str, client_secret: str, token_url: str) -> tuple[str, int]:
+def _fetch_circuit_token(
+    client_id: str, client_secret: str, token_url: str
+) -> tuple[str, int]:
     try:
         requests = importlib.import_module("requests")
     except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
-        raise RuntimeError("requests is required to mint Cisco CircuIT access tokens") from exc
+        raise RuntimeError(
+            "requests is required to mint Cisco CircuIT access tokens"
+        ) from exc
 
     response = requests.post(
         token_url,
@@ -181,10 +185,16 @@ def _mint_circuit_token(default_cache_filename: str) -> tuple[str, str, Optional
         return cached, "oauth-cache", cache_path
 
     client_id = os.getenv("CISCO_CLIENT_ID") or os.getenv("CIRCUIT_CLIENT_ID")
-    client_secret = os.getenv("CISCO_CLIENT_SECRET") or os.getenv("CIRCUIT_CLIENT_SECRET")
+    client_secret = os.getenv("CISCO_CLIENT_SECRET") or os.getenv(
+        "CIRCUIT_CLIENT_SECRET"
+    )
     if not client_id or not client_secret:
-        raise RuntimeError("Set CISCO_CIRCUIT_TOKEN or provide Cisco OAuth client credentials")
-    token_url = os.getenv("CISCO_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token")
+        raise RuntimeError(
+            "Set CISCO_CIRCUIT_TOKEN or provide Cisco OAuth client credentials"
+        )
+    token_url = os.getenv(
+        "CISCO_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token"
+    )
     token, expires_in = _fetch_circuit_token(client_id, client_secret, token_url)
     _write_cached_token(cache_path, token, expires_in)
     return token, "oauth-fetch", cache_path
@@ -201,7 +211,9 @@ def _augment_circuit_kwargs(
 
     app_key = os.getenv("CISCO_APP_KEY") or os.getenv("CIRCUIT_APP_KEY")
     if not app_key:
-        raise RuntimeError("CISCO_APP_KEY (or CIRCUIT_APP_KEY) must be set when using CircuIT")
+        raise RuntimeError(
+            "CISCO_APP_KEY (or CIRCUIT_APP_KEY) must be set when using CircuIT"
+        )
 
     raw_base = kwargs.pop("base_url", None) or os.getenv("CIRCUIT_API_BASE")
     if raw_base:
@@ -211,7 +223,9 @@ def _augment_circuit_kwargs(
         if "/openai/deployments/" not in sanitized:
             sanitized = f"{sanitized}/openai/deployments/{model}"
     else:
-        upstream = os.getenv("CIRCUIT_UPSTREAM_BASE", "https://chat-ai.cisco.com").rstrip("/")
+        upstream = os.getenv(
+            "CIRCUIT_UPSTREAM_BASE", "https://chat-ai.cisco.com"
+        ).rstrip("/")
         sanitized = f"{upstream}/openai/deployments/{model}"
     if sanitized.endswith("/chat/completions"):
         sanitized = sanitized[: -len("/chat/completions")]
@@ -262,13 +276,17 @@ def _augment_circuit_kwargs(
         if token_source_label == "kwargs":
             _debug_token_message("using CircuIT token supplied via kwargs", preview)
         else:
-            env_name = token_source_label.split(":", 1)[-1] if token_source_label else "env"
+            env_name = (
+                token_source_label.split(":", 1)[-1] if token_source_label else "env"
+            )
             _debug_token_message(f"using CircuIT token from {env_name}", preview)
 
     if ignored_sources:
         joined = ",".join(sorted(set(ignored_sources)))
         debug["ignored_token_sources"] = joined
-        _debug_token_message(f"force OAuth enabled so ignoring static token from {joined}")
+        _debug_token_message(
+            f"force OAuth enabled so ignoring static token from {joined}"
+        )
 
     debug["token_source"] = token_source_label or "unknown"
     debug["token_hint"] = preview
