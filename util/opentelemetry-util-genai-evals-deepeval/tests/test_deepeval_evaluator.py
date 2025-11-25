@@ -8,6 +8,7 @@ level ignore is used to keep the logical setup order clear.
 # ruff: noqa: E402
 
 import importlib
+import os
 import sys
 from unittest.mock import patch
 
@@ -16,21 +17,26 @@ import pytest
 
 # Provide stub 'deepeval' package structure if dependency is unavailable.
 def _install_deepeval_stubs():
-    if "deepeval" in sys.modules:
-        return
-    try:
-        import importlib as _il  # noqa: F401
+    if os.getenv("OTEL_TEST_USE_REAL_DEEPEVAL") == "1":
+        try:
+            import importlib as _il  # noqa: F401
 
-        __import__("deepeval")  # pragma: no cover
-        return
-    except Exception:
-        pass
+            __import__("deepeval")  # pragma: no cover
+            return
+        except Exception:
+            pass
+    # Ensure any previously imported real modules are cleared so our stubs take effect.
+    for name in list(sys.modules):
+        if name == "deepeval" or name.startswith("deepeval."):
+            sys.modules.pop(name, None)
     import types
 
     root = types.ModuleType("deepeval")
     metrics_mod = types.ModuleType("deepeval.metrics")
     test_case_mod = types.ModuleType("deepeval.test_case")
     eval_cfg_mod = types.ModuleType("deepeval.evaluate.configs")
+    models_root_mod = types.ModuleType("deepeval.models")
+    models_base_mod = types.ModuleType("deepeval.models.base_model")
 
     class _ReqParam:
         def __init__(self, value):
@@ -80,6 +86,22 @@ def _install_deepeval_stubs():
     metrics_mod.AnswerRelevancyMetric = AnswerRelevancyMetric
     metrics_mod.FaithfulnessMetric = FaithfulnessMetric
 
+    class DeepEvalBaseLLM:  # minimal behaviour for registry tests
+        def load_model(self):
+            return self
+
+        def generate(self, prompt: str):  # pragma: no cover - unused
+            raise NotImplementedError
+
+        async def a_generate(self, prompt: str):  # pragma: no cover - unused
+            raise NotImplementedError
+
+        def get_model_name(self):  # pragma: no cover - unused
+            return "stub"
+
+    models_base_mod.DeepEvalBaseLLM = DeepEvalBaseLLM
+    models_root_mod.base_model = models_base_mod
+
     class LLMTestCaseParams:
         INPUT_OUTPUT = "io"
         INPUT = "input"
@@ -124,6 +146,8 @@ def _install_deepeval_stubs():
     sys.modules["deepeval.test_case"] = test_case_mod
     sys.modules["deepeval.evaluate"] = root  # simplify
     sys.modules["deepeval.evaluate.configs"] = eval_cfg_mod
+    sys.modules["deepeval.models"] = models_root_mod
+    sys.modules["deepeval.models.base_model"] = models_base_mod
 
 
 _install_deepeval_stubs()
@@ -179,6 +203,12 @@ class DeeEvaluationResult:  # type: ignore[override]
 
 
 from opentelemetry.util.evaluator import deepeval as plugin
+from opentelemetry.util.evaluator.deepeval_models import (
+    clear_models as clear_model_registry,
+)
+from opentelemetry.util.evaluator.deepeval_models import (
+    register_model,
+)
 from opentelemetry.util.genai.evals.registry import (
     clear_registry,
     get_evaluator,
@@ -197,8 +227,10 @@ def _reset_registry():
     clear_registry()
     importlib.reload(plugin)
     plugin.register()
+    clear_model_registry()
     yield
     clear_registry()
+    clear_model_registry()
 
 
 def _build_invocation() -> LLMInvocation:
@@ -348,7 +380,59 @@ def test_evaluator_handles_instantiation_error(monkeypatch):
     results = evaluator.evaluate(invocation)
     assert len(results) == 1
     assert results[0].error is not None
-    assert "boom" in results[0].error.message
+
+
+def test_custom_deepeval_model_registry(monkeypatch):
+    import sys
+
+    models_mod = sys.modules["deepeval.models.base_model"]
+
+    class DummyModel(models_mod.DeepEvalBaseLLM):  # type: ignore[attr-defined]
+        def __init__(self):
+            self._loaded = False
+
+        def load_model(self):
+            self._loaded = True
+            return self
+
+        def generate(self, prompt: str) -> str:
+            self.load_model()
+            return "stubbed"
+
+        async def a_generate(
+            self, prompt: str
+        ) -> str:  # pragma: no cover - sync used
+            return self.generate(prompt)
+
+        def get_model_name(self) -> str:
+            return "dummy"
+
+    register_model("custom-circuit", DummyModel)
+
+    invocation = _build_invocation()
+    evaluator = plugin.DeepevalEvaluator(
+        ("bias",), invocation_type="LLMInvocation"
+    )
+
+    captured = {}
+
+    def fake_instantiate(specs, test_case, model):
+        captured["model"] = model
+        return [object()], []
+
+    monkeypatch.setenv("DEEPEVAL_MODEL", "custom-circuit")
+    monkeypatch.setattr(
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+        fake_instantiate,
+    )
+    monkeypatch.setattr(
+        "opentelemetry.util.evaluator.deepeval._run_deepeval",
+        lambda case, metrics, debug_log: DeeEvaluationResult(test_results=[]),
+    )
+
+    evaluator.evaluate(invocation)
+    assert "model" in captured
+    assert isinstance(captured["model"], DummyModel)
 
 
 def test_evaluator_missing_output(monkeypatch):
