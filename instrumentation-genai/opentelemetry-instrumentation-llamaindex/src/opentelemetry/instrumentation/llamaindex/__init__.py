@@ -4,6 +4,9 @@ from opentelemetry.instrumentation.llamaindex.config import Config
 from opentelemetry.instrumentation.llamaindex.callback_handler import (
     LlamaindexCallbackHandler,
 )
+from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
+    wrap_agent_run,
+)
 from wrapt import wrap_function_wrapper
 
 _instruments = ("llama-index-core >= 0.14.0",)
@@ -47,6 +50,17 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             name="CallbackManager.__init__",
             wrapper=_BaseCallbackManagerInitWrapper(llamaindexCallBackHandler),
         )
+
+        # Instrument Workflow-based agents
+        try:
+            wrap_function_wrapper(
+                module="llama_index.core.agent",
+                name="ReActAgent.run",
+                wrapper=wrap_agent_run,
+            )
+        except Exception:
+            # ReActAgent might not be available or importable
+            pass
 
     def _uninstrument(self, **kwargs):
         pass
