@@ -418,7 +418,6 @@ def _set_embeddings_response_attributes(
         # Don't set output tokens for embeddings as all tokens are input tokens
 
 
-
 class ToolCallBuffer:
     def __init__(self, index, tool_call_id, function_name):
         self.index = index
