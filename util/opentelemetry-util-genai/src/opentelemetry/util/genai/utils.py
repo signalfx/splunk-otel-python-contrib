@@ -14,6 +14,8 @@
 
 import logging
 import os
+import json
+
 from typing import Optional
 
 from opentelemetry.util._importlib_metadata import (
@@ -47,9 +49,7 @@ def get_content_capturing_mode() -> ContentCapturingMode:
     """Return capture mode derived from environment variables."""
 
     # Preferred configuration: boolean flag + explicit mode
-    capture_flag = os.environ.get(
-        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-    )
+    capture_flag = os.environ.get(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT)
     if capture_flag is not None:
         if not _is_truthy(capture_flag):
             return ContentCapturingMode.NO_CONTENT
@@ -78,9 +78,7 @@ def get_content_capturing_mode() -> ContentCapturingMode:
         return ContentCapturingMode.SPAN_AND_EVENT
 
     # Legacy fallback: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES
-    legacy_value = os.environ.get(
-        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES"
-    )
+    legacy_value = os.environ.get("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES")
     if legacy_value is not None:
         logger.warning(
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES is deprecated and ignored. "
@@ -138,9 +136,7 @@ def load_completion_callbacks(
     callbacks: list[tuple[str, CompletionCallback]] = []
     seen: set[str] = set()
     try:
-        entries = entry_points(
-            group="opentelemetry_util_genai_completion_callbacks"
-        )
+        entries = entry_points(group="opentelemetry_util_genai_completion_callbacks")
     except Exception:  # pragma: no cover - defensive
         logger.debug("Completion callback entry point group not available")
         return callbacks, seen
@@ -176,7 +172,15 @@ def is_truthy_env(value: Optional[str]) -> bool:
 def parse_callback_filter(value: Optional[str]) -> set[str] | None:
     if value is None:
         return None
-    selected = {
-        item.strip().lower() for item in value.split(",") if item.strip()
-    }
+    selected = {item.strip().lower() for item in value.split(",") if item.strip()}
     return selected or None
+
+
+def gen_ai_json_dumps(value: object) -> str:
+    """
+    Serialize GenAI payloads to JSON.
+
+    This is the helper expected by openai-agents-v2 span_processor.safe_json_dumps.
+    It should behave like json.dumps, but can be extended later (e.g., custom encoder).
+    """
+    return json.dumps(value, ensure_ascii=False)
