@@ -164,3 +164,10 @@ helm upgrade --install litellm ./litellm-helm -f values.yaml -n your-namespace
    ```
 
 3. Check for metric `gen_ai.client.operation.duration` (if sending histogram is enabled in Splunk OTel collector) or `gen_ai.client.operation.duration_count` otherwise.
+
+---
+
+## Updated Helm Chart Files
+
+- [Chart.yaml](../litellm-helm/Chart.yaml)
+- [values.yaml](../litellm-helm/values.yaml)
