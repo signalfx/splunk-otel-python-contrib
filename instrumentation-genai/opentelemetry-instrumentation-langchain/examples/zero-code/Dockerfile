@@ -44,7 +44,7 @@ RUN pip install -r /app/instrumentation-genai/opentelemetry-instrumentation-lang
 RUN pip install opentelemetry-distro opentelemetry-exporter-otlp
 
 RUN opentelemetry-bootstrap -a install && \
-    pip uninstall -y opentelemetry-instrumentation-openai-v2-outdated
+    pip uninstall -y opentelemetry-instrumentation-openai-v2
 
 WORKDIR /app/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner
 
