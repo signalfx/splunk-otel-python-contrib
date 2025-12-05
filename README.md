@@ -291,35 +291,7 @@ inv.output_messages = [OutputMessage(role="assistant", parts=[Text("Hi!")], fini
 handler.stop_llm(inv)
 ```
 
-## 16. Resolving CI Lint Failures
-
-If the CI lint job fails on your PR, you can automatically fix all linting and formatting issues:
-
-```bash
-make lint
-```
-
-This command will:
-1. Install ruff 0.6.9 (the version used in CI)
-2. Auto-fix all linting issues
-3. Auto-format all code
-4. Verify that all checks pass
-
-After running the command, commit and push the changes:
-
-```bash
-git add .
-git commit -m "fix: auto-fix linting issues"
-git push
-```
-
-The CI lint job checks two things:
-- **Linting**: `ruff check .` - checks for code quality issues
-- **Formatting**: `ruff format --check .` - checks code formatting
-
-The `make lint` command fixes both automatically.
-
-## 17. Validation Strategy
+## 16. Validation Strategy
 
 - Unit tests: env parsing, category overrides, evaluator grammar, sampling, content capture gating.
 - Future: ordering hints tests once implemented.
