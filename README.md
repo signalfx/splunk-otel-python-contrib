@@ -299,6 +299,8 @@ If the CI lint job fails on your PR, you can automatically fix all linting and f
 make lint
 ```
 
+**Note:** It's recommended to run this from within a Python virtual environment to avoid installing ruff globally.
+
 This command will:
 1. Install ruff 0.6.9 (the version used in CI)
 2. Auto-fix all linting issues
