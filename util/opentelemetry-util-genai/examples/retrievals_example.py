@@ -126,8 +126,7 @@ def example_vector_search():
     # Simulate response
     retrieval.documents_retrieved = 10
     retrieval.results = [
-        {"id": f"doc{i}", "score": 0.95 - i * 0.05}
-        for i in range(10)
+        {"id": f"doc{i}", "score": 0.95 - i * 0.05} for i in range(10)
     ]
 
     # Finish the retrieval operation

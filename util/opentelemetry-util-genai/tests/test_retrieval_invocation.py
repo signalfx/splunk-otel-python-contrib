@@ -1,6 +1,7 @@
 """Tests for RetrievalInvocation lifecycle and telemetry."""
 
 import pytest
+
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -11,7 +12,6 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.util.genai.attributes import (
     GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED,
-    GEN_AI_RETRIEVAL_QUERY_TEXT,
     GEN_AI_RETRIEVAL_TOP_K,
     GEN_AI_RETRIEVAL_TYPE,
 )

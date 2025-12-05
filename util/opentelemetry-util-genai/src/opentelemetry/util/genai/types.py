@@ -317,16 +317,17 @@ class EmbeddingInvocation(GenAI):
     )
     error_type: Optional[str] = None
 
+
 @dataclass
 class RetrievalInvocation(GenAI):
     """Represents a single retrieval/search invocation."""
 
-    #Required attribute
+    # Required attribute
     operation_name: str = field(
         default="retrieval",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    
+
     # Recommended attributes
     retriever_type: Optional[str] = field(
         default=None,
@@ -344,15 +345,16 @@ class RetrievalInvocation(GenAI):
         default=None,
         metadata={"semconv": "gen_ai.retrieval.documents_retrieved"},
     )
-    
+
     # Opt-in attribute
     results: list[dict[str, Any]] = field(
         default_factory=list,
         metadata={"semconv": "gen_ai.retrieval.documents"},
     )
-    
+
     # Additional utility fields (not in semantic conventions)
     query_vector: Optional[list[float]] = None
+
 
 @dataclass
 class Workflow(GenAI):
