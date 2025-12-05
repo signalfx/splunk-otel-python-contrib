@@ -293,7 +293,7 @@ handler.stop_llm(inv)
 
 ## 16. Resolving CI Lint Failures
 
-If the CI lint job fails on your PR, you can automatically fix all linting and formatting issues:
+If the CI lint job fails on your PR, you can automatically fix all linting and formatting issues:  
 
 ```bash
 make lint
