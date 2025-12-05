@@ -232,6 +232,7 @@ def test_retrieval_invocation_semantic_convention_attributes():
     """Test that semantic convention attributes are properly extracted."""
     retrieval = RetrievalInvocation(
         operation_name="retrieval",
+        request_model="text-embedding-ada-002",
         query="semantic test",
         top_k=5,
         retriever_type="vector_store",
@@ -243,6 +244,8 @@ def test_retrieval_invocation_semantic_convention_attributes():
     # Check that semantic convention attributes are present
     assert GenAI.GEN_AI_OPERATION_NAME in semconv_attrs
     assert semconv_attrs[GenAI.GEN_AI_OPERATION_NAME] == "retrieval"
+    assert GenAI.GEN_AI_REQUEST_MODEL in semconv_attrs
+    assert semconv_attrs[GenAI.GEN_AI_REQUEST_MODEL] == "text-embedding-ada-002"
     assert "gen_ai.retrieval.type" in semconv_attrs
     assert semconv_attrs["gen_ai.retrieval.type"] == "vector_store"
     assert "gen_ai.retrieval.query.text" in semconv_attrs
@@ -404,3 +407,75 @@ def test_retrieval_invocation_different_types(retriever_type, provider):
     retrieval.documents_retrieved = 5
     handler.stop_retrieval(retrieval)
     assert retrieval.end_time is not None
+
+
+def test_retrieval_invocation_with_server_and_model_attributes():
+    """Test retrieval with server address, port, and model attributes."""
+    span_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+
+    handler = get_telemetry_handler()
+    span_emitters = list(handler._emitter.emitters_for("span"))
+    if span_emitters:
+        span_emitters[0]._tracer = tracer_provider.get_tracer(__name__)
+
+    retrieval = RetrievalInvocation(
+        operation_name="retrieval",
+        request_model="text-embedding-ada-002",
+        query="test query",
+        top_k=5,
+        retriever_type="vector_store",
+        provider="weaviate",
+        server_address="localhost",
+        server_port=8080,
+    )
+
+    handler.start_retrieval(retrieval)
+    retrieval.documents_retrieved = 5
+    handler.stop_retrieval(retrieval)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+
+    span = spans[0]
+    attrs = span.attributes
+
+    # Check new attributes
+    assert attrs[GenAI.GEN_AI_REQUEST_MODEL] == "text-embedding-ada-002"
+    assert attrs["server.address"] == "localhost"
+    assert attrs["server.port"] == 8080
+
+
+def test_retrieval_invocation_with_error_type():
+    """Test retrieval with error_type attribute."""
+    span_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+
+    handler = get_telemetry_handler()
+    span_emitters = list(handler._emitter.emitters_for("span"))
+    if span_emitters:
+        span_emitters[0]._tracer = tracer_provider.get_tracer(__name__)
+
+    retrieval = RetrievalInvocation(
+        operation_name="retrieval",
+        query="test query",
+        top_k=5,
+        retriever_type="vector_store",
+        provider="pinecone",
+        error_type="ConnectionError",
+    )
+
+    handler.start_retrieval(retrieval)
+    error = Error(message="Connection failed", type=ConnectionError)
+    handler.fail_retrieval(retrieval, error)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+
+    span = spans[0]
+    attrs = span.attributes
+
+    # Check error type attribute (should be set from invocation.error_type)
+    assert attrs["error.type"] == "ConnectionError"

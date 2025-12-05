@@ -333,6 +333,10 @@ class RetrievalInvocation(GenAI):
         default=None,
         metadata={"semconv": "gen_ai.retrieval.type"},
     )
+    request_model: Optional[str] = field(
+        default=None,
+        metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_MODEL},
+    )
     query: Optional[str] = field(
         default=None,
         metadata={"semconv": "gen_ai.retrieval.query.text"},
@@ -354,6 +358,9 @@ class RetrievalInvocation(GenAI):
 
     # Additional utility fields (not in semantic conventions)
     query_vector: Optional[list[float]] = None
+    server_port: Optional[int] = None
+    server_address: Optional[str] = None
+    error_type: Optional[str] = None
 
 
 @dataclass

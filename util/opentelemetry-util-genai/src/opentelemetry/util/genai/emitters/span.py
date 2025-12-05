@@ -806,6 +806,10 @@ class SpanEmitter(EmitterMeta):
         self._apply_start_attrs(retrieval)
 
         # Set retrieval-specific start attributes
+        if retrieval.server_address:
+            span.set_attribute(SERVER_ADDRESS, retrieval.server_address)
+        if retrieval.server_port:
+            span.set_attribute(SERVER_PORT, retrieval.server_port)
         if retrieval.top_k is not None:
             span.set_attribute(GEN_AI_RETRIEVAL_TOP_K, retrieval.top_k)
         if self._capture_content and retrieval.query:
@@ -841,6 +845,11 @@ class SpanEmitter(EmitterMeta):
         if span.is_recording():
             span.set_attribute(
                 ErrorAttributes.ERROR_TYPE, error.type.__qualname__
+            )
+        # Set error type from invocation if available
+        if retrieval.error_type:
+            span.set_attribute(
+                ErrorAttributes.ERROR_TYPE, retrieval.error_type
             )
         token = retrieval.context_token
         if token is not None and hasattr(token, "__exit__"):
