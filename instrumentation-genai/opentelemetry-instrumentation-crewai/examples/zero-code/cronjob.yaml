@@ -8,7 +8,7 @@ metadata:
     component: telemetry
   annotations:
     description: "Customer support CrewAI with zero-code OpenTelemetry instrumentation"
-    git-commit: "d9b2968"
+    git-commit: "429430a"
 spec:
   # Run every 4 hours from 8 AM to 4 PM PST on weekdays (Monday-Friday)
   # Times in PST: 8am, 12pm, 4pm
@@ -46,7 +46,7 @@ spec:
                 
                 # === OpenTelemetry Resource Attributes ===
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=d9b2968"
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=429430a"
                 
                 # === Service name for telemetry ===
                 - name: OTEL_SERVICE_NAME
@@ -84,9 +84,9 @@ spec:
                 - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
                   value: "SPAN_AND_EVENT"
                 
-                # === GenAI Emitters Configuration ===
+                # === GenAI Emitters Configuration (aligned with code: span_metric) ===
                 - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
-                  value: "span_metric_event,splunk"
+                  value: "span_metric"
                 
                 - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
                   value: "replace-category:SplunkEvaluationResults"
