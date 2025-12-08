@@ -245,7 +245,9 @@ def test_retrieval_invocation_semantic_convention_attributes():
     assert GenAI.GEN_AI_OPERATION_NAME in semconv_attrs
     assert semconv_attrs[GenAI.GEN_AI_OPERATION_NAME] == "retrieval"
     assert GenAI.GEN_AI_REQUEST_MODEL in semconv_attrs
-    assert semconv_attrs[GenAI.GEN_AI_REQUEST_MODEL] == "text-embedding-ada-002"
+    assert (
+        semconv_attrs[GenAI.GEN_AI_REQUEST_MODEL] == "text-embedding-ada-002"
+    )
     assert "gen_ai.retrieval.type" in semconv_attrs
     assert semconv_attrs["gen_ai.retrieval.type"] == "vector_store"
     assert "gen_ai.retrieval.query.text" in semconv_attrs

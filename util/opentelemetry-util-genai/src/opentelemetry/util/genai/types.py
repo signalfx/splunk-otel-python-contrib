@@ -474,6 +474,7 @@ __all__ = [
     "GenAI",
     "LLMInvocation",
     "EmbeddingInvocation",
+    "RetrievalInvocation",
     "Error",
     "EvaluationResult",
     # agentic AI types
