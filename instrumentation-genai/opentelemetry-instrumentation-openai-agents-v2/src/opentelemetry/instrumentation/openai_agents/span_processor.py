@@ -28,7 +28,7 @@ from opentelemetry.util.genai.handler import (
     TelemetryHandler,
     get_telemetry_handler,
 )
-from opentelemetry.util.genai.types import AgentInvocation, Workflow
+from opentelemetry.util.genai.types import AgentInvocation, Workflow, Step
 from opentelemetry.util.genai.utils import gen_ai_json_dumps
 
 try:
@@ -73,6 +73,7 @@ from opentelemetry.trace import (
     Status,
     StatusCode,
     Tracer,
+    get_current_span,
     set_span_in_context,
 )
 from opentelemetry.util.types import AttributeValue
@@ -521,6 +522,7 @@ class GenAISemanticProcessor(TracingProcessor):
         # util/genai integration (step 1 – workflow only)
         self._handler = get_telemetry_handler()
         self._workflow: Workflow | None = None
+        self._steps: dict[str, Step] = {}
 
         # Metrics configuration
         self._metrics_enabled = metrics_enabled
@@ -1341,28 +1343,15 @@ class GenAISemanticProcessor(TracingProcessor):
             except Exception:  # defensive – don’t break existing spans
                 self._workflow = None
 
-            otel_span = self._tracer.start_span(
-                name=trace.name,
-                attributes=attributes,
-                kind=SpanKind.SERVER,  # Root span is typically server
-            )
-            self._root_spans[trace.trace_id] = otel_span
-
-            token = attach(set_span_in_context(otel_span))
-            self._tokens[trace.trace_id] = token
-
     def on_trace_end(self, trace: Trace) -> None:
         """End root span when trace ends."""
         if root_span := self._root_spans.pop(trace.trace_id, None):
             if root_span.is_recording():
                 root_span.set_status(Status(StatusCode.OK))
             root_span.end()
-        try:
-            if self._workflow is not None:
-                self._handler.stop_workflow(self._workflow)
-        finally:
-            self._workflow = None
-        self._cleanup_spans_for_trace(trace.trace_id)
+        if self._workflow is not None:
+            self._handler.stop_workflow(self._workflow)
+
 
     def on_span_start(self, span: Span[Any]) -> None:
         """Start child span for agent span."""
@@ -1432,6 +1421,35 @@ class GenAISemanticProcessor(TracingProcessor):
             attributes[GEN_AI_AGENT_DESCRIPTION] = agent_desc_override
         attributes.update(self._get_server_attributes())
 
+        # For agent spans, create a GenAI Step under the workflow and
+        # then make the OpenAI Agents span a child of that Step span.
+        if _is_instance_of(span.span_data, AgentSpanData) and self._workflow is not None:
+            try:
+                step_attrs: dict[str, Any] = dict(attributes)
+                step = Step(
+                    name=agent_name or span_name,
+                    step_type="agent_start",  # or "chain" if you prefer
+                    attributes=step_attrs,
+                )
+
+                # Parent the Step to the Workflow entity.
+                step.parent_run_id = self._workflow.run_id
+
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("input_messages"):
+                    step.input_data = safe_json_dumps(content["input_messages"])
+
+                self._handler.start_step(step)
+                self._steps[str(span.span_id)] = step
+
+                # After starting the Step, use its span as the parent context
+                # for the OpenAI Agents span.
+                parent_span = get_current_span()
+                context = set_span_in_context(parent_span)
+            except Exception:
+                # Defensive: do not break agent spans if util/genai fails.
+                pass
+
         otel_span = self._tracer.start_span(
             name=span_name,
             context=context,
@@ -1441,7 +1459,7 @@ class GenAISemanticProcessor(TracingProcessor):
         self._otel_spans[span.span_id] = otel_span
         self._tokens[span.span_id] = attach(set_span_in_context(otel_span))
 
-        # util/genai step 2: create AgentInvocation entity for agent spans.
+        # util/genai step 3: create AgentInvocation entity for agent spans.
         if _is_instance_of(span.span_data, AgentSpanData):
             try:
                 # Prepare attributes for the AgentInvocation entity. We start
@@ -1515,7 +1533,17 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._agent_content.pop(span.span_id, None)
             self._span_parents.pop(span.span_id, None)
             return
-
+        key = str(span.span_id)
+        step = self._steps.pop(key, None)
+        if step is not None:
+            try:
+                # Optional: attach output from agent/span
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("output_messages"):
+                    step.output_data = safe_json_dumps(content["output_messages"])
+                self._handler.stop_step(step)
+            except Exception:
+                pass
         try:
             # Extract and set attributes
             attributes: dict[str, AttributeValue] = {}
