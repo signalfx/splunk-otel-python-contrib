@@ -19,10 +19,7 @@ Installation
 Usage
 -----
 
-Instrumenting all Weaviate clients
-***********************************
-
-When using the instrumentor, all clients will automatically be instrumented.
+When using the instrumentor, all Weaviate clients will automatically be instrumented.
 
 .. code-block:: python
 
@@ -35,89 +32,20 @@ When using the instrumentor, all clients will automatically be instrumented.
     # This client will be automatically instrumented
     client = weaviate.connect_to_local()
 
-    # Use the client as normal
+    # Use the client as normal - all operations will be traced
     collection = client.collections.get("MyCollection")
     result = collection.query.fetch_objects(limit=10)
-
-
-Retrieval Spans for RAG Pipelines
-**********************************
-
-For RAG (Retrieval-Augmented Generation) pipelines, use the manual span helpers to create structured traces where embedding and database operations are children of a parent retrieval span.
-
-.. code-block:: python
-
-    from opentelemetry.instrumentation.weaviate import (
-        WeaviateInstrumentor,
-        retrieval_span,
-        embedding_span,
-    )
-
-    WeaviateInstrumentor().instrument()
-
-    # Create retrieval span with embedding as child
-    with retrieval_span(
-        query_text="What are vector databases?",
-        top_k=10,
-        collection_name="Articles",
-        embedding_model="nomic-embed-text"
-    ) as span:
-        # Child 1: Generate embedding
-        with embedding_span(query, model="nomic-embed-text"):
-            embedding = lm_studio_client.embeddings.create(input=query)
-        
-        # Child 2: Query Weaviate (auto-instrumented)
-        results = collection.query.near_vector(
-            near_vector=embedding.data[0].embedding,
-            limit=10
-        )
-        
-        # Add custom attributes
-        span.set_attribute("db.retrieval.documents_retrieved", len(results.objects))
-
-**Resulting span hierarchy:**
-
-::
-
-    db.retrieval.client
-    ├─ generate_embedding
-    └─ db.weaviate.collections.query.near_vector
-        └─ db.weaviate.collections.query.get
-
-**Builder pattern for complex scenarios:**
-
-.. code-block:: python
-
-    from opentelemetry.instrumentation.weaviate import RetrievalSpanBuilder
-
-    builder = RetrievalSpanBuilder(
-        query_text="search text",
-        top_k=10,
-        collection_name="Articles",
-        embedding_model="nomic-embed-text",
-        # Custom attributes via kwargs
-        user_id="user123",
-        session_id="session456"
-    )
-
-    with builder.span() as span:
-        # Your retrieval logic here
-        pass
-
-See ``RETRIEVAL_SPANS.md`` for detailed documentation.
 
 
 Examples
 --------
 
-The ``examples/manual/`` directory contains working examples:
+The ``examples/manual/`` directory contains a working example:
 
-* ``example_v4.py`` - Comprehensive example showing various Weaviate v4 operations
-* ``example_rag_pipeline.py`` - Complete RAG pipeline with LM Studio embeddings and manual retrieval spans
-* ``example_manual_retrieval_spans.py`` - Different patterns for manual retrieval spans
+* ``example_v4.py`` - Comprehensive example showing various Weaviate v4 operations with automatic tracing
 
-Running the examples
-********************
+Running the example
+*******************
 
 1. Install dependencies::
 
@@ -127,7 +55,7 @@ Running the examples
 
     docker run -d -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:latest
 
-3. Run an example::
+3. Run the example::
 
     cd examples/manual
     python3 example_v4.py
