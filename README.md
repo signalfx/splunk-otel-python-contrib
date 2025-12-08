@@ -291,35 +291,63 @@ inv.output_messages = [OutputMessage(role="assistant", parts=[Text("Hi!")], fini
 handler.stop_llm(inv)
 ```
 
-## 16. Resolving CI Lint Failures
+## 16. Linting and Formatting
 
-If the CI lint job fails on your PR, you can automatically fix all linting and formatting issues:  
+This project uses [pre-commit](https://pre-commit.com/) hooks to automatically check and fix linting and formatting issues before committing.
 
-```bash
-make lint
-```
+### Setting Up Pre-Commit Hooks
 
-**Note:** It's recommended to run this from within a Python virtual environment to avoid installing ruff globally.
-
-This command will:
-1. Install ruff 0.6.9 (the version used in CI)
-2. Auto-fix all linting issues
-3. Auto-format all code
-4. Verify that all checks pass
-
-After running the command, commit and push the changes:
+Install and configure pre-commit hooks (recommended to run in a virtual environment):
 
 ```bash
-git add .
-git commit -m "fix: auto-fix linting issues"
-git push
+pip install pre-commit
+pre-commit install
 ```
 
-The CI lint job checks two things:
-- **Linting**: `ruff check .` - checks for code quality issues
-- **Formatting**: `ruff format --check .` - checks code formatting
+Once installed, the hooks will automatically run on every `git commit` and will:
+- Fix linting issues with ruff
+- Format code with ruff
+- Check RST documentation files
+- Update dependency locks
 
-The `make lint` command fixes both automatically.
+### Running Pre-Commit Manually
+
+To run pre-commit checks on all files (not just staged files):
+
+```bash
+pre-commit run --all-files
+```
+
+This is useful for:
+- Fixing existing lint failures in CI
+- Checking the entire codebase before pushing
+- Running checks without committing
+
+### Resolving CI Lint Failures
+
+If the CI lint job fails on your PR:
+
+1. **Run pre-commit on all files:**
+   ```bash
+   pre-commit run --all-files
+   ```
+
+2. **Review and stage the fixes:**
+   ```bash
+   git add .
+   ```
+
+3. **Commit and push:**
+   ```bash
+   git commit -m "fix: auto-fix linting issues"
+   git push
+   ```
+
+The CI lint job checks:
+- **Linting**: `ruff check .` - code quality issues (unused imports, undefined names, etc.)
+- **Formatting**: `ruff format --check .` - code formatting consistency
+
+Pre-commit hooks use the same ruff version and configuration as CI, ensuring local checks match CI requirements.
 
 ## 17. Validation Strategy
 
