@@ -64,7 +64,7 @@ class SequenceMockLLM(MockLLM):
         if self.response_index < len(self.responses):
             response = self.responses[self.response_index]
             self.response_index += 1
-            from llama_index.core.base.llms.types import ChatResponseGen, ChatResponse
+            from llama_index.core.base.llms.types import ChatResponse
             # Yield a single response chunk
             yield ChatResponse(message=response, delta=response.content)
         else:

@@ -11,10 +11,8 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
-    Step,
     Text,
     ToolCall,
-    Workflow,
 )
 
 from .vendor_detection import detect_vendor_from_class

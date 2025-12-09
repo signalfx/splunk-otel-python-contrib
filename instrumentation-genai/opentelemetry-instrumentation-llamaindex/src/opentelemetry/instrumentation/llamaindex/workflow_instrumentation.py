@@ -6,7 +6,6 @@ by intercepting workflow event streams to capture agent steps and tool calls.
 """
 
 import asyncio
-from typing import Any, Optional
 from uuid import uuid4
 
 from opentelemetry.util.genai.handler import TelemetryHandler
