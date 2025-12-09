@@ -261,9 +261,7 @@ def embedding_invocation_demo():
         mixed_vectors = embeddings.embed_documents(mixed_texts)
         print(f"   ✓ Embedded {len(mixed_vectors)} mixed content texts")
         for i, text in enumerate(mixed_texts):
-            print(
-                f"   - Text {i + 1}: {text[:40]}... → {len(mixed_vectors[i])}D vector"
-            )
+            print(f"   - Text {i+1}: {text[:40]}... → {len(mixed_vectors[i])}D vector")
     except Exception as e:
         print(f"   ✗ Error: {e}")
 
