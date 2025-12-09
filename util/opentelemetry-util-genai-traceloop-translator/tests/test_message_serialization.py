@@ -47,9 +47,9 @@ class TestMessageSerialization:
         # CRITICAL: Content should be a STRING, not nested JSON
         content = parsed[0]["parts"][0]["content"]
         assert isinstance(content, str), "Content must be string"
-        assert not content.startswith(
-            '{"'
-        ), "Content should NOT be JSON string"
+        assert not content.startswith('{"'), (
+            "Content should NOT be JSON string"
+        )
         assert content == "Hello, how are you?", "Content should be plain text"
 
     def test_output_message_not_double_encoded(self):
@@ -86,12 +86,12 @@ class TestMessageSerialization:
         # CRITICAL: Content should be plain text, not JSON
         content = parsed[0]["parts"][0]["content"]
         assert isinstance(content, str), "Content must be string"
-        assert not content.startswith(
-            '{"'
-        ), "Content should NOT be JSON string"
-        assert (
-            content == "I'm doing great, thanks!"
-        ), "Content should be plain text"
+        assert not content.startswith('{"'), (
+            "Content should NOT be JSON string"
+        )
+        assert content == "I'm doing great, thanks!", (
+            "Content should be plain text"
+        )
 
     def test_deepeval_can_parse_serialized_messages(self):
         """Test that DeepEval can parse our serialized format."""
@@ -179,9 +179,9 @@ class TestMessageSerialization:
         content = parsed[0]["parts"][0]["content"]
 
         # Verify content is unchanged
-        assert (
-            content == complex_content
-        ), "Complex content should be preserved"
+        assert content == complex_content, (
+            "Complex content should be preserved"
+        )
         assert "\n" in content, "Newlines should be preserved"
         assert "$" in content, "Special characters should be preserved"
 
