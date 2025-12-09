@@ -122,8 +122,6 @@ MAPPING_V4: list[dict[str, str]] = [
         "name": "_QueryGRPC",
         "function": "get",
         "span_name": "collections.query.get",
-        # Note: get is an internal method called by fetch_objects and near_text
-        # We don't mark it as retrieval to avoid nested retrieval spans
     },
     {
         "module": "weaviate.collections.data",

@@ -28,8 +28,12 @@ Usage
 
     WeaviateInstrumentor().instrument()
 
-    client = weaviate.Client("http://localhost:8080")
+    # Weaviate v4 API
+    client = weaviate.connect_to_local()
     # Your Weaviate operations will now be traced
+
+    # Weaviate v3 API (also supported)
+    # client = weaviate.Client("http://localhost:8080")
 
 API
 ---
@@ -347,7 +351,6 @@ class _WeaviateTraceInjectionWrapper:
         """
         Extract documents from weaviate response.
         """
-        # TODO: Pagination, cursor?
         documents: list[dict[str, Any]] = []
         try:
             if hasattr(response, "objects"):
