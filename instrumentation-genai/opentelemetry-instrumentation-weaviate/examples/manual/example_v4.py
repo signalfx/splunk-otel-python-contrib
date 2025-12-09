@@ -9,6 +9,7 @@ For setup instructions, see ../../README.rst
 Tested with weaviate-client>=4.0.0
 Code adapted from: https://weaviate.io/developers/weaviate/client-libraries/python
 """
+
 import os
 
 import weaviate
@@ -40,9 +41,11 @@ RAW_QUERY = """
  """
 
 # Set up the tracer provider with service name
-resource = Resource(attributes={
-    ResourceAttributes.SERVICE_NAME: "weaviate-example",
-})
+resource = Resource(
+    attributes={
+        ResourceAttributes.SERVICE_NAME: "weaviate-example",
+    }
+)
 tracer_provider = TracerProvider(resource=resource)
 trace.set_tracer_provider(tracer_provider)
 
@@ -134,7 +137,7 @@ def query_get(collection):
         return_properties=[
             "author",
             "text",
-        ]
+        ],
     )
 
 

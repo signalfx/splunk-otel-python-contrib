@@ -55,11 +55,7 @@ def extract_collection_name(
 
     try:
         # Weaviate Client V4 stores this in the "request" attribute of the kwargs
-        if (
-            kwargs
-            and "request" in kwargs
-            and hasattr(kwargs["request"], "collection")
-        ):
+        if kwargs and "request" in kwargs and hasattr(kwargs["request"], "collection"):
             collection_name = kwargs["request"].collection
 
         # Check if the instance has a collection attribute
