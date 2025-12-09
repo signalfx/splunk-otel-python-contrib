@@ -44,7 +44,11 @@ def _get_vendor_rules() -> List[VendorRule]:
             vendor_name="aws",
         ),
         VendorRule(
-            exact_matches={"VertexTextEmbedding", "GeminiEmbedding", "GooglePaLMEmbedding"},
+            exact_matches={
+                "VertexTextEmbedding",
+                "GeminiEmbedding",
+                "GooglePaLMEmbedding",
+            },
             patterns=["vertex", "google", "palm", "gemini"],
             vendor_name="google",
         ),

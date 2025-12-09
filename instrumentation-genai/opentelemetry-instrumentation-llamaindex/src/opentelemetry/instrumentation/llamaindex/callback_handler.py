@@ -101,9 +101,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Extract model information from payload
         serialized = payload.get("serialized", {})
         model_name = (
-            serialized.get("model")
-            or serialized.get("model_name")
-            or "unknown"
+            serialized.get("model") or serialized.get("model_name") or "unknown"
         )
 
         # Extract messages from payload
@@ -116,16 +114,12 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if hasattr(msg, "content") and hasattr(msg, "role"):
                 # Extract role - could be MessageRole enum
                 role_value = (
-                    str(msg.role.value)
-                    if hasattr(msg.role, "value")
-                    else str(msg.role)
+                    str(msg.role.value) if hasattr(msg.role, "value") else str(msg.role)
                 )
                 # Extract content - this is a property that pulls from blocks[0].text
                 content = _safe_str(msg.content)
                 input_messages.append(
-                    InputMessage(
-                        role=role_value, parts=[Text(content=content)]
-                    )
+                    InputMessage(role=role_value, parts=[Text(content=content)])
                 )
             elif isinstance(msg, dict):
                 # Handle serialized messages (dict format)
@@ -138,9 +132,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     # Fallback to direct content field
                     content = msg.get("content", "")
 
-                role_value = (
-                    str(role.value) if hasattr(role, "value") else str(role)
-                )
+                role_value = str(role.value) if hasattr(role, "value") else str(role)
                 input_messages.append(
                     InputMessage(
                         role=role_value,
@@ -164,13 +156,13 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             # Get the current agent's span from the span registry
             _, agent_run_id = self._handler._agent_context_stack[-1]
             parent_span = self._handler._span_registry.get(agent_run_id)
-        
+
         # Fallback to OpenTelemetry context if no agent span found
         if not parent_span:
             current_span = trace.get_current_span()
             if current_span and current_span.is_recording():
                 parent_span = current_span
-        
+
         if parent_span:
             llm_inv.parent_span = parent_span
 
@@ -243,7 +235,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     else:
                         # It's an object, try to get usage attribute
                         usage = getattr(raw_response, "usage", None)
-                    
+
                     if usage:
                         # usage could also be dict or object
                         if isinstance(usage, dict):
@@ -251,7 +243,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                             llm_inv.output_tokens = usage.get("completion_tokens")
                         else:
                             llm_inv.input_tokens = getattr(usage, "prompt_tokens", None)
-                            llm_inv.output_tokens = getattr(usage, "completion_tokens", None)
+                            llm_inv.output_tokens = getattr(
+                                usage, "completion_tokens", None
+                            )
 
         # Stop the LLM invocation
         self._handler.stop_llm(llm_inv)
@@ -270,9 +264,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Extract model information from payload
         serialized = payload.get("serialized", {})
         model_name = (
-            serialized.get("model_name")
-            or serialized.get("model")
-            or "unknown"
+            serialized.get("model_name") or serialized.get("model") or "unknown"
         )
 
         # Detect provider from class name
@@ -299,13 +291,13 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             # Get the current agent's span from the span registry
             _, agent_run_id = self._handler._agent_context_stack[-1]
             parent_span = self._handler._span_registry.get(agent_run_id)
-        
+
         # Fallback to OpenTelemetry context if no agent span found
         if not parent_span:
             current_span = trace.get_current_span()
             if current_span and current_span.is_recording():
                 parent_span = current_span
-        
+
         if parent_span:
             emb_inv.parent_span = parent_span
 
@@ -333,11 +325,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             chunks = payload.get("chunks", [])
             if chunks:
                 emb_inv.input_texts = [_safe_str(chunk) for chunk in chunks]
-            
+
             # Extract embedding vectors from response
             # embeddings is the list of output vectors
             embeddings = payload.get("embeddings", [])
-            
+
             # Determine dimension from first embedding vector
             if embeddings and len(embeddings) > 0:
                 first_embedding = embeddings[0]
@@ -349,7 +341,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Stop the embedding invocation
         self._handler.stop_embedding(emb_inv)
 
-    def _find_nearest_agent(self, parent_id: Optional[str]) -> Optional[AgentInvocation]:
+    def _find_nearest_agent(
+        self, parent_id: Optional[str]
+    ) -> Optional[AgentInvocation]:
         """Walk up parent chain to find the nearest agent invocation."""
         if not self._handler:
             return None
@@ -385,7 +379,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         agent_type = None
         agent_description = None
         model_name = None
-        
+
         if step and hasattr(step, "step_state"):
             # Try to get agent from step state
             step_state = step.step_state
@@ -397,7 +391,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 # Try to get model from agent's LLM
                 if hasattr(agent, "llm"):
                     llm = agent.llm
-                    model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None)
+                    model_name = getattr(llm, "model", None) or getattr(
+                        llm, "model_name", None
+                    )
 
         # Create AgentInvocation for the agent execution
         agent_invocation = AgentInvocation(
@@ -408,7 +404,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             attributes={},
         )
         agent_invocation.framework = "llamaindex"
-        
+
         # Set enhanced metadata
         if agent_name:
             agent_invocation.agent_name = _safe_str(agent_name)
@@ -418,7 +414,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             agent_invocation.description = _safe_str(agent_description)
         if model_name:
             agent_invocation.model = _safe_str(model_name)
-        
+
         self._handler.start_agent_invocation(agent_invocation)
 
     def _handle_agent_step_end(
@@ -459,10 +455,16 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         tool = payload.get("tool")
         if not tool:
             return
-            
-        tool_name = getattr(tool, "name", "unknown_tool") if hasattr(tool, "name") else "unknown_tool"
-        tool_description = getattr(tool, "description", "") if hasattr(tool, "description") else ""
-        
+
+        tool_name = (
+            getattr(tool, "name", "unknown_tool")
+            if hasattr(tool, "name")
+            else "unknown_tool"
+        )
+        tool_description = (
+            getattr(tool, "description", "") if hasattr(tool, "description") else ""
+        )
+
         # Extract function arguments
         function_call = payload.get("function_call", {})
         arguments = function_call if function_call else {}
@@ -476,7 +478,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             arguments=arguments,
             id=event_id,
         )
-        
+
         # Set attributes
         tool_call.attributes = {
             "tool.description": tool_description,
@@ -484,14 +486,16 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         tool_call.run_id = event_id  # type: ignore[attr-defined]
         tool_call.parent_run_id = parent_id if parent_id else None  # type: ignore[attr-defined]
         tool_call.framework = "llamaindex"  # type: ignore[attr-defined]
-        
+
         # Propagate agent context to tool call
         if context_agent:
-            agent_name = getattr(context_agent, "agent_name", None) or getattr(context_agent, "name", None)
+            agent_name = getattr(context_agent, "agent_name", None) or getattr(
+                context_agent, "name", None
+            )
             if agent_name:
                 tool_call.agent_name = _safe_str(agent_name)  # type: ignore[attr-defined]
             tool_call.agent_id = str(context_agent.run_id)  # type: ignore[attr-defined]
-        
+
         # Start the tool call
         self._handler.start_tool_call(tool_call)
 

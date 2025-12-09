@@ -3,6 +3,7 @@ Test Workflow-based agent instrumentation.
 
 This test validates that workflow event streaming captures agent steps and tool calls.
 """
+
 import asyncio
 import pytest
 from typing import List
@@ -38,7 +39,7 @@ def setup_telemetry():
 class SequenceMockLLM(MockLLM):
     responses: List[ChatMessage] = []
     response_index: int = 0
-    
+
     def __init__(self, responses: List[ChatMessage], max_tokens: int = 256):
         super().__init__(max_tokens=max_tokens)
         self.responses = responses
@@ -49,26 +50,36 @@ class SequenceMockLLM(MockLLM):
             response = self.responses[self.response_index]
             self.response_index += 1
             from llama_index.core.base.llms.types import ChatResponse
+
             return ChatResponse(message=response)
-        return ChatResponse(message=ChatMessage(role=MessageRole.ASSISTANT, content="Done."))
+        return ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content="Done.")
+        )
 
     async def achat(self, messages, **kwargs):
         if self.response_index < len(self.responses):
             response = self.responses[self.response_index]
             self.response_index += 1
             from llama_index.core.base.llms.types import ChatResponse
+
             return ChatResponse(message=response)
-        return ChatResponse(message=ChatMessage(role=MessageRole.ASSISTANT, content="Done."))
+        return ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content="Done.")
+        )
 
     def stream_chat(self, messages, **kwargs):
         if self.response_index < len(self.responses):
             response = self.responses[self.response_index]
             self.response_index += 1
             from llama_index.core.base.llms.types import ChatResponse
+
             # Yield a single response chunk
             yield ChatResponse(message=response, delta=response.content)
         else:
-            yield ChatResponse(message=ChatMessage(role=MessageRole.ASSISTANT, content="Done."), delta="Done.")
+            yield ChatResponse(
+                message=ChatMessage(role=MessageRole.ASSISTANT, content="Done."),
+                delta="Done.",
+            )
 
     async def astream_chat(self, messages, **kwargs):
         async def gen():
@@ -76,18 +87,22 @@ class SequenceMockLLM(MockLLM):
                 response = self.responses[self.response_index]
                 self.response_index += 1
                 from llama_index.core.base.llms.types import ChatResponse
+
                 # Yield a single response chunk
                 yield ChatResponse(message=response, delta=response.content)
             else:
-                yield ChatResponse(message=ChatMessage(role=MessageRole.ASSISTANT, content="Done."), delta="Done.")
-        
+                yield ChatResponse(
+                    message=ChatMessage(role=MessageRole.ASSISTANT, content="Done."),
+                    delta="Done.",
+                )
+
         return gen()
 
 
 @pytest.mark.asyncio
 async def test_workflow_agent():
     """Test Workflow-based agent instrumentation."""
-    
+
     print("=" * 80)
     print("Setting up telemetry...")
     print("=" * 80)
@@ -96,18 +111,25 @@ async def test_workflow_agent():
     # Setup Mock LLM
     mock_responses = [
         # Step 1: Decide to multiply
-        ChatMessage(role=MessageRole.ASSISTANT, content="""Thought: I need to multiply 5 by 3 first.
+        ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="""Thought: I need to multiply 5 by 3 first.
 Action: multiply
-Action Input: {"a": 5, "b": 3}"""),
-        
+Action Input: {"a": 5, "b": 3}""",
+        ),
         # Step 2: Decide to add
-        ChatMessage(role=MessageRole.ASSISTANT, content="""Thought: The result is 15. Now I need to add 2 to 15.
+        ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="""Thought: The result is 15. Now I need to add 2 to 15.
 Action: add
-Action Input: {"a": 15, "b": 2}"""),
-
+Action Input: {"a": 15, "b": 2}""",
+        ),
         # Step 3: Final Answer
-        ChatMessage(role=MessageRole.ASSISTANT, content="""Thought: The final result is 17.
-Answer: The result is 17."""),
+        ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="""Thought: The final result is 17.
+Answer: The result is 17.""",
+        ),
     ]
     Settings.llm = SequenceMockLLM(responses=mock_responses, max_tokens=256)
 
@@ -130,7 +152,7 @@ Answer: The result is 17."""),
     print("\n" + "=" * 80)
     print("Running agent task (should see AgentInvocation -> ToolCall spans)...")
     print("=" * 80)
-    
+
     handler = agent.run(user_msg="Calculate 5 times 3, then add 2 to the result")
     result = await handler
 

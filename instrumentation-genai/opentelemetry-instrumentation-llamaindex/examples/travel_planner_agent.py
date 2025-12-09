@@ -16,6 +16,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 
+
 # 1. Setup Telemetry
 def setup_telemetry():
     trace.set_tracer_provider(TracerProvider())
@@ -26,21 +27,25 @@ def setup_telemetry():
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter(insecure=True))
     metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
 
+
 # 2. Define Tools
 def search_flights(origin: str, destination: str, date: str) -> str:
     """Search for flights between two cities on a specific date."""
     print(f"  [Tool] Searching flights from {origin} to {destination} on {date}...")
     return f"Flight UA123 from {origin} to {destination} on {date} costs $500."
 
+
 def search_hotels(city: str, check_in: str) -> str:
     """Search for hotels in a city."""
     print(f"  [Tool] Searching hotels in {city} for {check_in}...")
     return f"Hotel Grand in {city} is available for $200/night."
 
+
 def book_ticket(flight_number: str) -> str:
     """Book a flight ticket."""
     print(f"  [Tool] Booking flight {flight_number}...")
     return f"Confirmed booking for {flight_number}. Ticket #999."
+
 
 # 3. Main Agent Logic
 async def run_travel_planner():
@@ -50,7 +55,7 @@ async def run_travel_planner():
         sys.exit(1)
 
     setup_telemetry()
-    
+
     # Instrument LlamaIndex
     LlamaindexInstrumentor().instrument()
 
@@ -70,12 +75,12 @@ async def run_travel_planner():
 
     # Run Workflow
     user_request = "I want to fly from New York to Paris on 2023-12-01. Find a flight and book it, then find a hotel."
-    
+
     # We use the async run method which returns the handler we instrumented
     # This triggers wrap_agent_run -> WorkflowEventInstrumentor
     handler = agent.run(user_msg=user_request)
     response = await handler
-    
+
     print(f"\nFinal Response: {response}")
 
     # Ensure spans are flushed before exit
@@ -84,6 +89,7 @@ async def run_travel_planner():
         provider.force_flush()
     if hasattr(provider, "shutdown"):
         provider.shutdown()
+
 
 if __name__ == "__main__":
     asyncio.run(run_travel_planner())
