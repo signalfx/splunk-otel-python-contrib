@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-from openai import OpenAI
-import openlit
-from dotenv import load_dotenv
 import os
 import traceback
+
+import openlit
+from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
