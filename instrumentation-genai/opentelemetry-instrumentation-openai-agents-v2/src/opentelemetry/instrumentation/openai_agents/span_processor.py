@@ -13,6 +13,7 @@ References:
 """
 
 # pylint: disable=too-many-lines,invalid-name,too-many-locals,too-many-branches,too-many-statements,too-many-return-statements,too-many-nested-blocks,too-many-arguments,too-many-instance-attributes,broad-exception-caught,no-self-use,consider-iterating-dictionary,unused-variable,unnecessary-pass
+# ruff: noqa: I001
 
 from __future__ import annotations
 
@@ -28,7 +29,13 @@ from opentelemetry.util.genai.handler import (
     TelemetryHandler,
     get_telemetry_handler,
 )
-from opentelemetry.util.genai.types import AgentInvocation, Workflow, Step
+from opentelemetry.util.genai.types import (
+    AgentInvocation,
+    LLMInvocation,
+    Step,
+    ToolCall,
+    Workflow,
+)
 from opentelemetry.util.genai.utils import gen_ai_json_dumps
 
 try:
@@ -523,6 +530,8 @@ class GenAISemanticProcessor(TracingProcessor):
         self._handler = get_telemetry_handler()
         self._workflow: Workflow | None = None
         self._steps: dict[str, Step] = {}
+        self._llms: dict[str, LLMInvocation] = {}
+        self._tools: dict[str, ToolCall] = {}
 
         # Metrics configuration
         self._metrics_enabled = metrics_enabled
@@ -1304,22 +1313,6 @@ class GenAISemanticProcessor(TracingProcessor):
     def on_trace_start(self, trace: Trace) -> None:
         """Create root span when trace starts."""
         if self._tracer:
-            attributes = {
-                GEN_AI_PROVIDER_NAME: self.system_name,
-                GEN_AI_SYSTEM_KEY: self.system_name,
-                GEN_AI_OPERATION_NAME: GenAIOperationName.INVOKE_AGENT,
-            }
-            # Legacy emission removed
-
-            # Add configured agent and server attributes
-            if self.agent_name:
-                attributes[GEN_AI_AGENT_NAME] = self.agent_name
-            if self.agent_id:
-                attributes[GEN_AI_AGENT_ID] = self.agent_id
-            if self.agent_description:
-                attributes[GEN_AI_AGENT_DESCRIPTION] = self.agent_description
-            attributes.update(self._get_server_attributes())
-
             try:
                 initial_input = None
                 root = getattr(trace, "root_span", None)
@@ -1330,13 +1323,10 @@ class GenAISemanticProcessor(TracingProcessor):
                         first = messages[0]
                         initial_input = str(getattr(first, "content", first))
 
-                # Mirror LangChain style: constructor receives only basic
-                # fields we have (e.g., name/attributes). Other fields are
-                # optional and left to defaults.
+                # Create Workflow entity; mirror LangChain style minimal constructor.
                 wf_name = "OpenAIAgents"
                 wf_attrs: dict[str, Any] = {}
                 self._workflow = Workflow(name=wf_name, attributes=wf_attrs)
-                # Like LangChain, populate initial_input separately.
                 self._workflow.initial_input = initial_input
 
                 self._handler.start_workflow(self._workflow)
@@ -1351,7 +1341,7 @@ class GenAISemanticProcessor(TracingProcessor):
             root_span.end()
         if self._workflow is not None:
             self._handler.stop_workflow(self._workflow)
-
+            self._workflow = None
 
     def on_span_start(self, span: Span[Any]) -> None:
         """Start child span for agent span."""
@@ -1422,8 +1412,11 @@ class GenAISemanticProcessor(TracingProcessor):
         attributes.update(self._get_server_attributes())
 
         # For agent spans, create a GenAI Step under the workflow and
-        # then make the OpenAI Agents span a child of that Step span.
-        if _is_instance_of(span.span_data, AgentSpanData) and self._workflow is not None:
+        # make the OpenAI Agents span a child of that Step span.
+        if (
+            _is_instance_of(span.span_data, AgentSpanData)
+            and self._workflow is not None
+        ):
             try:
                 step_attrs: dict[str, Any] = dict(attributes)
                 step = Step(
@@ -1432,22 +1425,21 @@ class GenAISemanticProcessor(TracingProcessor):
                     attributes=step_attrs,
                 )
 
-                # Parent the Step to the Workflow entity.
                 step.parent_run_id = self._workflow.run_id
 
                 content = self._agent_content.get(span.span_id)
                 if content and content.get("input_messages"):
-                    step.input_data = safe_json_dumps(content["input_messages"])
+                    step.input_data = safe_json_dumps(
+                        content["input_messages"]
+                    )
 
                 self._handler.start_step(step)
                 self._steps[str(span.span_id)] = step
 
-                # After starting the Step, use its span as the parent context
-                # for the OpenAI Agents span.
+                # Use the Step's span as parent context for the OpenAI Agents span.
                 parent_span = get_current_span()
                 context = set_span_in_context(parent_span)
             except Exception:
-                # Defensive: do not break agent spans if util/genai fails.
                 pass
 
         otel_span = self._tracer.start_span(
@@ -1459,13 +1451,8 @@ class GenAISemanticProcessor(TracingProcessor):
         self._otel_spans[span.span_id] = otel_span
         self._tokens[span.span_id] = attach(set_span_in_context(otel_span))
 
-        # util/genai step 3: create AgentInvocation entity for agent spans.
         if _is_instance_of(span.span_data, AgentSpanData):
             try:
-                # Prepare attributes for the AgentInvocation entity. We start
-                # with the same core attributes we placed on the OTEL span and
-                # allow the util/genai layer to translate them into
-                # semantic-convention fields.
                 agent_attrs: dict[str, Any] = dict(attributes)
 
                 agent_entity = AgentInvocation(
@@ -1473,29 +1460,87 @@ class GenAISemanticProcessor(TracingProcessor):
                     attributes=agent_attrs,
                 )
 
-                # Link this agent invocation to the current workflow when
-                # available so the handler can build a proper hierarchy.
                 if self._workflow is not None:
                     agent_entity.parent_run_id = self._workflow.run_id
 
-                # Populate input_context from the agent's input messages if we
-                # have already captured them for this span.
                 content = self._agent_content.get(span.span_id)
                 if content and content.get("input_messages"):
                     agent_entity.input_context = safe_json_dumps(
                         content["input_messages"]
                     )
 
-                # Use configured or inferred agent name for the entity.
                 if agent_name:
                     agent_entity.agent_name = agent_name
 
-                # Mark the framework so downstream tools know this came from
-                # the OpenAI Agents integration.
                 agent_entity.framework = "openai_agents"
 
                 self._handler.start_agent(agent_entity)
-            except Exception:  # defensive – do not break span creation
+            except Exception:
+                pass
+
+        if _is_instance_of(span.span_data, GenerationSpanData):
+            try:
+                llm_attrs: dict[str, Any] = dict(attributes)
+
+                request_model = model or str(
+                    attributes.get(GEN_AI_REQUEST_MODEL, "unknown_model")
+                )
+
+                llm_entity = LLMInvocation(
+                    name=span_name,
+                    request_model=request_model,
+                    attributes=llm_attrs,
+                )
+
+                parent_run_id = None
+                parent_step = None
+                if span.parent_id is not None:
+                    parent_step = self._steps.get(str(span.parent_id))
+                if parent_step is not None:
+                    parent_run_id = parent_step.run_id
+                elif self._workflow is not None:
+                    parent_run_id = self._workflow.run_id
+                if parent_run_id is not None:
+                    llm_entity.parent_run_id = parent_run_id
+
+                self._handler.start_llm(llm_entity)
+                self._llms[str(span.span_id)] = llm_entity
+            except Exception:
+                pass
+
+        if _is_instance_of(span.span_data, FunctionSpanData):
+            try:
+                tool_attrs: dict[str, Any] = dict(attributes)
+
+                content = self._agent_content.get(span.span_id)
+                tool_args = None
+                if content is not None:
+                    tool_args = content.get("tool_arguments")
+
+                tool_entity = ToolCall(
+                    name=getattr(span.span_data, "name", span_name),
+                    id=None,
+                    arguments=tool_args,
+                    attributes=tool_attrs,
+                )
+
+                # Parent to enclosing Step when available, otherwise to Workflow.
+                parent_run_id = None
+                parent_step = None
+                if span.parent_id is not None:
+                    parent_step = self._steps.get(str(span.parent_id))
+                if parent_step is not None:
+                    parent_run_id = parent_step.run_id
+                elif self._workflow is not None:
+                    parent_run_id = self._workflow.run_id
+                if parent_run_id is not None:
+                    tool_entity.parent_run_id = parent_run_id
+
+                tool_entity.framework = "openai_agents"
+                self._handler.start_tool_call(tool_entity)
+                self._tools[str(span.span_id)] = tool_entity
+            except Exception:
+                # Defensive: do not break span creation if util/genai fails.
                 pass
 
     def on_span_end(self, span: Span[Any]) -> None:
@@ -1540,8 +1585,33 @@ class GenAISemanticProcessor(TracingProcessor):
                 # Optional: attach output from agent/span
                 content = self._agent_content.get(span.span_id)
                 if content and content.get("output_messages"):
-                    step.output_data = safe_json_dumps(content["output_messages"])
+                    step.output_data = safe_json_dumps(
+                        content["output_messages"]
+                    )
                 self._handler.stop_step(step)
+            except Exception:
+                pass
+        # Stop any LLMInvocation associated with this span.
+        llm_entity = self._llms.pop(key, None)
+        if llm_entity is not None:
+            try:
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("output_messages"):
+                    llm_entity.output_messages = []
+                self._handler.stop_llm(llm_entity)
+            except Exception:
+                pass
+        # Stop any ToolCall associated with this span.
+        tool_entity = self._tools.pop(key, None)
+        if tool_entity is not None:
+            try:
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("tool_result") is not None:
+                    serialized = safe_json_dumps(content["tool_result"])
+                    tool_entity.attributes.setdefault(
+                        "tool.response", serialized
+                    )
+                self._handler.stop_tool_call(tool_entity)
             except Exception:
                 pass
         try:

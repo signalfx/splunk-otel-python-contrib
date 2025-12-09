@@ -771,3 +771,4 @@ class SpanEmitter(EmitterMeta):
                 token.__exit__(None, None, None)  # type: ignore[misc]
             except Exception:
                 pass
+        span.end()
