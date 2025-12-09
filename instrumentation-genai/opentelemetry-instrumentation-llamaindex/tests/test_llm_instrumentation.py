@@ -21,9 +21,7 @@ def setup_telemetry():
     # Setup tracing
     trace.set_tracer_provider(TracerProvider())
     tracer_provider = trace.get_tracer_provider()
-    tracer_provider.add_span_processor(
-        SimpleSpanProcessor(ConsoleSpanExporter())
-    )
+    tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 
     # Setup metrics with InMemoryMetricReader
     metric_reader = InMemoryMetricReader()
@@ -43,12 +41,8 @@ def test_with_openai():
 
     llm = OpenAI(model="gpt-3.5-turbo")
     messages = [
-        ChatMessage(
-            role=MessageRole.SYSTEM, content="You are a helpful assistant."
-        ),
-        ChatMessage(
-            role=MessageRole.USER, content="Say hello in exactly 5 words"
-        ),
+        ChatMessage(role=MessageRole.SYSTEM, content="You are a helpful assistant."),
+        ChatMessage(role=MessageRole.USER, content="Say hello in exactly 5 words"),
     ]
 
     response = llm.chat(messages)
@@ -70,7 +64,9 @@ def test_with_openai():
                 completion_tokens = getattr(usage, "completion_tokens", None)
                 total_tokens = getattr(usage, "total_tokens", None)
 
-            print(f"\nToken Usage: input={prompt_tokens}, output={completion_tokens}, total={total_tokens}")
+            print(
+                f"\nToken Usage: input={prompt_tokens}, output={completion_tokens}, total={total_tokens}"
+            )
 
     print("=" * 80)
 
@@ -94,9 +90,7 @@ def test_with_mock():
 
     llm = MockLLM(max_tokens=50)
     messages = [
-        ChatMessage(
-            role=MessageRole.SYSTEM, content="You are a helpful assistant."
-        ),
+        ChatMessage(role=MessageRole.SYSTEM, content="You are a helpful assistant."),
         ChatMessage(role=MessageRole.USER, content="Say hello in 5 words"),
     ]
 
@@ -132,8 +126,7 @@ if __name__ == "__main__":
     # Instrument LlamaIndex
     instrumentor = LlamaindexInstrumentor()
     instrumentor.instrument(
-        tracer_provider=tracer_provider,
-        meter_provider=meter_provider
+        tracer_provider=tracer_provider, meter_provider=meter_provider
     )
     print("LlamaIndex instrumentation enabled\n")
 
@@ -174,8 +167,12 @@ if __name__ == "__main__":
                         found_token_usage = True
                         dps = getattr(metric.data, "data_points", [])
                         for dp in dps:
-                            token_type = dp.attributes.get("gen_ai.token.type", "unknown")
-                            print(f"  Token type: {token_type}, Sum: {dp.sum}, Count: {dp.count}")
+                            token_type = dp.attributes.get(
+                                "gen_ai.token.type", "unknown"
+                            )
+                            print(
+                                f"  Token type: {token_type}, Sum: {dp.sum}, Count: {dp.count}"
+                            )
 
     print("\n" + "=" * 80)
     status = []

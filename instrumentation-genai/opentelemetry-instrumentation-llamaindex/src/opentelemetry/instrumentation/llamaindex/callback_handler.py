@@ -90,9 +90,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Extract model information from payload
         serialized = payload.get("serialized", {})
         model_name = (
-            serialized.get("model")
-            or serialized.get("model_name")
-            or "unknown"
+            serialized.get("model") or serialized.get("model_name") or "unknown"
         )
 
         # Extract messages from payload
@@ -105,16 +103,12 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if hasattr(msg, "content") and hasattr(msg, "role"):
                 # Extract role - could be MessageRole enum
                 role_value = (
-                    str(msg.role.value)
-                    if hasattr(msg.role, "value")
-                    else str(msg.role)
+                    str(msg.role.value) if hasattr(msg.role, "value") else str(msg.role)
                 )
                 # Extract content - this is a property that pulls from blocks[0].text
                 content = _safe_str(msg.content)
                 input_messages.append(
-                    InputMessage(
-                        role=role_value, parts=[Text(content=content)]
-                    )
+                    InputMessage(role=role_value, parts=[Text(content=content)])
                 )
             elif isinstance(msg, dict):
                 # Handle serialized messages (dict format)
@@ -127,9 +121,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     # Fallback to direct content field
                     content = msg.get("content", "")
 
-                role_value = (
-                    str(role.value) if hasattr(role, "value") else str(role)
-                )
+                role_value = str(role.value) if hasattr(role, "value") else str(role)
                 input_messages.append(
                     InputMessage(
                         role=role_value,
@@ -215,7 +207,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     else:
                         # It's an object, try to get usage attribute
                         usage = getattr(raw_response, "usage", None)
-                    
+
                     if usage:
                         # usage could also be dict or object
                         if isinstance(usage, dict):
@@ -223,7 +215,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                             llm_inv.output_tokens = usage.get("completion_tokens")
                         else:
                             llm_inv.input_tokens = getattr(usage, "prompt_tokens", None)
-                            llm_inv.output_tokens = getattr(usage, "completion_tokens", None)
+                            llm_inv.output_tokens = getattr(
+                                usage, "completion_tokens", None
+                            )
 
         # Stop the LLM invocation
         self._handler.stop_llm(llm_inv)
@@ -242,9 +236,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Extract model information from payload
         serialized = payload.get("serialized", {})
         model_name = (
-            serialized.get("model_name")
-            or serialized.get("model")
-            or "unknown"
+            serialized.get("model_name") or serialized.get("model") or "unknown"
         )
 
         # Detect provider from class name
@@ -288,11 +280,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             chunks = payload.get("chunks", [])
             if chunks:
                 emb_inv.input_texts = [_safe_str(chunk) for chunk in chunks]
-            
+
             # Extract embedding vectors from response
             # embeddings is the list of output vectors
             embeddings = payload.get("embeddings", [])
-            
+
             # Determine dimension from first embedding vector
             if embeddings and len(embeddings) > 0:
                 first_embedding = embeddings[0]

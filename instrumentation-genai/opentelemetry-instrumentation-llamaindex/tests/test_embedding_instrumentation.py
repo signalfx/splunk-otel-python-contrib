@@ -22,10 +22,10 @@ instrumentor = None
 def setup_telemetry():
     """Setup OpenTelemetry with span and metric exporters (once)."""
     global metric_reader, instrumentor
-    
+
     if metric_reader is not None:
         return metric_reader
-    
+
     # Enable metrics
     os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric"
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     test_embedding_single_text()
     print("\n" + "=" * 60 + "\n")
     test_embedding_batch()
-    
+
     # Cleanup
     if instrumentor:
         instrumentor.uninstrument()
