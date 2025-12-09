@@ -130,37 +130,99 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     """
     Wrap agent.run() to instrument workflow events.
     
-    This function wraps the run() method of Workflow-based agents to capture
-    agent steps and tool calls via workflow event streaming.
-    """
-    handler = wrapped(*args, **kwargs)
+    This creates a root agent span immediately when agent.run() is called,
+    ensuring all LLM and tool calls inherit the same trace context.
     
+    The root span is pushed onto the agent_context_stack, which allows the
+    callback handler to retrieve it when LLM/embedding events occur.
+    """
     # Get the initial user message
     user_msg = kwargs.get('user_msg') or (args[0] if args else "")
     
     # Get TelemetryHandler from callback handler if available
     from llama_index.core import Settings
+    from opentelemetry.util.genai.types import AgentInvocation
+    
     telemetry_handler = None
     for callback_handler in Settings.callback_manager.handlers:
         if hasattr(callback_handler, '_handler'):
             telemetry_handler = callback_handler._handler
             break
     
+    # Create a root agent span immediately to ensure all subsequent calls
+    # (LLM, tools) inherit this trace context
+    root_agent = None
     if telemetry_handler:
-        # Create workflow instrumentor
+        from uuid import uuid4
+        
+        # Create root agent invocation before workflow starts
+        root_agent = AgentInvocation(
+            name=f"agent.{type(instance).__name__}",
+            run_id=str(uuid4()),
+            input_context=str(user_msg),
+            attributes={},
+        )
+        root_agent.framework = "llamaindex"
+        root_agent.agent_name = type(instance).__name__
+        
+        # Start the root agent span immediately
+        # This pushes (agent_name, run_id) onto the _agent_context_stack
+        # and stores the span in _span_registry[run_id]
+        telemetry_handler.start_agent(root_agent)
+    
+    # Call the original run() method to get the workflow handler
+    handler = wrapped(*args, **kwargs)
+    
+    if telemetry_handler and root_agent:
+        # Create workflow instrumentor for detailed step tracking
         instrumentor = WorkflowEventInstrumentor(telemetry_handler)
         
-        # Start background task to stream events
-        async def stream_events_background():
-            try:
-                await instrumentor.instrument_workflow_handler(handler, str(user_msg))
-            except Exception as e:
-                # Log error but don't crash the workflow
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Error instrumenting workflow events: {e}")
+        # Wrap the handler to close the root span when the workflow completes
+        original_handler = handler
         
-        # Launch background task
-        asyncio.create_task(stream_events_background())
+        class InstrumentedHandler:
+            """Wrapper that closes the root agent span when workflow completes."""
+            def __init__(self, original, root_span_agent):
+                self._original = original
+                self._root_agent = root_span_agent
+                self._result = None
+                
+            def __await__(self):
+                # Start background task to instrument workflow events
+                async def stream_events():
+                    try:
+                        await instrumentor.instrument_workflow_handler(
+                            self._original, str(user_msg)
+                        )
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Error instrumenting workflow events: {e}")
+                
+                asyncio.create_task(stream_events())
+                
+                # Wait for the actual workflow to complete and return the result
+                return self._await_impl().__await__()
+            
+            async def _await_impl(self):
+                """Actual async implementation."""
+                try:
+                    self._result = await self._original
+                    self._root_agent.output_result = str(self._result)
+                    telemetry_handler.stop_agent(self._root_agent)
+                except Exception as e:
+                    from opentelemetry.util.genai.types import Error
+                    telemetry_handler.fail_agent(
+                        self._root_agent,
+                        Error(message=str(e), type=type(e))
+                    )
+                    raise
+                return self._result
+            
+            def __getattr__(self, name):
+                # Delegate all other attributes to the original handler
+                return getattr(self._original, name)
+        
+        handler = InstrumentedHandler(original_handler, root_agent)
     
     return handler

@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 from llama_index.core.callbacks.base_handler import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType
 
+from opentelemetry import trace
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -158,6 +159,23 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         llm_inv.framework = "llamaindex"
 
+        # Get the currently active span to establish parent-child relationship
+        # First try to get from active agent context (workflow-based agents)
+        parent_span = None
+        if self._handler._agent_context_stack:
+            # Get the current agent's span from the span registry
+            _, agent_run_id = self._handler._agent_context_stack[-1]
+            parent_span = self._handler._span_registry.get(agent_run_id)
+        
+        # Fallback to OpenTelemetry context if no agent span found
+        if not parent_span:
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                parent_span = current_span
+        
+        if parent_span:
+            llm_inv.parent_span = parent_span
+
         # Start the LLM invocation (handler stores it in _entity_registry)
         self._handler.start_llm(llm_inv)
 
@@ -275,6 +293,23 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             run_id=event_id,
         )
         emb_inv.framework = "llamaindex"
+
+        # Get the currently active span to establish parent-child relationship
+        # First try to get from active agent context (workflow-based agents)
+        parent_span = None
+        if self._handler._agent_context_stack:
+            # Get the current agent's span from the span registry
+            _, agent_run_id = self._handler._agent_context_stack[-1]
+            parent_span = self._handler._span_registry.get(agent_run_id)
+        
+        # Fallback to OpenTelemetry context if no agent span found
+        if not parent_span:
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                parent_span = current_span
+        
+        if parent_span:
+            emb_inv.parent_span = parent_span
 
         # Start the embedding invocation
         self._handler.start_embedding(emb_inv)
