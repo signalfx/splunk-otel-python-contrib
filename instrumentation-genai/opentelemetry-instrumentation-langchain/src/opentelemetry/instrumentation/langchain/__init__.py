@@ -77,6 +77,9 @@ class LangchainInstrumentor(BaseInstrumentor):
             telemetry_handler=self._telemetry_handler,
         )
 
+        # Store reference to callback handler so tests can update it if needed
+        self._callback_handler = langchainCallbackHandler
+
         wrap_function_wrapper(
             module="langchain_core.callbacks",
             name="BaseCallbackManager.__init__",
