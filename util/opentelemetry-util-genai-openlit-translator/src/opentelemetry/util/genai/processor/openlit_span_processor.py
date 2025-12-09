@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
+from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 from opentelemetry.trace import Span
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
@@ -526,53 +527,72 @@ class OpenlitSpanProcessor(SpanProcessor):
             # STEP 2: Check if this is an LLM span that needs evaluation
             if self._is_llm_span(span):
                 _logger.debug(
-                    "[TL_PROCESSOR] LLM span detected: %s, processing for evaluations",
+                    "[TL_PROCESSOR] LLM span detected: %s, running evaluations on mutated span",
                     span.name,
                 )
-                # Process LLM spans IMMEDIATELY - create synthetic span and trigger evaluations
-                invocation = self._process_span_translation(span)
+                # MUTATION-ONLY MODE with EVALUATIONS using handler.stop_llm():
+                # We've already mutated the original span's attributes and instrumentation scope.
+                # Now we use handler.stop_llm() to get full functionality:
+                # - Sets end_time
+                # - Sets sample_for_evaluation  
+                # - Calls _emitter.on_end() (sets gen_ai.evaluation.sampled)
+                # - Calls _notify_completion() (triggers evaluation callbacks)
+                #
+                # The emitter's on_end() has been modified to handle ReadableSpan gracefully
+                # by checking is_recording() before trying to set attributes or end the span.
+                
+                invocation = self._build_invocation(
+                    span,
+                    attribute_transformations=self.attribute_transformations,
+                    name_transformations=self.name_transformations,
+                    openlit_attributes=self.openlit_attributes,
+                )
+                
                 if invocation:
-                    # DEBUG: Verify messages are present before calling stop_llm
-                    input_count = (
-                        len(invocation.input_messages)
-                        if invocation.input_messages
-                        else 0
-                    )
-                    output_count = (
-                        len(invocation.output_messages)
-                        if invocation.output_messages
-                        else 0
-                    )
-                    _logger.debug(
-                        "[TL_PROCESSOR] Calling stop_llm with messages: input=%d, output=%d, span=%s",
-                        input_count,
-                        output_count,
-                        span.name,
-                    )
-                    if input_count == 0 and output_count == 0:
-                        _logger.warning(
-                            "[TL_PROCESSOR] WARNING: No messages on invocation before stop_llm! span=%s",
+                    # Attach the original (mutated) span to the invocation
+                    # This is normally done by start_llm, but we're skipping that
+                    invocation.span = span  # type: ignore[attr-defined]
+                    
+                    # Get the handler
+                    handler = self.telemetry_handler or get_telemetry_handler()
+                    
+                    # Extract trace context from the original span
+                    span_context = getattr(span, "context", None)
+                    trace_id = getattr(span_context, "trace_id", None)
+                    span_id_val = getattr(span_context, "span_id", None)
+                    
+                    # Set trace_id on invocation (needed for sampling)
+                    invocation.trace_id = trace_id
+                    invocation.span_id = span_id_val
+                    
+                    # Set timing info (use span's timing if available)
+                    # ReadableSpan has start_time and end_time in nanoseconds
+                    if hasattr(span, "_start_time") and span._start_time:  # type: ignore[attr-defined]
+                        invocation.start_time = span._start_time / 1e9  # Convert ns to seconds  # type: ignore[attr-defined]
+                    
+                    # Use handler.stop_llm() for full functionality
+                    # This will:
+                    # 1. Set end_time if not set
+                    # 2. Determine sample_for_evaluation
+                    # 3. Call _emitter.on_end() - which handles ReadableSpan gracefully
+                    # 4. Call _notify_completion() - triggers evaluation callbacks
+                    try:
+                        handler.stop_llm(invocation)
+                        _logger.debug(
+                            "[TL_PROCESSOR] stop_llm completed for span: %s, sampled=%s, trace_id=%s",
                             span.name,
+                            invocation.sample_for_evaluation,
+                            trace_id,
+                        )
+                    except Exception as stop_err:
+                        _logger.warning(
+                            "[TL_PROCESSOR] handler.stop_llm failed: %s",
+                            stop_err,
                         )
                 else:
                     _logger.info(
-                        "[TL_PROCESSOR] Skipped LLM span (no invocation created - missing messages): %s",
+                        "[TL_PROCESSOR] Skipped evaluations (no invocation created): %s",
                         span.name,
-                    )
-                    return  # Exit early, don't try to process further
-
-                # Close the invocation immediately to trigger evaluations
-                handler = self.telemetry_handler or get_telemetry_handler()
-                try:
-                    handler.stop_llm(invocation)
-                    _logger.debug(
-                        "[TL_PROCESSOR] LLM invocation completed: %s",
-                        span.name,
-                    )
-                except Exception as stop_err:
-                    _logger.warning(
-                        "[TL_PROCESSOR] Failed to stop LLM invocation: %s",
-                        stop_err,
                     )
             else:
                 # Non-LLM spans (tasks, workflows, tools) - buffer for optional batch processing
@@ -884,16 +904,18 @@ class OpenlitSpanProcessor(SpanProcessor):
         if applied_rule is not None:
             attr_tx = applied_rule.attribute_transformations
             name_tx = applied_rule.name_transformations
+            extra_attrs = applied_rule.openlit_attributes
         else:
             attr_tx = self.attribute_transformations
             name_tx = self.name_transformations
+            extra_attrs = self.openlit_attributes
 
         # Check if mutation is enabled (both processor-level and per-invocation level)
         # For now, we only check processor-level since we don't have the invocation yet
         should_mutate = self.mutate_original_span
 
         # Mutate attributes
-        if should_mutate and attr_tx:
+        if should_mutate and (attr_tx or extra_attrs):
             try:
                 _logger = logging.getLogger(__name__)
                 if hasattr(span, "_attributes"):
@@ -903,6 +925,10 @@ class OpenlitSpanProcessor(SpanProcessor):
                     mutated = self._apply_attribute_transformations(
                         original.copy(), attr_tx
                     )
+                    
+                    # Apply extra openlit attributes (e.g. gen_ai.system)
+                    if extra_attrs:
+                        mutated.update(extra_attrs)
 
                     # CRITICAL: Only reconstruct messages for LLM operations (chat, completion, embedding)
                     # NOT for evaluation spans or other non-LLM spans
@@ -985,6 +1011,27 @@ class OpenlitSpanProcessor(SpanProcessor):
                     # Clear and update the underlying _attributes dict
                     span._attributes.clear()  # type: ignore[attr-defined]
                     span._attributes.update(mutated)  # type: ignore[attr-defined]
+                    
+                    # CRITICAL: Mutate the instrumentation scope to match our handler
+                    # This ensures the span appears as if it came from our GenAI handler
+                    # instead of the original OpenLit tracer
+                    try:
+                        from opentelemetry.util.genai.version import __version__
+                        new_scope = InstrumentationScope(
+                            name="opentelemetry.util.genai.handler",
+                            version=__version__,
+                        )
+                        span._instrumentation_scope = new_scope  # type: ignore[attr-defined]
+                        _logger.debug(
+                            "Mutated span %s instrumentation scope to: %s",
+                            span.name,
+                            new_scope.name,
+                        )
+                    except Exception as scope_err:
+                        _logger.debug(
+                            "Instrumentation scope mutation failed: %s", scope_err
+                        )
+                    
                     logging.getLogger(__name__).debug(
                         "Mutated span %s attributes: %s -> %s keys",
                         span.name,
@@ -1171,9 +1218,19 @@ class OpenlitSpanProcessor(SpanProcessor):
         name_transformations: Optional[Dict[str, str]] = None,
         openlit_attributes: Optional[Dict[str, Any]] = None,
     ) -> LLMInvocation:
-        base_attrs: Dict[str, Any] = (
-            dict(existing_span.attributes) if existing_span.attributes else {}
-        )
+        # CRITICAL: Read from _attributes (the live/mutated dict), NOT from .attributes
+        # The .attributes property returns a frozen/cached snapshot that doesn't reflect mutations.
+        # This is important because _mutate_span_if_needed() modifies _attributes directly.
+        if hasattr(existing_span, "_attributes") and existing_span._attributes:  # type: ignore[attr-defined]
+            base_attrs: Dict[str, Any] = dict(existing_span._attributes)  # type: ignore[attr-defined]
+        else:
+            base_attrs: Dict[str, Any] = (
+                dict(existing_span.attributes) if existing_span.attributes else {}
+            )
+
+        # Check if span was already mutated (has _openlit_processed marker)
+        # If so, skip re-applying transformations since they were already applied during mutation
+        already_mutated = base_attrs.get("_openlit_processed", False)
 
         # BEFORE transforming attributes, extract original message data
         # for message reconstruction (needed for evaluations)
@@ -1186,16 +1243,23 @@ class OpenlitSpanProcessor(SpanProcessor):
             or base_attrs.get("gen_ai.output.message")
         )
 
-        # Apply attribute transformations
-        base_attrs = self._apply_attribute_transformations(
-            base_attrs, attribute_transformations
-        )
-        if openlit_attributes:
-            # Transform openlit_attributes before adding them to avoid re-introducing legacy keys
-            transformed_tl_attrs = self._apply_attribute_transformations(
-                openlit_attributes.copy(), attribute_transformations
+        # Only apply attribute transformations if span was NOT already mutated
+        # This prevents double-transformation which would fail to find already-renamed keys
+        if not already_mutated:
+            base_attrs = self._apply_attribute_transformations(
+                base_attrs, attribute_transformations
             )
-            base_attrs.update(transformed_tl_attrs)
+        
+        if openlit_attributes:
+            # Only transform openlit_attributes if span was not already mutated
+            if not already_mutated:
+                transformed_tl_attrs = self._apply_attribute_transformations(
+                    openlit_attributes.copy(), attribute_transformations
+                )
+                base_attrs.update(transformed_tl_attrs)
+            else:
+                # Just add the extra attributes without transformation
+                base_attrs.update(openlit_attributes)
 
         new_name = self._derive_new_name(
             existing_span.name, name_transformations

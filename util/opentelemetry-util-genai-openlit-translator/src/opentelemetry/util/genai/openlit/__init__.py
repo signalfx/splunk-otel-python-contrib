@@ -48,7 +48,7 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "gen_ai.token.usage.output": "gen_ai.usage.output_tokens",
 
         #  GenAI LLM Provider Attributes (Extra - nested namespace) -> OTel semconv 
-        "gen_ai.llm.provider": "gen_ai.provider.name",
+        "gen_ai.llm.provider": "gen_ai.system",
         "gen_ai.llm.model": "gen_ai.request.model",
         "gen_ai.llm.temperature": "gen_ai.request.temperature",
         "gen_ai.llm.max_tokens": "gen_ai.request.max_tokens",
