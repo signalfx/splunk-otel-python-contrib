@@ -64,11 +64,9 @@ WeaviateInstrumentor().instrument()
 
 
 def create_schema(client):
-    """Create a simple collection without vectorization (no external dependencies)."""
     client.collections.create(
         name=CLASS_NAME,
         description="An Article class to store a text",
-        vectorizer_config=wvc.config.Configure.Vectorizer.none(),
         properties=[
             wvc.config.Property(
                 name="author",
@@ -131,9 +129,6 @@ def create_batch(collection):
 
 
 def query_get(collection):
-    # This now automatically creates:
-    # - Parent: db.retrieval.client span with db.retrieval.type=fetch
-    # - Child: db.weaviate.collections.query.fetch_objects span
     return collection.query.fetch_objects(
         limit=5,
         return_properties=[
@@ -149,23 +144,6 @@ def query_aggregate(collection):
 
 def query_raw(client):
     return client.graphql_raw_query(RAW_QUERY)
-
-
-def query_near_text(collection, text):
-    """Query using nearText to find similar articles.
-    
-    Note: This requires a vectorizer to be configured on the collection.
-    Skipped in this example since we use Vectorizer.none().
-    """
-    # Commented out because it requires vectorization
-    # query_result = collection.query.near_text(
-    #     query=text,
-    #     limit=2,
-    #     return_metadata=weaviate.classes.query.MetadataQuery(distance=True),
-    # )
-    # return query_result
-    print("Skipping near_text query (requires vectorizer)")
-    return None
 
 
 def validate(collection, uuid=None):
@@ -233,9 +211,6 @@ def example_schema_workflow(client):
     print("Aggregate result:", aggregate_result)
     raw_result = query_raw(client)
     print("Raw result: ", raw_result)
-    # Skip near_text query since we're not using a vectorizer
-    # near_text_result = query_near_text(collection, "book")
-    # print("Near text result: ", near_text_result)
 
     delete_collection(client)
     print("Deleted schema")
@@ -252,6 +227,7 @@ if __name__ == "__main__":
     # Connect to local Weaviate instance (default: http://localhost:8080)
     # Make sure Weaviate is running locally, e.g., via Docker:
     # docker run -d -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:latest
+
     client = weaviate.connect_to_local()
     print("Connected to local Weaviate instance")
 
