@@ -1,7 +1,5 @@
 """Tests for Weaviate instrumentation."""
 
-import pytest
-
 from opentelemetry import trace
 from opentelemetry.instrumentation.weaviate import WeaviateInstrumentor
 
@@ -17,10 +15,10 @@ class TestWeaviateInstrumentation:
     def test_instrument_uninstrument(self, instrumentor, tracer_provider):
         """Test that instrumentation can be applied and removed."""
         trace.set_tracer_provider(tracer_provider)
-        
+
         # Instrument
         instrumentor.instrument(tracer_provider=tracer_provider)
-        
+
         # Uninstrument
         instrumentor.uninstrument()
 
@@ -34,11 +32,11 @@ class TestWeaviateInstrumentation:
     def test_double_instrument(self, instrumentor, tracer_provider):
         """Test that double instrumentation doesn't cause errors."""
         trace.set_tracer_provider(tracer_provider)
-        
+
         instrumentor.instrument(tracer_provider=tracer_provider)
         # Second instrumentation should be idempotent
         instrumentor.instrument(tracer_provider=tracer_provider)
-        
+
         instrumentor.uninstrument()
 
     def test_uninstrument_without_instrument(self, instrumentor):

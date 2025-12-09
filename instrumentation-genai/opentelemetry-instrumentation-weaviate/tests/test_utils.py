@@ -1,7 +1,5 @@
 """Tests for utility functions."""
 
-import pytest
-
 from opentelemetry.instrumentation.weaviate.utils import (
     extract_collection_name,
     parse_url_to_host_port,
@@ -59,14 +57,15 @@ class TestExtractCollectionName:
 
     def test_extract_from_args(self):
         """Test extracting collection name from positional args."""
+
         # Mock function and instance
         def mock_func():
             pass
-        
+
         instance = None
         args = ("MyCollection",)
         kwargs = {}
-        
+
         result = extract_collection_name(
             mock_func, instance, args, kwargs, "weaviate.schema", "get"
         )
@@ -75,13 +74,14 @@ class TestExtractCollectionName:
 
     def test_extract_from_kwargs(self):
         """Test extracting collection name from keyword args."""
+
         def mock_func():
             pass
-        
+
         instance = None
         args = ()
         kwargs = {"class_name": "MyCollection"}
-        
+
         result = extract_collection_name(
             mock_func, instance, args, kwargs, "weaviate.data", "create"
         )
@@ -90,13 +90,14 @@ class TestExtractCollectionName:
 
     def test_extract_with_no_collection(self):
         """Test extraction when no collection name is present."""
+
         def mock_func():
             pass
-        
+
         instance = None
         args = ()
         kwargs = {}
-        
+
         result = extract_collection_name(
             mock_func, instance, args, kwargs, "weaviate.query", "raw"
         )

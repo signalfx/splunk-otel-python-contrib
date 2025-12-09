@@ -121,24 +121,18 @@ class WeaviateInstrumentor(BaseInstrumentor):
 
         self._get_server_details(weaviate_version, tracer)
 
-        wrappings = (
-            MAPPING_V3 if weaviate_version == WEAVIATE_V3 else MAPPING_V4
-        )
+        wrappings = MAPPING_V3 if weaviate_version == WEAVIATE_V3 else MAPPING_V4
         for to_wrap in wrappings:
             name = ".".join([to_wrap["name"], to_wrap["function"]])
             wrap_function_wrapper(
                 module=to_wrap["module"],
                 name=name,
-                wrapper=_WeaviateTraceInjectionWrapper(
-                    tracer, wrap_properties=to_wrap
-                ),
+                wrapper=_WeaviateTraceInjectionWrapper(tracer, wrap_properties=to_wrap),
             )
 
     def _uninstrument(self, **kwargs: Any) -> None:
         global weaviate_version
-        wrappings = (
-            MAPPING_V3 if weaviate_version == WEAVIATE_V3 else MAPPING_V4
-        )
+        wrappings = MAPPING_V3 if weaviate_version == WEAVIATE_V3 else MAPPING_V4
         for to_unwrap in wrappings:
             try:
                 module = ".".join([to_unwrap["module"], to_unwrap["name"]])
@@ -182,9 +176,7 @@ class _WeaviateConnectionInjectionWrapper:
     def __init__(self, tracer: Tracer):
         self.tracer = tracer
 
-    def __call__(
-        self, wrapped: Any, instance: Any, args: Any, kwargs: Any
-    ) -> Any:
+    def __call__(self, wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
         if not is_instrumentation_enabled():
             return wrapped(*args, **kwargs)
 
@@ -203,9 +195,7 @@ class _WeaviateConnectionInjectionWrapper:
             connection_url = kwargs["url"]
 
         if connection_url:
-            connection_host, connection_port = parse_url_to_host_port(
-                connection_url
-            )
+            connection_host, connection_port = parse_url_to_host_port(connection_url)
 
         return_value = wrapped(*args, **kwargs)
 
@@ -238,9 +228,7 @@ class _WeaviateTraceInjectionWrapper:
         self.tracer = tracer
         self.wrap_properties = wrap_properties or {}
 
-    def __call__(
-        self, wrapped: Any, instance: Any, args: Any, kwargs: Any
-    ) -> Any:
+    def __call__(self, wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
         """
         Wraps the original function to inject tracing headers.
         """
@@ -259,9 +247,7 @@ class _WeaviateTraceInjectionWrapper:
             getattr(wrapped, "__name__", "unknown"),
         )
         name = f"{SPAN_NAME_PREFIX}.{name}"
-        with self.tracer.start_as_current_span(
-            name, kind=SpanKind.CLIENT
-        ) as span:
+        with self.tracer.start_as_current_span(name, kind=SpanKind.CLIENT) as span:
             span.set_attribute(DbAttributes.DB_SYSTEM_NAME, "weaviate")
 
             # Extract operation name dynamically from the function call
@@ -275,20 +261,14 @@ class _WeaviateTraceInjectionWrapper:
             )
             if collection_name:
                 # Use a Weaviate-specific collection attribute similar to MongoDB's DB_MONGODB_COLLECTION
-                span.set_attribute(
-                    "db.weaviate.collection.name", collection_name
-                )
+                span.set_attribute("db.weaviate.collection.name", collection_name)
 
             connection_host = _connection_host_context.get()
             connection_port = _connection_port_context.get()
             if connection_host is not None:
-                span.set_attribute(
-                    ServerAttributes.SERVER_ADDRESS, connection_host
-                )
+                span.set_attribute(ServerAttributes.SERVER_ADDRESS, connection_host)
             if connection_port is not None:
-                span.set_attribute(
-                    ServerAttributes.SERVER_PORT, connection_port
-                )
+                span.set_attribute(ServerAttributes.SERVER_PORT, connection_port)
 
             return_value = wrapped(*args, **kwargs)
 
@@ -296,9 +276,7 @@ class _WeaviateTraceInjectionWrapper:
             if self._is_similarity_search():
                 documents = self._extract_documents_from_response(return_value)
                 if documents:
-                    span.set_attribute(
-                        "db.weaviate.documents.count", len(documents)
-                    )
+                    span.set_attribute("db.weaviate.documents.count", len(documents))
                     # emit the documents as events
                     for doc in documents:
                         # emit the document content as an event
@@ -306,9 +284,7 @@ class _WeaviateTraceInjectionWrapper:
                         if "query" in kwargs:
                             query = json.dumps(kwargs["query"])
                         attributes = {
-                            "db.weaviate.document.content": json.dumps(
-                                doc["content"]
-                            ),
+                            "db.weaviate.document.content": json.dumps(doc["content"]),
                         }
 
                         # Only add non-None values to attributes
@@ -321,14 +297,10 @@ class _WeaviateTraceInjectionWrapper:
                                 "certainty"
                             ]
                         if doc.get("score") is not None:
-                            attributes["db.weaviate.document.score"] = doc[
-                                "score"
-                            ]
+                            attributes["db.weaviate.document.score"] = doc["score"]
                         if query:
                             attributes["db.weaviate.document.query"] = query
-                        span.add_event(
-                            "weaviate.document", attributes=attributes
-                        )
+                        span.add_event("weaviate.document", attributes=attributes)
 
         return return_value
 
@@ -345,9 +317,7 @@ class _WeaviateTraceInjectionWrapper:
             or "fetch_objects" in function_name.lower()
         )
 
-    def _extract_documents_from_response(
-        self, response: Any
-    ) -> list[dict[str, Any]]:
+    def _extract_documents_from_response(self, response: Any) -> list[dict[str, Any]]:
         """
         Extract documents from weaviate response.
         """
@@ -372,10 +342,7 @@ class _WeaviateTraceInjectionWrapper:
                             and metadata.certainty is not None
                         ):
                             doc["certainty"] = metadata.certainty
-                        if (
-                            hasattr(metadata, "score")
-                            and metadata.score is not None
-                        ):
+                        if hasattr(metadata, "score") and metadata.score is not None:
                             doc["score"] = metadata.score
 
                     documents.append(doc)
