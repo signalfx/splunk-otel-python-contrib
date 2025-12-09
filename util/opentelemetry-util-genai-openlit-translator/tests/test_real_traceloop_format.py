@@ -96,9 +96,7 @@ class TestRealopenlitFormat:
 
         # Create span with real format
         with tracer.start_as_current_span("ChatbotSummarizationAgent") as span:
-            span.set_attribute(
-                "openlit.entity.input", json.dumps(input_data)
-            )
+            span.set_attribute("openlit.entity.input", json.dumps(input_data))
             span.set_attribute("llm.request.model", "gemini-1.5-flash")
             span_id = span.get_span_context().span_id
 
@@ -111,19 +109,19 @@ class TestRealopenlitFormat:
 
         # Verify correct extraction
         assert len(cached_input) == 1, "Should have 1 input message"
-        assert isinstance(
-            cached_input[0], InputMessage
-        ), "Should be InputMessage"
-        assert (
-            cached_input[0].role == "user"
-        ), "Should map HumanMessage to user"
+        assert isinstance(cached_input[0], InputMessage), (
+            "Should be InputMessage"
+        )
+        assert cached_input[0].role == "user", (
+            "Should map HumanMessage to user"
+        )
         assert len(cached_input[0].parts) == 1, "Should have 1 part"
-        assert isinstance(
-            cached_input[0].parts[0], Text
-        ), "Part should be Text"
-        assert (
-            cached_input[0].parts[0].content == "hi! I'm Lance"
-        ), "Should extract content from kwargs"
+        assert isinstance(cached_input[0].parts[0], Text), (
+            "Part should be Text"
+        )
+        assert cached_input[0].parts[0].content == "hi! I'm Lance", (
+            "Should extract content from kwargs"
+        )
 
     def test_real_nested_output_format(self, setup_tracer):
         """Test with real openlit nested output format."""
@@ -181,23 +179,23 @@ class TestRealopenlitFormat:
 
         # Verify correct extraction
         assert len(cached_output) == 1, "Should have 1 output message"
-        assert isinstance(
-            cached_output[0], OutputMessage
-        ), "Should be OutputMessage"
-        assert (
-            cached_output[0].role == "assistant"
-        ), "Should map AIMessage to assistant"
+        assert isinstance(cached_output[0], OutputMessage), (
+            "Should be OutputMessage"
+        )
+        assert cached_output[0].role == "assistant", (
+            "Should map AIMessage to assistant"
+        )
         assert len(cached_output[0].parts) == 1, "Should have 1 part"
-        assert isinstance(
-            cached_output[0].parts[0], Text
-        ), "Part should be Text"
+        assert isinstance(cached_output[0].parts[0], Text), (
+            "Part should be Text"
+        )
         assert (
             cached_output[0].parts[0].content
             == "Hi Lance! Nice to meet you.\n"
         ), "Should extract content from kwargs"
-        assert (
-            cached_output[0].finish_reason == "stop"
-        ), "Should normalize finish_reason to lowercase"
+        assert cached_output[0].finish_reason == "stop", (
+            "Should normalize finish_reason to lowercase"
+        )
 
     def test_real_full_conversation(self, setup_tracer):
         """Test with complete conversation including input and output."""
@@ -261,9 +259,7 @@ class TestRealopenlitFormat:
 
         # Create span
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute(
-                "openlit.entity.input", json.dumps(input_data)
-            )
+            span.set_attribute("openlit.entity.input", json.dumps(input_data))
             span.set_attribute(
                 "openlit.entity.output", json.dumps(output_data)
             )
@@ -321,9 +317,7 @@ class TestRealopenlitFormat:
         }
 
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute(
-                "openlit.entity.input", json.dumps(input_data)
-            )
+            span.set_attribute("openlit.entity.input", json.dumps(input_data))
             span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 
@@ -345,9 +339,9 @@ class TestRealopenlitFormat:
 
         # Test extraction
         extracted_text = extract_text_from_messages(cached_input)
-        assert (
-            extracted_text == "Test DeepEval extraction"
-        ), "DeepEval should extract text correctly from real format"
+        assert extracted_text == "Test DeepEval extraction", (
+            "DeepEval should extract text correctly from real format"
+        )
 
     def test_multiple_messages_in_real_format(self, setup_tracer):
         """Test with multiple messages in real openlit format."""
@@ -387,9 +381,7 @@ class TestRealopenlitFormat:
         }
 
         with tracer.start_as_current_span("openai.chat") as span:
-            span.set_attribute(
-                "openlit.entity.input", json.dumps(input_data)
-            )
+            span.set_attribute("openlit.entity.input", json.dumps(input_data))
             span.set_attribute("llm.request.model", "gpt-5-nano")
             span_id = span.get_span_context().span_id
 

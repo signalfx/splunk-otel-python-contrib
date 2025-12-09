@@ -11,9 +11,7 @@ load_dotenv()
 try:
     openlit.init(otlp_endpoint="http://0.0.0.0:4318")
 
-    client = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY")
-    )
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     chat_completion = client.chat.completions.create(
         messages=[

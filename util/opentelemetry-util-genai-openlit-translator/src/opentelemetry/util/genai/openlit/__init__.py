@@ -39,40 +39,31 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "gen_ai.completion": "gen_ai.output.messages",
         "gen_ai.content.prompt": "gen_ai.input.messages",
         "gen_ai.content.completion": "gen_ai.output.messages",
-
-        #  GenAI Request Attributes (Extra) -> OTel semconv 
+        #  GenAI Request Attributes (Extra) -> OTel semconv
         "gen_ai.request.embedding_dimension": "gen_ai.embeddings.dimension.count",
-
-        #  GenAI Token Usage (Extra - alternative naming) -> OTel semconv 
+        #  GenAI Token Usage (Extra - alternative naming) -> OTel semconv
         "gen_ai.token.usage.input": "gen_ai.usage.input_tokens",
         "gen_ai.token.usage.output": "gen_ai.usage.output_tokens",
-
-        #  GenAI LLM Provider Attributes (Extra - nested namespace) -> OTel semconv 
+        #  GenAI LLM Provider Attributes (Extra - nested namespace) -> OTel semconv
         "gen_ai.llm.provider": "gen_ai.system",
         "gen_ai.llm.model": "gen_ai.request.model",
         "gen_ai.llm.temperature": "gen_ai.request.temperature",
         "gen_ai.llm.max_tokens": "gen_ai.request.max_tokens",
         "gen_ai.llm.top_p": "gen_ai.request.top_p",
-
-        #  GenAI Operation Type (Extra) -> OTel semconv 
+        #  GenAI Operation Type (Extra) -> OTel semconv
         "gen_ai.operation.type": "gen_ai.operation.name",
-
-        #  GenAI Output Messages (Extra - alternative naming) -> OTel semconv 
+        #  GenAI Output Messages (Extra - alternative naming) -> OTel semconv
         "gen_ai.output_messages": "gen_ai.output.messages",
-
-        #  GenAI Session/Conversation Tracking (Extra) -> OTel semconv 
+        #  GenAI Session/Conversation Tracking (Extra) -> OTel semconv
         "gen_ai.session.id": "gen_ai.conversation.id",
-
         # OpenAI-specific Attributes -> OTel semconv
         "gen_ai.openai.thread.id": "gen_ai.conversation.id",
-
-        #  GenAI Tool Attributes (Extra) -> OTel semconv 
+        #  GenAI Tool Attributes (Extra) -> OTel semconv
         # Normalize tool-related attributes to standard OTel tool attributes
         "gen_ai.tool.call.id": "gen_ai.tool.call.id",
         "gen_ai.tool.args": "gen_ai.tool.call.arguments",
         "gen_ai.tool.result": "gen_ai.tool.call.result",
-
-        #  VectorDB Attributes (Extra) -> OTel DB semconv 
+        #  VectorDB Attributes (Extra) -> OTel DB semconv
         # Note: These map to OTel database semantic conventions, not gen_ai
         "gen_ai.vectordb.name": "db.system.name",
         "gen_ai.vectordb.search.query": "db.query.text",

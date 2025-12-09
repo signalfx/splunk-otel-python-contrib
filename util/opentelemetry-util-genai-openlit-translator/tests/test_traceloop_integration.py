@@ -82,9 +82,7 @@ class TestWorkflowPattern:
             # Simulate: @task(name="joke_creation")
             with tracer.start_as_current_span("joke_creation") as task_span:
                 task_span.set_attribute("openlit.span.kind", "task")
-                task_span.set_attribute(
-                    "openlit.entity.name", "joke_creation"
-                )
+                task_span.set_attribute("openlit.entity.name", "joke_creation")
                 task_span.set_attribute(
                     "openlit.workflow.name", "pirate_joke_generator"
                 )
@@ -119,9 +117,9 @@ class TestWorkflowPattern:
             and s.attributes.get("gen_ai.workflow.name")
             == "pirate_joke_generator"
         ]
-        assert (
-            len(workflow_spans) >= 1
-        ), "Should have at least one workflow span"
+        assert len(workflow_spans) >= 1, (
+            "Should have at least one workflow span"
+        )
 
         # Find task spans
         task_spans = [
@@ -147,9 +145,9 @@ class TestWorkflowPattern:
                 openlit_keys = [
                     k for k in openlit_keys if k != "_openlit_processed"
                 ]
-                assert (
-                    len(openlit_keys) == 0
-                ), f"Span {span.name} should not have openlit.* attributes, found: {openlit_keys}"
+                assert len(openlit_keys) == 0, (
+                    f"Span {span.name} should not have openlit.* attributes, found: {openlit_keys}"
+                )
 
     def test_nested_agent_with_tool(self, setup_tracer):
         """Test @agent pattern with nested @tool calls."""
@@ -158,9 +156,7 @@ class TestWorkflowPattern:
         # Simulate: @agent(name="joke_translation")
         with tracer.start_as_current_span("joke_translation") as agent_span:
             agent_span.set_attribute("openlit.span.kind", "agent")
-            agent_span.set_attribute(
-                "openlit.entity.name", "joke_translation"
-            )
+            agent_span.set_attribute("openlit.entity.name", "joke_translation")
             agent_span.set_attribute(
                 "openlit.workflow.name", "pirate_joke_generator"
             )
@@ -179,9 +175,7 @@ class TestWorkflowPattern:
             # Simulate: @tool(name="history_jokes")
             with tracer.start_as_current_span("history_jokes") as tool_span:
                 tool_span.set_attribute("openlit.span.kind", "tool")
-                tool_span.set_attribute(
-                    "openlit.entity.name", "history_jokes"
-                )
+                tool_span.set_attribute("openlit.entity.name", "history_jokes")
                 tool_span.set_attribute(
                     "openlit.workflow.name", "pirate_joke_generator"
                 )
@@ -244,9 +238,9 @@ class TestWorkflowPattern:
             input_data = json.loads(
                 agent_with_input[0].attributes["gen_ai.input.messages"]
             )
-            assert isinstance(
-                input_data, list
-            ), "Input should be normalized to message array"
+            assert isinstance(input_data, list), (
+                "Input should be normalized to message array"
+            )
 
 
 class TestParentChildRelationships:
@@ -285,9 +279,9 @@ class TestParentChildRelationships:
             if child.parent and child.parent.span_id in span_map:
                 valid_parent_refs += 1
 
-        assert (
-            valid_parent_refs >= 1
-        ), "At least one child should have a valid parent reference"
+        assert valid_parent_refs >= 1, (
+            "At least one child should have a valid parent reference"
+        )
 
 
 class TestContentNormalization:
@@ -342,22 +336,22 @@ class TestContentNormalization:
         ]
 
         # Should have at least the mutated original span with gen_ai.input.messages
-        assert (
-            len(spans_with_input) >= 1
-        ), f"Should have spans with normalized input, got {len(spans)} spans total"
+        assert len(spans_with_input) >= 1, (
+            f"Should have spans with normalized input, got {len(spans)} spans total"
+        )
 
         # Verify normalization
         for span in spans_with_input:
             input_str = span.attributes.get("gen_ai.input.messages")
             if input_str:
                 input_data = json.loads(input_str)
-                assert isinstance(
-                    input_data, list
-                ), "Input should be list of messages"
+                assert isinstance(input_data, list), (
+                    "Input should be list of messages"
+                )
                 if input_data:
-                    assert (
-                        "role" in input_data[0]
-                    ), "Messages should have role field"
+                    assert "role" in input_data[0], (
+                        "Messages should have role field"
+                    )
 
         # Check output normalization
         spans_with_output = [
@@ -371,9 +365,9 @@ class TestContentNormalization:
                 "gen_ai.output.messages"
             )
             output_data = json.loads(output_str)
-            assert isinstance(
-                output_data, list
-            ), "Output should be list of messages"
+            assert isinstance(output_data, list), (
+                "Output should be list of messages"
+            )
 
     def test_normalize_string_input(self, setup_tracer):
         """Test normalization of simple string inputs."""
@@ -399,9 +393,9 @@ class TestContentNormalization:
             and any(k.startswith("gen_ai.") for k in s.attributes.keys())
         ]
 
-        assert (
-            len(spans_with_genai) >= 1
-        ), "Should have spans with gen_ai.* attributes after processing"
+        assert len(spans_with_genai) >= 1, (
+            "Should have spans with gen_ai.* attributes after processing"
+        )
 
     def test_normalize_list_of_strings(self, setup_tracer):
         """Test normalization of list inputs."""
@@ -428,9 +422,9 @@ class TestContentNormalization:
             for s in spans
             if s.attributes and "gen_ai.span.kind" in s.attributes
         ]
-        assert (
-            len(spans_with_genai) >= 1
-        ), "Should have processed spans with gen_ai attributes"
+        assert len(spans_with_genai) >= 1, (
+            "Should have processed spans with gen_ai attributes"
+        )
 
 
 class TestModelInference:
@@ -477,9 +471,9 @@ class TestModelInference:
             and s.attributes.get("gen_ai.request.model") == "gpt-5-nano"
         ]
 
-        assert (
-            len(spans_with_model) >= 1
-        ), "Should preserve explicit model attribute"
+        assert len(spans_with_model) >= 1, (
+            "Should preserve explicit model attribute"
+        )
 
 
 class TestSpanFiltering:
@@ -497,18 +491,18 @@ class TestSpanFiltering:
         spans = exporter.get_finished_spans()
 
         # Should only have the original span, no synthetic spans
-        assert (
-            len(spans) == 1
-        ), f"Expected 1 span (non-LLM filtered), got {len(spans)}"
+        assert len(spans) == 1, (
+            f"Expected 1 span (non-LLM filtered), got {len(spans)}"
+        )
 
         # Original span should not have gen_ai.* attributes
         span = spans[0]
         gen_ai_attrs = [
             k for k in span.attributes.keys() if k.startswith("gen_ai.")
         ]
-        assert (
-            len(gen_ai_attrs) == 0
-        ), "Non-LLM span should not have gen_ai.* attributes"
+        assert len(gen_ai_attrs) == 0, (
+            "Non-LLM span should not have gen_ai.* attributes"
+        )
 
     def test_includes_openlit_spans(self, setup_tracer):
         """Test that openlit task/workflow spans are included."""
@@ -531,9 +525,9 @@ class TestSpanFiltering:
             for s in spans
             if s.attributes and s.attributes.get("gen_ai.span.kind") == "task"
         ]
-        assert (
-            len(spans_with_kind) >= 1
-        ), f"openlit task should be transformed, got {len(spans)} spans"
+        assert len(spans_with_kind) >= 1, (
+            f"openlit task should be transformed, got {len(spans)} spans"
+        )
 
 
 class TestOperationInference:
@@ -557,9 +551,9 @@ class TestOperationInference:
             if s.attributes and "gen_ai.system" in s.attributes
         ]
 
-        assert (
-            len(spans_with_genai) >= 1
-        ), f"Should have processed spans with gen_ai attributes, got {len(spans)} total spans"
+        assert len(spans_with_genai) >= 1, (
+            f"Should have processed spans with gen_ai attributes, got {len(spans)} total spans"
+        )
 
     def test_infer_embedding_operation(self, setup_tracer):
         """Test that 'embedding' operation is inferred from span name."""
@@ -584,9 +578,9 @@ class TestOperationInference:
             in s.attributes.get("gen_ai.request.model", "")
         ]
 
-        assert (
-            len(spans_with_embedding) >= 1
-        ), f"Should process embedding spans, got {len(spans)} total spans"
+        assert len(spans_with_embedding) >= 1, (
+            f"Should process embedding spans, got {len(spans)} total spans"
+        )
 
 
 class TestComplexWorkflow:
@@ -620,9 +614,7 @@ class TestComplexWorkflow:
             # Agent: Translate joke
             with tracer.start_as_current_span("joke_translation") as agent:
                 agent.set_attribute("openlit.span.kind", "agent")
-                agent.set_attribute(
-                    "openlit.entity.name", "joke_translation"
-                )
+                agent.set_attribute("openlit.entity.name", "joke_translation")
                 agent.set_attribute(
                     "openlit.workflow.name", "pirate_joke_generator"
                 )
@@ -636,9 +628,7 @@ class TestComplexWorkflow:
                 # Tool within agent
                 with tracer.start_as_current_span("history_jokes") as tool:
                     tool.set_attribute("openlit.span.kind", "tool")
-                    tool.set_attribute(
-                        "openlit.entity.name", "history_jokes"
-                    )
+                    tool.set_attribute("openlit.entity.name", "history_jokes")
                     tool.set_attribute(
                         "openlit.workflow.name", "pirate_joke_generator"
                     )
@@ -670,9 +660,9 @@ class TestComplexWorkflow:
         spans = exporter.get_finished_spans()
 
         # Should have many spans (original mutated + synthetic)
-        assert (
-            len(spans) >= 8
-        ), f"Expected at least 8 spans in full workflow, got {len(spans)}"
+        assert len(spans) >= 8, (
+            f"Expected at least 8 spans in full workflow, got {len(spans)}"
+        )
 
         # Verify workflow span exists - look for spans with the workflow name
         workflow_spans = [
@@ -682,9 +672,9 @@ class TestComplexWorkflow:
             and s.attributes.get("gen_ai.workflow.name")
             == "pirate_joke_generator"
         ]
-        assert (
-            len(workflow_spans) >= 1
-        ), f"Should have workflow span, got {len(spans)} total spans, workflow_spans={len(workflow_spans)}"
+        assert len(workflow_spans) >= 1, (
+            f"Should have workflow span, got {len(spans)} total spans, workflow_spans={len(workflow_spans)}"
+        )
 
         # Verify all task names are present
         task_names = {"joke_creation", "signature_generation"}
@@ -695,9 +685,9 @@ class TestComplexWorkflow:
                 if agent_name in task_names:
                     found_tasks.add(agent_name)
 
-        assert (
-            len(found_tasks) >= 1
-        ), f"Should find task spans, found: {found_tasks}"
+        assert len(found_tasks) >= 1, (
+            f"Should find task spans, found: {found_tasks}"
+        )
 
         # Verify no openlit.* attributes remain (mutation)
         for span in spans:
@@ -705,12 +695,11 @@ class TestComplexWorkflow:
                 openlit_keys = [
                     k
                     for k in span.attributes.keys()
-                    if k.startswith("openlit.")
-                    and k != "_openlit_processed"
+                    if k.startswith("openlit.") and k != "_openlit_processed"
                 ]
-                assert (
-                    len(openlit_keys) == 0
-                ), f"Span {span.name} should not have openlit.* attributes"
+                assert len(openlit_keys) == 0, (
+                    f"Span {span.name} should not have openlit.* attributes"
+                )
 
 
 class TestEdgeCases:
