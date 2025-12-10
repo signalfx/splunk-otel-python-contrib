@@ -16,6 +16,8 @@ import logging
 from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
 
+from opentelemetry.instrumentation.weaviate.config import Config
+
 # TODO: get semconv for vector databases
 # from opentelemetry.semconv._incubating.attributes import gen_ai_attributes as GenAI
 
@@ -68,9 +70,10 @@ def extract_collection_name(
 
         return collection_name
 
-    except Exception:
+    except Exception as e:
         # Silently ignore any errors during extraction to avoid breaking the tracing
-
+        if Config.exception_logger:
+            Config.exception_logger(e)
         pass
 
     return None

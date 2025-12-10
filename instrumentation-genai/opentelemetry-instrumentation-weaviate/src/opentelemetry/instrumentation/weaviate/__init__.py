@@ -119,7 +119,7 @@ class WeaviateInstrumentor(BaseInstrumentor):
             # Default to V3 if version parsing fails
             weaviate_version = WEAVIATE_V3
 
-        self._get_server_details(weaviate_version, tracer)
+        self._instrument_client(weaviate_version, tracer)
 
         wrappings = MAPPING_V3 if weaviate_version == WEAVIATE_V3 else MAPPING_V4
         for to_wrap in wrappings:
@@ -155,7 +155,7 @@ class WeaviateInstrumentor(BaseInstrumentor):
             # Ignore errors when unwrapping connection methods
             pass
 
-    def _get_server_details(self, version: int, tracer: Tracer) -> None:
+    def _instrument_client(self, version: int, tracer: Tracer) -> None:
         name = "Client.__init__"
         if version == WEAVIATE_V4:
             name = "WeaviateClient.__init__"
@@ -168,10 +168,7 @@ class WeaviateInstrumentor(BaseInstrumentor):
 
 
 class _WeaviateConnectionInjectionWrapper:
-    """
-    A wrapper that intercepts calls to weaviate connection methods to inject tracing headers.
-    This is used to create spans for Weaviate connection operations.
-    """
+    """A wrapper that intercepts Weaviate client initialization to capture server connection details."""
 
     def __init__(self, tracer: Tracer):
         self.tracer = tracer
@@ -217,10 +214,7 @@ class _WeaviateConnectionInjectionWrapper:
 
 
 class _WeaviateTraceInjectionWrapper:
-    """
-    A wrapper that intercepts calls to weaviate to inject tracing headers.
-    This is used to create spans for Weaviate operations.
-    """
+    """A wrapper that intercepts Weaviate client operations to create database spans with Weaviate attributes."""
 
     def __init__(
         self, tracer: Tracer, wrap_properties: Optional[Dict[str, str]] = None
@@ -229,9 +223,7 @@ class _WeaviateTraceInjectionWrapper:
         self.wrap_properties = wrap_properties or {}
 
     def __call__(self, wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
-        """
-        Wraps the original function to inject tracing headers.
-        """
+        """Wraps the original Weaviate operation to create a tracing span."""
         if not is_instrumentation_enabled():
             return wrapped(*args, **kwargs)
 
@@ -305,9 +297,7 @@ class _WeaviateTraceInjectionWrapper:
         return return_value
 
     def _is_similarity_search(self) -> bool:
-        """
-        Check if this is a similarity search operation.
-        """
+        """Check if the operation is a similarity search."""
         module_name = self.wrap_properties.get("module", "")
         function_name = self.wrap_properties.get("function", "")
         return (
@@ -318,9 +308,7 @@ class _WeaviateTraceInjectionWrapper:
         )
 
     def _extract_documents_from_response(self, response: Any) -> list[dict[str, Any]]:
-        """
-        Extract documents from weaviate response.
-        """
+        """Extract documents from weaviate response."""
         documents: list[dict[str, Any]] = []
         try:
             if hasattr(response, "objects"):
@@ -372,8 +360,9 @@ class _WeaviateTraceInjectionWrapper:
                                 ):
                                     doc["score"] = metadata["score"]
                             documents.append(doc)
-        except Exception:
-            # silently handle extraction errors
+        except Exception as e:
+            if Config.exception_logger:
+                Config.exception_logger(e)
             pass
         return documents
 
