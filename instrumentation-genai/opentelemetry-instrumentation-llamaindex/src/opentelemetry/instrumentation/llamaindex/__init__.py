@@ -4,6 +4,7 @@ from opentelemetry.instrumentation.llamaindex.config import Config
 from opentelemetry.instrumentation.llamaindex.callback_handler import (
     LlamaindexCallbackHandler,
 )
+from opentelemetry.instrumentation.utils import unwrap
 from wrapt import wrap_function_wrapper
 
 _instruments = ("llama-index-core >= 0.14.0",)
@@ -47,7 +48,7 @@ class LlamaindexInstrumentor(BaseInstrumentor):
         )
 
     def _uninstrument(self, **kwargs):
-        pass
+        unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
 
 
 class _BaseCallbackManagerInitWrapper:

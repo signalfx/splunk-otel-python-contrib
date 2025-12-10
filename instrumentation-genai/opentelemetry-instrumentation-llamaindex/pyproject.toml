@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "splunk-otel-instrumentation-llamaindex"
 dynamic = ["version"]
-description = "OpenTelemetry LlamaIndex instrumentation"
+description = "OpenTelemetry Official LlamaIndex instrumentation"
 readme = "README.rst"
 license = "Apache-2.0"
 requires-python = ">=3.9"

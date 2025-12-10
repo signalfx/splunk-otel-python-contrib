@@ -23,6 +23,13 @@ def _safe_str(value: Any) -> str:
         return "<unrepr>"
 
 
+def _get_attr(obj: Any, key: str, default: Any = None) -> Any:
+    """Get attribute from dict or object."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 class LlamaindexCallbackHandler(BaseCallbackHandler):
     """LlamaIndex callback handler supporting LLM and Embedding instrumentation."""
 
@@ -102,8 +109,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             # Handle ChatMessage objects (has .content property and .role attribute)
             if hasattr(msg, "content") and hasattr(msg, "role"):
                 # Extract role - could be MessageRole enum
-                role_value = (
-                    str(msg.role.value) if hasattr(msg.role, "value") else str(msg.role)
+                role_value = _safe_str(
+                    msg.role.value if hasattr(msg.role, "value") else msg.role
                 )
                 # Extract content - this is a property that pulls from blocks[0].text
                 content = _safe_str(msg.content)
@@ -121,7 +128,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     # Fallback to direct content field
                     content = msg.get("content", "")
 
-                role_value = str(role.value) if hasattr(role, "value") else str(role)
+                role_value = _safe_str(role.value if hasattr(role, "value") else role)
                 input_messages.append(
                     InputMessage(
                         role=role_value,
@@ -162,31 +169,19 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
             # Handle both dict and object types for response
             if response:
-                # Get message - could be dict or object
-                if isinstance(response, dict):
-                    message = response.get("message", {})
-                    raw_response = response.get("raw")
-                else:
-                    # response is a ChatResponse object
-                    message = getattr(response, "message", None)
-                    raw_response = getattr(response, "raw", None)
+                # Get message and raw_response - works for both dict and object
+                message = _get_attr(response, "message")
+                raw_response = _get_attr(response, "raw")
 
                 # Extract content from message
                 if message:
-                    if isinstance(message, dict):
-                        # Message is dict
-                        blocks = message.get("blocks", [])
-                        if blocks and isinstance(blocks[0], dict):
-                            content = blocks[0].get("text", "")
-                        else:
-                            content = message.get("content", "")
+                    # Try to extract from blocks first (LlamaIndex format)
+                    blocks = _get_attr(message, "blocks", [])
+                    if blocks and len(blocks) > 0:
+                        content = _get_attr(blocks[0], "text", "")
                     else:
-                        # Message is ChatMessage object
-                        blocks = getattr(message, "blocks", [])
-                        if blocks and len(blocks) > 0:
-                            content = getattr(blocks[0], "text", "")
-                        else:
-                            content = getattr(message, "content", "")
+                        # Fallback to direct content field
+                        content = _get_attr(message, "content", "")
 
                     # Create output message
                     llm_inv.output_messages = [
@@ -197,27 +192,12 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         )
                     ]
 
-                # Extract token usage from response.raw (OpenAI format)
-                # LlamaIndex stores the raw API response (e.g., OpenAI response) in response.raw
-                # raw_response could be a dict or an object (e.g., ChatCompletion from OpenAI)
+                # Extract token usage from raw_response
                 if raw_response:
-                    # Try to get usage from dict or object
-                    if isinstance(raw_response, dict):
-                        usage = raw_response.get("usage", {})
-                    else:
-                        # It's an object, try to get usage attribute
-                        usage = getattr(raw_response, "usage", None)
-
+                    usage = _get_attr(raw_response, "usage")
                     if usage:
-                        # usage could also be dict or object
-                        if isinstance(usage, dict):
-                            llm_inv.input_tokens = usage.get("prompt_tokens")
-                            llm_inv.output_tokens = usage.get("completion_tokens")
-                        else:
-                            llm_inv.input_tokens = getattr(usage, "prompt_tokens", None)
-                            llm_inv.output_tokens = getattr(
-                                usage, "completion_tokens", None
-                            )
+                        llm_inv.input_tokens = _get_attr(usage, "prompt_tokens")
+                        llm_inv.output_tokens = _get_attr(usage, "completion_tokens")
 
         # Stop the LLM invocation
         self._handler.stop_llm(llm_inv)
