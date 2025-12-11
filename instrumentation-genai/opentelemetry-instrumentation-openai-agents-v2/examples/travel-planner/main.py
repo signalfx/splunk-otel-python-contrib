@@ -30,6 +30,7 @@ See README.md for more information
 
 import argparse
 import random
+import time
 from datetime import datetime, timedelta
 
 from agents import Agent, Runner, function_tool
@@ -48,6 +49,10 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
 from opentelemetry.instrumentation.openai_agents import (
     OpenAIAgentsInstrumentor,
 )
+from opentelemetry.instrumentation.openai_agents.span_processor import (
+    start_multi_agent_workflow,
+    stop_multi_agent_workflow,
+)
 from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
@@ -55,7 +60,6 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -215,11 +219,6 @@ def create_coordinator_agent() -> Agent:
 
 def run_travel_planner() -> None:
     """Execute the multi-agent travel planning workflow."""
-    from opentelemetry.instrumentation.openai_agents.span_processor import (
-        start_multi_agent_workflow,
-        stop_multi_agent_workflow,
-    )
-
     # Sample travel request
     origin = "Seattle"
     destination = "Paris"
@@ -307,8 +306,6 @@ Please organize this into a clear, well-formatted itinerary for a romantic week-
         stop_multi_agent_workflow(final_output=final_output)
 
         # Allow time for telemetry to flush
-        import time
-
         time.sleep(2)
 
 
