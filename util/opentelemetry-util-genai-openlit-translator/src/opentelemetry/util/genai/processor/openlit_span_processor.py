@@ -106,7 +106,7 @@ class TransformationRule:
             except re.error:
                 # Bad regex – treat as non-match but log once
                 logging.warning(
-                    "[TL_PROCESSOR] Invalid regex in match_scope: %s", pattern
+                    "[OPENLIT_PROCESSOR] Invalid regex in match_scope: %s", pattern
                 )
                 return False
         if self.match_attributes:
@@ -129,7 +129,7 @@ def _load_rules_from_env() -> List[TransformationRule]:
         rules_spec = data.get("rules") if isinstance(data, dict) else None
         if not isinstance(rules_spec, list):
             logging.warning(
-                "[TL_PROCESSOR] %s must contain a 'rules' list", _ENV_RULES
+                "[OPENLIT_PROCESSOR] %s must contain a 'rules' list", _ENV_RULES
             )
             return []
         rules: List[TransformationRule] = []
@@ -156,7 +156,7 @@ def _load_rules_from_env() -> List[TransformationRule]:
         return rules
     except Exception as exc:  # broad: we never want to break app startup
         logging.warning(
-            "[TL_PROCESSOR] Failed to parse %s: %s", _ENV_RULES, exc
+            "[OPENLIT_PROCESSOR] Failed to parse %s: %s", _ENV_RULES, exc
         )
         return []
 
@@ -284,7 +284,7 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         # Check if this span should be transformed
         if not self.span_filter(span):
-            logger.debug("[TL_PROCESSOR] Span filtered: name=%s", span.name)
+            logger.debug("[OPENLIT_PROCESSOR] Span filtered: name=%s", span.name)
             return None
 
         # avoid emitting multiple synthetic spans if on_end invoked repeatedly.
@@ -303,7 +303,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                     break
             except Exception as match_err:  # pragma: no cover - defensive
                 logging.warning(
-                    "[TL_PROCESSOR] Rule match error: %s", match_err
+                    "[OPENLIT_PROCESSOR] Rule match error: %s", match_err
                 )
 
         sentinel = {"_openlit_processed": True}
@@ -331,7 +331,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # If invocation is None, it means we couldn't get messages - skip this span
         if invocation is None:
             logger.debug(
-                "[TL_PROCESSOR] Skipping span translation - invocation creation returned None: %s",
+                "[OPENLIT_PROCESSOR] Skipping span translation - invocation creation returned None: %s",
                 span.name,
             )
             return None
@@ -407,7 +407,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                 if synthetic_span_id:
                     self._synthetic_span_ids.add(synthetic_span_id)
                     logger.debug(
-                        "[TL_PROCESSOR] Marked synthetic span ID=%s for skipping",
+                        "[OPENLIT_PROCESSOR] Marked synthetic span ID=%s for skipping",
                         synthetic_span_id,
                     )
 
@@ -452,7 +452,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Skip synthetic spans we created (check span ID in set)
         if span_id and span_id in self._synthetic_span_ids:
             _logger.debug(
-                "[TL_PROCESSOR] Skipping synthetic span (ID in set): %s",
+                "[OPENLIT_PROCESSOR] Skipping synthetic span (ID in set): %s",
                 span.name,
             )
             return True
@@ -460,7 +460,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Fallback: Also check attributes for defense-in-depth
         if span.attributes and "_openlit_translated" in span.attributes:
             _logger.debug(
-                "[TL_PROCESSOR] Skipping synthetic span (attribute): %s",
+                "[OPENLIT_PROCESSOR] Skipping synthetic span (attribute): %s",
                 span.name,
             )
             return True
@@ -468,7 +468,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Skip already processed spans
         if span.attributes and "_openlit_processed" in span.attributes:
             _logger.debug(
-                "[TL_PROCESSOR] Skipping already processed span: %s", span.name
+                "[OPENLIT_PROCESSOR] Skipping already processed span: %s", span.name
             )
             return True
 
@@ -500,7 +500,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             for exclude_pattern in _EXCLUDE_SPAN_PATTERNS:
                 if exclude_pattern.lower() in span_name.lower():
                     _logger.debug(
-                        "[TL_PROCESSOR] Span excluded (will not export): pattern='%s', span=%s",
+                        "[OPENLIT_PROCESSOR] Span excluded (will not export): pattern='%s', span=%s",
                         exclude_pattern,
                         span_name,
                     )
@@ -513,12 +513,12 @@ class OpenlitSpanProcessor(SpanProcessor):
                             # Set trace flags to 0 (not sampled)
                             span._context._trace_flags = 0  # type: ignore
                             _logger.debug(
-                                "[TL_PROCESSOR] Marked span as non-sampled: %s",
+                                "[OPENLIT_PROCESSOR] Marked span as non-sampled: %s",
                                 span_name,
                             )
                         except Exception as e:
                             _logger.debug(
-                                "[TL_PROCESSOR] Could not mark span as non-sampled: %s",
+                                "[OPENLIT_PROCESSOR] Could not mark span as non-sampled: %s",
                                 e,
                             )
                     return
@@ -526,7 +526,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             # STEP 2: Check if this is an LLM span that needs evaluation
             if self._is_llm_span(span):
                 _logger.debug(
-                    "[TL_PROCESSOR] LLM span detected: %s, running evaluations on mutated span",
+                    "[OPENLIT_PROCESSOR] LLM span detected: %s, running evaluations on mutated span",
                     span.name,
                 )
                 # MUTATION-ONLY MODE with EVALUATIONS using handler.stop_llm():
@@ -580,25 +580,25 @@ class OpenlitSpanProcessor(SpanProcessor):
                     try:
                         handler.stop_llm(invocation)
                         _logger.debug(
-                            "[TL_PROCESSOR] stop_llm completed for span: %s, sampled=%s, trace_id=%s",
+                            "[OPENLIT_PROCESSOR] stop_llm completed for span: %s, sampled=%s, trace_id=%s",
                             span.name,
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
                     except Exception as stop_err:
                         _logger.warning(
-                            "[TL_PROCESSOR] handler.stop_llm failed: %s",
+                            "[OPENLIT_PROCESSOR] handler.stop_llm failed: %s",
                             stop_err,
                         )
                 else:
                     _logger.info(
-                        "[TL_PROCESSOR] Skipped evaluations (no invocation created): %s",
+                        "[OPENLIT_PROCESSOR] Skipped evaluations (no invocation created): %s",
                         span.name,
                     )
             else:
                 # Non-LLM spans (tasks, workflows, tools) - buffer for optional batch processing
                 _logger.debug(
-                    "[TL_PROCESSOR] Non-LLM span buffered: %s (buffer_size=%d)",
+                    "[OPENLIT_PROCESSOR] Non-LLM span buffered: %s (buffer_size=%d)",
                     span.name,
                     len(self._span_buffer) + 1,
                 )
@@ -607,7 +607,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                 # Process buffer when root span arrives (optional, for synthetic spans of workflows)
                 if span.parent is None and not self._processing_buffer:
                     _logger.debug(
-                        "[TL_PROCESSOR] Root span detected, processing buffered spans (count=%d)",
+                        "[OPENLIT_PROCESSOR] Root span detected, processing buffered spans (count=%d)",
                         len(self._span_buffer),
                     )
                     self._processing_buffer = True
@@ -653,7 +653,7 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
-            logging.warning("[TL_PROCESSOR] Span transformation failed: %s", e)
+            logging.warning("[OPENLIT_PROCESSOR] Span transformation failed: %s", e)
 
     def _sort_spans_by_hierarchy(
         self, spans: List[ReadableSpan]
@@ -731,7 +731,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         for exclude_pattern in _EXCLUDE_SPAN_PATTERNS:
             if exclude_pattern.lower() in span_name.lower():
                 _logger.debug(
-                    "[TL_PROCESSOR] Span excluded (matches pattern '%s'): name=%s",
+                    "[OPENLIT_PROCESSOR] Span excluded (matches pattern '%s'): name=%s",
                     exclude_pattern,
                     span_name,
                 )
@@ -748,7 +748,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                 op in str(operation_name).lower() for op in _LLM_OPERATIONS
             ):
                 _logger.debug(
-                    "[TL_PROCESSOR] LLM span detected (gen_ai.operation.name=%s): name=%s",
+                    "[OPENLIT_PROCESSOR] LLM span detected (gen_ai.operation.name=%s): name=%s",
                     operation_name,
                     span.name,
                 )
@@ -756,7 +756,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             else:
                 # Has operation name but not an LLM operation (e.g., "workflow", "task", "tool")
                 _logger.debug(
-                    "[TL_PROCESSOR] Non-LLM operation (gen_ai.operation.name=%s): name=%s",
+                    "[OPENLIT_PROCESSOR] Non-LLM operation (gen_ai.operation.name=%s): name=%s",
                     operation_name,
                     span.name,
                 )
@@ -764,7 +764,7 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         # No gen_ai.operation.name means it wasn't transformed or doesn't match our rules
         _logger.debug(
-            "[TL_PROCESSOR] Span skipped (no gen_ai.operation.name): name=%s",
+            "[OPENLIT_PROCESSOR] Span skipped (no gen_ai.operation.name): name=%s",
             span.name,
         )
         return False
@@ -843,7 +843,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                 mutated_attrs["gen_ai.output.messages"] = output_json
 
             _logger.debug(
-                "[TL_PROCESSOR] Messages reconstructed in mutation: input=%d, output=%d, span=%s",
+                "[OPENLIT_PROCESSOR] Messages reconstructed in mutation: input=%d, output=%d, span=%s",
                 len(input_messages) if input_messages else 0,
                 len(output_messages) if output_messages else 0,
                 span_name,
@@ -856,7 +856,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                     output_messages,
                 )
                 _logger.debug(
-                    "[TL_PROCESSOR] Cached messages for span_id=%s: input=%d, output=%d",
+                    "[OPENLIT_PROCESSOR] Cached messages for span_id=%s: input=%d, output=%d",
                     span_id,
                     len(input_messages) if input_messages else 0,
                     len(output_messages) if output_messages else 0,
@@ -866,7 +866,7 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         except Exception as e:
             _logger.debug(
-                "[TL_PROCESSOR] Message reconstruction in mutation failed: %s, span=%s",
+                "[OPENLIT_PROCESSOR] Message reconstruction in mutation failed: %s, span=%s",
                 e,
                 span_name,
             )
@@ -898,7 +898,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                     break
             except Exception as match_err:  # pragma: no cover - defensive
                 logging.warning(
-                    "[TL_PROCESSOR] Rule match error: %s", match_err
+                    "[OPENLIT_PROCESSOR] Rule match error: %s", match_err
                 )
 
         # Decide which transformation config to apply
@@ -960,7 +960,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                                     )
                                 )
                                 _logger.debug(
-                                    "[TL_PROCESSOR] Inferred operation from span name: %s → %s",
+                                    "[OPENLIT_PROCESSOR] Inferred operation from span name: %s → %s",
                                     span.name,
                                     operation_name,
                                 )
@@ -992,7 +992,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                             original, mutated, span.name, span_id
                         )
                         _logger.debug(
-                            "[TL_PROCESSOR] Messages reconstructed for LLM span: operation=%s, span=%s, span_id=%s",
+                            "[OPENLIT_PROCESSOR] Messages reconstructed for LLM span: operation=%s, span=%s, span_id=%s",
                             operation_name,
                             span.name,
                             span_id,
@@ -1000,7 +1000,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                     else:
                         # Not an LLM span - skip message reconstruction
                         _logger.debug(
-                            "[TL_PROCESSOR] Skipping message reconstruction for non-LLM span: operation=%s, span=%s",
+                            "[OPENLIT_PROCESSOR] Skipping message reconstruction for non-LLM span: operation=%s, span=%s",
                             operation_name,
                             span.name,
                         )
@@ -1161,11 +1161,11 @@ class OpenlitSpanProcessor(SpanProcessor):
                         ):
                             content = parsed["kwargs"]["content"]
                             logging.getLogger(__name__).debug(
-                                "[TL_PROCESSOR] Extracted content from LangChain serialization format"
+                                "[OPENLIT_PROCESSOR] Extracted content from LangChain serialization format"
                             )
                     except (json.JSONDecodeError, KeyError, TypeError) as e:
                         logging.getLogger(__name__).warning(
-                            "[TL_PROCESSOR] Failed to parse LangChain serialization: %s",
+                            "[OPENLIT_PROCESSOR] Failed to parse LangChain serialization: %s",
                             str(e),
                         )
 
@@ -1189,7 +1189,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                         # Fallback: serialize to JSON string (not ideal)
                         content = json.dumps(content)
                         logging.getLogger(__name__).warning(
-                            "[TL_PROCESSOR] Content is dict, serializing: %s",
+                            "[OPENLIT_PROCESSOR] Content is dict, serializing: %s",
                             str(content)[:100],
                         )
 
@@ -1326,7 +1326,7 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         _logger = logging.getLogger(__name__)
         _logger.debug(
-            "[TL_PROCESSOR] _build_invocation: span_id=%s, cache_has_entry=%s, cache_size=%d, span=%s",
+            "[OPENLIT_PROCESSOR] _build_invocation: span_id=%s, cache_has_entry=%s, cache_size=%d, span=%s",
             span_id,
             span_id in self._message_cache if span_id else False,
             len(self._message_cache),
@@ -1337,7 +1337,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             # Use cached messages (already in DeepEval format: InputMessage/OutputMessage with Text objects)
             input_messages, output_messages = cached_messages
             _logger.debug(
-                "[TL_PROCESSOR] Using cached messages for invocation: input=%d, output=%d, span=%s, span_id=%s",
+                "[OPENLIT_PROCESSOR] Using cached messages for invocation: input=%d, output=%d, span=%s, span_id=%s",
                 len(input_messages) if input_messages else 0,
                 len(output_messages) if output_messages else 0,
                 existing_span.name,
@@ -1349,7 +1349,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             output_messages = None
 
             _logger.warning(
-                "[TL_PROCESSOR] Messages NOT in cache! span_id=%s, span=%s, has_input_data=%s, has_output_data=%s",
+                "[OPENLIT_PROCESSOR] Messages NOT in cache! span_id=%s, span=%s, has_input_data=%s, has_output_data=%s",
                 span_id,
                 existing_span.name,
                 original_input_data is not None,
@@ -1359,7 +1359,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             if original_input_data or original_output_data:
                 try:
                     _logger.debug(
-                        "[TL_PROCESSOR] Attempting fallback reconstruction: input_len=%d, output_len=%d",
+                        "[OPENLIT_PROCESSOR] Attempting fallback reconstruction: input_len=%d, output_len=%d",
                         len(str(original_input_data))
                         if original_input_data
                         else 0,
@@ -1381,20 +1381,20 @@ class OpenlitSpanProcessor(SpanProcessor):
                         )
                     )
                     _logger.debug(
-                        "[TL_PROCESSOR] Fallback: reconstructed messages for invocation: input=%d, output=%d, span=%s",
+                        "[OPENLIT_PROCESSOR] Fallback: reconstructed messages for invocation: input=%d, output=%d, span=%s",
                         len(input_messages) if input_messages else 0,
                         len(output_messages) if output_messages else 0,
                         existing_span.name,
                     )
                 except Exception as e:
                     _logger.warning(
-                        "[TL_PROCESSOR] Message reconstruction failed: %s, span=%s",
+                        "[OPENLIT_PROCESSOR] Message reconstruction failed: %s, span=%s",
                         e,
                         existing_span.name,
                     )
             else:
                 _logger.error(
-                    "[TL_PROCESSOR] ERROR: No message data available! span_id=%s, span=%s, attrs_keys=%s",
+                    "[OPENLIT_PROCESSOR] ERROR: No message data available! span_id=%s, span=%s, attrs_keys=%s",
                     span_id,
                     existing_span.name,
                     list(base_attrs.keys())[:20],
@@ -1403,7 +1403,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Create invocation with reconstructed messages
         _logger = logging.getLogger(__name__)
         _logger.debug(
-            "[TL_PROCESSOR] Creating invocation: input_msgs=%d, output_msgs=%d, span=%s, span_id=%s",
+            "[OPENLIT_PROCESSOR] Creating invocation: input_msgs=%d, output_msgs=%d, span=%s, span_id=%s",
             len(input_messages) if input_messages else 0,
             len(output_messages) if output_messages else 0,
             existing_span.name,
@@ -1414,7 +1414,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Without messages, we can't run evaluations, so there's no point in creating a synthetic span
         if not input_messages or not output_messages:
             _logger.warning(
-                "[TL_PROCESSOR] Skipping invocation creation - no messages available! "
+                "[OPENLIT_PROCESSOR] Skipping invocation creation - no messages available! "
                 "span=%s, span_id=%s, is_llm=%s, is_agent=%s, is_task=%s",
                 existing_span.name,
                 span_id,
@@ -1429,7 +1429,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Example: [OutputMessage(role='assistant', parts=[], finish_reason='stop')]
         if output_messages and all(not msg.parts for msg in output_messages):
             _logger.warning(
-                "[TL_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
+                "[OPENLIT_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
                 "span=%s, span_id=%s, output_messages=%s",
                 existing_span.name,
                 span_id,

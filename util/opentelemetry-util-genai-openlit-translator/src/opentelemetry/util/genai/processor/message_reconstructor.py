@@ -189,10 +189,7 @@ def _convert_normalized_to_langchain(
             # Import Text from GenAI types
             from opentelemetry.util.genai.types import Text
 
-            # Create a Text part from the content
             text_part = Text(content=content, type="text")
-
-            # Add .parts attribute (monkeypatch on the instance)
             langchain_msg.parts = [text_part]  # type: ignore[attr-defined]
 
             _logger.debug(
