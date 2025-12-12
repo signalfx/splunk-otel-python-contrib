@@ -34,38 +34,42 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import argparse
-import random
-import time
-from datetime import datetime, timedelta
+import argparse  # noqa: E402
+import random  # noqa: E402
+import time  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
 
-from agents import Agent, Runner, function_tool
+from agents import Agent, Runner, function_tool  # noqa: E402
 
-from opentelemetry import _events, _logs, metrics, trace
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+from opentelemetry import _events, _logs, metrics, trace  # noqa: E402
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # noqa: E402
     OTLPLogExporter,
 )
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # noqa: E402
     OTLPMetricExporter,
 )
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E402
     OTLPSpanExporter,
 )
-from opentelemetry.instrumentation.openai_agents import (
+from opentelemetry.instrumentation.openai_agents import (  # noqa: E402
     OpenAIAgentsInstrumentor,
 )
-from opentelemetry.instrumentation.openai_agents.span_processor import (
+from opentelemetry.instrumentation.openai_agents.span_processor import (  # noqa: E402
     start_multi_agent_workflow,
     stop_multi_agent_workflow,
 )
-from opentelemetry.sdk._events import EventLoggerProvider
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk._events import EventLoggerProvider  # noqa: E402
+from opentelemetry.sdk._logs import LoggerProvider  # noqa: E402
+from opentelemetry.sdk._logs.export import (  # noqa: E402
+    BatchLogRecordProcessor,
+)
+from opentelemetry.sdk.metrics import MeterProvider  # noqa: E402
+from opentelemetry.sdk.metrics.export import (  # noqa: E402
+    PeriodicExportingMetricReader,
+)
+from opentelemetry.sdk.resources import Resource  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Sample data
