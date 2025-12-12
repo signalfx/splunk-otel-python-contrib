@@ -28,13 +28,18 @@ Agents:
 See README.md for more information
 """
 
+# Load environment variables FIRST before any other imports
+# This ensures OTEL_SERVICE_NAME and other env vars are available when SDK initializes
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import argparse
 import random
 import time
 from datetime import datetime, timedelta
 
 from agents import Agent, Runner, function_tool
-from dotenv import load_dotenv
 
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
@@ -58,6 +63,7 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
@@ -135,8 +141,12 @@ def search_activities(destination: str) -> str:
 
 def configure_otel() -> None:
     """Configure OpenTelemetry SDK for traces, metrics, and logs."""
+    # Create resource with service name from environment (OTEL_SERVICE_NAME)
+    # Resource.create() automatically picks up OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+    resource = Resource.create()
+
     # Traces
-    trace_provider = TracerProvider()
+    trace_provider = TracerProvider(resource=resource)
     trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(trace_provider)
 
@@ -243,8 +253,6 @@ def run_travel_planner() -> None:
     start_multi_agent_workflow(
         workflow_name="travel-planner",
         initial_input=initial_request,
-        workflow_origin=origin,
-        workflow_destination=destination,
     )
 
     final_output = None
@@ -316,7 +324,7 @@ Please organize this into a clear, well-formatted itinerary for a romantic week-
 
 def main(manual_instrumentation: bool = False) -> None:
     """Main entry point for the travel planner example."""
-    load_dotenv()
+    # Note: load_dotenv() is called at module level before imports
 
     if manual_instrumentation:
         configure_otel()

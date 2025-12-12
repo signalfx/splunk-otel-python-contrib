@@ -183,6 +183,7 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             base_url_default="https://api.openai.com",
             server_address_default="api.openai.com",
             server_port_default=443,
+            tracer_provider=tracer_provider,
         )
 
         tracing = _load_tracing_module()

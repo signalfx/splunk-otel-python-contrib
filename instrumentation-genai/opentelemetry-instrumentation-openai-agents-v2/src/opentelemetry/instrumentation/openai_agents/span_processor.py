@@ -85,6 +85,65 @@ from opentelemetry.trace import (
 )
 from opentelemetry.util.types import AttributeValue
 
+# ---------------------------------------------------------------------------
+# Global workflow context for multi-agent scenarios
+# ---------------------------------------------------------------------------
+
+_GLOBAL_WORKFLOW_CONTEXT: dict[str, Any] = {}
+_GLOBAL_PROCESSOR_REF: list = []  # Holds reference to active processor
+
+
+def start_multi_agent_workflow(
+    workflow_name: str,
+    initial_input: Optional[str] = None,
+    **kwargs: Any,
+) -> None:
+    """Start a global workflow context for multi-agent scenarios.
+
+    This allows multiple independent agent runs to be grouped under a single
+    workflow span. Call this before running multiple agents, and call
+    stop_multi_agent_workflow() when done.
+
+    Args:
+        workflow_name: Name of the workflow
+        initial_input: Optional initial input/request for the workflow
+        **kwargs: Additional attributes to store in the workflow context
+    """
+    _GLOBAL_WORKFLOW_CONTEXT["workflow_name"] = workflow_name
+    _GLOBAL_WORKFLOW_CONTEXT["initial_input"] = initial_input
+    _GLOBAL_WORKFLOW_CONTEXT["attributes"] = kwargs
+    _GLOBAL_WORKFLOW_CONTEXT["active"] = True
+
+    # Immediately start the workflow span via the processor if available
+    if _GLOBAL_PROCESSOR_REF:
+        processor = _GLOBAL_PROCESSOR_REF[0]
+        if processor._workflow is None:
+            wf_attrs = kwargs.copy() if kwargs else {}
+            workflow = Workflow(name=workflow_name, attributes=wf_attrs)
+            workflow.initial_input = initial_input
+            processor._workflow = workflow
+            processor._handler.start_workflow(workflow)
+
+
+def stop_multi_agent_workflow(final_output: Optional[str] = None) -> None:
+    """Stop the global workflow context and finalize the workflow span.
+
+    Args:
+        final_output: Optional final output of the workflow
+    """
+    # Stop the workflow via the processor if available
+    if _GLOBAL_PROCESSOR_REF:
+        processor = _GLOBAL_PROCESSOR_REF[0]
+        if processor._workflow is not None:
+            processor._workflow.final_output = final_output
+            processor._handler.stop_workflow(processor._workflow)
+            processor._workflow = None
+
+    _GLOBAL_WORKFLOW_CONTEXT["final_output"] = final_output
+    _GLOBAL_WORKFLOW_CONTEXT["active"] = False
+    _GLOBAL_WORKFLOW_CONTEXT.clear()
+
+
 # Import all semantic convention constants
 # ---- GenAI semantic convention helpers (embedded from constants.py) ----
 
@@ -460,6 +519,7 @@ class GenAISemanticProcessor(TracingProcessor):
         base_url_default: Optional[str] = None,
         server_address_default: Optional[str] = None,
         server_port_default: Optional[int] = None,
+        tracer_provider: Optional[Any] = None,
     ):
         """Initialize processor with metrics support.
 
@@ -527,11 +587,22 @@ class GenAISemanticProcessor(TracingProcessor):
         self._agent_content: dict[str, Dict[str, list[Any]]] = {}
 
         # util/genai integration (step 1 – workflow only)
-        self._handler = get_telemetry_handler()
+        # Pass tracer_provider to ensure handler uses correct resource/service name
+        self._handler = get_telemetry_handler(tracer_provider=tracer_provider)
         self._workflow: Workflow | None = None
         self._steps: dict[str, Step] = {}
         self._llms: dict[str, LLMInvocation] = {}
         self._tools: dict[str, ToolCall] = {}
+        # Track workflow input/output from agent spans
+        self._workflow_first_input: Optional[str] = None
+        self._workflow_last_output: Optional[str] = None
+        # Track agent spans per trace for auto-detecting multi-agent scenarios
+        self._trace_agent_count: dict[str, int] = {}
+        self._trace_first_agent_name: dict[str, str] = {}
+
+        # Register this processor globally for multi-agent workflow support
+        _GLOBAL_PROCESSOR_REF.clear()
+        _GLOBAL_PROCESSOR_REF.append(self)
 
         # Metrics configuration
         self._metrics_enabled = metrics_enabled
@@ -1314,23 +1385,24 @@ class GenAISemanticProcessor(TracingProcessor):
         """Create root span when trace starts."""
         if self._tracer:
             try:
-                initial_input = None
-                root = getattr(trace, "root_span", None)
-                if root is not None:
-                    data = getattr(root, "data", None)
-                    messages = getattr(data, "messages", None)
-                    if messages:
-                        first = messages[0]
-                        initial_input = str(getattr(first, "content", first))
+                # If global workflow context is active, workflow was already started
+                # by start_multi_agent_workflow() - don't create a new one
+                if _GLOBAL_WORKFLOW_CONTEXT.get("active"):
+                    return
 
-                # Create Workflow entity; mirror LangChain style minimal constructor.
-                wf_name = "OpenAIAgents"
-                wf_attrs: dict[str, Any] = {}
-                self._workflow = Workflow(name=wf_name, attributes=wf_attrs)
-                self._workflow.initial_input = initial_input
+                # Initialize agent tracking for this trace
+                self._trace_agent_count[trace.trace_id] = 0
+                self._trace_first_agent_name.pop(trace.trace_id, None)
 
-                self._handler.start_workflow(self._workflow)
-            except Exception:  # defensive – don’t break existing spans
+                # Reset workflow input/output tracking for new trace
+                self._workflow_first_input = None
+                self._workflow_last_output = None
+
+                # Workflow will be created lazily on first agent span
+                # This allows us to use the first agent's name for the workflow
+                # Similar to LangChain's approach
+                self._workflow = None
+            except Exception:  # defensive – don't break existing spans
                 self._workflow = None
 
     def on_trace_end(self, trace: Trace) -> None:
@@ -1339,7 +1411,18 @@ class GenAISemanticProcessor(TracingProcessor):
             if root_span.is_recording():
                 root_span.set_status(Status(StatusCode.OK))
             root_span.end()
-        if self._workflow is not None:
+
+        # Clean up trace-level tracking
+        self._trace_agent_count.pop(trace.trace_id, None)
+        self._trace_first_agent_name.pop(trace.trace_id, None)
+
+        # Only stop workflow if not in global workflow context
+        if self._workflow is not None and not _GLOBAL_WORKFLOW_CONTEXT.get("active"):
+            # Set input/output from tracked agent spans
+            if self._workflow_first_input and not self._workflow.initial_input:
+                self._workflow.initial_input = self._workflow_first_input
+            if self._workflow_last_output:
+                self._workflow.final_output = self._workflow_last_output
             self._handler.stop_workflow(self._workflow)
             self._workflow = None
 
@@ -1413,6 +1496,31 @@ class GenAISemanticProcessor(TracingProcessor):
 
         # For agent spans, create a GenAI Step under the workflow and
         # make the OpenAI Agents span a child of that Step span.
+        # Auto-detect multi-agent: lazily create workflow on first agent span
+        if _is_instance_of(span.span_data, AgentSpanData):
+            # Track agent count for this trace (auto-detect multi-agent)
+            trace_id = span.trace_id
+            if trace_id in self._trace_agent_count:
+                self._trace_agent_count[trace_id] += 1
+            else:
+                self._trace_agent_count[trace_id] = 1
+
+            # Store first agent name for workflow naming
+            if trace_id not in self._trace_first_agent_name and agent_name:
+                self._trace_first_agent_name[trace_id] = agent_name
+
+            # Lazily create workflow on first agent span (similar to LangChain)
+            if self._workflow is None and not _GLOBAL_WORKFLOW_CONTEXT.get("active"):
+                try:
+                    # Use first agent's name for workflow, or default
+                    workflow_name = self._trace_first_agent_name.get(
+                        trace_id, agent_name or "OpenAIAgents"
+                    )
+                    self._workflow = Workflow(name=workflow_name, attributes={})
+                    self._handler.start_workflow(self._workflow)
+                except Exception:
+                    self._workflow = None
+
         if (
             _is_instance_of(span.span_data, AgentSpanData)
             and self._workflow is not None
@@ -1582,12 +1690,22 @@ class GenAISemanticProcessor(TracingProcessor):
         step = self._steps.pop(key, None)
         if step is not None:
             try:
-                # Optional: attach output from agent/span
+                # Attach input and output from agent/span
                 content = self._agent_content.get(span.span_id)
-                if content and content.get("output_messages"):
-                    step.output_data = safe_json_dumps(
-                        content["output_messages"]
-                    )
+                if content:
+                    if content.get("input_messages") and not step.input_data:
+                        step.input_data = safe_json_dumps(
+                            content["input_messages"]
+                        )
+                        # Track first input for workflow (default workflow path)
+                        if self._workflow_first_input is None:
+                            self._workflow_first_input = step.input_data
+                    if content.get("output_messages"):
+                        step.output_data = safe_json_dumps(
+                            content["output_messages"]
+                        )
+                        # Track last output for workflow (default workflow path)
+                        self._workflow_last_output = step.output_data
                 self._handler.stop_step(step)
             except Exception:
                 pass
