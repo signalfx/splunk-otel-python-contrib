@@ -145,6 +145,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     # Get TelemetryHandler from callback handler if available
     from llama_index.core import Settings
     from opentelemetry.util.genai.types import AgentInvocation
+    from opentelemetry import trace, context
 
     telemetry_handler = None
     for callback_handler in Settings.callback_manager.handlers:
@@ -155,6 +156,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     # Create a root agent span immediately to ensure all subsequent calls
     # (LLM, tools) inherit this trace context
     root_agent = None
+    parent_context = None
     if telemetry_handler:
         from uuid import uuid4
 
@@ -172,11 +174,15 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         # This pushes (agent_name, run_id) onto the _agent_context_stack
         # and stores the span in _span_registry[run_id]
         telemetry_handler.start_agent(root_agent)
+        
+        # Capture the current context (which includes the active span)
+        # so we can propagate it to async tasks
+        parent_context = context.get_current()
 
     # Call the original run() method to get the workflow handler
     handler = wrapped(*args, **kwargs)
 
-    if telemetry_handler and root_agent:
+    if telemetry_handler and root_agent and parent_context:
         # Create workflow instrumentor for detailed step tracking
         instrumentor = WorkflowEventInstrumentor(telemetry_handler)
 
@@ -186,18 +192,24 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         class InstrumentedHandler:
             """Wrapper that closes the root agent span when workflow completes."""
 
-            def __init__(self, original, root_span_agent):
+            def __init__(self, original, root_span_agent, ctx):
                 self._original = original
                 self._root_agent = root_span_agent
                 self._result = None
+                self._parent_context = ctx
 
             def __await__(self):
                 # Start background task to instrument workflow events
                 async def stream_events():
                     try:
-                        await instrumentor.instrument_workflow_handler(
-                            self._original, str(user_msg)
-                        )
+                        # Attach the parent context before processing workflow events
+                        token = context.attach(self._parent_context)
+                        try:
+                            await instrumentor.instrument_workflow_handler(
+                                self._original, str(user_msg)
+                            )
+                        finally:
+                            context.detach(token)
                     except Exception as e:
                         import logging
 
@@ -211,6 +223,8 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
 
             async def _await_impl(self):
                 """Actual async implementation."""
+                # Attach the parent context to ensure proper span hierarchy
+                token = context.attach(self._parent_context)
                 try:
                     self._result = await self._original
                     self._root_agent.output_result = str(self._result)
@@ -222,12 +236,14 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                         self._root_agent, Error(message=str(e), type=type(e))
                     )
                     raise
+                finally:
+                    context.detach(token)
                 return self._result
 
             def __getattr__(self, name):
                 # Delegate all other attributes to the original handler
                 return getattr(self._original, name)
 
-        handler = InstrumentedHandler(original_handler, root_agent)
+        handler = InstrumentedHandler(original_handler, root_agent, parent_context)
 
     return handler
