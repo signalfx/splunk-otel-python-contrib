@@ -1417,7 +1417,9 @@ class GenAISemanticProcessor(TracingProcessor):
         self._trace_first_agent_name.pop(trace.trace_id, None)
 
         # Only stop workflow if not in global workflow context
-        if self._workflow is not None and not _GLOBAL_WORKFLOW_CONTEXT.get("active"):
+        if self._workflow is not None and not _GLOBAL_WORKFLOW_CONTEXT.get(
+            "active"
+        ):
             # Set input/output from tracked agent spans
             if self._workflow_first_input and not self._workflow.initial_input:
                 self._workflow.initial_input = self._workflow_first_input
@@ -1510,13 +1512,17 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._trace_first_agent_name[trace_id] = agent_name
 
             # Lazily create workflow on first agent span (similar to LangChain)
-            if self._workflow is None and not _GLOBAL_WORKFLOW_CONTEXT.get("active"):
+            if self._workflow is None and not _GLOBAL_WORKFLOW_CONTEXT.get(
+                "active"
+            ):
                 try:
                     # Use first agent's name for workflow, or default
                     workflow_name = self._trace_first_agent_name.get(
                         trace_id, agent_name or "OpenAIAgents"
                     )
-                    self._workflow = Workflow(name=workflow_name, attributes={})
+                    self._workflow = Workflow(
+                        name=workflow_name, attributes={}
+                    )
                     self._handler.start_workflow(self._workflow)
                 except Exception:
                     self._workflow = None
