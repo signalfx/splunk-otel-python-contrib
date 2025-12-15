@@ -4,7 +4,7 @@ This example demonstrates **zero-code instrumentation** of CrewAI applications u
 
 ## Prerequisites
 
-1. **OpenAI API Key** - Required for LLM calls
+1. **LLM Access** - Either OpenAI API key OR Cisco Chat AI credentials
 2. **OTel Collector** (optional) - For sending telemetry to backends
 
 ## Setup
@@ -20,30 +20,51 @@ pip install -e ../../[instruments]
 
 # 3. Configure environment variables
 cp env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and add your credentials
 ```
 
-## Configuration (.env)
+## LLM Configuration
 
-Create a `.env` file with:
+### Option 1: Cisco Chat AI (Default)
+
+The example uses Cisco Chat AI via OAuth2 authentication:
 
 ```bash
-# OpenAI API Key (required)
-OPENAI_API_KEY=your-openai-api-key-here
+# In .env
+CISCO_CLIENT_ID=your-cisco-client-id
+CISCO_CLIENT_SECRET=your-cisco-client-secret
+CISCO_APP_KEY=your-cisco-app-key
+```
 
-# OpenTelemetry Configuration
+### Option 2: OpenAI API (Direct)
+
+To use OpenAI directly, set `OPENAI_API_KEY` and modify `customer_support.py` to remove the Cisco LLM configuration.
+
+```bash
+# In .env
+OPENAI_API_KEY=your-openai-api-key
+```
+
+## OpenTelemetry Configuration (.env)
+
+```bash
+# Service name
 OTEL_SERVICE_NAME=crewai-zero-code
+
+# Local OTLP Collector
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 
-# Enable metrics (required for gen_ai.agent.duration, gen_ai.workflow.duration)
+# Or Splunk Observability Cloud (HTTP required)
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://ingest.us1.signalfx.com/v2/trace/otlp
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=https://ingest.us1.signalfx.com/v2/datapoint/otlp
+OTEL_EXPORTER_OTLP_HEADERS=X-SF-Token=YOUR_SPLUNK_TOKEN
+
+# Enable metrics
 OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric
 
-# Disable CrewAI built-in telemetry (recommended)
+# Disable CrewAI built-in telemetry
 CREWAI_DISABLE_TELEMETRY=true
-
-# OpenAI Model
-OPENAI_MODEL_NAME=gpt-4o-mini
 ```
 
 ## Run with Console Output
@@ -66,10 +87,23 @@ dotenv run -- opentelemetry-instrument \
     python customer_support.py
 ```
 
+## Project Structure
+
+```
+zero-code/
+├── customer_support.py    # CrewAI application with Cisco LLM integration
+├── util/
+│   ├── __init__.py
+│   └── cisco_token_manager.py  # OAuth2 token management for Cisco LLM
+├── requirements.txt       # Python dependencies
+├── env.example           # Environment variable template
+└── README.md             # This file
+```
+
 ## What Gets Instrumented
 
 ✅ **CrewAI** - Workflows, tasks, agents, tools  
-✅ **OpenAI** - LLM calls, token usage, embeddings  
+✅ **OpenAI/LiteLLM** - LLM calls, token usage  
 ✅ **ChromaDB** - Memory queries/updates (when `memory=True`)  
 ✅ **HTTP** - Web scraping and external API calls
 
@@ -79,15 +113,11 @@ dotenv run -- opentelemetry-instrument \
 gen_ai.workflow crew
 ├── gen_ai.step Task 1 (Support Inquiry)
 │   └── invoke_agent Senior Support Representative
-│       ├── chroma.query (memory retrieval)
-│       ├── embeddings text-embedding-3-small
 │       ├── chat gpt-4o-mini (LLM reasoning)
 │       └── tool Read website content
 │           └── GET https://docs.crewai.com/...
 └── gen_ai.step Task 2 (QA Review)
     └── invoke_agent Support QA Specialist
-        ├── chroma.query (memory retrieval)
-        ├── embeddings text-embedding-3-small
         └── chat gpt-4o-mini (LLM review)
 ```
 
@@ -95,12 +125,14 @@ gen_ai.workflow crew
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key (**required**) | - |
+| `CISCO_CLIENT_ID` | Cisco OAuth2 client ID | - |
+| `CISCO_CLIENT_SECRET` | Cisco OAuth2 client secret | - |
+| `CISCO_APP_KEY` | Cisco app key for API access | - |
+| `OPENAI_API_KEY` | OpenAI API key (alternative to Cisco) | - |
 | `OTEL_SERVICE_NAME` | Service name in traces | `unknown_service` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL | `http://localhost:4317` |
 | `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Enable metrics (`span_metric`) | `span` |
 | `CREWAI_DISABLE_TELEMETRY` | Disable CrewAI telemetry | `false` |
-| `OPENAI_MODEL_NAME` | Default OpenAI model | `gpt-4o-mini` |
 
 ## Metrics Generated
 
@@ -118,11 +150,16 @@ Normal warning, safe to ignore. Means auto-instrumentation is working correctly.
 
 **No traces appearing in console?**  
 1. Verify you're using `--traces_exporter console`
-2. Check that `OPENAI_API_KEY` is set correctly
+2. Check that credentials are set correctly
 3. Enable debug logging: `export OTEL_LOG_LEVEL=debug`
 
 **No metrics appearing?**  
 Ensure `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric` is set in your `.env` file.
+
+**Cisco token errors?**  
+1. Verify `CISCO_CLIENT_ID` and `CISCO_CLIENT_SECRET` are correct
+2. Check that your credentials have access to the Chat AI API
+3. Ensure `CISCO_APP_KEY` is set for API authorization
 
 **OTel collector connection refused?**  
 Verify your collector is running:
