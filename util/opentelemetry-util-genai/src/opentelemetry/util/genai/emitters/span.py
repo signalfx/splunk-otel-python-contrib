@@ -595,7 +595,7 @@ class SpanEmitter(EmitterMeta):
     # ---- Step lifecycle --------------------------------------------------
     def _start_step(self, step: Step) -> None:
         """Start a step span."""
-        span_name = f"step_execution {step.name}"
+        span_name = f"step {step.name}"
         parent_span = getattr(step, "parent_span", None)
         parent_ctx = (
             trace.set_span_in_context(parent_span)
