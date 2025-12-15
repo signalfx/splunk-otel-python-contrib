@@ -55,8 +55,7 @@ from opentelemetry.instrumentation.openai_agents import (  # noqa: E402
     OpenAIAgentsInstrumentor,
 )
 from opentelemetry.instrumentation.openai_agents.span_processor import (  # noqa: E402
-    start_multi_agent_workflow,
-    stop_multi_agent_workflow,
+    stop_workflow,
 )
 from opentelemetry.sdk._events import EventLoggerProvider  # noqa: E402
 from opentelemetry.sdk._logs import LoggerProvider  # noqa: E402
@@ -252,12 +251,8 @@ def run_travel_planner() -> None:
     activity_agent = create_activity_agent()
     coordinator = create_coordinator_agent()
 
-    # Start a global workflow that spans all agent calls
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
-    start_multi_agent_workflow(
-        workflow_name="travel-planner",
-        initial_input=initial_request,
-    )
+    print(f"\nRequest: {initial_request}\n")
 
     final_output = None
     try:
@@ -314,8 +309,8 @@ Please organize this into a clear, well-formatted itinerary for a romantic week-
         print(f"\n{final_output}\n")
 
     finally:
-        # Stop the global workflow with final output
-        stop_multi_agent_workflow(final_output=final_output)
+        # Stop the workflow to finalize it with all agent steps
+        stop_workflow(final_output=final_output)
 
         # Allow time for telemetry to flush
         time.sleep(2)

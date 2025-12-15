@@ -163,6 +163,7 @@ class SpanEmitter(EmitterMeta):
             semconv_attrs[GenAI.GEN_AI_OPERATION_NAME] = (
                 enum_val.value if enum_val else "execute_tool"
             )
+            semconv_attrs[GenAI.GEN_AI_REQUEST_MODEL] = invocation.name
         elif isinstance(invocation, EmbeddingInvocation):
             semconv_attrs.setdefault(
                 GenAI.GEN_AI_REQUEST_MODEL, invocation.request_model
@@ -380,7 +381,7 @@ class SpanEmitter(EmitterMeta):
     # ---- Workflow lifecycle ----------------------------------------------
     def _start_workflow(self, workflow: Workflow) -> None:
         """Start a workflow span."""
-        span_name = f"workflow {workflow.name}"
+        span_name = f"gen_ai.workflow {workflow.name}"
         parent_span = getattr(workflow, "parent_span", None)
         parent_ctx = (
             trace.set_span_in_context(parent_span)
@@ -595,7 +596,7 @@ class SpanEmitter(EmitterMeta):
     # ---- Step lifecycle --------------------------------------------------
     def _start_step(self, step: Step) -> None:
         """Start a step span."""
-        span_name = f"step {step.name}"
+        span_name = f"gen_ai.step {step.name}"
         parent_span = getattr(step, "parent_span", None)
         parent_ctx = (
             trace.set_span_in_context(parent_span)
@@ -771,4 +772,3 @@ class SpanEmitter(EmitterMeta):
                 token.__exit__(None, None, None)  # type: ignore[misc]
             except Exception:
                 pass
-        span.end()
