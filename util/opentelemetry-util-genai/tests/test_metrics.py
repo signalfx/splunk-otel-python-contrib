@@ -66,6 +66,8 @@ class TestMetricsEmission(unittest.TestCase):
         *,
         agent_name: Optional[str] = None,
         agent_id: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
     ) -> LLMInvocation:
         env = {
             **STABILITY_EXPERIMENTAL,
@@ -96,6 +98,8 @@ class TestMetricsEmission(unittest.TestCase):
                 ],
             )
             inv.provider = "prov"
+            inv.server_address = server_address
+            inv.server_port = server_port
             # set agent identity post construction if provided
             if agent_name is not None:
                 inv.agent_name = agent_name
@@ -283,10 +287,48 @@ class TestMetricsEmission(unittest.TestCase):
         self.assertTrue(
             found_token_agent,
             "Expected token usage metric datapoint to include agent.name and agent.id",
-        )
+                )
         self.assertTrue(
             found_duration_agent,
             "Expected operation duration metric datapoint to include agent.name and agent.id",
+        )
+
+    def test_llm_metrics_include_server_attributes(self):
+        self._invoke(
+            "span_metric",
+            "span",
+            server_address="llm.internal",
+            server_port=8081,
+        )
+        metrics_list = self._collect_metrics()
+        saw_duration = False
+        saw_tokens = False
+        for metric in metrics_list:
+            if metric.name not in (
+                "gen_ai.client.token.usage",
+                "gen_ai.client.operation.duration",
+            ):
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                attrs = getattr(dp, "attributes", {}) or {}
+                if (
+                    attrs.get("server.address") == "llm.internal"
+                    and attrs.get("server.port") == 8081
+                ):
+                    if metric.name == "gen_ai.client.token.usage":
+                        saw_tokens = True
+                    else:
+                        saw_duration = True
+        self.assertTrue(
+            saw_duration,
+            "Expected duration metric to include server.address and server.port",
+        )
+        self.assertTrue(
+            saw_tokens,
+            "Expected token usage metric to include server.address and server.port",
         )
 
     def test_llm_metrics_inherit_agent_identity_from_context(self):
