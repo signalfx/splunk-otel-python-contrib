@@ -21,6 +21,9 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
 from opentelemetry.instrumentation.openai_agents import (
     OpenAIAgentsInstrumentor,
 )
+from opentelemetry.instrumentation.openai_agents.span_processor import (  # noqa: E402
+    stop_workflow,
+)
 from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
@@ -116,8 +119,15 @@ def run_agent1() -> None:
 def main() -> None:
     load_dotenv()
     _configure_manual_instrumentation()
-    run_agent()
-    # run_agent1()
+    try:
+        run_agent()
+        # run_agent1()
+    finally:
+        # Stop workflow to finalize the workflow span and flush traces
+        stop_workflow()
+        # Force flush to ensure all spans are exported
+        tracer_provider = cast(Any, get_tracer_provider())
+        tracer_provider.force_flush()
 
 
 if __name__ == "__main__":

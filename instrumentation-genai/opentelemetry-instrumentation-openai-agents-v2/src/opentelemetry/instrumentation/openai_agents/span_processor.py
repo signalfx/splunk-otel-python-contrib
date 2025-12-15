@@ -18,6 +18,7 @@ References:
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -80,68 +81,42 @@ from opentelemetry.trace import (
     Status,
     StatusCode,
     Tracer,
-    get_current_span,
     set_span_in_context,
 )
 from opentelemetry.util.types import AttributeValue
 
 # ---------------------------------------------------------------------------
-# Global workflow context for multi-agent scenarios
+# Global processor reference (for internal use)
 # ---------------------------------------------------------------------------
 
-_GLOBAL_WORKFLOW_CONTEXT: dict[str, Any] = {}
 _GLOBAL_PROCESSOR_REF: list = []  # Holds reference to active processor
 
 
-def start_multi_agent_workflow(
-    workflow_name: str,
-    initial_input: Optional[str] = None,
-    **kwargs: Any,
-) -> None:
-    """Start a global workflow context for multi-agent scenarios.
+def stop_workflow(final_output: Optional[str] = None) -> None:
+    """Stop the current workflow span.
 
-    This allows multiple independent agent runs to be grouped under a single
-    workflow span. Call this before running multiple agents, and call
-    stop_multi_agent_workflow() when done.
+    For multi-agent scenarios, call this after all agents complete to finalize
+    the workflow. For single-agent scenarios, this is called automatically
+    on shutdown() but can be called explicitly for immediate finalization.
 
     Args:
-        workflow_name: Name of the workflow
-        initial_input: Optional initial input/request for the workflow
-        **kwargs: Additional attributes to store in the workflow context
-    """
-    _GLOBAL_WORKFLOW_CONTEXT["workflow_name"] = workflow_name
-    _GLOBAL_WORKFLOW_CONTEXT["initial_input"] = initial_input
-    _GLOBAL_WORKFLOW_CONTEXT["attributes"] = kwargs
-    _GLOBAL_WORKFLOW_CONTEXT["active"] = True
+        final_output: Optional final output to set on the workflow.
 
-    # Immediately start the workflow span via the processor if available
+    Example:
+        from opentelemetry.instrumentation.openai_agents.span_processor import stop_workflow
+
+        # Run multiple agents - workflow persists across traces
+        Runner.run_sync(flight_agent, "Find flights")
+        Runner.run_sync(hotel_agent, "Find hotels")
+        result = Runner.run_sync(coordinator, "Create itinerary")
+
+        # Stop the workflow to finalize it
+        stop_workflow(final_output=result.final_output)
+    """
     if _GLOBAL_PROCESSOR_REF:
         processor = _GLOBAL_PROCESSOR_REF[0]
-        if processor._workflow is None:
-            wf_attrs = kwargs.copy() if kwargs else {}
-            workflow = Workflow(name=workflow_name, attributes=wf_attrs)
-            workflow.initial_input = initial_input
-            processor._workflow = workflow
-            processor._handler.start_workflow(workflow)
-
-
-def stop_multi_agent_workflow(final_output: Optional[str] = None) -> None:
-    """Stop the global workflow context and finalize the workflow span.
-
-    Args:
-        final_output: Optional final output of the workflow
-    """
-    # Stop the workflow via the processor if available
-    if _GLOBAL_PROCESSOR_REF:
-        processor = _GLOBAL_PROCESSOR_REF[0]
-        if processor._workflow is not None:
-            processor._workflow.final_output = final_output
-            processor._handler.stop_workflow(processor._workflow)
-            processor._workflow = None
-
-    _GLOBAL_WORKFLOW_CONTEXT["final_output"] = final_output
-    _GLOBAL_WORKFLOW_CONTEXT["active"] = False
-    _GLOBAL_WORKFLOW_CONTEXT.clear()
+        if hasattr(processor, "stop_workflow"):
+            processor.stop_workflow(final_output)
 
 
 # Import all semantic convention constants
@@ -596,7 +571,7 @@ class GenAISemanticProcessor(TracingProcessor):
         # Track workflow input/output from agent spans
         self._workflow_first_input: Optional[str] = None
         self._workflow_last_output: Optional[str] = None
-        # Track agent spans per trace for auto-detecting multi-agent scenarios
+        # Track agent spans per trace
         self._trace_agent_count: dict[str, int] = {}
         self._trace_first_agent_name: dict[str, str] = {}
 
@@ -1381,32 +1356,74 @@ class GenAISemanticProcessor(TracingProcessor):
             return SpanKind.INTERNAL  # Agent operations are internal
         return SpanKind.INTERNAL
 
+    def _format_input_message(self, content: str) -> str:
+        """Format input content as GenAI semantic convention message JSON."""
+        # Check if already JSON formatted
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return content  # Already in correct format
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Wrap in standard format
+        input_msg = {
+            "role": "user",
+            "parts": [{"type": "text", "content": content}],
+        }
+        return json.dumps([input_msg])
+
+    def _format_output_message(self, content: str) -> str:
+        """Format output content as GenAI semantic convention message JSON."""
+        # Check if already JSON formatted
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return content  # Already in correct format
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Wrap in standard format
+        output_msg = {
+            "role": "assistant",
+            "parts": [{"type": "text", "content": content}],
+            "finish_reason": "stop",
+        }
+        return json.dumps([output_msg])
+
     def on_trace_start(self, trace: Trace) -> None:
-        """Create root span when trace starts."""
-        if self._tracer:
-            try:
-                # If global workflow context is active, workflow was already started
-                # by start_multi_agent_workflow() - don't create a new one
-                if _GLOBAL_WORKFLOW_CONTEXT.get("active"):
-                    return
+        """Create or reuse workflow span when trace starts.
 
-                # Initialize agent tracking for this trace
-                self._trace_agent_count[trace.trace_id] = 0
-                self._trace_first_agent_name.pop(trace.trace_id, None)
+        Workflow persists across multiple traces until stop_workflow() is called
+        or shutdown() is invoked. This supports multi-agent scenarios with
+        sequential Runner.run() calls.
+        """
+        if not self._tracer:
+            return
 
-                # Reset workflow input/output tracking for new trace
+        try:
+            # Initialize tracking for this trace
+            self._trace_agent_count[trace.trace_id] = 0
+            self._trace_first_agent_name.pop(trace.trace_id, None)
+
+            # Only create workflow if one doesn't exist
+            # Workflow persists across traces for multi-agent support
+            if self._workflow is None:
+                # Reset workflow input/output tracking for new workflow
                 self._workflow_first_input = None
                 self._workflow_last_output = None
 
-                # Workflow will be created lazily on first agent span
-                # This allows us to use the first agent's name for the workflow
-                # Similar to LangChain's approach
-                self._workflow = None
-            except Exception:  # defensive – don't break existing spans
-                self._workflow = None
+                # Create workflow - will be named after first agent
+                self._workflow = Workflow(name="OpenAIAgents", attributes={})
+                self._handler.start_workflow(self._workflow)
+        except Exception:  # defensive – don't break existing spans
+            self._workflow = None
 
     def on_trace_end(self, trace: Trace) -> None:
-        """End root span when trace ends."""
+        """Handle trace end - update workflow but don't stop it.
+
+        Workflow persists across traces until stop_workflow() is called
+        explicitly or shutdown() is invoked. This supports both single-agent
+        and multi-agent scenarios with sequential Runner.run() calls.
+        """
         if root_span := self._root_spans.pop(trace.trace_id, None):
             if root_span.is_recording():
                 root_span.set_status(Status(StatusCode.OK))
@@ -1416,17 +1433,40 @@ class GenAISemanticProcessor(TracingProcessor):
         self._trace_agent_count.pop(trace.trace_id, None)
         self._trace_first_agent_name.pop(trace.trace_id, None)
 
-        # Only stop workflow if not in global workflow context
-        if self._workflow is not None and not _GLOBAL_WORKFLOW_CONTEXT.get(
-            "active"
-        ):
-            # Set input/output from tracked agent spans
+        # Update workflow input/output but DON'T stop it
+        # Workflow persists until stop_workflow() or shutdown()
+        if self._workflow is not None:
             if self._workflow_first_input and not self._workflow.initial_input:
                 self._workflow.initial_input = self._workflow_first_input
             if self._workflow_last_output:
                 self._workflow.final_output = self._workflow_last_output
+
+    def stop_workflow(self, final_output: Optional[str] = None) -> None:
+        """Stop the current workflow.
+
+        For multi-agent scenarios, call this explicitly after all agents complete.
+        For single-agent scenarios, this is called automatically on shutdown().
+
+        Args:
+            final_output: Optional final output to set on the workflow.
+        """
+        if self._workflow is not None:
+            # Set final output
+            if final_output:
+                self._workflow.final_output = self._format_output_message(final_output)
+            elif self._workflow_last_output:
+                self._workflow.final_output = self._format_output_message(
+                    self._workflow_last_output
+                )
+            # Set initial input
+            if self._workflow_first_input and not self._workflow.initial_input:
+                self._workflow.initial_input = self._format_input_message(
+                    self._workflow_first_input
+                )
             self._handler.stop_workflow(self._workflow)
             self._workflow = None
+            self._workflow_first_input = None
+            self._workflow_last_output = None
 
     def on_span_start(self, span: Span[Any]) -> None:
         """Start child span for agent span."""
@@ -1498,35 +1538,22 @@ class GenAISemanticProcessor(TracingProcessor):
 
         # For agent spans, create a GenAI Step under the workflow and
         # make the OpenAI Agents span a child of that Step span.
-        # Auto-detect multi-agent: lazily create workflow on first agent span
         if _is_instance_of(span.span_data, AgentSpanData):
-            # Track agent count for this trace (auto-detect multi-agent)
+            # Track agent count for this trace
             trace_id = span.trace_id
             if trace_id in self._trace_agent_count:
                 self._trace_agent_count[trace_id] += 1
             else:
                 self._trace_agent_count[trace_id] = 1
 
-            # Store first agent name for workflow naming
+            # Store first agent name for workflow naming and update workflow name
             if trace_id not in self._trace_first_agent_name and agent_name:
                 self._trace_first_agent_name[trace_id] = agent_name
+                # Update workflow name to first agent's name
+                if self._workflow is not None:
+                    self._workflow.name = agent_name
 
-            # Lazily create workflow on first agent span (similar to LangChain)
-            if self._workflow is None and not _GLOBAL_WORKFLOW_CONTEXT.get(
-                "active"
-            ):
-                try:
-                    # Use first agent's name for workflow, or default
-                    workflow_name = self._trace_first_agent_name.get(
-                        trace_id, agent_name or "OpenAIAgents"
-                    )
-                    self._workflow = Workflow(
-                        name=workflow_name, attributes={}
-                    )
-                    self._handler.start_workflow(self._workflow)
-                except Exception:
-                    self._workflow = None
-
+        # Create step for every agent invocation under the workflow
         if (
             _is_instance_of(span.span_data, AgentSpanData)
             and self._workflow is not None
@@ -1535,11 +1562,15 @@ class GenAISemanticProcessor(TracingProcessor):
                 step_attrs: dict[str, Any] = dict(attributes)
                 step = Step(
                     name=agent_name or span_name,
-                    step_type="agent_start",  # or "chain" if you prefer
+                    step_type="agent_start",
                     attributes=step_attrs,
                 )
 
                 step.parent_run_id = self._workflow.run_id
+                # Set parent_span so step becomes child of workflow span
+                # This is critical for multi-agent scenarios where traces are separate
+                if hasattr(self._workflow, "span") and self._workflow.span:
+                    step.parent_span = self._workflow.span
 
                 content = self._agent_content.get(span.span_id)
                 if content and content.get("input_messages"):
@@ -1551,8 +1582,8 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._steps[str(span.span_id)] = step
 
                 # Use the Step's span as parent context for the OpenAI Agents span.
-                parent_span = get_current_span()
-                context = set_span_in_context(parent_span)
+                if hasattr(step, "span") and step.span:
+                    context = set_span_in_context(step.span)
             except Exception:
                 pass
 
@@ -1660,7 +1691,12 @@ class GenAISemanticProcessor(TracingProcessor):
     def on_span_end(self, span: Span[Any]) -> None:
         """Finalize span with attributes, events, and metrics."""
         if token := self._tokens.pop(span.span_id, None):
-            detach(token)
+            try:
+                detach(token)
+            except ValueError:
+                # Token was created in a different context (e.g., multi-agent scenario)
+                # This is expected when workflow spans persist across multiple traces
+                pass
 
         payload = self._build_content_payload(span)
         self._update_agent_aggregate(span, payload)
@@ -1799,6 +1835,9 @@ class GenAISemanticProcessor(TracingProcessor):
 
     def shutdown(self) -> None:
         """Clean up resources on shutdown."""
+        # Stop any active workflow first
+        self.stop_workflow()
+
         for span_id, otel_span in list(self._otel_spans.items()):
             otel_span.set_status(
                 Status(StatusCode.ERROR, "Application shutdown")
@@ -2503,4 +2542,5 @@ __all__ = [
     "normalize_provider",
     "normalize_output_type",
     "validate_tool_type",
+    "stop_workflow",
 ]
