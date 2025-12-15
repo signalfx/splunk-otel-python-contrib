@@ -8,7 +8,7 @@ metadata:
     component: telemetry
   annotations:
     description: "Customer support CrewAI multi-agent with OpenTelemetry instrumentation and GenAI evaluations"
-    git-commit: "8b573f3"
+    git-commit: "c08d3c5"
 spec:
   # Run every 4 hours from 8 AM to 4 PM PST on weekdays (Monday-Friday)
   # Times in PST: 8am, 12pm, 4pm
@@ -47,7 +47,7 @@ spec:
                 
                 # === OpenTelemetry Resource Attributes ===
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=8b573f3"
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=c08d3c5"
                 
                 # === Service name for telemetry ===
                 - name: OTEL_SERVICE_NAME
@@ -63,13 +63,31 @@ spec:
                 - name: OPENAI_MODEL_NAME
                   value: "gpt-4o-mini"
                 
-                # === Serper API Key for web search (if available) ===
-                # Uncomment if you add serper-api-key to the secret
-                # - name: SERPER_API_KEY
-                #   valueFrom:
-                #     secretKeyRef:
-                #       name: openai-credentials
-                #       key: serper-api-key
+                # === Serper API Key for web search ===
+                - name: SERPER_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openai-credentials
+                      key: serper-api-key
+                
+                # === Cisco API Credentials ===
+                - name: CISCO_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: cisco-credentials
+                      key: client-id
+                
+                - name: CISCO_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: cisco-credentials
+                      key: client-secret
+                
+                - name: CISCO_APP_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cisco-credentials
+                      key: app-key
                 
                 # === CrewAI Configuration ===
                 - name: CREWAI_DISABLE_TELEMETRY
@@ -88,7 +106,7 @@ spec:
                 
                 # === GenAI Emitters Configuration ===
                 - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
-                  value: "span_metric_event,splunk"
+                  value: "span_metric"
                 
                 - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
                   value: "replace-category:SplunkEvaluationResults"
@@ -115,6 +133,19 @@ spec:
                 # === OTLP Protocol (grpc) ===
                 - name: OTEL_EXPORTER_OTLP_PROTOCOL
                   value: "grpc"
+                
+                # === Explicit Exporter Configuration ===
+                - name: OTEL_TRACES_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_METRICS_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                
+                - name: OTEL_LOG_LEVEL
+                  value: "info"
                 
                 # === Exclude health check URLs ===
                 - name: OTEL_PYTHON_EXCLUDED_URLS

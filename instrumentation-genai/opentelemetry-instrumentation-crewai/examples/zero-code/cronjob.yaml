@@ -8,7 +8,7 @@ metadata:
     component: telemetry
   annotations:
     description: "Customer support CrewAI with zero-code OpenTelemetry instrumentation"
-    git-commit: "429430a"
+    git-commit: "c08d3c5"
 spec:
   # Run every 4 hours from 8 AM to 4 PM PST on weekdays (Monday-Friday)
   # Times in PST: 8am, 12pm, 4pm
@@ -46,7 +46,7 @@ spec:
                 
                 # === OpenTelemetry Resource Attributes ===
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=429430a"
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=c08d3c5"
                 
                 # === Service name for telemetry ===
                 - name: OTEL_SERVICE_NAME
@@ -68,6 +68,25 @@ spec:
                     secretKeyRef:
                       name: openai-credentials
                       key: serper-api-key
+                
+                # === Cisco API Credentials (for Bedrock AgentCore) ===
+                - name: CISCO_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: cisco-credentials
+                      key: client-id
+                
+                - name: CISCO_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: cisco-credentials
+                      key: client-secret
+                
+                - name: CISCO_APP_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cisco-credentials
+                      key: app-key
                 
                 # === CrewAI Configuration ===
                 - name: CREWAI_DISABLE_TELEMETRY
@@ -113,6 +132,19 @@ spec:
                 - name: OTEL_EXPORTER_OTLP_PROTOCOL
                   value: "grpc"
                 
+                # === Explicit Exporter Configuration (required for auto-instrumentation) ===
+                - name: OTEL_TRACES_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_METRICS_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                
+                - name: OTEL_LOG_LEVEL
+                  value: "info"
+                
                 # === Exclude health check URLs ===
                 - name: OTEL_PYTHON_EXCLUDED_URLS
                   value: "^(https?://)?[^/]+(/)?$"
@@ -147,6 +179,23 @@ spec:
                 # === GenAI evaluation sampling rate ===
                 - name: OTEL_GENAI_EVALUATION_SAMPLING_RATE
                   value: "1"
+                
+                # === Batch Span Processor Configuration (for short-lived containers) ===
+                # Reduce batch delay for faster export in K8s jobs
+                - name: OTEL_BSP_SCHEDULE_DELAY
+                  value: "1000"
+                
+                # Export timeout
+                - name: OTEL_BSP_EXPORT_TIMEOUT
+                  value: "30000"
+                
+                # Max queue size
+                - name: OTEL_BSP_MAX_QUEUE_SIZE
+                  value: "2048"
+                
+                # Max export batch size
+                - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
+                  value: "512"
               
               # === Resource limits ===
               resources:

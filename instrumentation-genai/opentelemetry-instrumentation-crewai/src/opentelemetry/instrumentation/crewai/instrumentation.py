@@ -4,7 +4,6 @@ OpenTelemetry CrewAI Instrumentation
 Wrapper-based instrumentation for CrewAI using splunk-otel-util-genai.
 """
 
-import contextvars
 from typing import Collection, Optional
 
 from wrapt import wrap_function_wrapper
@@ -23,12 +22,6 @@ _instruments = ("crewai >= 0.70.0",)
 
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
-
-# Context variable to track parent run IDs for nested operations
-_current_run_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "crewai_current_run_id", default=None
-)
-
 
 class CrewAIInstrumentor(BaseInstrumentor):
     """
@@ -113,13 +106,11 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
     """
     try:
         handler = _handler
-        parent_run_id = _current_run_id.get()
         
         # Create workflow invocation
         workflow = Workflow(
             name=getattr(instance, "name", None) or "CrewAI Workflow",
             workflow_type="crewai.crew",
-            parent_run_id=parent_run_id,
             framework="crewai",
             system="crewai",
         )
@@ -130,9 +121,6 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         
         # Start the workflow
         handler.start_workflow(workflow)
-        
-        # Set as current run ID for child operations
-        token = _current_run_id.set(str(workflow.run_id))
     except Exception:
         # If instrumentation setup fails, just run the original function
         return wrapped(*args, **kwargs)
@@ -160,12 +148,6 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         except Exception:
             pass
         raise
-    finally:
-        # Restore previous run ID context
-        try:
-            _current_run_id.reset(token)
-        except Exception:
-            pass
 
 
 def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
@@ -176,12 +158,10 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
     """
     try:
         handler = _handler
-        parent_run_id = _current_run_id.get()
-        
+
         # Create agent invocation
         agent_invocation = AgentInvocation(
             name=getattr(instance, "role", "Unknown Agent"),
-            parent_run_id=parent_run_id,
             framework="crewai",
             system="crewai",
         )
@@ -193,9 +173,6 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         
         # Start the agent invocation
         handler.start_agent(agent_invocation)
-        
-        # Set as current run ID for child operations
-        token = _current_run_id.set(str(agent_invocation.run_id))
     except Exception:
         # If instrumentation setup fails, just run the original function
         return wrapped(*args, **kwargs)
@@ -233,12 +210,6 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         except Exception:
             pass
         raise
-    finally:
-        # Restore previous run ID context
-        try:
-            _current_run_id.reset(token)
-        except Exception:
-            pass
 
 
 def _wrap_task_execute(wrapped, instance, args, kwargs):
@@ -249,12 +220,10 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
     """
     try:
         handler = _handler
-        parent_run_id = _current_run_id.get()
         
         # Create step
         step = Step(
             name=getattr(instance, "description", None) or "Task Execution",
-            parent_run_id=parent_run_id,
             framework="crewai",
             system="crewai",
         )
@@ -270,9 +239,6 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         
         # Start the step
         handler.start_step(step)
-        
-        # Set as current run ID for child operations
-        token = _current_run_id.set(str(step.run_id))
     except Exception:
         # If instrumentation setup fails, just run the original function
         return wrapped(*args, **kwargs)
@@ -299,12 +265,6 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         except Exception:
             pass
         raise
-    finally:
-        # Restore previous run ID context
-        try:
-            _current_run_id.reset(token)
-        except Exception:
-            pass
 
 
 def _wrap_tool_run(wrapped, instance, args, kwargs):
@@ -315,14 +275,12 @@ def _wrap_tool_run(wrapped, instance, args, kwargs):
     """
     try:
         handler = _handler
-        parent_run_id = _current_run_id.get()
         
         # Create tool call
         tool_call = ToolCall(
             name=getattr(instance, "name", "unknown_tool"),
             arguments=str(kwargs) if kwargs else "{}",
             id=str(id(instance)),
-            parent_run_id=parent_run_id,
             framework="crewai",
             system="crewai",
         )
@@ -362,14 +320,12 @@ def _wrap_structured_tool_invoke(wrapped, instance, args, kwargs):
     """
     try:
         handler = _handler
-        parent_run_id = _current_run_id.get()
         
         # Create tool call
         tool_call = ToolCall(
             name=getattr(instance, "name", "unknown_tool"),
             arguments=str(kwargs) if kwargs else "{}",
             id=str(id(instance)),
-            parent_run_id=parent_run_id,
             framework="crewai",
             system="crewai",
         )
