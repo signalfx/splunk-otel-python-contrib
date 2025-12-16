@@ -1,0 +1,42 @@
+# Amazon Bedrock AgentCore (starter-toolkit 0.2.5+ has file permission fix - PR #407)
+bedrock-agentcore>=1.1.1
+bedrock-agentcore-starter-toolkit>=0.2.5
+
+# Core langchain dependencies
+langchain>=1.0.0
+langchain-openai>=1.0.0
+langgraph>=1.0.0
+
+# OpenAI
+openai>=1.0.0
+
+# OpenTelemetry core packages
+opentelemetry-api>=1.38.0
+opentelemetry-sdk>=1.38.0
+opentelemetry-exporter-otlp-proto-http>=1.38.0
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+opentelemetry-instrumentation>=0.59b0
+opentelemetry-semantic-conventions>=0.59b0
+
+# OpenTelemetry instrumentations for LLM providers
+opentelemetry-instrumentation-openai>=0.30.0
+
+# Splunk GenAI utilities and emitters
+splunk-otel-util-genai>=0.1.4
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval>=0.1.6
+splunk-otel-instrumentation-langchain
+
+# DeepEval for evaluations
+deepeval>=3.0.0
+
+# Note: CiscoTokenManager is in local util/ directory (no external package needed)
+
+# Other dependencies
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+requests>=2.25.0
+
+
+
