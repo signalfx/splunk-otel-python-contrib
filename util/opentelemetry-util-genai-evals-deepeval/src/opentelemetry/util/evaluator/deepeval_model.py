@@ -152,10 +152,10 @@ def create_eval_model() -> Any | None:
         DEEPEVAL_LLM_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
         DEEPEVAL_LLM_CLIENT_APP_NAME=<app-key>
 
-    Example - TIAA GAIT (Azure AD):
-        DEEPEVAL_LLM_BASE_URL=https://gait-api.tiaa.com/v1
-        DEEPEVAL_LLM_MODEL=claude-3-5-sonnet-v2@20241022
-        DEEPEVAL_LLM_PROVIDER=anthropic
+    Example - Azure Active Directory:
+        DEEPEVAL_LLM_BASE_URL=https://your-api.example.com/v1
+        DEEPEVAL_LLM_MODEL=gpt-4o-mini
+        DEEPEVAL_LLM_PROVIDER=openai
         DEEPEVAL_LLM_CLIENT_ID=<azure-client-id>
         DEEPEVAL_LLM_CLIENT_SECRET=<azure-client-secret>
         DEEPEVAL_LLM_TOKEN_URL=https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
