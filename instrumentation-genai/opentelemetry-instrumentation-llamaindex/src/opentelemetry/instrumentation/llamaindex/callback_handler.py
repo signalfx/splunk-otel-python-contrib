@@ -415,7 +415,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if model_name:
             agent_invocation.model = _safe_str(model_name)
 
-        self._handler.start_agent_invocation(agent_invocation)
+        self._handler.start_agent(agent_invocation)
 
     def _handle_agent_step_end(
         self,
@@ -438,7 +438,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 agent_invocation.output_result = _safe_str(response)
 
         # Stop the agent invocation
-        self._handler.stop_agent_invocation(agent_invocation)
+        self._handler.stop_agent(agent_invocation)
 
     def _handle_function_call_start(
         self,
