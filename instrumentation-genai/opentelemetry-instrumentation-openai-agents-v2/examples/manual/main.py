@@ -3,28 +3,61 @@
 
 from __future__ import annotations
 
-from agents import Agent, Runner, function_tool
-from dotenv import load_dotenv
+# ruff: noqa: I001
 
-from opentelemetry import trace
+from typing import Any, cast
+
+from dotenv import load_dotenv
+from opentelemetry import _logs
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+    OTLPLogExporter,
+)
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+    OTLPMetricExporter,
+)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
     OTLPSpanExporter,
 )
 from opentelemetry.instrumentation.openai_agents import (
     OpenAIAgentsInstrumentor,
 )
+from opentelemetry.instrumentation.openai_agents.span_processor import (  # noqa: E402
+    stop_workflow,
+)
+from opentelemetry.metrics import set_meter_provider
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import get_tracer_provider, set_tracer_provider
+
+from agents import Agent, Runner, function_tool
 
 
-def configure_otel() -> None:
-    """Configure the OpenTelemetry SDK for exporting spans."""
+def _configure_manual_instrumentation() -> None:
+    """Configure tracing/metrics/logging manually so exported data goes to OTLP."""
 
-    provider = TracerProvider()
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    trace.set_tracer_provider(provider)
+    # Traces
+    set_tracer_provider(TracerProvider())
+    tracer_provider = cast(Any, get_tracer_provider())
+    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
-    OpenAIAgentsInstrumentor().instrument(tracer_provider=provider)
+    # Metrics
+    metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+    set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
+
+    # Logs
+    _logs.set_logger_provider(LoggerProvider())
+    logger_provider = cast(Any, _logs.get_logger_provider())
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter())
+    )
+
+    # OpenAI Agents instrumentation
+    instrumentor: Any = OpenAIAgentsInstrumentor()
+    instrumentor.instrument(tracer_provider=get_tracer_provider())
 
 
 @function_tool
@@ -57,8 +90,15 @@ def run_agent() -> None:
 
 def main() -> None:
     load_dotenv()
-    configure_otel()
-    run_agent()
+    _configure_manual_instrumentation()
+    try:
+        run_agent()
+    finally:
+        # Stop workflow to finalize the workflow span and flush traces
+        stop_workflow()
+        # Force flush to ensure all spans are exported
+        tracer_provider = cast(Any, get_tracer_provider())
+        tracer_provider.force_flush()
 
 
 if __name__ == "__main__":
