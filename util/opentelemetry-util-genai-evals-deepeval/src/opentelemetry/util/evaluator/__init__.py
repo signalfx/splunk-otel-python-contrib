@@ -12,7 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Deepeval evaluator plugin package."""
+"""Evaluator plugin package.
+
+The module exposes the built-in Deepeval evaluator and extends the package
+search path so additional evaluator helpers (for example custom Deepeval
+models) can live in separate distributions under the same namespace.
+"""
+
+from pkgutil import extend_path
+
+__path__ = extend_path(__path__, __name__)  # type: ignore[name-defined]
 
 from .deepeval import DeepevalEvaluator, register, registration
 

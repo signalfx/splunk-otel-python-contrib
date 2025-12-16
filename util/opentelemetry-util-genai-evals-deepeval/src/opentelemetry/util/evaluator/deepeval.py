@@ -15,9 +15,11 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import re as _re
+import sys
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
@@ -47,6 +49,7 @@ from .deepeval_metrics import (
 from .deepeval_metrics import (
     instantiate_metrics as _instantiate_metrics,
 )
+from .deepeval_models import resolve_model as _resolve_model
 from .deepeval_runner import run_evaluation as _run_deepeval
 
 try:  # Optional debug logging import
@@ -364,6 +367,17 @@ class DeepevalEvaluator(Evaluator):
             )
         except Exception:  # pragma: no cover
             pass
+
+        module = sys.modules.get("deepeval")
+        if module is None:
+            try:
+                module = importlib.import_module("deepeval")
+            except Exception:
+                module = None
+        if module is None:
+            return self._error_results(
+                "Deepeval dependency is not available", ModuleNotFoundError
+            )
         metric_specs = self._build_metric_specs()
         if not metric_specs:
             genai_debug_log(
@@ -413,18 +427,28 @@ class DeepevalEvaluator(Evaluator):
                 "GENAI_OPENAI_API_KEY"
             )
             api_key = candidate or env_key
+            base_url = os.getenv("OPENAI_API_BASE") or os.getenv(
+                "GENAI_OPENAI_API_BASE"
+            )
             if api_key:
-                # Attempt to configure Deepeval/OpenAI client.
                 try:  # pragma: no cover - external dependency
-                    # Support legacy openai<1 and new openai>=1 semantics.
                     if not getattr(openai, "api_key", None):  # type: ignore[attr-defined]
                         try:
-                            setattr(openai, "api_key", api_key)  # legacy style
-                        except Exception:  # pragma: no cover
+                            setattr(openai, "api_key", api_key)
+                        except Exception:
                             pass
-                    # Ensure env var set for client() style usage.
                     if not os.getenv("OPENAI_API_KEY"):
                         os.environ["OPENAI_API_KEY"] = api_key
+                    if base_url:
+                        try:
+                            setattr(openai, "base_url", base_url)
+                        except Exception:
+                            pass
+                        try:
+                            setattr(openai, "api_base", base_url)
+                        except Exception:
+                            os.environ.setdefault("OPENAI_API_BASE", base_url)
+                        os.environ.setdefault("OPENAI_BASE_URL", base_url)
                 except Exception:
                     pass
         except Exception:  # pragma: no cover - defensive
@@ -614,13 +638,16 @@ class DeepevalEvaluator(Evaluator):
     # per-metric param check handled in deepeval_metrics
 
     @staticmethod
-    def _default_model() -> str | None:
+    def _default_model() -> Any:
         model = (
             os.getenv("DEEPEVAL_EVALUATION_MODEL")
             or os.getenv("DEEPEVAL_MODEL")
             or os.getenv("OPENAI_MODEL")
         )
         if model:
+            custom_model = _resolve_model(model)
+            if custom_model is not None:
+                return custom_model
             return model
         return "gpt-4o-mini"
 
