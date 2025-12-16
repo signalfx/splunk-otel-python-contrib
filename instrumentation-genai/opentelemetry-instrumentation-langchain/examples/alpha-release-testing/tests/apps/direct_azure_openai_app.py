@@ -470,7 +470,7 @@ class DirectAIApp:
                 "status": "success"
             }
             
-        except Exception:
+        except Exception as e:
             if self.handler:
                 self.handler.stop_agent(parent_agent)
             print(f"❌ Error in Research Department: {e}")
@@ -608,7 +608,7 @@ def main():
         metrics.get_meter_provider().force_flush()
         print("✅ Done!")
         
-    except Exception:
+    except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
