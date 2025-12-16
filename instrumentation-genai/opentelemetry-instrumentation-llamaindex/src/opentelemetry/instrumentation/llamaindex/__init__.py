@@ -18,7 +18,7 @@ class LlamaindexInstrumentor(BaseInstrumentor):
         use_legacy_attributes: bool = True,
     ):
         super().__init__()
-        Config._exception_logger = exception_logger
+        Config.exception_logger = exception_logger
         Config.use_legacy_attributes = use_legacy_attributes
         self._disable_trace_context_propagation = disable_trace_context_propagation
         self._telemetry_handler = None
