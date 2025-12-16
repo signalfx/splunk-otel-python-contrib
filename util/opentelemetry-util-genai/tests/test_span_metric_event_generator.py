@@ -37,8 +37,9 @@ class DummyLogger:
 
 
 def _build_composite(logger: DummyLogger, capture_content: bool):
+    provider = TracerProvider()
     span = SpanEmitter(
-        tracer=None, capture_content=False
+        tracer=provider.get_tracer(__name__), capture_content=False
     )  # span kept lean for event mode
     content = ContentEventsEmitter(
         logger=logger, capture_content=capture_content
