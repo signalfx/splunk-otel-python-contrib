@@ -253,7 +253,7 @@ Please format this into a clear, structured output with headings and bullet poin
         print(f"\n✅ Scenario '{scenario['name']}' completed")
         print(f"🔍 Expected metrics to trigger: {scenario['expected_issue']}\n")
         
-    except Exception as e:
+    except Exception:
         logger.error(f"Error in scenario {scenario['name']}: {e}", exc_info=True)
         print(f"\n❌ Error in scenario: {e}\n")
         raise
@@ -280,7 +280,7 @@ def main():
     print("⚠️  Purpose: Testing evaluation metrics (Toxicity, Bias, Hallucination, Relevance)")
     print("=" * 80)
     print(f"🤖 Model: {model_name}")
-    print(f"📊 Telemetry: Exporting to OTLP backend")
+    print("📊 Telemetry: Exporting to OTLP backend")
     print(f"🧪 Test Scenarios: {len(TEST_SCENARIOS)}")
     
     # Determine which scenario to run
