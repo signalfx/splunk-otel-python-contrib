@@ -70,28 +70,36 @@ load_dotenv(dotenv_path=env_path)
 # Set environment variables for GenAI content capture and evaluation
 os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
-os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE", "SPAN_AND_EVENT")
+os.environ.setdefault(
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE", "SPAN_AND_EVENT"
+)
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric_event")
 
 # Enable Deepeval evaluator for bias, toxicity, hallucination, relevance, sentiment
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "Deepeval")
-os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE", "1.0")  # Evaluate 100% of invocations
+os.environ.setdefault(
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE", "1.0"
+)  # Evaluate 100% of invocations
 
 # Configure OpenTelemetry with complete observability stack
-resource = Resource.create({
-    "service.name": os.getenv("OTEL_SERVICE_NAME", "direct-ai-app"),
-    "deployment.environment": os.getenv("OTEL_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT", "ai-test-val"),
-})
+resource = Resource.create(
+    {
+        "service.name": os.getenv("OTEL_SERVICE_NAME", "direct-ai-app"),
+        "deployment.environment": os.getenv(
+            "OTEL_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT", "ai-test-val"
+        ),
+    }
+)
 
 # Configure Tracing
 trace.set_tracer_provider(TracerProvider(resource=resource))
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter())
-)
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
 # Configure Metrics
 metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader], resource=resource))
+metrics.set_meter_provider(
+    MeterProvider(metric_readers=[metric_reader], resource=resource)
+)
 
 # Configure Logging (CRITICAL for AI Details in Splunk APM)
 logger_provider = LoggerProvider(resource=resource)
@@ -119,12 +127,14 @@ class DirectAIApp:
             # Use Azure OpenAI
             azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
             if not azure_api_key:
-                raise ValueError("AZURE_OPENAI_API_KEY environment variable is required for Azure OpenAI")
+                raise ValueError(
+                    "AZURE_OPENAI_API_KEY environment variable is required for Azure OpenAI"
+                )
 
             self.client = AzureOpenAI(
                 api_key=azure_api_key,
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
             )
             self.model = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
             self.provider = "azure"
@@ -135,11 +145,14 @@ class DirectAIApp:
                 raise ValueError("OPENAI_API_KEY environment variable is required")
 
             from openai import OpenAI
+
             self.client = OpenAI(api_key=self.api_key)
             self.model = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
             self.provider = "openai"
 
-    def _call_llm(self, system_prompt: str, user_prompt: str, agent_context: str = "") -> str:
+    def _call_llm(
+        self, system_prompt: str, user_prompt: str, agent_context: str = ""
+    ) -> str:
         """
         Internal LLM call with instrumentation
 
@@ -157,7 +170,7 @@ class DirectAIApp:
             operation="chat.completions",
             input_messages=[
                 InputMessage(role="system", parts=[Text(content=system_prompt)]),
-                InputMessage(role="user", parts=[Text(content=user_prompt)])
+                InputMessage(role="user", parts=[Text(content=user_prompt)]),
             ],
         )
         llm_invocation.provider = self.provider
@@ -176,10 +189,10 @@ class DirectAIApp:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.0,
-                max_tokens=200
+                max_tokens=200,
             )
 
             # Extract response
@@ -190,17 +203,17 @@ class DirectAIApp:
                 OutputMessage(
                     role="assistant",
                     parts=[Text(content=content)],
-                    finish_reason="stop"
+                    finish_reason="stop",
                 )
             ]
 
             # Set token usage from response
-            if hasattr(response, 'usage') and response.usage:
+            if hasattr(response, "usage") and response.usage:
                 llm_invocation.input_tokens = response.usage.prompt_tokens
                 llm_invocation.output_tokens = response.usage.completion_tokens
 
             # Set response model
-            if hasattr(response, 'model'):
+            if hasattr(response, "model"):
                 llm_invocation.response_model = response.model
 
             # Stop LLM span
@@ -226,7 +239,7 @@ class DirectAIApp:
         agent = AgentInvocation(
             name="customer-service-dept",
             agent_type="customer_support",
-            input_context=f"Parent: {parent_context}\nRequest: {request}"
+            input_context=f"Parent: {parent_context}\nRequest: {request}",
         )
 
         if self.handler:
@@ -245,7 +258,7 @@ class DirectAIApp:
             response = self._call_llm(
                 system_prompt=system_prompt,
                 user_prompt=request,
-                agent_context="Customer Service"
+                agent_context="Customer Service",
             )
 
             agent.output_result = response
@@ -269,7 +282,7 @@ class DirectAIApp:
         agent = AgentInvocation(
             name="legal-compliance-dept",
             agent_type="legal_review",
-            input_context=f"Parent: {parent_context}\nRequest: {request}"
+            input_context=f"Parent: {parent_context}\nRequest: {request}",
         )
 
         if self.handler:
@@ -288,7 +301,7 @@ class DirectAIApp:
             contract_result = self._call_llm(
                 system_prompt=system_prompt,
                 user_prompt=request,
-                agent_context="Legal & Compliance"
+                agent_context="Legal & Compliance",
             )
 
             agent.output_result = contract_result
@@ -312,7 +325,7 @@ class DirectAIApp:
         agent = AgentInvocation(
             name="research-analysis-dept",
             agent_type="research",
-            input_context=f"Parent: {parent_context}\nRequest: {request}"
+            input_context=f"Parent: {parent_context}\nRequest: {request}",
         )
 
         if self.handler:
@@ -331,7 +344,7 @@ class DirectAIApp:
             analysis = self._call_llm(
                 system_prompt=system_prompt,
                 user_prompt=request,
-                agent_context="Research & Analysis"
+                agent_context="Research & Analysis",
             )
 
             agent.output_result = analysis
@@ -355,7 +368,7 @@ class DirectAIApp:
         agent = AgentInvocation(
             name="hr-dept",
             agent_type="human_resources",
-            input_context=f"Parent: {parent_context}\nRequest: {request}"
+            input_context=f"Parent: {parent_context}\nRequest: {request}",
         )
 
         if self.handler:
@@ -374,7 +387,7 @@ class DirectAIApp:
             hr_response = self._call_llm(
                 system_prompt=system_prompt,
                 user_prompt=request,
-                agent_context="Human Resources"
+                agent_context="Human Resources",
             )
 
             agent.output_result = hr_response
@@ -408,16 +421,16 @@ class DirectAIApp:
         parent_agent = AgentInvocation(
             name="research-dept-coordinator",
             agent_type="coordinator",
-            input_context=organizational_request
+            input_context=organizational_request,
         )
 
         if self.handler:
             self.handler.start_agent(parent_agent)
 
         try:
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print("🏢 RESEARCH DEPARTMENT (Parent Agent)")
-            print(f"{'='*80}")
+            print(f"{'=' * 80}")
             print(f"Request: {organizational_request}")
 
             # Parent agent calls ALL 4 departments in sequence (like langgraph)
@@ -427,17 +440,23 @@ class DirectAIApp:
 
             # 1. Customer Service
             print("\n  → Customer Service Department")
-            cs_result = self._customer_service_agent(organizational_request, "Research Dept")
+            cs_result = self._customer_service_agent(
+                organizational_request, "Research Dept"
+            )
             dept_results.append(("Customer Service", cs_result))
 
             # 2. Legal & Compliance
             print("\n  → Legal & Compliance Department")
-            legal_result = self._legal_compliance_agent(organizational_request, "Research Dept")
+            legal_result = self._legal_compliance_agent(
+                organizational_request, "Research Dept"
+            )
             dept_results.append(("Legal & Compliance", legal_result))
 
             # 3. Research & Analysis
             print("\n  → Research & Analysis Department")
-            research_result = self._research_analysis_agent(organizational_request, "Research Dept")
+            research_result = self._research_analysis_agent(
+                organizational_request, "Research Dept"
+            )
             dept_results.append(("Research & Analysis", research_result))
 
             # 4. HR
@@ -452,14 +471,14 @@ class DirectAIApp:
 
             # Get trace ID BEFORE stopping the span
             span = trace.get_current_span()
-            trace_id = format(span.get_span_context().trace_id, '032x')
+            trace_id = format(span.get_span_context().trace_id, "032x")
 
             if self.handler:
                 self.handler.stop_agent(parent_agent)
 
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print("✅ ORGANIZATIONAL RESPONSE COMPLETE")
-            print(f"{'='*80}")
+            print(f"{'=' * 80}")
             print(f"🔍 Trace ID: {trace_id}")
 
             return {
@@ -467,7 +486,7 @@ class DirectAIApp:
                 "departments": dept_results,
                 "final_synthesis": final_synthesis,
                 "trace_id": trace_id,
-                "status": "success"
+                "status": "success",
             }
 
         except Exception as e:
@@ -494,9 +513,15 @@ def main():
     print("=" * 80)
     print()
     print("🔧 Configuration:")
-    print(f"  Evaluators: {os.getenv('OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS', 'NOT SET')}")
-    print(f"  Sample Rate: {os.getenv('OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE', 'NOT SET')}")
-    print(f"  Deepeval API Key: {'SET' if os.getenv('DEEPEVAL_API_KEY') else 'NOT SET'}")
+    print(
+        f"  Evaluators: {os.getenv('OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS', 'NOT SET')}"
+    )
+    print(
+        f"  Sample Rate: {os.getenv('OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE', 'NOT SET')}"
+    )
+    print(
+        f"  Deepeval API Key: {'SET' if os.getenv('DEEPEVAL_API_KEY') else 'NOT SET'}"
+    )
     print("=" * 80)
     print()
     print("Organization Structure (Simplified):")
@@ -581,7 +606,9 @@ def main():
         print("  [ ] Both scenarios show eval metrics on ALL agents")
         print()
         print("Next Steps:")
-        print(f"1. Search Splunk APM: sf_service:{os.getenv('OTEL_SERVICE_NAME', 'direct-ai-app')}")
+        print(
+            f"1. Search Splunk APM: sf_service:{os.getenv('OTEL_SERVICE_NAME', 'direct-ai-app')}"
+        )
         print("2. Filter by trace IDs above to see each problematic scenario")
         print("3. Verify AI Details show evaluation FAILURES (not passes)")
         print("4. Check that problematic content is properly flagged")
@@ -590,7 +617,9 @@ def main():
 
         # Allow time for telemetry export and async evaluations
         print("\n⏳ Waiting 300 seconds for telemetry export and async evaluations...")
-        print("   (Deepeval evaluations run asynchronously - matching langgraph app wait time)")
+        print(
+            "   (Deepeval evaluations run asynchronously - matching langgraph app wait time)"
+        )
 
         # First flush to send spans
         print("\n📤 Flushing telemetry providers (initial)...")
@@ -611,6 +640,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

@@ -18,16 +18,14 @@ class MockLLM:
         self.call_count += 1
         return {
             "id": f"mock-{self.call_count}",
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": f"Mock response to {len(messages)} messages"
-                },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 15,
-                "total_tokens": 25
-            }
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": f"Mock response to {len(messages)} messages",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
         }
