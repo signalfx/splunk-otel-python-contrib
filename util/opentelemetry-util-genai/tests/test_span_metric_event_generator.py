@@ -17,9 +17,9 @@ from opentelemetry.util.genai.emitters.content_events import (
 from opentelemetry.util.genai.emitters.span import SpanEmitter
 from opentelemetry.util.genai.types import (
     AgentInvocation,
-    EvaluationResult,
     EmbeddingInvocation,
     Error,
+    EvaluationResult,
     InputMessage,
     LLMInvocation,
     OutputMessage,
