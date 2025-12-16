@@ -192,18 +192,10 @@ from __future__ import annotations
 
 import json
 import os
-import random
-from datetime import datetime, timedelta
-import time
-from typing import Annotated, Dict, List, Optional, TypedDict
-from uuid import uuid4
-from dotenv import load_dotenv
+import sys
+import typing
 from pathlib import Path
-
-# Load environment variables
-env_path = Path(__file__).parent.parent.parent / "config" / ".env"
-load_dotenv(dotenv_path=env_path)
-
+from dotenv import load_dotenv
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -214,16 +206,12 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-
-
 from langchain.agents import (
     create_agent as _create_react_agent,  # type: ignore[attr-defined]
 )
-
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
-
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
@@ -238,6 +226,10 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+# Load environment variables
+env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Configure tracing/metrics/logging once per process so exported data goes to OTLP.
 trace.set_tracer_provider(TracerProvider())

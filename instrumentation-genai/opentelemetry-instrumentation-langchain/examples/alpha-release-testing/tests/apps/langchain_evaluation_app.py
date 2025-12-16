@@ -10,18 +10,13 @@ This application deliberately generates responses that trigger evaluation metric
 Each run cycles through different scenarios to test the evaluation pipeline.
 """
 
-from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
 import os
 import logging
 import time
-
-# Load environment variables from .env file
 from pathlib import Path
-env_path = Path(__file__).parent.parent.parent / "config" / ".env"
-load_dotenv(dotenv_path=env_path)
-
+from dotenv import load_dotenv
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
@@ -39,6 +34,10 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Configure resource (shared between traces, metrics, and logs)
 resource = Resource.create({
@@ -253,7 +252,7 @@ Please format this into a clear, structured output with headings and bullet poin
         print(f"\n✅ Scenario '{scenario['name']}' completed")
         print(f"🔍 Expected metrics to trigger: {scenario['expected_issue']}\n")
         
-    except Exception:
+    except Exception as e:
         logger.error(f"Error in scenario {scenario['name']}: {e}", exc_info=True)
         print(f"\n❌ Error in scenario: {e}\n")
         raise
