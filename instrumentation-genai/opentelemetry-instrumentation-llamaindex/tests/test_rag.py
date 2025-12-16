@@ -4,7 +4,7 @@ Test LlamaIndex RAG instrumentation without agents.
 This test validates that:
 1. QUERY events create Workflow spans at the root level
 2. RETRIEVE events create Step spans with parent_run_id pointing to the Workflow
-3. SYNTHESIZE events create Step spans with parent_run_id pointing to the Workflow  
+3. SYNTHESIZE events create Step spans with parent_run_id pointing to the Workflow
 4. LLM invocations nest under their Step parent via parent_run_id
 5. Embedding invocations nest under their Step parent via parent_run_id
 """
@@ -28,7 +28,7 @@ def setup_telemetry():
 
 def test_rag_without_agents():
     """Test RAG instrumentation creates correct hierarchy: Workflow -> Steps -> LLM/Embedding"""
-    
+
     print("=" * 80)
     print("Setting up telemetry...")
     print("=" * 80)
@@ -41,9 +41,10 @@ def test_rag_without_agents():
     # Instrument
     instrumentor = LlamaindexInstrumentor()
     instrumentor.instrument()
-    
+
     # Debug: Check callback handler
     from llama_index.core import Settings as LlamaSettings
+
     print(f"\nCallbacks registered: {len(LlamaSettings.callback_manager.handlers)}")
     for handler in LlamaSettings.callback_manager.handlers:
         print(f"  Handler: {type(handler).__name__}")
@@ -71,7 +72,9 @@ def test_rag_without_agents():
     query_engine = index.as_query_engine(similarity_top_k=2)
 
     print("\n" + "=" * 80)
-    print("Executing RAG query (should see Workflow -> retrieve.task/synthesize.task -> LLM/Embedding)...")
+    print(
+        "Executing RAG query (should see Workflow -> retrieve.task/synthesize.task -> LLM/Embedding)..."
+    )
     print("=" * 80)
     response = query_engine.query("What is the capital of France?")
 

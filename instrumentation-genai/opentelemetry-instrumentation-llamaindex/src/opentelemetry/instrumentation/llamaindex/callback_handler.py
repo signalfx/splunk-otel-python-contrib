@@ -116,9 +116,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Extract model information from payload
         serialized = payload.get("serialized", {})
         model_name = (
-            serialized.get("model")
-            or serialized.get("model_name")
-            or "unknown"
+            serialized.get("model") or serialized.get("model_name") or "unknown"
         )
 
         # Extract messages from payload
@@ -131,16 +129,12 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if hasattr(msg, "content") and hasattr(msg, "role"):
                 # Extract role - could be MessageRole enum
                 role_value = (
-                    str(msg.role.value)
-                    if hasattr(msg.role, "value")
-                    else str(msg.role)
+                    str(msg.role.value) if hasattr(msg.role, "value") else str(msg.role)
                 )
                 # Extract content - this is a property that pulls from blocks[0].text
                 content = _safe_str(msg.content)
                 input_messages.append(
-                    InputMessage(
-                        role=role_value, parts=[Text(content=content)]
-                    )
+                    InputMessage(role=role_value, parts=[Text(content=content)])
                 )
             elif isinstance(msg, dict):
                 # Handle serialized messages (dict format)
@@ -153,9 +147,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     # Fallback to direct content field
                     content = msg.get("content", "")
 
-                role_value = (
-                    str(role.value) if hasattr(role, "value") else str(role)
-                )
+                role_value = str(role.value) if hasattr(role, "value") else str(role)
                 input_messages.append(
                     InputMessage(
                         role=role_value,
@@ -172,7 +164,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             parent_run_id=parent_id if parent_id else None,  # Set parent for hierarchy
         )
         llm_inv.framework = "llamaindex"
-        
+
         # Resolve parent_id to parent_span for proper span context
         parent_span = self._get_parent_span(parent_id)
         if parent_span:
@@ -180,7 +172,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Start the LLM invocation (handler stores it in _entity_registry)
         self._handler.start_llm(llm_inv)
-    
+
     def _handle_llm_end(
         self,
         event_id: str,
@@ -247,7 +239,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     else:
                         # It's an object, try to get usage attribute
                         usage = getattr(raw_response, "usage", None)
-                    
+
                     if usage:
                         # usage could also be dict or object
                         if isinstance(usage, dict):
@@ -255,7 +247,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                             llm_inv.output_tokens = usage.get("completion_tokens")
                         else:
                             llm_inv.input_tokens = getattr(usage, "prompt_tokens", None)
-                            llm_inv.output_tokens = getattr(usage, "completion_tokens", None)
+                            llm_inv.output_tokens = getattr(
+                                usage, "completion_tokens", None
+                            )
 
         # Stop the LLM invocation
         self._handler.stop_llm(llm_inv)
@@ -274,9 +268,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Extract model information from payload
         serialized = payload.get("serialized", {})
         model_name = (
-            serialized.get("model_name")
-            or serialized.get("model")
-            or "unknown"
+            serialized.get("model_name") or serialized.get("model") or "unknown"
         )
 
         # Detect provider from class name
@@ -296,7 +288,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             parent_run_id=parent_id if parent_id else None,  # Set parent for hierarchy
         )
         emb_inv.framework = "llamaindex"
-        
+
         # Resolve parent_id to parent_span for proper span context
         parent_span = self._get_parent_span(parent_id)
         if parent_span:
@@ -326,11 +318,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             chunks = payload.get("chunks", [])
             if chunks:
                 emb_inv.input_texts = [_safe_str(chunk) for chunk in chunks]
-            
+
             # Extract embedding vectors from response
             # embeddings is the list of output vectors
             embeddings = payload.get("embeddings", [])
-            
+
             # Determine dimension from first embedding vector
             if embeddings and len(embeddings) > 0:
                 first_embedding = embeddings[0]
@@ -354,7 +346,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             return
 
         query_str = payload.get("query_str", "")
-        
+
         # If no parent, this is the root workflow
         if not parent_id:
             workflow = Workflow(
@@ -417,11 +409,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             return
 
         query_str = payload.get("query_str", "")
-        
+
         # If parent_id doesn't exist or doesn't resolve to a tracked entity,
         # create a root Workflow to hold the RAG operations
         parent_entity = self._handler.get_entity(parent_id) if parent_id else None
-        
+
         if not parent_entity:
             # No valid parent - create auto-workflow
             workflow_id = f"{event_id}_workflow"
@@ -445,7 +437,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         else:
             # Valid parent exists - resolve to parent_span
             parent_span = self._get_parent_span(parent_id)
-        
+
         # Create a retrieval invocation for the retrieval task
         retrieval = RetrievalInvocation(
             operation_name="retrieve",
@@ -455,11 +447,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             parent_run_id=parent_id if parent_id else None,
             attributes={},
         )
-        
+
         # Set parent_span if we have one
         if parent_span:
             retrieval.parent_span = parent_span  # type: ignore[attr-defined]
-        
+
         self._handler.start_retrieval(retrieval)
 
     def _handle_retrieve_end(
@@ -481,7 +473,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if nodes:
                 # Set document count
                 retrieval.document_count = len(nodes)
-                
+
                 # Store scores and document IDs as attributes
                 scores = []
                 doc_ids = []
@@ -492,7 +484,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         doc_ids.append(str(node.node_id))
                     elif hasattr(node, "id_"):
                         doc_ids.append(str(node.id_))
-                
+
                 if scores:
                     retrieval.attributes["retrieve.scores"] = scores
                 if doc_ids:
@@ -512,7 +504,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             return
 
         query_str = payload.get("query_str", "")
-        
+
         # Create a step for the synthesis task
         step = Step(
             name="synthesize.task",
@@ -523,12 +515,12 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             parent_run_id=parent_id if parent_id else None,
             attributes={},
         )
-        
+
         # Resolve parent_id to parent_span for proper span context
         parent_span = self._get_parent_span(parent_id)
         if parent_span:
             step.parent_span = parent_span  # type: ignore[attr-defined]
-        
+
         self._handler.start_step(step)
 
     def _handle_synthesize_end(
@@ -557,7 +549,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 step.output_data = _safe_str(response_text)
 
         self._handler.stop_step(step)
-        
+
         # If we auto-created a workflow, close it after synthesize completes
         if self._auto_workflow_id:
             workflow = self._handler.get_entity(self._auto_workflow_id)
