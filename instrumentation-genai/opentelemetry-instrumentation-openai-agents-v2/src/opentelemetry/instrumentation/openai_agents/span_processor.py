@@ -1453,7 +1453,9 @@ class GenAISemanticProcessor(TracingProcessor):
         if self._workflow is not None:
             # Set final output
             if final_output:
-                self._workflow.final_output = self._format_output_message(final_output)
+                self._workflow.final_output = self._format_output_message(
+                    final_output
+                )
             elif self._workflow_last_output:
                 self._workflow.final_output = self._format_output_message(
                     self._workflow_last_output

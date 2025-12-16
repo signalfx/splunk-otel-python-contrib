@@ -88,40 +88,11 @@ def run_agent() -> None:
     print(result.final_output)
 
 
-@function_tool
-def get_budget(city: str) -> str:
-    """Return a simplified travel budget response for the requested city."""
-
-    return f"The plan for {city} is budget-friendly."
-
-
-def run_agent1() -> None:
-    """Create a simple agent and execute a single run."""
-
-    assistant = Agent(
-        name="Travel Budget",
-        instructions=(
-            "You are a concise travel budget planner. Use the budget tool when the"
-            " traveler asks about local conditions."
-        ),
-        tools=[get_budget],
-    )
-
-    result = Runner.run_sync(
-        assistant,
-        "I'm visiting Barcelona this weekend. How to plan my budget?",
-    )
-
-    print("Agent response:")
-    print(result.final_output)
-
-
 def main() -> None:
     load_dotenv()
     _configure_manual_instrumentation()
     try:
         run_agent()
-        # run_agent1()
     finally:
         # Stop workflow to finalize the workflow span and flush traces
         stop_workflow()
