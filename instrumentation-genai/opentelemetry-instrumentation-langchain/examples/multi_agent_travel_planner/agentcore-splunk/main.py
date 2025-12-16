@@ -9,6 +9,7 @@ import json
 import os
 import random
 import sys
+import time
 from datetime import datetime, timedelta
 from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
@@ -30,8 +31,6 @@ from langchain.agents import (
     create_agent as _create_react_agent,
 )
 
-import time
-
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
@@ -46,27 +45,6 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-# Cisco authentication (local util module for AgentCore deployment)
-from util import CiscoTokenManager
-
-# =============================================================================
-# Cisco LLM Configuration
-# =============================================================================
-
-CISCO_APP_KEY = os.environ.get("CISCO_APP_KEY")
-token_manager = CiscoTokenManager()
-
-
-def get_cisco_openai_config() -> dict:
-    """Get configuration for ChatOpenAI to use Cisco endpoint."""
-    token = token_manager.get_token()
-    return {
-        "base_url": CiscoTokenManager.get_llm_base_url("gpt-4o-mini"),
-        "api_key": "placeholder",
-        "default_headers": {"api-key": token},
-        "model_kwargs": {"user": json.dumps({"appkey": CISCO_APP_KEY})},
-    }
 
 
 # =============================================================================
@@ -104,7 +82,7 @@ instrumentor = LangchainInstrumentor()
 instrumentor.instrument()
 
 # =============================================================================
-# Sample data utilities (unchanged)
+# Sample data utilities
 # =============================================================================
 
 DESTINATIONS = {
@@ -148,7 +126,7 @@ def _compute_dates() -> tuple[str, str]:
 
 
 # =============================================================================
-# Tools exposed to agents (unchanged)
+# Tools exposed to agents
 # =============================================================================
 
 @tool
@@ -211,7 +189,11 @@ def _model_name() -> str:
 
 
 def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
-    """Create an LLM instance using Cisco endpoint."""
+    """
+    Create an LLM instance using OpenAI API directly.
+    
+    Uses OPENAI_API_KEY environment variable for authentication.
+    """
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner"]
     metadata = {
@@ -223,23 +205,17 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "ls_temperature": temperature,
     }
 
-    # Get Cisco configuration with fresh token
-    cisco_config = get_cisco_openai_config()
-
     return ChatOpenAI(
         model=model,
         temperature=temperature,
         tags=tags,
         metadata=metadata,
-        base_url=cisco_config["base_url"],
-        api_key=cisco_config["api_key"],
-        default_headers=cisco_config["default_headers"],
-        model_kwargs=cisco_config["model_kwargs"],
+        # Uses OPENAI_API_KEY from environment automatically
     )
 
 
 # =============================================================================
-# Poison config helpers (unchanged - keeping for completeness)
+# Poison config helpers (for testing evaluation quality)
 # =============================================================================
 
 def _poison_config(custom_config: Optional[Dict[str, object]] = None) -> Dict[str, object]:
@@ -300,7 +276,7 @@ def maybe_add_quality_noise(agent_name: str, base_prompt: str, state: PlannerSta
 
 
 # =============================================================================
-# LangGraph nodes (unchanged logic, uses Cisco LLM)
+# LangGraph nodes
 # =============================================================================
 
 def coordinator_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
@@ -570,3 +546,4 @@ def invoke(payload: dict) -> dict:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(port=port)
+

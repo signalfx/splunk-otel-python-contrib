@@ -31,12 +31,8 @@ splunk-otel-instrumentation-langchain
 # DeepEval for evaluations
 deepeval>=3.0.0
 
-# Note: CiscoTokenManager is in local util/ directory (no external package needed)
-
 # Other dependencies
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 requests>=2.25.0
-
-
 
