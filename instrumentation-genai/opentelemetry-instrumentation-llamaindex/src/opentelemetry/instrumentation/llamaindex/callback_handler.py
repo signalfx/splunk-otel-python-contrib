@@ -8,6 +8,7 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
+    RetrievalInvocation,
     Step,
     Text,
     Workflow,
@@ -411,14 +412,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         payload: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        """Handle retrieval start - create Step for retrieve task."""
+        """Handle retrieval start - create RetrievalInvocation for retrieve task."""
         if not self._handler or not payload:
             return
 
         query_str = payload.get("query_str", "")
         
         # If parent_id doesn't exist or doesn't resolve to a tracked entity,
-        # create a root Workflow to hold the RAG steps
+        # create a root Workflow to hold the RAG operations
         parent_entity = self._handler.get_entity(parent_id) if parent_id else None
         
         if not parent_entity:
@@ -445,12 +446,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             # Valid parent exists - resolve to parent_span
             parent_span = self._get_parent_span(parent_id)
         
-        # Create a step for the retrieval task
-        step = Step(
-            name="retrieve.task",
-            step_type="retrieve",
-            objective="Retrieve relevant documents",
-            input_data=_safe_str(query_str),
+        # Create a retrieval invocation for the retrieval task
+        retrieval = RetrievalInvocation(
+            operation_name="retrieve",
+            retriever_type="llamaindex_retriever",
+            query=_safe_str(query_str),
             run_id=event_id,
             parent_run_id=parent_id if parent_id else None,
             attributes={},
@@ -458,9 +458,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         
         # Set parent_span if we have one
         if parent_span:
-            step.parent_span = parent_span  # type: ignore[attr-defined]
+            retrieval.parent_span = parent_span  # type: ignore[attr-defined]
         
-        self._handler.start_step(step)
+        self._handler.start_retrieval(retrieval)
 
     def _handle_retrieve_end(
         self,
@@ -468,19 +468,21 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         payload: Optional[Dict[str, Any]],
         **kwargs: Any,
     ) -> None:
-        """Handle retrieval end - update step with retrieved nodes."""
+        """Handle retrieval end - update RetrievalInvocation with retrieved nodes."""
         if not self._handler:
             return
 
-        step = self._handler.get_entity(event_id)
-        if not step or not isinstance(step, Step):
+        retrieval = self._handler.get_entity(event_id)
+        if not retrieval or not isinstance(retrieval, RetrievalInvocation):
             return
 
         if payload:
             nodes = payload.get("nodes", [])
             if nodes:
-                # Store document count and scores
-                step.attributes["retrieve.documents_count"] = len(nodes)
+                # Set document count
+                retrieval.document_count = len(nodes)
+                
+                # Store scores and document IDs as attributes
                 scores = []
                 doc_ids = []
                 for node in nodes:
@@ -492,14 +494,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         doc_ids.append(str(node.id_))
                 
                 if scores:
-                    step.attributes["retrieve.scores"] = scores
+                    retrieval.attributes["retrieve.scores"] = scores
                 if doc_ids:
-                    step.attributes["retrieve.document_ids"] = doc_ids
-                
-                # Create output summary
-                step.output_data = f"Retrieved {len(nodes)} documents"
+                    retrieval.attributes["retrieve.document_ids"] = doc_ids
 
-        self._handler.stop_step(step)
+        self._handler.stop_retrieval(retrieval)
 
     def _handle_synthesize_start(
         self,
