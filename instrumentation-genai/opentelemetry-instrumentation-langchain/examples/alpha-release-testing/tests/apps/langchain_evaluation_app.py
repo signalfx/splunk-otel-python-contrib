@@ -171,7 +171,7 @@ def run_scenario(scenario, llm, scenario_index):
         debug=False,
     ).with_config({
         "run_name": f"problematic-agent-{scenario_index}",
-        "tags": [f"agent:problematic", "agent", "order:1", f"test:{scenario['expected_issue']}"],
+        "tags": ["agent:problematic", "agent", "order:1", f"test:{scenario['expected_issue']}"],
         "metadata": {
             "agent_name": f"problematic-agent-{scenario_index}",
             "agent_role": "content_generator",
@@ -190,7 +190,7 @@ def run_scenario(scenario, llm, scenario_index):
         debug=False,
     ).with_config({
         "run_name": f"formatter-agent-{scenario_index}",
-        "tags": [f"agent:formatter", "agent", "order:2", f"test:{scenario['expected_issue']}"],
+        "tags": ["agent:formatter", "agent", "order:2", f"test:{scenario['expected_issue']}"],
         "metadata": {
             "agent_name": f"formatter-agent-{scenario_index}",
             "agent_role": "output_formatter",
