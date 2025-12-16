@@ -9,7 +9,7 @@ class MockTools:
         return {
             "flights": [
                 {"airline": "MockAir", "price": 299, "departure": "10:00"},
-                {"airline": "TestFly", "price": 349, "departure": "14:00"}
+                {"airline": "TestFly", "price": 349, "departure": "14:00"},
             ]
         }
 
@@ -18,7 +18,7 @@ class MockTools:
         return {
             "hotels": [
                 {"name": "Mock Hotel", "price": 150, "rating": 4.5},
-                {"name": "Test Inn", "price": 120, "rating": 4.0}
+                {"name": "Test Inn", "price": 120, "rating": 4.0},
             ]
         }
 
@@ -27,6 +27,6 @@ class MockTools:
         return {
             "activities": [
                 {"name": "City Tour", "price": 50, "duration": "3 hours"},
-                {"name": "Museum Visit", "price": 25, "duration": "2 hours"}
+                {"name": "Museum Visit", "price": 25, "duration": "2 hours"},
             ]
         }

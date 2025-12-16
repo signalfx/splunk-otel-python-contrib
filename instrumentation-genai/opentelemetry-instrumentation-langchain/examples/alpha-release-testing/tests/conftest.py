@@ -15,7 +15,9 @@ TEST_DATA_DIR = Path(__file__).parent / "fixtures"
 def test_env():
     """Load test environment variables"""
     return {
-        "OTEL_EXPORTER_OTLP_ENDPOINT": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT": os.getenv(
+            "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
+        ),
         "OTEL_SERVICE_NAME": os.getenv("OTEL_SERVICE_NAME", "alpha-test"),
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", "test-key"),
         "OPENAI_MODEL_NAME": os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
@@ -35,16 +37,12 @@ def mock_openai_response():
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": "This is a test response from the AI assistant."
+                    "content": "This is a test response from the AI assistant.",
                 },
-                "finish_reason": "stop"
+                "finish_reason": "stop",
             }
         ],
-        "usage": {
-            "prompt_tokens": 10,
-            "completion_tokens": 15,
-            "total_tokens": 25
-        }
+        "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
     }
 
 
@@ -69,7 +67,7 @@ def travel_request():
         "start_date": "2025-12-01",
         "end_date": "2025-12-07",
         "budget": 3000,
-        "preferences": ["cultural sites", "good food", "museums"]
+        "preferences": ["cultural sites", "good food", "museums"],
     }
 
 
@@ -100,6 +98,7 @@ def evaluation_metrics():
 def test_scenarios():
     """Load test scenarios from JSON"""
     import json
+
     scenarios_file = TEST_DATA_DIR / "test_scenarios.json"
     if scenarios_file.exists():
         with open(scenarios_file) as f:
@@ -111,6 +110,7 @@ def test_scenarios():
 def mock_llm():
     """Mock LLM for testing"""
     from tests.mocks.mock_llm import MockLLM
+
     return MockLLM()
 
 
@@ -118,6 +118,7 @@ def mock_llm():
 def mock_tools():
     """Mock tools for agent testing"""
     from tests.mocks.mock_tools import MockTools
+
     return MockTools()
 
 
@@ -127,9 +128,5 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
-    config.addinivalue_line(
-        "markers", "unit: marks tests as unit tests"
-    )
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line("markers", "unit: marks tests as unit tests")
