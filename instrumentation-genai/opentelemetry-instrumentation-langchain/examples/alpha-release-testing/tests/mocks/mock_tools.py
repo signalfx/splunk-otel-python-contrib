@@ -3,7 +3,7 @@
 
 class MockTools:
     """Mock tools for testing agents"""
-    
+
     def search_flights(self, origin: str, destination: str, date: str) -> dict:
         """Mock flight search"""
         return {
@@ -12,7 +12,7 @@ class MockTools:
                 {"airline": "TestFly", "price": 349, "departure": "14:00"}
             ]
         }
-    
+
     def search_hotels(self, location: str, checkin: str, checkout: str) -> dict:
         """Mock hotel search"""
         return {
@@ -21,7 +21,7 @@ class MockTools:
                 {"name": "Test Inn", "price": 120, "rating": 4.0}
             ]
         }
-    
+
     def search_activities(self, location: str) -> dict:
         """Mock activity search"""
         return {
