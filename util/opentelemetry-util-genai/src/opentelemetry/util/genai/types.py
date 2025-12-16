@@ -319,6 +319,51 @@ class EmbeddingInvocation(GenAI):
 
 
 @dataclass
+class RetrievalInvocation(GenAI):
+    """Represents a single retrieval/search invocation."""
+
+    # Required attribute
+    operation_name: str = field(
+        default="retrieval",
+        metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
+    )
+
+    # Recommended attributes
+    retriever_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.type"},
+    )
+    request_model: Optional[str] = field(
+        default=None,
+        metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_MODEL},
+    )
+    query: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.query.text"},
+    )
+    top_k: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.top_k"},
+    )
+    documents_retrieved: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.documents_retrieved"},
+    )
+
+    # Opt-in attribute
+    results: list[dict[str, Any]] = field(
+        default_factory=list,
+        metadata={"semconv": "gen_ai.retrieval.documents"},
+    )
+
+    # Additional utility fields (not in semantic conventions)
+    query_vector: Optional[list[float]] = None
+    server_port: Optional[int] = None
+    server_address: Optional[str] = None
+    error_type: Optional[str] = None
+
+
+@dataclass
 class Workflow(GenAI):
     """Represents a workflow orchestrating multiple agents and steps.
 
@@ -429,6 +474,7 @@ __all__ = [
     "GenAI",
     "LLMInvocation",
     "EmbeddingInvocation",
+    "RetrievalInvocation",
     "Error",
     "EvaluationResult",
     # agentic AI types

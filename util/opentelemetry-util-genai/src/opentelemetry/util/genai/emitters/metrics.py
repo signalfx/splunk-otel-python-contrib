@@ -18,6 +18,7 @@ from ..types import (
     EmbeddingInvocation,
     Error,
     LLMInvocation,
+    RetrievalInvocation,
     ToolCall,
     Workflow,
 )
@@ -49,6 +50,9 @@ class MetricsEmitter(EmitterMeta):
         )
         self._agent_duration_histogram: Histogram = (
             instruments.agent_duration_histogram
+        )
+        self._retrieval_duration_histogram: Histogram = (
+            instruments.retrieval_duration_histogram
         )
 
     def on_start(self, obj: Any) -> None:  # no-op for metrics
@@ -146,6 +150,9 @@ class MetricsEmitter(EmitterMeta):
                 span=getattr(embedding_invocation, "span", None),
             )
 
+        if isinstance(obj, RetrievalInvocation):
+            self._record_retrieval_metrics(obj)
+
     def on_error(self, error: Error, obj: Any) -> None:
         # Handle new agentic types
         if isinstance(obj, Workflow):
@@ -242,6 +249,9 @@ class MetricsEmitter(EmitterMeta):
                 span=getattr(embedding_invocation, "span", None),
             )
 
+        if isinstance(obj, RetrievalInvocation):
+            self._record_retrieval_metrics(obj, error)
+
     def handles(self, obj: Any) -> bool:
         return isinstance(
             obj,
@@ -251,6 +261,7 @@ class MetricsEmitter(EmitterMeta):
                 Workflow,
                 AgentInvocation,
                 EmbeddingInvocation,
+                RetrievalInvocation,
             ),
         )
 
@@ -304,5 +315,42 @@ class MetricsEmitter(EmitterMeta):
                 context = None
 
         self._agent_duration_histogram.record(
+            duration, attributes=metric_attrs, context=context
+        )
+
+    def _record_retrieval_metrics(
+        self, retrieval: RetrievalInvocation, error: Optional[Error] = None
+    ) -> None:
+        """Record metrics for a retrieval operation."""
+        if retrieval.end_time is None:
+            return
+        duration = retrieval.end_time - retrieval.start_time
+        metric_attrs = {
+            GenAI.GEN_AI_OPERATION_NAME: retrieval.operation_name,
+        }
+        if retrieval.retriever_type:
+            metric_attrs["gen_ai.retrieval.type"] = retrieval.retriever_type
+        if retrieval.framework:
+            metric_attrs["gen_ai.framework"] = retrieval.framework
+        if retrieval.provider:
+            metric_attrs[GenAI.GEN_AI_PROVIDER_NAME] = retrieval.provider
+        # Add agent context if available
+        if retrieval.agent_name:
+            metric_attrs[GenAI.GEN_AI_AGENT_NAME] = retrieval.agent_name
+        if retrieval.agent_id:
+            metric_attrs[GenAI.GEN_AI_AGENT_ID] = retrieval.agent_id
+        # Add error type if present
+        if error is not None and getattr(error, "type", None) is not None:
+            metric_attrs[ErrorAttributes.ERROR_TYPE] = error.type.__qualname__
+
+        context = None
+        span = getattr(retrieval, "span", None)
+        if span is not None:
+            try:
+                context = trace.set_span_in_context(span)
+            except (ValueError, RuntimeError):  # pragma: no cover - defensive
+                context = None
+
+        self._retrieval_duration_histogram.record(
             duration, attributes=metric_attrs, context=context
         )
