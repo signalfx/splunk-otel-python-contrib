@@ -3,16 +3,16 @@
 
 class MockLLM:
     """Mock Language Model for testing"""
-    
+
     def __init__(self, model_name="mock-gpt-4"):
         self.model_name = model_name
         self.call_count = 0
-    
+
     def generate(self, prompt: str) -> str:
         """Generate mock response"""
         self.call_count += 1
         return f"Mock response to: {prompt[:50]}..."
-    
+
     def chat(self, messages: list) -> dict:
         """Mock chat completion"""
         self.call_count += 1
