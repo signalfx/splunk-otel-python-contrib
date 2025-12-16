@@ -144,12 +144,12 @@ def create_eval_model() -> Any | None:
     Returns:
         LiteLLMModel instance if configured, None otherwise (uses default OpenAI)
 
-    Example - Cisco:
-        DEEPEVAL_LLM_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
+    Example - OAuth2 with Basic Auth (Okta-style):
+        DEEPEVAL_LLM_BASE_URL=https://llm-gateway.example.com/openai/deployments/gpt-4o-mini
         DEEPEVAL_LLM_MODEL=gpt-4o-mini
         DEEPEVAL_LLM_CLIENT_ID=<client-id>
         DEEPEVAL_LLM_CLIENT_SECRET=<client-secret>
-        DEEPEVAL_LLM_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
+        DEEPEVAL_LLM_TOKEN_URL=https://identity.example.com/oauth2/default/v1/token
         DEEPEVAL_LLM_CLIENT_APP_NAME=<app-key>
 
     Example - Azure Active Directory:
