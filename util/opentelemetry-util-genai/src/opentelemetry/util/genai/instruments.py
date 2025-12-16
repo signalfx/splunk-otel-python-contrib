@@ -42,3 +42,8 @@ class Instruments:
             unit="s",
             description="Duration of agent operations",
         )
+        self.retrieval_duration_histogram: Histogram = meter.create_histogram(
+            name="gen_ai.retrieval.duration",
+            unit="s",
+            description="Duration of retrieval operations",
+        )
