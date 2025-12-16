@@ -287,7 +287,7 @@ class TestMetricsEmission(unittest.TestCase):
         self.assertTrue(
             found_token_agent,
             "Expected token usage metric datapoint to include agent.name and agent.id",
-                )
+        )
         self.assertTrue(
             found_duration_agent,
             "Expected operation duration metric datapoint to include agent.name and agent.id",
