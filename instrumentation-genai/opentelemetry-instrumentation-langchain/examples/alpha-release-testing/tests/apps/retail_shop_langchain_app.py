@@ -259,7 +259,7 @@ As store manager, provide a final coordinated response to the customer."""
         
         print(f"\n✅ {scenario_name} Complete")
         
-    except Exception as e:
+    except Exception:
         print(f"\n❌ Error in {scenario_name}: {e}")
         import traceback
         traceback.print_exc()
@@ -275,8 +275,8 @@ def main():
     print("=" * 80)
     print()
     print("🔧 Configuration:")
-    print(f"  Service: retail-shop-langchain")
-    print(f"  Environment: alpha-test")
+    print("  Service: retail-shop-langchain")
+    print("  Environment: alpha-test")
     print(f"  Deepeval API Key: {'SET' if os.getenv('DEEPEVAL_API_KEY') else 'NOT SET'}")
     print("=" * 80)
     print()
@@ -338,9 +338,9 @@ def main():
     print("\n\n" + "=" * 80)
     print("✅ ALL SCENARIOS COMPLETE")
     print("=" * 80)
-    print(f"Total Scenarios: 2")
-    print(f"Architecture: 1 Parent + 2 Children = 3 Agents per scenario")
-    print(f"Instrumentation: LangChain Automatic (LangchainInstrumentor)")
+    print("Total Scenarios: 2")
+    print("Architecture: 1 Parent + 2 Children = 3 Agents per scenario")
+    print("Instrumentation: LangChain Automatic (LangchainInstrumentor)")
     print()
     print("Expected Results:")
     print("  ✅ 2 traces (one per scenario)")

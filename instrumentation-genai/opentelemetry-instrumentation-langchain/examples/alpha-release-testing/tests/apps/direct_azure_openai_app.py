@@ -38,8 +38,30 @@ Organization Structure:
 import os
 import sys
 import time
+import logging
 from dotenv import load_dotenv
 from pathlib import Path
+from openai import AzureOpenAI
+from opentelemetry import trace, _logs, _events, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+from opentelemetry.sdk._events import EventLoggerProvider
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.types import (
+    LLMInvocation,
+    AgentInvocation,
+    InputMessage,
+    OutputMessage,
+    Text,
+)
 
 # Load environment variables
 env_path = Path(__file__).parent.parent.parent / "config" / ".env"
@@ -54,31 +76,6 @@ os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric_event"
 # Enable Deepeval evaluator for bias, toxicity, hallucination, relevance, sentiment
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "Deepeval")
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE", "1.0")  # Evaluate 100% of invocations
-
-from openai import AzureOpenAI
-from opentelemetry import trace, _logs, _events, metrics
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-from opentelemetry.sdk._events import EventLoggerProvider
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-import logging
-
-# Import GenAI instrumentation utilities
-from opentelemetry.util.genai.handler import get_telemetry_handler
-from opentelemetry.util.genai.types import (
-    LLMInvocation,
-    AgentInvocation,
-    InputMessage,
-    OutputMessage,
-    Text,
-)
 
 # Configure OpenTelemetry with complete observability stack
 resource = Resource.create({
@@ -212,7 +209,7 @@ class DirectAIApp:
             
             return content
             
-        except Exception as e:
+        except Exception:
             if self.handler:
                 self.handler.stop_llm(llm_invocation)
             raise
@@ -236,7 +233,7 @@ class DirectAIApp:
             self.handler.start_agent(agent)
         
         try:
-            print(f"\n  📞 Customer Service Department")
+            print("\n  📞 Customer Service Department")
             
             # Detect if this is a problematic instruction
             if "INSTRUCTION:" in request:
@@ -256,10 +253,10 @@ class DirectAIApp:
             if self.handler:
                 self.handler.stop_agent(agent)
             
-            print(f"    ✓ Customer Service: Response prepared")
+            print("    ✓ Customer Service: Response prepared")
             return {"department": "Customer Service", "result": response}
             
-        except Exception as e:
+        except Exception:
             if self.handler:
                 self.handler.stop_agent(agent)
             raise
@@ -279,7 +276,7 @@ class DirectAIApp:
             self.handler.start_agent(agent)
         
         try:
-            print(f"\n  ⚖️  Legal & Compliance Department")
+            print("\n  ⚖️  Legal & Compliance Department")
             
             # Detect if this is a problematic instruction
             if "INSTRUCTION:" in request:
@@ -299,10 +296,10 @@ class DirectAIApp:
             if self.handler:
                 self.handler.stop_agent(agent)
             
-            print(f"    ✓ Legal & Compliance: Review completed")
+            print("    ✓ Legal & Compliance: Review completed")
             return {"department": "Legal & Compliance", "result": contract_result}
             
-        except Exception as e:
+        except Exception:
             if self.handler:
                 self.handler.stop_agent(agent)
             raise
@@ -322,7 +319,7 @@ class DirectAIApp:
             self.handler.start_agent(agent)
         
         try:
-            print(f"\n  🔬 Research & Analysis Department")
+            print("\n  🔬 Research & Analysis Department")
             
             # Detect if this is a problematic instruction
             if "INSTRUCTION:" in request:
@@ -342,10 +339,10 @@ class DirectAIApp:
             if self.handler:
                 self.handler.stop_agent(agent)
             
-            print(f"    ✓ Research & Analysis: Report completed")
+            print("    ✓ Research & Analysis: Report completed")
             return {"department": "Research & Analysis", "result": analysis}
             
-        except Exception as e:
+        except Exception:
             if self.handler:
                 self.handler.stop_agent(agent)
             raise
@@ -365,7 +362,7 @@ class DirectAIApp:
             self.handler.start_agent(agent)
         
         try:
-            print(f"\n  👥 Human Resources Department")
+            print("\n  👥 Human Resources Department")
             
             # Detect if this is a problematic instruction
             if "INSTRUCTION:" in request:
@@ -385,10 +382,10 @@ class DirectAIApp:
             if self.handler:
                 self.handler.stop_agent(agent)
             
-            print(f"    ✓ Human Resources: Guidance provided")
+            print("    ✓ Human Resources: Guidance provided")
             return {"department": "Human Resources", "result": hr_response}
             
-        except Exception as e:
+        except Exception:
             if self.handler:
                 self.handler.stop_agent(agent)
             raise
@@ -419,32 +416,32 @@ class DirectAIApp:
         
         try:
             print(f"\n{'='*80}")
-            print(f"🏢 RESEARCH DEPARTMENT (Parent Agent)")
+            print("🏢 RESEARCH DEPARTMENT (Parent Agent)")
             print(f"{'='*80}")
             print(f"Request: {organizational_request}")
             
             # Parent agent calls ALL 4 departments in sequence (like langgraph)
-            print(f"\n📋 Calling all departments in sequence...")
+            print("\n📋 Calling all departments in sequence...")
             
             dept_results = []
             
             # 1. Customer Service
-            print(f"\n  → Customer Service Department")
+            print("\n  → Customer Service Department")
             cs_result = self._customer_service_agent(organizational_request, "Research Dept")
             dept_results.append(("Customer Service", cs_result))
             
             # 2. Legal & Compliance
-            print(f"\n  → Legal & Compliance Department")
+            print("\n  → Legal & Compliance Department")
             legal_result = self._legal_compliance_agent(organizational_request, "Research Dept")
             dept_results.append(("Legal & Compliance", legal_result))
             
             # 3. Research & Analysis
-            print(f"\n  → Research & Analysis Department")
+            print("\n  → Research & Analysis Department")
             research_result = self._research_analysis_agent(organizational_request, "Research Dept")
             dept_results.append(("Research & Analysis", research_result))
             
             # 4. HR
-            print(f"\n  → HR Department")
+            print("\n  → HR Department")
             hr_result = self._hr_agent(organizational_request, "Research Dept")
             dept_results.append(("HR", hr_result))
             
@@ -461,7 +458,7 @@ class DirectAIApp:
                 self.handler.stop_agent(parent_agent)
             
             print(f"\n{'='*80}")
-            print(f"✅ ORGANIZATIONAL RESPONSE COMPLETE")
+            print("✅ ORGANIZATIONAL RESPONSE COMPLETE")
             print(f"{'='*80}")
             print(f"🔍 Trace ID: {trace_id}")
             
@@ -473,7 +470,7 @@ class DirectAIApp:
                 "status": "success"
             }
             
-        except Exception as e:
+        except Exception:
             if self.handler:
                 self.handler.stop_agent(parent_agent)
             print(f"❌ Error in Research Department: {e}")
@@ -559,12 +556,12 @@ def main():
         print("\n\n" + "=" * 80)
         print("✅ ALL 2 SCENARIOS COMPLETE")
         print("=" * 80)
-        print(f"Total Scenarios: 2")
-        print(f"  - Both scenarios should show evaluation metrics")
-        print(f"  - Both should PASS (demonstrating eval metrics are working)")
-        print(f"Architecture: 2-level hierarchy (Parent → 4 Departments)")
-        print(f"Total Agents: 5 (1 Parent + 4 Departments)")
-        print(f"Total LLM Calls per Scenario: 4 (one per department)")
+        print("Total Scenarios: 2")
+        print("  - Both scenarios should show evaluation metrics")
+        print("  - Both should PASS (demonstrating eval metrics are working)")
+        print("Architecture: 2-level hierarchy (Parent → 4 Departments)")
+        print("Total Agents: 5 (1 Parent + 4 Departments)")
+        print("Total LLM Calls per Scenario: 4 (one per department)")
         print()
         print("Trace IDs:")
         print(f"  Scenario 1 (Baseline):                {result1['trace_id']}")
@@ -611,7 +608,7 @@ def main():
         metrics.get_meter_provider().force_flush()
         print("✅ Done!")
         
-    except Exception as e:
+    except Exception:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
