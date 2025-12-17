@@ -33,8 +33,6 @@ _LOGGER = logging.getLogger(__name__)
 _DEFAULT_ATTR_TRANSFORMATIONS = {
     "rename": {
         # OpenLit uses indexed content format, OTel uses structured messages
-        "gen_ai.completion.0.content": "gen_ai.output.messages",
-        "gen_ai.prompt.0.content": "gen_ai.input.messages",
         "gen_ai.prompt": "gen_ai.input.messages",
         "gen_ai.completion": "gen_ai.output.messages",
         "gen_ai.content.prompt": "gen_ai.input.messages",
