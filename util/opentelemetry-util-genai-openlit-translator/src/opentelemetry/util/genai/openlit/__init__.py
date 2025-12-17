@@ -23,6 +23,9 @@ from opentelemetry import trace
 _ENV_DISABLE = "OTEL_INSTRUMENTATION_GENAI_openlit_DISABLE"
 _LOGGER = logging.getLogger(__name__)
 
+# Marker attribute to identify our wrapper (for conflict detection)
+_WRAPPER_MARKER = "_openlit_translator_wrapper"
+
 # Default attribute transformation mappings i.e., openlit specific ones to GenAI semantic convention
 #
 # These mappings translate OpenLit-specific attributes (including those marked as "Extra"
@@ -189,6 +192,22 @@ def _install_deferred_registration() -> None:
     """Install a hook to register the processor when TracerProvider becomes available."""
     from ..processor.openlit_span_processor import OpenlitSpanProcessor
 
+    # Check if another translator has already wrapped set_tracer_provider
+    current_func = trace.set_tracer_provider
+    if hasattr(current_func, "_traceloop_translator_wrapper"):
+        _LOGGER.info(
+            "Traceloop translator is already installed; "
+            "skipping OpenLit translator to avoid conflicts."
+        )
+        return
+    
+    # Check if we already wrapped it (prevent double-wrapping on re-import)
+    if hasattr(current_func, _WRAPPER_MARKER):
+        _LOGGER.debug(
+            "OpenLit translator wrapper already installed; skipping"
+        )
+        return
+
     # Wrap the trace.set_tracer_provider function to intercept when it's called
     original_set_tracer_provider = trace.set_tracer_provider
 
@@ -240,6 +259,10 @@ def _install_deferred_registration() -> None:
             )
 
         return result
+
+    # Mark the wrapper so we can detect it later
+    wrapped_set_tracer_provider._openlit_translator_wrapper = True  # type: ignore[attr-defined]
+    setattr(wrapped_set_tracer_provider, _WRAPPER_MARKER, True)
 
     # Install the wrapper
     trace.set_tracer_provider = wrapped_set_tracer_provider
