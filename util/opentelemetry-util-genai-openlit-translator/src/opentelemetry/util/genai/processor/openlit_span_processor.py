@@ -106,7 +106,8 @@ class TransformationRule:
             except re.error:
                 # Bad regex – treat as non-match but log once
                 logging.warning(
-                    "[OPENLIT_PROCESSOR] Invalid regex in match_scope: %s", pattern
+                    "[OPENLIT_PROCESSOR] Invalid regex in match_scope: %s",
+                    pattern,
                 )
                 return False
         if self.match_attributes:
@@ -129,7 +130,8 @@ def _load_rules_from_env() -> List[TransformationRule]:
         rules_spec = data.get("rules") if isinstance(data, dict) else None
         if not isinstance(rules_spec, list):
             logging.warning(
-                "[OPENLIT_PROCESSOR] %s must contain a 'rules' list", _ENV_RULES
+                "[OPENLIT_PROCESSOR] %s must contain a 'rules' list",
+                _ENV_RULES,
             )
             return []
         rules: List[TransformationRule] = []
@@ -284,7 +286,9 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         # Check if this span should be transformed
         if not self.span_filter(span):
-            logger.debug("[OPENLIT_PROCESSOR] Span filtered: name=%s", span.name)
+            logger.debug(
+                "[OPENLIT_PROCESSOR] Span filtered: name=%s", span.name
+            )
             return None
 
         # avoid emitting multiple synthetic spans if on_end invoked repeatedly.
@@ -468,7 +472,8 @@ class OpenlitSpanProcessor(SpanProcessor):
         # Skip already processed spans
         if span.attributes and "_openlit_processed" in span.attributes:
             _logger.debug(
-                "[OPENLIT_PROCESSOR] Skipping already processed span: %s", span.name
+                "[OPENLIT_PROCESSOR] Skipping already processed span: %s",
+                span.name,
             )
             return True
 
@@ -653,7 +658,9 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
-            logging.warning("[OPENLIT_PROCESSOR] Span transformation failed: %s", e)
+            logging.warning(
+                "[OPENLIT_PROCESSOR] Span transformation failed: %s", e
+            )
 
     def _sort_spans_by_hierarchy(
         self, spans: List[ReadableSpan]

@@ -200,12 +200,10 @@ def _install_deferred_registration() -> None:
             "skipping OpenLit translator to avoid conflicts."
         )
         return
-    
+
     # Check if we already wrapped it (prevent double-wrapping on re-import)
     if hasattr(current_func, _WRAPPER_MARKER):
-        _LOGGER.debug(
-            "OpenLit translator wrapper already installed; skipping"
-        )
+        _LOGGER.debug("OpenLit translator wrapper already installed; skipping")
         return
 
     # Wrap the trace.set_tracer_provider function to intercept when it's called
