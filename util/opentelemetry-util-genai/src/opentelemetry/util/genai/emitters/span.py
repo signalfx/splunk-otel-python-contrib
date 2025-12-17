@@ -224,6 +224,12 @@ class SpanEmitter(EmitterMeta):
         provider = getattr(invocation, "provider", None)
         if provider:
             span.set_attribute(GEN_AI_PROVIDER_NAME, provider)
+        server_address = getattr(invocation, "server_address", None)
+        if server_address:
+            span.set_attribute(SERVER_ADDRESS, server_address)
+        server_port = getattr(invocation, "server_port", None)
+        if server_port:
+            span.set_attribute(SERVER_PORT, server_port)
         # framework (named field)
         if isinstance(invocation, LLMInvocation) and invocation.framework:
             span.set_attribute("gen_ai.framework", invocation.framework)
@@ -695,10 +701,6 @@ class SpanEmitter(EmitterMeta):
         self._apply_start_attrs(embedding)
 
         # Set embedding-specific start attributes
-        if embedding.server_address:
-            span.set_attribute(SERVER_ADDRESS, embedding.server_address)
-        if embedding.server_port:
-            span.set_attribute(SERVER_PORT, embedding.server_port)
         if embedding.encoding_formats:
             span.set_attribute(
                 GEN_AI_REQUEST_ENCODING_FORMATS, embedding.encoding_formats
@@ -743,5 +745,12 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 ErrorAttributes.ERROR_TYPE, embedding.error_type
             )
+        token = embedding.context_token
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        span.end()
         _safe_exit_context(embedding.context_token)
         span.end()
