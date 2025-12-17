@@ -1414,7 +1414,13 @@ class GenAISemanticProcessor(TracingProcessor):
                 # Create workflow - will be named after first agent
                 self._workflow = Workflow(name="OpenAIAgents", attributes={})
                 self._handler.start_workflow(self._workflow)
-        except Exception:  # defensive – don't break existing spans
+        except Exception as e:  # defensive – don't break existing spans
+            logger.debug(
+                "Failed to create workflow for trace %s: %s",
+                getattr(trace, "trace_id", "<unknown>"),
+                e,
+                exc_info=True,
+            )
             self._workflow = None
 
     def on_trace_end(self, trace: Trace) -> None:
@@ -1586,8 +1592,13 @@ class GenAISemanticProcessor(TracingProcessor):
                 # Use the Step's span as parent context for the OpenAI Agents span.
                 if hasattr(step, "span") and step.span:
                     context = set_span_in_context(step.span)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Failed to create step entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
 
         otel_span = self._tracer.start_span(
             name=span_name,
@@ -1622,8 +1633,13 @@ class GenAISemanticProcessor(TracingProcessor):
                 agent_entity.framework = "openai_agents"
 
                 self._handler.start_agent(agent_entity)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Failed to create AgentInvocation entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
 
         if _is_instance_of(span.span_data, GenerationSpanData):
             try:
@@ -1652,8 +1668,13 @@ class GenAISemanticProcessor(TracingProcessor):
 
                 self._handler.start_llm(llm_entity)
                 self._llms[str(span.span_id)] = llm_entity
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Failed to create LLMInvocation entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
 
         if _is_instance_of(span.span_data, FunctionSpanData):
             try:
@@ -1686,9 +1707,14 @@ class GenAISemanticProcessor(TracingProcessor):
                 tool_entity.framework = "openai_agents"
                 self._handler.start_tool_call(tool_entity)
                 self._tools[str(span.span_id)] = tool_entity
-            except Exception:
+            except Exception as e:
                 # Defensive: do not break span creation if util/genai fails.
-                pass
+                logger.debug(
+                    "Failed to create ToolCall entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
 
     def on_span_end(self, span: Span[Any]) -> None:
         """Finalize span with attributes, events, and metrics."""
@@ -1698,7 +1724,10 @@ class GenAISemanticProcessor(TracingProcessor):
             except ValueError:
                 # Token was created in a different context (e.g., multi-agent scenario)
                 # This is expected when workflow spans persist across multiple traces
-                pass
+                logger.debug(
+                    "Context detach failed for span %s (expected in multi-agent workflows)",
+                    getattr(span, "span_id", "<unknown>"),
+                )
 
         payload = self._build_content_payload(span)
         self._update_agent_aggregate(span, payload)
@@ -1751,8 +1780,13 @@ class GenAISemanticProcessor(TracingProcessor):
                         # Track last output for workflow (default workflow path)
                         self._workflow_last_output = step.output_data
                 self._handler.stop_step(step)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Failed to stop Step entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
         # Stop any LLMInvocation associated with this span.
         llm_entity = self._llms.pop(key, None)
         if llm_entity is not None:
@@ -1761,8 +1795,13 @@ class GenAISemanticProcessor(TracingProcessor):
                 if content and content.get("output_messages"):
                     llm_entity.output_messages = []
                 self._handler.stop_llm(llm_entity)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Failed to stop LLMInvocation entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
         # Stop any ToolCall associated with this span.
         tool_entity = self._tools.pop(key, None)
         if tool_entity is not None:
@@ -1774,8 +1813,13 @@ class GenAISemanticProcessor(TracingProcessor):
                         "tool.response", serialized
                     )
                 self._handler.stop_tool_call(tool_entity)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Failed to stop ToolCall entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
         try:
             # Extract and set attributes
             attributes: dict[str, AttributeValue] = {}
@@ -1857,6 +1901,9 @@ class GenAISemanticProcessor(TracingProcessor):
         self._tokens.clear()
         self._span_parents.clear()
         self._agent_content.clear()
+
+        if _GLOBAL_PROCESSOR_REF and _GLOBAL_PROCESSOR_REF[0] is self:
+            _GLOBAL_PROCESSOR_REF.clear()
 
     def force_flush(self) -> None:
         """Force flush (no-op for this processor)."""

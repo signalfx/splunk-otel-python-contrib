@@ -578,13 +578,59 @@ def test_workflow_and_step_entities_created(processor_setup):
     # Step map should be cleared once the agent span ends.
     assert agent_span.span_id not in processor._steps
 
-    # Workflow should be cleared after trace end.
+    # Workflow persists across traces until stop_workflow() (multi-agent support).
+    assert processor._workflow is not None
+
+    processor.stop_workflow()
     assert processor._workflow is None
 
     # Exported spans remain valid.
     finished = exporter.get_finished_spans()
     names = {span.name for span in finished}
     assert "invoke_agent Helper" in names
+
+
+def test_workflow_persists_across_multiple_traces(processor_setup):
+    processor, _ = processor_setup
+
+    trace1 = FakeTrace(name="trace1", trace_id="trace-1")
+    processor.on_trace_start(trace1)
+    workflow_1 = processor._workflow
+    assert workflow_1 is not None
+
+    agent1_span = FakeSpan(
+        trace_id=trace1.trace_id,
+        span_id="agent-1",
+        span_data=AgentSpanData(operation="invoke_agent", name="Agent1"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:01Z",
+    )
+    processor.on_span_start(agent1_span)
+    processor.on_span_end(agent1_span)
+    processor.on_trace_end(trace1)
+
+    assert processor._workflow is workflow_1
+
+    trace2 = FakeTrace(name="trace2", trace_id="trace-2")
+    processor.on_trace_start(trace2)
+
+    assert processor._workflow is workflow_1
+
+    agent2_span = FakeSpan(
+        trace_id=trace2.trace_id,
+        span_id="agent-2",
+        span_data=AgentSpanData(operation="invoke_agent", name="Agent2"),
+        started_at="2025-01-01T00:00:02Z",
+        ended_at="2025-01-01T00:00:03Z",
+    )
+    processor.on_span_start(agent2_span)
+    processor.on_span_end(agent2_span)
+    processor.on_trace_end(trace2)
+
+    assert processor._workflow is workflow_1
+
+    processor.stop_workflow()
+    assert processor._workflow is None
 
 
 def test_llm_and_tool_entities_lifecycle(processor_setup):
