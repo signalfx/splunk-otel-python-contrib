@@ -36,6 +36,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
 from opentelemetry import _events, _logs, metrics, trace
+
 # Use gRPC exporters for full telemetry support (traces, metrics, logs, events)
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
@@ -154,10 +155,11 @@ def _compute_dates() -> tuple[str, str]:
 # Tools exposed to agents (unchanged)
 # =============================================================================
 
+
 @tool
 def mock_search_flights(origin: str, destination: str, departure: str) -> str:
     """Return mock flight options for a given origin/destination pair."""
-    random.seed(hash((origin, destination, departure)) % (2 ** 32))
+    random.seed(hash((origin, destination, departure)) % (2**32))
     airline = random.choice(["SkyLine", "AeroJet", "CloudNine"])
     fare = random.randint(700, 1250)
     return (
@@ -170,7 +172,7 @@ def mock_search_flights(origin: str, destination: str, departure: str) -> str:
 @tool
 def mock_search_hotels(destination: str, check_in: str, check_out: str) -> str:
     """Return mock hotel recommendation for the stay."""
-    random.seed(hash((destination, check_in, check_out)) % (2 ** 32))
+    random.seed(hash((destination, check_in, check_out)) % (2**32))
     name = random.choice(["Grand Meridian", "Hotel Lumière", "The Atlas"])
     rate = random.randint(240, 410)
     return (
@@ -191,8 +193,10 @@ def mock_search_activities(destination: str) -> str:
 # LangGraph state & helpers
 # =============================================================================
 
+
 class PlannerState(TypedDict):
     """Shared state that moves through the LangGraph workflow."""
+
     messages: Annotated[List[AnyMessage], add_messages]
     user_request: str
     session_id: str
@@ -238,7 +242,7 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "api_key": oauth2_config["api_key"],
         "default_headers": oauth2_config["default_headers"],
     }
-    
+
     # Add model_kwargs if present (for providers that require app key)
     if "model_kwargs" in oauth2_config:
         llm_kwargs["model_kwargs"] = oauth2_config["model_kwargs"]
@@ -250,11 +254,17 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
 # Poison config helpers (unchanged - keeping for completeness)
 # =============================================================================
 
-def _poison_config(custom_config: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+
+def _poison_config(
+    custom_config: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
     """Read environment variables or custom config controlling prompt poisoning."""
     if custom_config:
         prob = float(custom_config.get("prob", 0.8))
-        types = custom_config.get("types", ["hallucination", "bias", "irrelevance", "negative_sentiment", "toxicity"])
+        types = custom_config.get(
+            "types",
+            ["hallucination", "bias", "irrelevance", "negative_sentiment", "toxicity"],
+        )
         max_snippets = int(custom_config.get("max", 2))
         seed = custom_config.get("seed")
         if seed:
@@ -264,10 +274,21 @@ def _poison_config(custom_config: Optional[Dict[str, object]] = None) -> Dict[st
                 random.seed(seed)
     else:
         prob = float(os.getenv("TRAVEL_POISON_PROB", "0.8"))
-        types_raw = os.getenv("TRAVEL_POISON_TYPES", "hallucination,bias,irrelevance,negative_sentiment,toxicity")
-        types = [t.strip() for t in types_raw.split(",") if t.strip()] if types_raw else []
+        types_raw = os.getenv(
+            "TRAVEL_POISON_TYPES",
+            "hallucination,bias,irrelevance,negative_sentiment,toxicity",
+        )
+        types = (
+            [t.strip() for t in types_raw.split(",") if t.strip()] if types_raw else []
+        )
         if not types:
-            types = ["hallucination", "bias", "irrelevance", "negative_sentiment", "toxicity"]
+            types = [
+                "hallucination",
+                "bias",
+                "irrelevance",
+                "negative_sentiment",
+                "toxicity",
+            ]
         max_snippets = int(os.getenv("TRAVEL_POISON_MAX", "2"))
         seed = os.getenv("TRAVEL_POISON_SEED")
         if seed:
@@ -290,8 +311,12 @@ def _generate_poison_snippet(kind: str, agent_name: str) -> str:
     return snippets.get(kind, f"(poison:{kind})")
 
 
-def maybe_add_quality_noise(agent_name: str, base_prompt: str, state: PlannerState,
-                            custom_poison_config: Optional[Dict[str, object]] = None) -> str:
+def maybe_add_quality_noise(
+    agent_name: str,
+    base_prompt: str,
+    state: PlannerState,
+    custom_poison_config: Optional[Dict[str, object]] = None,
+) -> str:
     """Randomly inject poisoning snippets into the prompt."""
     if custom_poison_config is None:
         return base_prompt
@@ -311,97 +336,174 @@ def maybe_add_quality_noise(agent_name: str, base_prompt: str, state: PlannerSta
 # LangGraph nodes (unchanged logic, uses OAuth2-authenticated LLM)
 # =============================================================================
 
-def coordinator_node(state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
+
+def coordinator_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
     llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
-    agent = _create_react_agent(llm, tools=[]).with_config({
-        "run_name": "coordinator",
-        "tags": ["agent", "agent:coordinator"],
-        "metadata": {"agent_name": "coordinator", "session_id": state["session_id"]},
-    })
+    agent = _create_react_agent(llm, tools=[]).with_config(
+        {
+            "run_name": "coordinator",
+            "tags": ["agent", "agent:coordinator"],
+            "metadata": {
+                "agent_name": "coordinator",
+                "session_id": state["session_id"],
+            },
+        }
+    )
     system_message = SystemMessage(
-        content="You are the lead travel coordinator. Extract the key details from the traveller's request.")
-    poisoned_system = maybe_add_quality_noise("coordinator", system_message.content, state, custom_poison_config)
+        content="You are the lead travel coordinator. Extract the key details from the traveller's request."
+    )
+    poisoned_system = maybe_add_quality_noise(
+        "coordinator", system_message.content, state, custom_poison_config
+    )
     system_message = SystemMessage(content=poisoned_system)
     result = agent.invoke({"messages": [system_message] + list(state["messages"])})
     final_message = result["messages"][-1]
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=str(final_message)))
+        final_message
+        if isinstance(final_message, BaseMessage)
+        else AIMessage(content=str(final_message))
+    )
     state["current_agent"] = "flight_specialist"
     return state
 
 
-def flight_specialist_node(state: PlannerState,
-                           custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
-    llm = _create_llm("flight_specialist", temperature=0.4, session_id=state["session_id"])
-    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config({
-        "run_name": "flight_specialist",
-        "tags": ["agent", "agent:flight_specialist"],
-        "metadata": {"agent_name": "flight_specialist", "session_id": state["session_id"]},
-    })
+def flight_specialist_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
+    llm = _create_llm(
+        "flight_specialist", temperature=0.4, session_id=state["session_id"]
+    )
+    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
+        {
+            "run_name": "flight_specialist",
+            "tags": ["agent", "agent:flight_specialist"],
+            "metadata": {
+                "agent_name": "flight_specialist",
+                "session_id": state["session_id"],
+            },
+        }
+    )
     step = f"Find an appealing flight from {state['origin']} to {state['destination']} departing {state['departure']} for {state['travellers']} travellers."
-    step = maybe_add_quality_noise("flight_specialist", step, state, custom_poison_config)
+    step = maybe_add_quality_noise(
+        "flight_specialist", step, state, custom_poison_config
+    )
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
-    state["flight_summary"] = final_message.content if isinstance(final_message, BaseMessage) else str(final_message)
+    state["flight_summary"] = (
+        final_message.content
+        if isinstance(final_message, BaseMessage)
+        else str(final_message)
+    )
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=str(final_message)))
+        final_message
+        if isinstance(final_message, BaseMessage)
+        else AIMessage(content=str(final_message))
+    )
     state["current_agent"] = "hotel_specialist"
     return state
 
 
-def hotel_specialist_node(state: PlannerState,
-                          custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
-    llm = _create_llm("hotel_specialist", temperature=0.5, session_id=state["session_id"])
-    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config({
-        "run_name": "hotel_specialist",
-        "tags": ["agent", "agent:hotel_specialist"],
-        "metadata": {"agent_name": "hotel_specialist", "session_id": state["session_id"]},
-    })
+def hotel_specialist_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
+    llm = _create_llm(
+        "hotel_specialist", temperature=0.5, session_id=state["session_id"]
+    )
+    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
+        {
+            "run_name": "hotel_specialist",
+            "tags": ["agent", "agent:hotel_specialist"],
+            "metadata": {
+                "agent_name": "hotel_specialist",
+                "session_id": state["session_id"],
+            },
+        }
+    )
     step = f"Recommend a boutique hotel in {state['destination']} between {state['departure']} and {state['return_date']} for {state['travellers']} travellers."
-    step = maybe_add_quality_noise("hotel_specialist", step, state, custom_poison_config)
+    step = maybe_add_quality_noise(
+        "hotel_specialist", step, state, custom_poison_config
+    )
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
-    state["hotel_summary"] = final_message.content if isinstance(final_message, BaseMessage) else str(final_message)
+    state["hotel_summary"] = (
+        final_message.content
+        if isinstance(final_message, BaseMessage)
+        else str(final_message)
+    )
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=str(final_message)))
+        final_message
+        if isinstance(final_message, BaseMessage)
+        else AIMessage(content=str(final_message))
+    )
     state["current_agent"] = "activity_specialist"
     return state
 
 
-def activity_specialist_node(state: PlannerState,
-                             custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
-    llm = _create_llm("activity_specialist", temperature=0.6, session_id=state["session_id"])
-    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config({
-        "run_name": "activity_specialist",
-        "tags": ["agent", "agent:activity_specialist"],
-        "metadata": {"agent_name": "activity_specialist", "session_id": state["session_id"]},
-    })
+def activity_specialist_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
+    llm = _create_llm(
+        "activity_specialist", temperature=0.6, session_id=state["session_id"]
+    )
+    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
+        {
+            "run_name": "activity_specialist",
+            "tags": ["agent", "agent:activity_specialist"],
+            "metadata": {
+                "agent_name": "activity_specialist",
+                "session_id": state["session_id"],
+            },
+        }
+    )
     step = f"Curate signature activities for travellers spending a week in {state['destination']}."
-    step = maybe_add_quality_noise("activity_specialist", step, state, custom_poison_config)
+    step = maybe_add_quality_noise(
+        "activity_specialist", step, state, custom_poison_config
+    )
     result = agent.invoke({"messages": [HumanMessage(content=step)]})
     final_message = result["messages"][-1]
-    state["activities_summary"] = final_message.content if isinstance(final_message, BaseMessage) else str(
-        final_message)
+    state["activities_summary"] = (
+        final_message.content
+        if isinstance(final_message, BaseMessage)
+        else str(final_message)
+    )
     state["messages"].append(
-        final_message if isinstance(final_message, BaseMessage) else AIMessage(content=str(final_message)))
+        final_message
+        if isinstance(final_message, BaseMessage)
+        else AIMessage(content=str(final_message))
+    )
     state["current_agent"] = "plan_synthesizer"
     return state
 
 
-def plan_synthesizer_node(state: PlannerState,
-                          custom_poison_config: Optional[Dict[str, object]] = None) -> PlannerState:
-    llm = _create_llm("plan_synthesizer", temperature=0.3, session_id=state["session_id"])
+def plan_synthesizer_node(
+    state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
+) -> PlannerState:
+    llm = _create_llm(
+        "plan_synthesizer", temperature=0.3, session_id=state["session_id"]
+    )
     system_content = "You are the travel plan synthesiser. Combine the specialist insights into a concise, structured itinerary."
-    system_content = maybe_add_quality_noise("plan_synthesizer", system_content, state, custom_poison_config)
+    system_content = maybe_add_quality_noise(
+        "plan_synthesizer", system_content, state, custom_poison_config
+    )
     system_prompt = SystemMessage(content=system_content)
     content = json.dumps(
-        {"flight": state["flight_summary"], "hotel": state["hotel_summary"], "activities": state["activities_summary"]},
-        indent=2)
-    response = llm.invoke([
-        system_prompt,
-        HumanMessage(
-            content=f"Traveller request: {state['user_request']}\n\nOrigin: {state['origin']} | Destination: {state['destination']}\nDates: {state['departure']} to {state['return_date']}\n\nSpecialist summaries:\n{content}")
-    ])
+        {
+            "flight": state["flight_summary"],
+            "hotel": state["hotel_summary"],
+            "activities": state["activities_summary"],
+        },
+        indent=2,
+    )
+    response = llm.invoke(
+        [
+            system_prompt,
+            HumanMessage(
+                content=f"Traveller request: {state['user_request']}\n\nOrigin: {state['origin']} | Destination: {state['destination']}\nDates: {state['departure']} to {state['return_date']}\n\nSpecialist summaries:\n{content}"
+            ),
+        ]
+    )
     state["final_itinerary"] = response.content
     state["messages"].append(response)
     state["current_agent"] = "completed"
@@ -419,13 +521,29 @@ def should_continue(state: PlannerState) -> str:
     return mapping.get(state["current_agent"], END)
 
 
-def build_workflow(custom_poison_config: Optional[Dict[str, object]] = None) -> StateGraph:
+def build_workflow(
+    custom_poison_config: Optional[Dict[str, object]] = None,
+) -> StateGraph:
     graph = StateGraph(PlannerState)
-    graph.add_node("coordinator", lambda state: coordinator_node(state, custom_poison_config))
-    graph.add_node("flight_specialist", lambda state: flight_specialist_node(state, custom_poison_config))
-    graph.add_node("hotel_specialist", lambda state: hotel_specialist_node(state, custom_poison_config))
-    graph.add_node("activity_specialist", lambda state: activity_specialist_node(state, custom_poison_config))
-    graph.add_node("plan_synthesizer", lambda state: plan_synthesizer_node(state, custom_poison_config))
+    graph.add_node(
+        "coordinator", lambda state: coordinator_node(state, custom_poison_config)
+    )
+    graph.add_node(
+        "flight_specialist",
+        lambda state: flight_specialist_node(state, custom_poison_config),
+    )
+    graph.add_node(
+        "hotel_specialist",
+        lambda state: hotel_specialist_node(state, custom_poison_config),
+    )
+    graph.add_node(
+        "activity_specialist",
+        lambda state: activity_specialist_node(state, custom_poison_config),
+    )
+    graph.add_node(
+        "plan_synthesizer",
+        lambda state: plan_synthesizer_node(state, custom_poison_config),
+    )
     graph.add_conditional_edges(START, should_continue)
     graph.add_conditional_edges("coordinator", should_continue)
     graph.add_conditional_edges("flight_specialist", should_continue)
@@ -439,8 +557,14 @@ def build_workflow(custom_poison_config: Optional[Dict[str, object]] = None) -> 
 # Core planning function
 # =============================================================================
 
-def plan_travel_internal(origin: str, destination: str, user_request: str, travellers: int,
-                         poison_config: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+
+def plan_travel_internal(
+    origin: str,
+    destination: str,
+    user_request: str,
+    travellers: int,
+    poison_config: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
     """Execute travel planning workflow."""
     session_id = str(uuid4())
     departure, return_date = _compute_dates()
@@ -467,7 +591,9 @@ def plan_travel_internal(origin: str, destination: str, user_request: str, trave
 
     tracer = trace.get_tracer(__name__)
 
-    with tracer.start_as_current_span(name="POST /travel/plan", kind=SpanKind.SERVER) as root_span:
+    with tracer.start_as_current_span(
+        name="POST /travel/plan", kind=SpanKind.SERVER
+    ) as root_span:
         root_span.set_attribute("travel.origin", origin)
         root_span.set_attribute("travel.destination", destination)
         root_span.set_attribute("travel.session_id", session_id)
@@ -500,7 +626,11 @@ def plan_travel_internal(origin: str, destination: str, user_request: str, trave
     # Wait for telemetry export and evals to complete
     # Evals can take significant time (up to 5 mins per eval), so we add a buffer
     eval_wait_time = int(os.getenv("EVAL_FLUSH_WAIT_SECONDS", "10"))
-    print(f"[Telemetry] Waiting {eval_wait_time}s for evals to complete...", file=sys.stderr, flush=True)
+    print(
+        f"[Telemetry] Waiting {eval_wait_time}s for evals to complete...",
+        file=sys.stderr,
+        flush=True,
+    )
     time.sleep(eval_wait_time)
 
     return {
@@ -512,7 +642,9 @@ def plan_travel_internal(origin: str, destination: str, user_request: str, trave
         "travellers": travellers,
         "flight_summary": final_state.get("flight_summary") if final_state else None,
         "hotel_summary": final_state.get("hotel_summary") if final_state else None,
-        "activities_summary": final_state.get("activities_summary") if final_state else None,
+        "activities_summary": final_state.get("activities_summary")
+        if final_state
+        else None,
         "final_itinerary": final_plan,
         "poison_events": final_state.get("poison_events") if final_state else [],
         "agent_steps": agent_steps,
@@ -550,7 +682,11 @@ def invoke(payload: dict) -> dict:
     travellers = int(payload.get("travellers", 2))
     poison_config = payload.get("poison_config")
 
-    print(f"[AgentCore] Processing travel plan: {origin} -> {destination}", file=sys.stderr, flush=True)
+    print(
+        f"[AgentCore] Processing travel plan: {origin} -> {destination}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     try:
         result = plan_travel_internal(
@@ -561,12 +697,17 @@ def invoke(payload: dict) -> dict:
             poison_config=poison_config,
         )
 
-        print("[AgentCore] Travel plan completed successfully", file=sys.stderr, flush=True)
+        print(
+            "[AgentCore] Travel plan completed successfully",
+            file=sys.stderr,
+            flush=True,
+        )
         return {"status": "success", **result}
 
     except Exception as e:
         print(f"[AgentCore] Error: {e}", file=sys.stderr, flush=True)
         import traceback
+
         traceback.print_exc(file=sys.stderr)
         return {"status": "error", "error": str(e)}
 
