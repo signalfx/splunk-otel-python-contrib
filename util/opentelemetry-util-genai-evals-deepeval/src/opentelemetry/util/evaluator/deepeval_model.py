@@ -163,6 +163,13 @@ def create_eval_model() -> Any | None:
         DEEPEVAL_LLM_TOKEN_URL=https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
         DEEPEVAL_LLM_SCOPE=api://<resource>/.default
         DEEPEVAL_LLM_AUTH_METHOD=post
+
+    Example - Static API Key (no OAuth2):
+        DEEPEVAL_LLM_BASE_URL=https://api.your-provider.com/v1
+        DEEPEVAL_LLM_MODEL=gpt-4o-mini
+        DEEPEVAL_LLM_PROVIDER=openai
+        DEEPEVAL_LLM_API_KEY=<your-api-key>
+        # Note: Do NOT set DEEPEVAL_LLM_TOKEN_URL when using static API key
     """
     base_url = os.environ.get("DEEPEVAL_LLM_BASE_URL")
     if not base_url:
