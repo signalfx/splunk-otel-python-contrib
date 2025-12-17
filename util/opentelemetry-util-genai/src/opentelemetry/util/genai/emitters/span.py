@@ -119,12 +119,18 @@ def _apply_sampled_for_evaluation(
 ) -> None:
     # Check if span is recording before setting attribute
     # This handles ReadableSpan which has already ended, gracefully
-    if span is not None and hasattr(span, "is_recording") and span.is_recording():
+    if (
+        span is not None
+        and hasattr(span, "is_recording")
+        and span.is_recording()
+    ):
         span.set_attribute("gen_ai.evaluation.sampled", is_sampled)
     elif span is not None and hasattr(span, "_attributes"):
         # Fallback for ReadableSpan: directly mutate _attributes
         try:
-            span._attributes["gen_ai.evaluation.sampled"] = str(is_sampled).lower()
+            span._attributes["gen_ai.evaluation.sampled"] = str(
+                is_sampled
+            ).lower()
         except Exception:
             pass
 
@@ -350,7 +356,9 @@ class SpanEmitter(EmitterMeta):
                 return
             # Check if span is still recording (not already ended)
             # This allows reusing on_end with ReadableSpan from translators
-            is_recording = hasattr(span, "is_recording") and span.is_recording()
+            is_recording = (
+                hasattr(span, "is_recording") and span.is_recording()
+            )
             if is_recording:
                 self._apply_finish_attrs(invocation)
             token = getattr(invocation, "context_token", None)
