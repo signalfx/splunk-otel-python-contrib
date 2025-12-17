@@ -300,7 +300,7 @@ export DEEPEVAL_LLM_API_KEY=<your-api-key>
 # Note: Do NOT set DEEPEVAL_LLM_TOKEN_URL when using static API key
 ```
 
-### Example: Azure AD / GAIT API (OAuth2)
+### Example: Dynamic Token Generation (OAuth2)
 
 ```bash
 export DEEPEVAL_LLM_BASE_URL=https://your-gait-gateway.example.com/v1
@@ -388,14 +388,6 @@ When running in AgentCore VPC mode, ensure your runtime can reach:
 - LLM gateway endpoint
 
 Configure NAT Gateway or appropriate egress rules for your VPC subnets.
-
----
-
-## Related Examples
-
-- [`agentcore-splunk/`](../agentcore-splunk/) - Same example using OpenAI directly (no OAuth2)
-- [`agentcore-cisco-token/`](../agentcore-cisco-token/) - Uses Cisco-specific token manager
-- [`agentcore/`](../agentcore/) - Full documentation with EKS OTel Collector setup guide
 
 ---
 
