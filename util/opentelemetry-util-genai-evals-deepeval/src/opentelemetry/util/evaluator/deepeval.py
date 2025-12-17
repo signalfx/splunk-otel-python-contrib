@@ -622,7 +622,7 @@ class DeepevalEvaluator(Evaluator):
         Returns either:
         - A LiteLLMModel instance if DEEPEVAL_LLM_BASE_URL is configured
         - A model name string for standard OpenAI usage
-        
+
         Environment Variables (for custom model):
             DEEPEVAL_LLM_BASE_URL: Custom LLM endpoint
             DEEPEVAL_LLM_MODEL: Model name
