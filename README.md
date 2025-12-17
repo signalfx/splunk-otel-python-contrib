@@ -327,6 +327,32 @@ This is useful for:
 
 If the CI lint job fails on your PR:
 
+#### Option 1: Using Make (Recommended for instrumentation packages)
+
+Some instrumentation packages include a Makefile with a lint recipe that automatically fixes all linting and formatting issues.
+
+**Note:** It's recommended to run this in a virtual environment to avoid conflicts with system packages.
+
+```bash
+cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+make lint
+```
+
+This will:
+- Install the correct version of ruff
+- Fix all linting issues with `ruff check --fix`
+- Format all code with `ruff format`
+- Verify that all fixes pass CI checks
+
+Then commit and push the changes:
+```bash
+git add .
+git commit -m "fix: auto-fix linting issues"
+git push
+```
+
+#### Option 2: Using Pre-Commit
+
 1. **Run pre-commit on all files:**
    ```bash
    pre-commit run --all-files
