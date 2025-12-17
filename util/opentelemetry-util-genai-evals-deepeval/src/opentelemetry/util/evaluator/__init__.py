@@ -15,5 +15,12 @@
 """Deepeval evaluator plugin package."""
 
 from .deepeval import DeepevalEvaluator, register, registration
+from .deepeval_model import OAuth2TokenManager, create_eval_model
 
-__all__ = ["DeepevalEvaluator", "register", "registration"]
+__all__ = [
+    "DeepevalEvaluator",
+    "register",
+    "registration",
+    "OAuth2TokenManager",
+    "create_eval_model",
+]
