@@ -17,9 +17,9 @@ import requests
 class OAuth2TokenManager:
     """
     Lightweight OAuth2 token manager for custom LLM providers.
-    
+
     Supports client_credentials grant type with Basic Auth or form POST.
-    
+
     Environment Variables:
         DEEPEVAL_LLM_CLIENT_ID: OAuth2 client ID
         DEEPEVAL_LLM_CLIENT_SECRET: OAuth2 client secret
@@ -46,7 +46,9 @@ class OAuth2TokenManager:
 
     def get_token(self) -> str:
         """Get a valid access token, refreshing if needed."""
-        if self._token and time.time() < (self._token_expiry - self._refresh_buffer):
+        if self._token and time.time() < (
+            self._token_expiry - self._refresh_buffer
+        ):
             return self._token
         return self._refresh_token()
 
@@ -132,7 +134,7 @@ def create_eval_model() -> Any | None:
         DEEPEVAL_LLM_API_KEY: Static API key (if not using OAuth2)
         DEEPEVAL_LLM_CLIENT_APP_NAME: App key/name (passed in headers for some providers)
         DEEPEVAL_LLM_AUTH_HEADER: Auth header name (default: api-key)
-        
+
         OAuth2 Configuration (optional):
         DEEPEVAL_LLM_TOKEN_URL: OAuth2 token endpoint
         DEEPEVAL_LLM_CLIENT_ID: OAuth2 client ID
@@ -212,4 +214,3 @@ def create_eval_model() -> Any | None:
 
 
 __all__ = ["OAuth2TokenManager", "create_eval_model"]
-
