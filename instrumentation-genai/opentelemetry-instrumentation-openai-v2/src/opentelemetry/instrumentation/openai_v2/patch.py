@@ -261,16 +261,15 @@ def chat_completions_create(
     """Wrap the `create` method of the `ChatCompletion` class to trace it."""
 
     def traced_method(wrapped, instance, args, kwargs):
-        capture_content_flag = capture_content
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
-            kwargs, capture_content_flag, span_attributes
+            kwargs, capture_content, span_attributes
         )
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
         for message in kwargs.get("messages", []):
-            logger.emit(message_to_event(message, capture_content_flag))
+            logger.emit(message_to_event(message, capture_content))
 
         start = default_timer()
         result = None
@@ -284,19 +283,19 @@ def chat_completions_create(
                     parsed_result,
                     invocation,
                     logger,
-                    capture_content_flag,
+                    capture_content,
                     handler,
                 )
 
             if span and span.is_recording():
                 _set_response_attributes(
-                    span, parsed_result, logger, capture_content_flag
+                    span, parsed_result, logger, capture_content
                 )
             for choice in getattr(parsed_result, "choices", []):
-                logger.emit(choice_to_event(choice, capture_content_flag))
+                logger.emit(choice_to_event(choice, capture_content))
 
             _apply_chat_response_to_invocation(
-                invocation, parsed_result, capture_content_flag
+                invocation, parsed_result, capture_content
             )
             handler.stop_llm(invocation)
             return result
@@ -333,16 +332,15 @@ def async_chat_completions_create(
     """Wrap the `create` method of the `AsyncChatCompletion` class to trace it."""
 
     async def traced_method(wrapped, instance, args, kwargs):
-        capture_content_flag = capture_content
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
-            kwargs, capture_content_flag, span_attributes
+            kwargs, capture_content, span_attributes
         )
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
         for message in kwargs.get("messages", []):
-            logger.emit(message_to_event(message, capture_content_flag))
+            logger.emit(message_to_event(message, capture_content))
 
         start = default_timer()
         result = None
@@ -356,19 +354,19 @@ def async_chat_completions_create(
                     parsed_result,
                     invocation,
                     logger,
-                    capture_content_flag,
+                    capture_content,
                     handler,
                 )
 
             if span and span.is_recording():
                 _set_response_attributes(
-                    span, parsed_result, logger, capture_content_flag
+                    span, parsed_result, logger, capture_content
                 )
             for choice in getattr(parsed_result, "choices", []):
-                logger.emit(choice_to_event(choice, capture_content_flag))
+                logger.emit(choice_to_event(choice, capture_content))
 
             _apply_chat_response_to_invocation(
-                invocation, parsed_result, capture_content_flag
+                invocation, parsed_result, capture_content
             )
             handler.stop_llm(invocation)
             return result
