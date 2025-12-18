@@ -88,9 +88,7 @@ def _to_text_parts(content: Any, capture_content: bool) -> list[Text]:
             text_value = _text_value(item)
             if text_value is None:
                 continue
-            parts.append(
-                Text(content=text_value if capture_content else "")
-            )
+            parts.append(Text(content=text_value if capture_content else ""))
         return parts
 
     text_value = _text_value(content)
@@ -106,9 +104,7 @@ def _build_input_messages(
 ) -> list[InputMessage]:
     input_messages: list[InputMessage] = []
     for message in messages or []:
-        role = getattr(message, "role", None) or getattr(
-            message, "type", None
-        )
+        role = getattr(message, "role", None) or getattr(message, "type", None)
         if role is None and isinstance(message, dict):
             role = message.get("role") or message.get("type")
         role = role or "user"
@@ -162,9 +158,7 @@ def _build_chat_invocation(
         request_seed=seed,
         request_functions=list(kwargs.get("tools", []) or []),
         request_stop_sequences=stop_sequences,
-        request_encoding_formats=[
-            response_format
-        ]
+        request_encoding_formats=[response_format]
         if value_is_set(response_format)
         else [],
     )
@@ -175,9 +169,9 @@ def _build_chat_invocation(
         ] = response_format
 
     if seed is not None:
-        invocation.attributes[
-            GenAIAttributes.GEN_AI_OPENAI_REQUEST_SEED
-        ] = seed
+        invocation.attributes[GenAIAttributes.GEN_AI_OPENAI_REQUEST_SEED] = (
+            seed
+        )
 
     if attributes:
         if ServerAttributes.SERVER_ADDRESS in attributes:
