@@ -25,8 +25,15 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.sdk import trace as trace_sdk
 from opentelemetry.sdk import metrics as metrics_sdk
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor, BatchSpanProcessor
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+    BatchSpanProcessor,
+)
+from opentelemetry.sdk.metrics.export import (
+    PeriodicExportingMetricReader,
+    ConsoleMetricExporter,
+)
 
 from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 from util import CiscoTokenManager
@@ -48,15 +55,14 @@ trace.set_tracer_provider(tracer_provider)
 metric_readers = [
     PeriodicExportingMetricReader(
         OTLPMetricExporter(),
-        export_interval_millis=60000  # Export every 60 seconds for production
+        export_interval_millis=60000,  # Export every 60 seconds for production
     )
 ]
 
 if ENABLE_CONSOLE_OUTPUT:
     metric_readers.append(
         PeriodicExportingMetricReader(
-            ConsoleMetricExporter(),
-            export_interval_millis=60000
+            ConsoleMetricExporter(), export_interval_millis=60000
         )
     )
 
@@ -74,11 +80,13 @@ CISCO_APP_KEY = os.environ.get("CISCO_APP_KEY")
 # Initialize token manager (uses CISCO_CLIENT_ID, CISCO_CLIENT_SECRET env vars)
 token_manager = CiscoTokenManager()
 
+
 def get_cisco_llm():
     """Create LLM instance with fresh token for Cisco Chat AI."""
     import json
+
     token = token_manager.get_token()
-    
+
     # Cisco requires:
     # 1. api-key header with OAuth token
     # 2. user field in request body with JSON-encoded appkey
@@ -93,6 +101,7 @@ def get_cisco_llm():
         user=json.dumps({"appkey": CISCO_APP_KEY}),
         temperature=0.7,
     )
+
 
 cisco_llm = get_cisco_llm()
 
@@ -180,27 +189,27 @@ crew = Crew(
     agents=[support_agent, support_quality_assurance_agent],
     tasks=[inquiry_resolution, quality_assurance_review],
     verbose=False,
-    memory=False
+    memory=False,
 )
 
 inputs = {
     "customer": "Splunk Olly for AI",
     "person": "Aditya Mehra",
     "inquiry": "I need help with setting up a Crew "
-               "and kicking it off, specifically "
-               "how can I add memory to my crew? "
-               "Can you provide guidance?"
+    "and kicking it off, specifically "
+    "how can I add memory to my crew? "
+    "Can you provide guidance?",
 }
 
 CrewAIInstrumentor().instrument(
-    tracer_provider=tracer_provider,
-    meter_provider=meter_provider
+    tracer_provider=tracer_provider, meter_provider=meter_provider
 )
+
 
 def flush_telemetry():
     """Flush all OpenTelemetry providers before exit to ensure traces and metrics are exported."""
     print("\n[FLUSH] Starting telemetry flush", flush=True)
-    
+
     # Flush traces
     try:
         tracer_provider = trace.get_tracer_provider()
@@ -209,7 +218,7 @@ def flush_telemetry():
             tracer_provider.force_flush(timeout_millis=30000)
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush traces: {e}", flush=True)
-    
+
     # Flush metrics
     try:
         meter_provider_instance = metrics.get_meter_provider()
@@ -221,10 +230,11 @@ def flush_telemetry():
             meter_provider_instance.shutdown()
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush metrics: {e}", flush=True)
-    
+
     # Give batch processors time to complete final export
     time.sleep(2)
     print("[FLUSH] Telemetry flush complete\n", flush=True)
+
 
 if __name__ == "__main__":
     exit_code = 0
@@ -232,25 +242,28 @@ if __name__ == "__main__":
         # Refresh token and recreate LLM with fresh token
         fresh_token = token_manager.get_token()
         print(f"[AUTH] Token obtained (length: {len(fresh_token)})")
-        
+
         # Recreate LLM with fresh token in headers
         cisco_llm = get_cisco_llm()
-        
+
         # Update agents with fresh LLM
         support_agent.llm = cisco_llm
         support_quality_assurance_agent.llm = cisco_llm
-        
+
         result = crew.kickoff(inputs=inputs)
         print("\n[SUCCESS] Crew execution completed")
     except Exception as e:
         print(f"\n[ERROR] Crew execution failed: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         exit_code = 1
     finally:
         # CRITICAL: Always flush telemetry to ensure spans and metrics are exported
-        print("\n" + "="*100)
-        print("METRICS OUTPUT BELOW - Look for gen_ai.agent.duration and gen_ai.workflow.duration")
-        print("="*100 + "\n")
+        print("\n" + "=" * 100)
+        print(
+            "METRICS OUTPUT BELOW - Look for gen_ai.agent.duration and gen_ai.workflow.duration"
+        )
+        print("=" * 100 + "\n")
         flush_telemetry()
         sys.exit(exit_code)

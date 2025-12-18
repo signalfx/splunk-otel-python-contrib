@@ -1,8 +1,10 @@
 from crewai import Agent, Crew, Task, Process
+
 # Disable CrewAI's built-in telemetry
 import os
+
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
-os.environ["OPENAI_MODEL_NAME"] = 'gpt-5-mini'
+os.environ["OPENAI_MODEL_NAME"] = "gpt-5-mini"
 
 # Manager agent coordinates the team
 manager = Agent(
@@ -10,7 +12,7 @@ manager = Agent(
     goal="Coordinate team efforts and ensure project success",
     backstory="Experienced project manager skilled at delegation and quality control",
     allow_delegation=True,
-    verbose=True
+    verbose=True,
 )
 
 # Specialist agents
@@ -19,7 +21,7 @@ researcher = Agent(
     goal="Provide accurate research and analysis",
     backstory="Expert researcher with deep analytical skills",
     allow_delegation=False,  # Specialists focus on their expertise
-    verbose=True
+    verbose=True,
 )
 
 writer = Agent(
@@ -27,14 +29,14 @@ writer = Agent(
     goal="Create compelling content",
     backstory="Skilled writer who creates engaging content",
     allow_delegation=False,
-    verbose=True
+    verbose=True,
 )
 
 # Manager-led task
 project_task = Task(
     description="Create a comprehensive market analysis report with recommendations",
     expected_output="Executive summary, detailed analysis, and strategic recommendations",
-    agent=manager  # Manager will delegate to specialists
+    agent=manager,  # Manager will delegate to specialists
 )
 
 # Hierarchical crew
@@ -43,13 +45,17 @@ crew = Crew(
     tasks=[project_task],
     process=Process.hierarchical,  # Manager coordinates everything
     manager_llm="gpt-4o",  # Specify LLM for manager
-    verbose=True
+    verbose=True,
 )
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk import trace as trace_sdk
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor, BatchSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+    BatchSpanProcessor,
+)
 
 tracer_provider = trace_sdk.TracerProvider()
 tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
