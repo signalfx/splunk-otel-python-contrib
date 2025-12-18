@@ -41,7 +41,7 @@ token_manager = CiscoTokenManager()
 def get_cisco_llm():
     """Create LLM instance with fresh token for Cisco Chat AI."""
     token = token_manager.get_token()
-    
+
     # Cisco requires:
     # 1. api-key header with OAuth token
     # 2. user field in request body with JSON-encoded appkey
@@ -160,9 +160,9 @@ inputs = {
     "customer": "Splunk Olly for AI",
     "person": "Aditya Mehra",
     "inquiry": "I need help with setting up a Crew "
-               "and kicking it off, specifically "
-               "how can I add memory to my crew? "
-               "Can you provide guidance?"
+    "and kicking it off, specifically "
+    "how can I add memory to my crew? "
+    "Can you provide guidance?",
 }
 
 
@@ -174,14 +174,14 @@ if __name__ == "__main__":
     # Refresh token and recreate LLM with fresh token
     fresh_token = token_manager.get_token()
     print(f"[AUTH] Token obtained (length: {len(fresh_token)})")
-    
+
     # Recreate LLM with fresh token in headers
     cisco_llm = get_cisco_llm()
-    
+
     # Update agents with fresh LLM
     support_agent.llm = cisco_llm
     support_quality_assurance_agent.llm = cisco_llm
-    
+
     result = crew.kickoff(inputs=inputs)
     print("\n[SUCCESS] Crew execution completed")
     print(result)

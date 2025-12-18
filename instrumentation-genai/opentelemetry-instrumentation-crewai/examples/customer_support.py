@@ -10,8 +10,15 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.sdk import trace as trace_sdk
 from opentelemetry.sdk import metrics as metrics_sdk
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor, BatchSpanProcessor
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+    BatchSpanProcessor,
+)
+from opentelemetry.sdk.metrics.export import (
+    PeriodicExportingMetricReader,
+    ConsoleMetricExporter,
+)
 
 from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 from opentelemetry.instrumentation.openai import OpenAIInstrumentor
@@ -33,15 +40,14 @@ trace.set_tracer_provider(tracer_provider)
 metric_readers = [
     PeriodicExportingMetricReader(
         OTLPMetricExporter(),
-        export_interval_millis=60000  # Export every 60 seconds for production
+        export_interval_millis=60000,  # Export every 60 seconds for production
     )
 ]
 
 if ENABLE_CONSOLE_OUTPUT:
     metric_readers.append(
         PeriodicExportingMetricReader(
-            ConsoleMetricExporter(),
-            export_interval_millis=60000
+            ConsoleMetricExporter(), export_interval_millis=60000
         )
     )
 
@@ -50,26 +56,25 @@ metrics.set_meter_provider(meter_provider)
 
 # Disable CrewAI's built-in telemetry
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
-os.environ["OPENAI_MODEL_NAME"] = 'gpt-4o-mini'
+os.environ["OPENAI_MODEL_NAME"] = "gpt-4o-mini"
 
 # Enable metrics in genai-util (defaults to span-only)
 os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric"
 
 support_agent = Agent(
     role="Senior Support Representative",
-	goal="Be the most friendly and helpful "
-        "support representative in your team",
-	backstory=(
-		"You work at crewAI (https://crewai.com) and "
+    goal="Be the most friendly and helpful " "support representative in your team",
+    backstory=(
+        "You work at crewAI (https://crewai.com) and "
         " are now working on providing "
-		"support to {customer}, a super important customer "
+        "support to {customer}, a super important customer "
         " for your company."
-		"You need to make sure that you provide the best support!"
-		"Make sure to provide full complete answers, "
+        "You need to make sure that you provide the best support!"
+        "Make sure to provide full complete answers, "
         " and make no assumptions."
-	),
-	allow_delegation=False,
-	verbose=False
+    ),
+    allow_delegation=False,
+    verbose=False,
 )
 
 # By not setting allow_delegation=False, allow_delegation takes its default value of being True.
@@ -77,20 +82,20 @@ support_agent = Agent(
 
 
 support_quality_assurance_agent = Agent(
-	role="Support Quality Assurance Specialist",
-	goal="Get recognition for providing the "
+    role="Support Quality Assurance Specialist",
+    goal="Get recognition for providing the "
     "best support quality assurance in your team",
-	backstory=(
-		"You work at crewAI (https://crewai.com) and "
+    backstory=(
+        "You work at crewAI (https://crewai.com) and "
         "are now working with your team "
-		"on a request from {customer} ensuring that "
+        "on a request from {customer} ensuring that "
         "the support representative is "
-		"providing the best support possible.\n"
-		"You need to make sure that the support representative "
+        "providing the best support possible.\n"
+        "You need to make sure that the support representative "
         "is providing full"
-		"complete answers, and make no assumptions."
-	),
-	verbose=False
+        "complete answers, and make no assumptions."
+    ),
+    verbose=False,
 )
 
 docs_scrape_tool = ScrapeWebsiteTool(
@@ -101,25 +106,25 @@ docs_scrape_tool = ScrapeWebsiteTool(
 inquiry_resolution = Task(
     description=(
         "{customer} just reached out with a super important ask:\n"
-	    "{inquiry}\n\n"
+        "{inquiry}\n\n"
         "{person} from {customer} is the one that reached out. "
-		"Make sure to use everything you know "
+        "Make sure to use everything you know "
         "to provide the best support possible."
-		"You must strive to provide a complete "
+        "You must strive to provide a complete "
         "and accurate response to the customer's inquiry."
     ),
     expected_output=(
-	    "A detailed, informative response to the "
+        "A detailed, informative response to the "
         "customer's inquiry that addresses "
         "all aspects of their question.\n"
         "The response should include references "
         "to everything you used to find the answer, "
         "including external data or solutions. "
         "Ensure the answer is complete, "
-		"leaving no questions unanswered, and maintain a helpful and friendly "
-		"tone throughout."
+        "leaving no questions unanswered, and maintain a helpful and friendly "
+        "tone throughout."
     ),
-	tools=[docs_scrape_tool],
+    tools=[docs_scrape_tool],
     agent=support_agent,
 )
 
@@ -129,13 +134,13 @@ quality_assurance_review = Task(
     description=(
         "Review the response drafted by the Senior Support Representative for {customer}'s inquiry. "
         "Ensure that the answer is comprehensive, accurate, and adheres to the "
-		"high-quality standards expected for customer support.\n"
+        "high-quality standards expected for customer support.\n"
         "Verify that all parts of the customer's inquiry "
         "have been addressed "
-		"thoroughly, with a helpful and friendly tone.\n"
+        "thoroughly, with a helpful and friendly tone.\n"
         "Check for references and sources used to "
         " find the information, "
-		"ensuring the response is well-supported and "
+        "ensuring the response is well-supported and "
         "leaves no questions unanswered."
     ),
     expected_output=(
@@ -143,41 +148,40 @@ quality_assurance_review = Task(
         "ready to be sent to the customer.\n"
         "This response should fully address the "
         "customer's inquiry, incorporating all "
-		"relevant feedback and improvements.\n"
-		"Don't be too formal, we are a chill and cool company "
-	    "but maintain a professional and friendly tone throughout."
+        "relevant feedback and improvements.\n"
+        "Don't be too formal, we are a chill and cool company "
+        "but maintain a professional and friendly tone throughout."
     ),
     agent=support_quality_assurance_agent,
 )
 
 # Setting memory=True when putting the crew together enables Memory
 crew = Crew(
-  agents=[support_agent, support_quality_assurance_agent],
-  tasks=[inquiry_resolution, quality_assurance_review],
-  verbose=False,
-  memory=True
+    agents=[support_agent, support_quality_assurance_agent],
+    tasks=[inquiry_resolution, quality_assurance_review],
+    verbose=False,
+    memory=True,
 )
 
 inputs = {
     "customer": "Splunk Olly for AI",
     "person": "Aditya Mehra",
     "inquiry": "I need help with setting up a Crew "
-               "and kicking it off, specifically "
-               "how can I add memory to my crew? "
-               "Can you provide guidance?"
+    "and kicking it off, specifically "
+    "how can I add memory to my crew? "
+    "Can you provide guidance?",
 }
 
-OpenAIInstrumentor().instrument(
-    tracer_provider=tracer_provider)
+OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
 CrewAIInstrumentor().instrument(
-    tracer_provider=tracer_provider,
-    meter_provider=meter_provider
+    tracer_provider=tracer_provider, meter_provider=meter_provider
 )
+
 
 def flush_telemetry():
     """Flush all OpenTelemetry providers before exit to ensure traces and metrics are exported."""
     print("\n[FLUSH] Starting telemetry flush", flush=True)
-    
+
     # Flush traces
     try:
         tracer_provider = trace.get_tracer_provider()
@@ -186,7 +190,7 @@ def flush_telemetry():
             tracer_provider.force_flush(timeout_millis=30000)
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush traces: {e}", flush=True)
-    
+
     # Flush metrics
     try:
         meter_provider_instance = metrics.get_meter_provider()
@@ -198,10 +202,11 @@ def flush_telemetry():
             meter_provider_instance.shutdown()
     except Exception as e:
         print(f"[FLUSH] Warning: Could not flush metrics: {e}", flush=True)
-    
+
     # Give batch processors time to complete final export
     time.sleep(2)
     print("[FLUSH] Telemetry flush complete\n", flush=True)
+
 
 if __name__ == "__main__":
     exit_code = 0
@@ -211,12 +216,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n[ERROR] Crew execution failed: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         exit_code = 1
     finally:
         # CRITICAL: Always flush telemetry to ensure spans and metrics are exported
-        print("\n" + "="*100)
-        print("METRICS OUTPUT BELOW - Look for gen_ai.agent.duration and gen_ai.workflow.duration")
-        print("="*100 + "\n")
+        print("\n" + "=" * 100)
+        print(
+            "METRICS OUTPUT BELOW - Look for gen_ai.agent.duration and gen_ai.workflow.duration"
+        )
+        print("=" * 100 + "\n")
         flush_telemetry()
         sys.exit(exit_code)
