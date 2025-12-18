@@ -1,0 +1,359 @@
+[
+  {
+    "trace_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    "span_id": "1234567890abcdef",
+    "parent_span_id": null,
+    "name": "POST /api/checkout",
+    "kind": "SERVER",
+    "start_time": "2025-01-15T10:30:00.000Z",
+    "end_time": "2025-01-15T10:30:00.245Z",
+    "duration_ms": 245.5,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "checkout-service",
+      "service.version": "1.2.3",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "http.method": "POST",
+      "http.route": "/api/checkout",
+      "http.status_code": 200,
+      "http.target": "/api/checkout/complete",
+      "http.user_agent": "Mozilla/5.0"
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:30:00.100Z",
+        "name": "payment.validation.started",
+        "attributes": {
+          "payment.amount": 99.99,
+          "payment.currency": "USD"
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7",
+    "span_id": "2345678901bcdefg",
+    "parent_span_id": null,
+    "name": "SELECT users",
+    "kind": "CLIENT",
+    "start_time": "2025-01-15T10:31:15.000Z",
+    "end_time": "2025-01-15T10:31:16.251Z",
+    "duration_ms": 1250.8,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "user-service",
+      "service.version": "2.1.0",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "db.system": "postgresql",
+      "db.operation": "SELECT",
+      "db.name": "users_db",
+      "db.statement": "SELECT * FROM users WHERE id = $1",
+      "db.user": "app_user",
+      "net.peer.name": "postgres-primary.internal",
+      "net.peer.port": 5432
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:31:15.500Z",
+        "name": "query.planning",
+        "attributes": {
+          "rows.examined": 15000
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
+    "span_id": "3456789012cdefgh",
+    "parent_span_id": "3456789012cdefgg",
+    "name": "GET https://payment-service/api/validate",
+    "kind": "CLIENT",
+    "start_time": "2025-01-15T10:32:00.000Z",
+    "end_time": "2025-01-15T10:32:00.523Z",
+    "duration_ms": 523.2,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "api-gateway",
+      "service.version": "3.0.1",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "http.method": "GET",
+      "http.url": "https://payment-service/api/validate",
+      "http.status_code": 200,
+      "net.peer.name": "payment-service",
+      "http.response_content_length": 1024
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:32:00.300Z",
+        "name": "dns.resolution",
+        "attributes": {
+          "dns.time_ms": 45
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9",
+    "span_id": "4567890123defghi",
+    "parent_span_id": null,
+    "name": "InventoryService/CheckStock",
+    "kind": "CLIENT",
+    "start_time": "2025-01-15T10:33:30.000Z",
+    "end_time": "2025-01-15T10:33:30.090Z",
+    "duration_ms": 89.7,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "inventory-service",
+      "service.version": "1.5.2",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "rpc.system": "grpc",
+      "rpc.service": "InventoryService",
+      "rpc.method": "CheckStock",
+      "rpc.grpc.status_code": 0,
+      "net.peer.name": "inventory-grpc.internal",
+      "net.peer.port": 50051
+    },
+    "events": []
+  },
+  {
+    "trace_id": "e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0",
+    "span_id": "5678901234efghij",
+    "parent_span_id": null,
+    "name": "publish notifications.email",
+    "kind": "PRODUCER",
+    "start_time": "2025-01-15T10:34:45.000Z",
+    "end_time": "2025-01-15T10:34:45.034Z",
+    "duration_ms": 34.1,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "notification-service",
+      "service.version": "2.0.0",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "messaging.system": "kafka",
+      "messaging.destination": "notifications.email",
+      "messaging.operation": "publish",
+      "messaging.kafka.partition": 2,
+      "messaging.message_id": "msg-12345",
+      "messaging.kafka.message.key": "user-789"
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:34:45.020Z",
+        "name": "message.serialized",
+        "attributes": {
+          "message.size_bytes": 512
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1",
+    "span_id": "6789012345fghijk",
+    "parent_span_id": null,
+    "name": "GET /api/search",
+    "kind": "SERVER",
+    "start_time": "2025-01-15T10:35:20.000Z",
+    "end_time": "2025-01-15T10:35:23.500Z",
+    "duration_ms": 3500.0,
+    "status": {
+      "code": "ERROR",
+      "message": "Gateway Timeout"
+    },
+    "resource": {
+      "service.name": "search-service",
+      "service.version": "1.8.0",
+      "deployment.environment": "staging"
+    },
+    "attributes": {
+      "http.method": "GET",
+      "http.route": "/api/search",
+      "http.status_code": 504,
+      "http.target": "/api/search?q=laptop",
+      "error": true,
+      "error.type": "TimeoutError"
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:35:23.000Z",
+        "name": "exception",
+        "attributes": {
+          "exception.type": "TimeoutError",
+          "exception.message": "Request timed out after 3000ms",
+          "exception.stacktrace": "TimeoutError: Request timed out\n  at search.py:45"
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2",
+    "span_id": "7890123456ghijkl",
+    "parent_span_id": "7890123456ghijkk",
+    "name": "redis.GET",
+    "kind": "CLIENT",
+    "start_time": "2025-01-15T10:36:10.000Z",
+    "end_time": "2025-01-15T10:36:10.012Z",
+    "duration_ms": 12.3,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "product-catalog",
+      "service.version": "1.3.1",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "db.system": "redis",
+      "db.operation": "GET",
+      "db.redis.database_index": 0,
+      "net.peer.name": "redis-cluster.internal",
+      "net.peer.port": 6379,
+      "cache.hit": false,
+      "db.statement": "GET product:12345"
+    },
+    "events": []
+  },
+  {
+    "trace_id": "h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3",
+    "span_id": "8901234567hijklm",
+    "parent_span_id": null,
+    "name": "process_analytics_batch",
+    "kind": "INTERNAL",
+    "start_time": "2025-01-15T10:37:00.000Z",
+    "end_time": "2025-01-15T10:37:05.421Z",
+    "duration_ms": 5420.6,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "analytics-engine",
+      "service.version": "2.2.0",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "function.name": "process_analytics_batch",
+      "batch.size": 10000,
+      "processing.type": "aggregation",
+      "cpu.utilization": 0.92
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:37:02.000Z",
+        "name": "batch.processing.checkpoint",
+        "attributes": {
+          "processed.records": 5000
+        }
+      },
+      {
+        "timestamp": "2025-01-15T10:37:05.000Z",
+        "name": "batch.processing.complete",
+        "attributes": {
+          "processed.records": 10000,
+          "failed.records": 0
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4",
+    "span_id": "9012345678ijklmn",
+    "parent_span_id": "9012345678ijklmm",
+    "name": "INSERT orders",
+    "kind": "CLIENT",
+    "start_time": "2025-01-15T10:38:30.000Z",
+    "end_time": "2025-01-15T10:38:30.678Z",
+    "duration_ms": 678.4,
+    "status": {
+      "code": "OK",
+      "message": ""
+    },
+    "resource": {
+      "service.name": "order-service",
+      "service.version": "1.9.5",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "db.system": "mysql",
+      "db.operation": "INSERT",
+      "db.name": "orders_db",
+      "db.statement": "INSERT INTO orders (user_id, total) VALUES (?, ?)",
+      "db.user": "order_writer",
+      "net.peer.name": "mysql-master.internal",
+      "net.peer.port": 3306,
+      "db.rows_affected": 1
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:38:30.600Z",
+        "name": "transaction.commit",
+        "attributes": {
+          "transaction.id": "txn-98765"
+        }
+      }
+    ]
+  },
+  {
+    "trace_id": "j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5",
+    "span_id": "0123456789jklmno",
+    "parent_span_id": null,
+    "name": "POST /api/auth/login",
+    "kind": "SERVER",
+    "start_time": "2025-01-15T10:39:15.000Z",
+    "end_time": "2025-01-15T10:39:15.157Z",
+    "duration_ms": 156.9,
+    "status": {
+      "code": "ERROR",
+      "message": "Unauthorized"
+    },
+    "resource": {
+      "service.name": "auth-service",
+      "service.version": "2.5.0",
+      "deployment.environment": "production"
+    },
+    "attributes": {
+      "http.method": "POST",
+      "http.route": "/api/auth/login",
+      "http.status_code": 401,
+      "http.target": "/api/auth/login",
+      "error": true,
+      "error.type": "AuthenticationError",
+      "user.attempted": "user@example.com"
+    },
+    "events": [
+      {
+        "timestamp": "2025-01-15T10:39:15.120Z",
+        "name": "authentication.failed",
+        "attributes": {
+          "reason": "invalid_credentials",
+          "attempt_count": 3
+        }
+      }
+    ]
+  }
+]

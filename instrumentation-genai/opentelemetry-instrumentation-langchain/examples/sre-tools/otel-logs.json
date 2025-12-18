@@ -1,0 +1,252 @@
+[
+  {
+    "timestamp": "2025-01-15T10:30:00.100Z",
+    "observed_timestamp": "2025-01-15T10:30:00.102Z",
+    "trace_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    "span_id": "1234567890abcdef",
+    "severity_text": "INFO",
+    "severity_number": 9,
+    "body": "Payment validation started for checkout transaction",
+    "resource": {
+      "service.name": "checkout-service",
+      "service.version": "1.2.3",
+      "deployment.environment": "production",
+      "host.name": "checkout-pod-7f8d9c",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "application",
+      "payment.amount": 99.99,
+      "payment.currency": "USD",
+      "transaction.id": "txn-abc123",
+      "user.id": "user-456"
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:31:15.500Z",
+    "observed_timestamp": "2025-01-15T10:31:15.502Z",
+    "trace_id": "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7",
+    "span_id": "2345678901bcdefg",
+    "severity_text": "WARN",
+    "severity_number": 13,
+    "body": "Database query examined large number of rows, consider adding index",
+    "resource": {
+      "service.name": "user-service",
+      "service.version": "2.1.0",
+      "deployment.environment": "production",
+      "host.name": "user-service-5d6c8f",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "database",
+      "db.system": "postgresql",
+      "db.operation": "SELECT",
+      "db.table": "users",
+      "rows.examined": 15000,
+      "rows.returned": 1,
+      "query.duration_ms": 1250.8
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:32:00.300Z",
+    "observed_timestamp": "2025-01-15T10:32:00.301Z",
+    "trace_id": "c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
+    "span_id": "3456789012cdefgh",
+    "severity_text": "DEBUG",
+    "severity_number": 5,
+    "body": "DNS resolution completed for payment service",
+    "resource": {
+      "service.name": "api-gateway",
+      "service.version": "3.0.1",
+      "deployment.environment": "production",
+      "host.name": "gateway-pod-9e2f1a",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "network",
+      "dns.hostname": "payment-service",
+      "dns.time_ms": 45,
+      "dns.ip_address": "10.0.5.23",
+      "http.method": "GET"
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:33:30.050Z",
+    "observed_timestamp": "2025-01-15T10:33:30.052Z",
+    "trace_id": "d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9",
+    "span_id": "4567890123defghi",
+    "severity_text": "INFO",
+    "severity_number": 9,
+    "body": "Successfully checked inventory stock via gRPC",
+    "resource": {
+      "service.name": "inventory-service",
+      "service.version": "1.5.2",
+      "deployment.environment": "production",
+      "host.name": "inventory-pod-3b7c9d",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "application",
+      "rpc.system": "grpc",
+      "rpc.method": "CheckStock",
+      "product.id": "prod-789",
+      "stock.available": true,
+      "stock.quantity": 150
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:34:45.020Z",
+    "observed_timestamp": "2025-01-15T10:34:45.022Z",
+    "trace_id": "e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0",
+    "span_id": "5678901234efghij",
+    "severity_text": "INFO",
+    "severity_number": 9,
+    "body": "Email notification message published to Kafka",
+    "resource": {
+      "service.name": "notification-service",
+      "service.version": "2.0.0",
+      "deployment.environment": "production",
+      "host.name": "notification-pod-6e8a1c",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "messaging",
+      "messaging.system": "kafka",
+      "messaging.topic": "notifications.email",
+      "messaging.partition": 2,
+      "message.id": "msg-12345",
+      "message.size_bytes": 512,
+      "recipient.email": "user@example.com"
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:35:23.000Z",
+    "observed_timestamp": "2025-01-15T10:35:23.005Z",
+    "trace_id": "f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1",
+    "span_id": "6789012345fghijk",
+    "severity_text": "ERROR",
+    "severity_number": 17,
+    "body": "Request timed out after 3000ms during search operation",
+    "resource": {
+      "service.name": "search-service",
+      "service.version": "1.8.0",
+      "deployment.environment": "staging",
+      "host.name": "search-pod-4c9f2b",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "application",
+      "error.type": "TimeoutError",
+      "error.message": "Request timed out after 3000ms",
+      "http.method": "GET",
+      "http.route": "/api/search",
+      "http.status_code": 504,
+      "search.query": "laptop",
+      "timeout.configured_ms": 3000,
+      "exception.stacktrace": "TimeoutError: Request timed out\n  at search.py:45\n  at elasticsearch_client.py:120"
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:36:10.005Z",
+    "observed_timestamp": "2025-01-15T10:36:10.007Z",
+    "trace_id": "g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2",
+    "span_id": "7890123456ghijkl",
+    "severity_text": "DEBUG",
+    "severity_number": 5,
+    "body": "Cache miss for product key, fetching from database",
+    "resource": {
+      "service.name": "product-catalog",
+      "service.version": "1.3.1",
+      "deployment.environment": "production",
+      "host.name": "catalog-pod-1d5e8f",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "cache",
+      "cache.hit": false,
+      "cache.key": "product:12345",
+      "db.system": "redis",
+      "cache.ttl_seconds": 3600,
+      "fallback.source": "postgresql"
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:37:02.000Z",
+    "observed_timestamp": "2025-01-15T10:37:02.003Z",
+    "trace_id": "h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3",
+    "span_id": "8901234567hijklm",
+    "severity_text": "INFO",
+    "severity_number": 9,
+    "body": "Batch processing checkpoint reached",
+    "resource": {
+      "service.name": "analytics-engine",
+      "service.version": "2.2.0",
+      "deployment.environment": "production",
+      "host.name": "analytics-pod-7a3c9e",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "batch_processing",
+      "batch.id": "batch-98765",
+      "batch.total_size": 10000,
+      "batch.processed_count": 5000,
+      "batch.progress_percentage": 50,
+      "processing.duration_ms": 2000,
+      "cpu.utilization": 0.85
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:38:30.600Z",
+    "observed_timestamp": "2025-01-15T10:38:30.602Z",
+    "trace_id": "i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4",
+    "span_id": "9012345678ijklmn",
+    "severity_text": "INFO",
+    "severity_number": 9,
+    "body": "Order successfully committed to database",
+    "resource": {
+      "service.name": "order-service",
+      "service.version": "1.9.5",
+      "deployment.environment": "production",
+      "host.name": "order-pod-2f6d8a",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "database",
+      "db.system": "mysql",
+      "db.operation": "INSERT",
+      "db.table": "orders",
+      "transaction.id": "txn-98765",
+      "order.id": "ord-54321",
+      "order.total": 299.99,
+      "user.id": "user-123",
+      "db.rows_affected": 1
+    }
+  },
+  {
+    "timestamp": "2025-01-15T10:39:15.120Z",
+    "observed_timestamp": "2025-01-15T10:39:15.125Z",
+    "trace_id": "j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5",
+    "span_id": "0123456789jklmno",
+    "severity_text": "WARN",
+    "severity_number": 13,
+    "body": "Authentication failed: invalid credentials (attempt 3/3)",
+    "resource": {
+      "service.name": "auth-service",
+      "service.version": "2.5.0",
+      "deployment.environment": "production",
+      "host.name": "auth-pod-9c1e5b",
+      "host.arch": "amd64"
+    },
+    "attributes": {
+      "log.source": "security",
+      "auth.result": "failed",
+      "auth.reason": "invalid_credentials",
+      "user.attempted": "user@example.com",
+      "attempt.count": 3,
+      "attempt.max": 3,
+      "account.locked": false,
+      "ip.address": "192.168.1.100",
+      "user_agent": "Mozilla/5.0"
+    }
+  }
+]

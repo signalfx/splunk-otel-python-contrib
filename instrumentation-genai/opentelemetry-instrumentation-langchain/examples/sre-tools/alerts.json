@@ -1,0 +1,185 @@
+[
+  {
+    "id": "latency_spike_checkout",
+    "title": "Latency spike in checkout service",
+    "alert": {
+      "name": "p95_latency_high",
+      "service": "checkout-service",
+      "environment": "production",
+      "region": "us-west-2",
+      "severity": "medium",
+      "window_minutes": 15,
+      "description": "POST /api/checkout completed in 245.5ms. Payment validation started for transaction.",
+      "trace_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+      "span_id": "1234567890abcdef",
+      "http_status_code": 200,
+      "duration_ms": 245.5
+    }
+  },
+  {
+    "id": "db_query_performance",
+    "title": "Database query examined excessive rows",
+    "alert": {
+      "name": "query_performance_warning",
+      "service": "user-service",
+      "environment": "production",
+      "region": "us-east-1",
+      "severity": "high",
+      "window_minutes": 10,
+      "description": "SELECT query on users_db examined 15000 rows but returned only 1, taking 1250.8ms. Index optimization recommended.",
+      "trace_id": "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7",
+      "span_id": "2345678901bcdefg",
+      "db_system": "postgresql",
+      "duration_ms": 1250.8,
+      "rows_examined": 15000
+    }
+  },
+  {
+    "id": "payment_validation_latency",
+    "title": "Payment service validation slow",
+    "alert": {
+      "name": "http_client_latency",
+      "service": "api-gateway",
+      "environment": "production",
+      "region": "us-west-2",
+      "severity": "medium",
+      "window_minutes": 15,
+      "description": "GET request to payment-service /api/validate took 523.2ms including 45ms DNS resolution.",
+      "trace_id": "c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
+      "span_id": "3456789012cdefgh",
+      "http_status_code": 200,
+      "duration_ms": 523.2,
+      "dns_time_ms": 45
+    }
+  },
+  {
+    "id": "grpc_inventory_check",
+    "title": "Inventory stock check completed successfully",
+    "alert": {
+      "name": "rpc_call_success",
+      "service": "inventory-service",
+      "environment": "production",
+      "region": "us-west-2",
+      "severity": "low",
+      "window_minutes": 5,
+      "description": "gRPC call to InventoryService/CheckStock completed in 89.7ms with status code 0.",
+      "trace_id": "d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9",
+      "span_id": "4567890123defghi",
+      "rpc_system": "grpc",
+      "duration_ms": 89.7,
+      "rpc_status_code": 0
+    }
+  },
+  {
+    "id": "kafka_message_published",
+    "title": "Email notification published to Kafka",
+    "alert": {
+      "name": "messaging_operation_success",
+      "service": "notification-service",
+      "environment": "production",
+      "region": "ap-southeast-1",
+      "severity": "low",
+      "window_minutes": 5,
+      "description": "Published message to notifications.email topic (partition 2) in 34.1ms. Message size: 512 bytes.",
+      "trace_id": "e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0",
+      "span_id": "5678901234efghij",
+      "messaging_system": "kafka",
+      "duration_ms": 34.1,
+      "message_size_bytes": 512
+    }
+  },
+  {
+    "id": "search_timeout_critical",
+    "title": "Search API experiencing timeout errors",
+    "alert": {
+      "name": "request_timeout_critical",
+      "service": "search-service",
+      "environment": "staging",
+      "region": "eu-central-1",
+      "severity": "critical",
+      "window_minutes": 15,
+      "description": "GET /api/search?q=laptop timed out after 3500ms with 504 Gateway Timeout. TimeoutError: Request timed out after 3000ms.",
+      "trace_id": "f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1",
+      "span_id": "6789012345fghijk",
+      "http_status_code": 504,
+      "duration_ms": 3500.0,
+      "error": true,
+      "error_type": "TimeoutError"
+    }
+  },
+  {
+    "id": "cache_miss_redis",
+    "title": "Cache miss on product lookup",
+    "alert": {
+      "name": "cache_miss_warning",
+      "service": "product-catalog",
+      "environment": "production",
+      "region": "us-east-1",
+      "severity": "medium",
+      "window_minutes": 20,
+      "description": "Redis GET for product:12345 resulted in cache miss, requiring database fallback. Query completed in 12.3ms.",
+      "trace_id": "g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2",
+      "span_id": "7890123456ghijkl",
+      "db_system": "redis",
+      "duration_ms": 12.3,
+      "cache_hit": false
+    }
+  },
+  {
+    "id": "cpu_spike_analytics",
+    "title": "CPU spike during batch processing",
+    "alert": {
+      "name": "cpu_utilization_high",
+      "service": "analytics-engine",
+      "environment": "production",
+      "region": "us-west-2",
+      "severity": "high",
+      "window_minutes": 10,
+      "description": "Batch processing of 10000 records reached 92% CPU utilization. Completed in 5420.6ms with checkpoints at 5000 and 10000 records.",
+      "trace_id": "h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3",
+      "span_id": "8901234567hijklm",
+      "duration_ms": 5420.6,
+      "cpu_utilization": 0.92,
+      "batch_size": 10000
+    }
+  },
+  {
+    "id": "db_insert_order",
+    "title": "Order database insert completed",
+    "alert": {
+      "name": "db_write_operation",
+      "service": "order-service",
+      "environment": "production",
+      "region": "us-west-2",
+      "severity": "low",
+      "window_minutes": 5,
+      "description": "INSERT into orders_db completed in 678.4ms affecting 1 row. Transaction txn-98765 committed successfully.",
+      "trace_id": "i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4",
+      "span_id": "9012345678ijklmn",
+      "db_system": "mysql",
+      "duration_ms": 678.4,
+      "db_rows_affected": 1,
+      "transaction_id": "txn-98765"
+    }
+  },
+  {
+    "id": "auth_failure_critical",
+    "title": "Authentication failures detected",
+    "alert": {
+      "name": "authentication_error",
+      "service": "auth-service",
+      "environment": "production",
+      "region": "us-east-1",
+      "severity": "critical",
+      "window_minutes": 5,
+      "description": "POST /api/auth/login failed with 401 Unauthorized for user@example.com after 156.9ms. Authentication failed due to invalid credentials (attempt 3/3).",
+      "trace_id": "j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5",
+      "span_id": "0123456789jklmno",
+      "http_status_code": 401,
+      "duration_ms": 156.9,
+      "error": true,
+      "error_type": "AuthenticationError",
+      "attempt_count": 3
+    }
+  }
+]

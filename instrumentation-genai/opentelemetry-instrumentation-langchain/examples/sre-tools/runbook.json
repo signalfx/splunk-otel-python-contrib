@@ -1,0 +1,192 @@
+[
+  {
+    "id": "RB-001",
+    "title": "Checkout Service Latency Spike Investigation",
+    "scenario": "POST /api/checkout experiencing elevated response times",
+    "services": ["checkout-service"],
+    "severity": ["medium", "high"],
+    "sections": [
+      {
+        "section_id": "RB-001-S1",
+        "title": "Initial Diagnosis",
+        "content": "Check payment validation duration and database connection pool status. Review trace spans for payment gateway timeouts."
+      },
+      {
+        "section_id": "RB-001-S2",
+        "title": "Remediation Steps",
+        "content": "1. Scale checkout service pods if CPU > 80%. 2. Verify payment service health. 3. Check Redis cache hit ratio for product data. 4. Review database query performance."
+      }
+    ]
+  },
+  {
+    "id": "RB-002",
+    "title": "Database Query Performance Degradation",
+    "scenario": "PostgreSQL SELECT queries examining excessive rows",
+    "services": ["user-service"],
+    "severity": ["high", "critical"],
+    "sections": [
+      {
+        "section_id": "RB-002-S1",
+        "title": "Root Cause Analysis",
+        "content": "Query examining 15000+ rows indicates missing or ineffective index. Check EXPLAIN plan for table scans on users table."
+      },
+      {
+        "section_id": "RB-002-S2",
+        "title": "Immediate Actions",
+        "content": "1. Create index on frequently queried columns. 2. Add query result caching. 3. Optimize WHERE clauses. 4. Consider table partitioning if > 10M rows."
+      }
+    ]
+  },
+  {
+    "id": "RB-003",
+    "title": "External Service Latency Issues",
+    "scenario": "HTTP client requests to downstream services slow",
+    "services": ["api-gateway"],
+    "severity": ["medium"],
+    "sections": [
+      {
+        "section_id": "RB-003-S1",
+        "title": "Investigation Steps",
+        "content": "Check DNS resolution time (should be < 50ms), network latency to payment-service, and SSL handshake duration. Review circuit breaker status."
+      },
+      {
+        "section_id": "RB-003-S2",
+        "title": "Resolution",
+        "content": "1. Enable DNS caching. 2. Implement request timeouts (< 1s). 3. Add retry logic with exponential backoff. 4. Monitor circuit breaker trip rates."
+      }
+    ]
+  },
+  {
+    "id": "RB-004",
+    "title": "gRPC Service Communication Health",
+    "scenario": "Inventory service gRPC calls monitoring",
+    "services": ["inventory-service"],
+    "severity": ["low"],
+    "sections": [
+      {
+        "section_id": "RB-004-S1",
+        "title": "Health Check",
+        "content": "Verify gRPC status code 0 (OK). Monitor response times (target < 100ms). Check connection pool utilization."
+      },
+      {
+        "section_id": "RB-004-S2",
+        "title": "Optimization",
+        "content": "1. Enable gRPC keepalive. 2. Use streaming for bulk operations. 3. Implement client-side load balancing. 4. Monitor quota/rate limits."
+      }
+    ]
+  },
+  {
+    "id": "RB-005",
+    "title": "Message Queue Publishing Performance",
+    "scenario": "Kafka message publishing to notification topics",
+    "services": ["notification-service"],
+    "severity": ["low", "medium"],
+    "sections": [
+      {
+        "section_id": "RB-005-S1",
+        "title": "Monitoring",
+        "content": "Track message serialization time, partition assignment, and broker acknowledgment latency. Verify message sizes < 1MB."
+      },
+      {
+        "section_id": "RB-005-S2",
+        "title": "Troubleshooting",
+        "content": "1. Check broker health and replication status. 2. Verify partition count matches consumer group size. 3. Monitor producer buffer memory. 4. Review compression settings."
+      }
+    ]
+  },
+  {
+    "id": "RB-006",
+    "title": "Search Service Timeout Recovery",
+    "scenario": "GET /api/search returning 504 Gateway Timeout",
+    "services": ["search-service"],
+    "severity": ["critical"],
+    "sections": [
+      {
+        "section_id": "RB-006-S1",
+        "title": "Immediate Response",
+        "content": "TimeoutError after 3000ms indicates Elasticsearch cluster issues. Check cluster health, node availability, and shard allocation."
+      },
+      {
+        "section_id": "RB-006-S2",
+        "title": "Recovery Steps",
+        "content": "1. Reduce timeout to 2000ms with early termination. 2. Implement pagination (max 100 results). 3. Add query complexity limits. 4. Scale Elasticsearch cluster. 5. Enable search result caching."
+      }
+    ]
+  },
+  {
+    "id": "RB-007",
+    "title": "Cache Miss Investigation",
+    "scenario": "Redis cache misses requiring database fallback",
+    "services": ["product-catalog"],
+    "severity": ["medium"],
+    "sections": [
+      {
+        "section_id": "RB-007-S1",
+        "title": "Analysis",
+        "content": "Cache miss on product:* keys indicates TTL expiration or eviction. Check Redis memory usage, eviction policy, and key patterns."
+      },
+      {
+        "section_id": "RB-007-S2",
+        "title": "Optimization",
+        "content": "1. Increase TTL from 3600s to 7200s for stable data. 2. Implement cache warming on deployment. 3. Add cache-aside pattern with write-through. 4. Monitor hit ratio (target > 85%)."
+      }
+    ]
+  },
+  {
+    "id": "RB-008",
+    "title": "Batch Processing CPU Optimization",
+    "scenario": "Analytics engine CPU utilization spikes during batch jobs",
+    "services": ["analytics-engine"],
+    "severity": ["high"],
+    "sections": [
+      {
+        "section_id": "RB-008-S1",
+        "title": "Performance Analysis",
+        "content": "CPU at 92% during 10000 record batch processing. Check processing checkpoints, memory allocation, and parallel worker utilization."
+      },
+      {
+        "section_id": "RB-008-S2",
+        "title": "Tuning",
+        "content": "1. Reduce batch size from 10000 to 5000 records. 2. Increase worker threads with CPU core count. 3. Implement backpressure mechanisms. 4. Add resource quotas to prevent starvation."
+      }
+    ]
+  },
+  {
+    "id": "RB-009",
+    "title": "Database Write Performance",
+    "scenario": "MySQL INSERT operations on orders table",
+    "services": ["order-service"],
+    "severity": ["low", "medium"],
+    "sections": [
+      {
+        "section_id": "RB-009-S1",
+        "title": "Performance Baseline",
+        "content": "INSERT taking 678ms for single row indicates lock contention or slow disk I/O. Check transaction isolation level and index overhead."
+      },
+      {
+        "section_id": "RB-009-S2",
+        "title": "Improvements",
+        "content": "1. Use batch inserts for multiple orders. 2. Review index count (max 5 per table). 3. Enable write-ahead logging. 4. Consider read replicas for reporting queries."
+      }
+    ]
+  },
+  {
+    "id": "RB-010",
+    "title": "Authentication Failure Response",
+    "scenario": "POST /api/auth/login returning 401 Unauthorized",
+    "services": ["auth-service"],
+    "severity": ["critical"],
+    "sections": [
+      {
+        "section_id": "RB-010-S1",
+        "title": "Security Analysis",
+        "content": "Failed login attempt 3/3 for user@example.com from IP 192.168.1.100. Check for credential stuffing attack patterns and rate limiting effectiveness."
+      },
+      {
+        "section_id": "RB-010-S2",
+        "title": "Security Actions",
+        "content": "1. Implement account lockout after 3 failed attempts (15 min). 2. Enable CAPTCHA after 2 failures. 3. Add IP-based rate limiting (5 req/min). 4. Monitor for distributed brute force patterns. 5. Alert security team for credential breach investigation."
+      }
+    ]
+  }
+]
