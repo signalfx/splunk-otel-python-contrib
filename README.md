@@ -23,6 +23,7 @@ Implemented dataclasses (in `types.py`):
 - `GenAI` - base class
 - `LLMInvocation`
 - `EmbeddingInvocation`
+- `RetrievalInvocation`
 - `Workflow`
 - `AgentInvocation`
 - `Step`

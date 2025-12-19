@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented in this file.
 
+## Unreleased
+
+- Added `RetrievalInvocation` type to support retrieval/search operations in GenAI workflows
+
 ## Version 0.1.4 - 2025-11-07
 
 - Initial 0.1.4 release of splunk-otel-util-genai

@@ -91,6 +91,7 @@ from opentelemetry.util.genai.types import (
     EvaluationResult,
     GenAI,
     LLMInvocation,
+    RetrievalInvocation,
     Step,
     ToolCall,
     Workflow,
@@ -461,6 +462,70 @@ class TelemetryHandler:
         self, invocation: EmbeddingInvocation, error: Error
     ) -> EmbeddingInvocation:
         """Fail an embedding invocation and end its span with error status."""
+        invocation.end_time = time.time()
+        self._emitter.on_error(error, invocation)
+        self._notify_completion(invocation)
+        self._entity_registry.pop(str(invocation.run_id), None)
+        if (
+            hasattr(self, "_meter_provider")
+            and self._meter_provider is not None
+        ):
+            try:  # pragma: no cover
+                self._meter_provider.force_flush()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        return invocation
+
+    def start_retrieval(
+        self, invocation: RetrievalInvocation
+    ) -> RetrievalInvocation:
+        """Start a retrieval invocation and create a pending span entry."""
+        self._refresh_capture_content()
+        if (
+            not invocation.agent_name or not invocation.agent_id
+        ) and self._agent_context_stack:
+            top_name, top_id = self._agent_context_stack[-1]
+            if not invocation.agent_name:
+                invocation.agent_name = top_name
+            if not invocation.agent_id:
+                invocation.agent_id = top_id
+        invocation.start_time = time.time()
+        self._emitter.on_start(invocation)
+        span = getattr(invocation, "span", None)
+        if span is not None:
+            self._span_registry[str(invocation.run_id)] = span
+        self._entity_registry[str(invocation.run_id)] = invocation
+        return invocation
+
+    def stop_retrieval(
+        self, invocation: RetrievalInvocation
+    ) -> RetrievalInvocation:
+        """Finalize a retrieval invocation successfully and end its span."""
+        invocation.end_time = time.time()
+
+        # Determine if this invocation should be sampled for evaluation
+        invocation.sample_for_evaluation = self._should_sample_for_evaluation(
+            invocation.trace_id
+        )
+
+        self._emitter.on_end(invocation)
+        self._notify_completion(invocation)
+        self._entity_registry.pop(str(invocation.run_id), None)
+        # Force flush metrics if a custom provider with force_flush is present
+        if (
+            hasattr(self, "_meter_provider")
+            and self._meter_provider is not None
+        ):
+            try:  # pragma: no cover
+                self._meter_provider.force_flush()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        return invocation
+
+    def fail_retrieval(
+        self, invocation: RetrievalInvocation, error: Error
+    ) -> RetrievalInvocation:
+        """Fail a retrieval invocation and end its span with error status."""
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
@@ -880,6 +945,8 @@ class TelemetryHandler:
             return self.start_llm(obj)
         if isinstance(obj, EmbeddingInvocation):
             return self.start_embedding(obj)
+        if isinstance(obj, RetrievalInvocation):
+            return self.start_retrieval(obj)
         if isinstance(obj, ToolCall):
             return self.start_tool_call(obj)
         return obj
@@ -960,6 +1027,8 @@ class TelemetryHandler:
             return self.stop_llm(obj)
         if isinstance(obj, EmbeddingInvocation):
             return self.stop_embedding(obj)
+        if isinstance(obj, RetrievalInvocation):
+            return self.stop_retrieval(obj)
         if isinstance(obj, ToolCall):
             return self.stop_tool_call(obj)
         return obj
@@ -976,6 +1045,8 @@ class TelemetryHandler:
             return self.fail_llm(obj, error)
         if isinstance(obj, EmbeddingInvocation):
             return self.fail_embedding(obj, error)
+        if isinstance(obj, RetrievalInvocation):
+            return self.fail_retrieval(obj, error)
         if isinstance(obj, ToolCall):
             return self.fail_tool_call(obj, error)
         return obj
