@@ -58,3 +58,6 @@ GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats"
 # Server attributes (from semantic conventions)
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
+
+# Security attributes (Cisco AI Defense)
+GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
