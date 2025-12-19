@@ -471,8 +471,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if payload:
             nodes = payload.get("nodes", [])
             if nodes:
-                # Set document count
-                retrieval.document_count = len(nodes)
+                # Set documents retrieved count
+                retrieval.documents_retrieved = len(nodes)
 
                 # Store scores and document IDs as attributes
                 scores = []
