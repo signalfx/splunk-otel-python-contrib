@@ -1,0 +1,13 @@
+# OpenAI Agents SDK
+openai-agents~=0.3.3
+
+# Environment and utilities
+python-dotenv~=1.0.0
+
+# OpenTelemetry core and exporters
+opentelemetry-sdk~=1.38.0
+opentelemetry-exporter-otlp-proto-grpc~=1.38.0
+
+# OpenAI Agents v2 instrumentation (install from local editable)
+# Use: pip install -e ../../
+# opentelemetry-instrumentation-openai-agents-v2~=0.1.0.dev

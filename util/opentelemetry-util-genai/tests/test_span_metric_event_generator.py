@@ -17,6 +17,8 @@ from opentelemetry.util.genai.emitters.content_events import (
 from opentelemetry.util.genai.emitters.span import SpanEmitter
 from opentelemetry.util.genai.types import (
     AgentInvocation,
+    EmbeddingInvocation,
+    Error,
     EvaluationResult,
     InputMessage,
     LLMInvocation,
@@ -35,8 +37,9 @@ class DummyLogger:
 
 
 def _build_composite(logger: DummyLogger, capture_content: bool):
+    provider = TracerProvider()
     span = SpanEmitter(
-        tracer=None, capture_content=False
+        tracer=provider.get_tracer(__name__), capture_content=False
     )  # span kept lean for event mode
     content = ContentEventsEmitter(
         logger=logger, capture_content=capture_content
@@ -178,6 +181,48 @@ def test_span_emitter_filters_non_gen_ai_attributes():
     assert "traceloop.association.properties.ls_temperature" not in attrs
     assert all(not key.startswith("traceloop.") for key in attrs.keys())
     assert any(key.startswith("gen_ai.") for key in attrs)
+
+
+def test_span_emitter_sets_server_attributes():
+    provider = TracerProvider()
+    emitter = SpanEmitter(
+        tracer=provider.get_tracer(__name__), capture_content=False
+    )
+    invocation = LLMInvocation(
+        request_model="example-model",
+        server_address="api.service.local",
+        server_port=3000,
+    )
+
+    emitter.on_start(invocation)
+    emitter.on_end(invocation)
+
+    span = invocation.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert attrs.get("server.address") == "api.service.local"
+    assert attrs.get("server.port") == 3000
+
+
+def test_embedding_error_closes_span():
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+    embedding = EmbeddingInvocation(
+        request_model="emb-model",
+        input_texts=["hello"],
+    )
+
+    emitter.on_start(embedding)
+    span = embedding.span
+    assert span is not None
+
+    emitter.on_error(Error(message="boom", type=RuntimeError), embedding)
+
+    assert span.end_time is not None
+    assert not span.is_recording()
 
 
 def test_span_emitter_workflow_captures_content():
