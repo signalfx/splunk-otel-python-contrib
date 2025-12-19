@@ -75,6 +75,8 @@ class MetricsEmitter(EmitterMeta):
                 llm_invocation.operation,
                 llm_invocation.provider,
                 llm_invocation.framework,
+                server_address=llm_invocation.server_address,
+                server_port=llm_invocation.server_port,
             )
             # Add agent context if available
             if llm_invocation.agent_name:
@@ -172,6 +174,8 @@ class MetricsEmitter(EmitterMeta):
                 llm_invocation.operation,
                 llm_invocation.provider,
                 llm_invocation.framework,
+                server_address=llm_invocation.server_address,
+                server_port=llm_invocation.server_port,
             )
             # Add agent context if available
             if llm_invocation.agent_name:

@@ -24,6 +24,9 @@ from uuid import UUID, uuid4
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
 )
+from opentelemetry.semconv.attributes import (
+    server_attributes as ServerAttributes,
+)
 from opentelemetry.trace import Span, SpanContext
 
 # Backward compatibility: older semconv builds may miss new GEN_AI attributes
@@ -171,6 +174,14 @@ class LLMInvocation(GenAI):
 
     request_model: str = field(
         metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_MODEL}
+    )
+    server_address: Optional[str] = field(
+        default=None,
+        metadata={"semconv": ServerAttributes.SERVER_ADDRESS},
+    )
+    server_port: Optional[int] = field(
+        default=None,
+        metadata={"semconv": ServerAttributes.SERVER_PORT},
     )
     input_messages: List[InputMessage] = field(
         default_factory=_new_input_messages

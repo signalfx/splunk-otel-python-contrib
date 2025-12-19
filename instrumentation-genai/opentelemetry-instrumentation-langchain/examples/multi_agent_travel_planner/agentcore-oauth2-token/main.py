@@ -9,7 +9,6 @@ import json
 import os
 import random
 import sys
-import time
 from datetime import datetime, timedelta
 from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
@@ -31,6 +30,8 @@ from langchain.agents import (
     create_agent as _create_react_agent,
 )
 
+import time
+
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
@@ -46,6 +47,30 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+# OAuth2 authentication (local util module for AgentCore deployment)
+from util import OAuth2TokenManager
+
+# =============================================================================
+# OAuth2 LLM Configuration
+# =============================================================================
+
+LLM_APP_KEY = os.environ.get("LLM_APP_KEY") or os.environ.get("CISCO_APP_KEY")
+token_manager = OAuth2TokenManager()
+
+
+def get_oauth2_openai_config() -> dict:
+    """Get configuration for ChatOpenAI to use OAuth2-authenticated endpoint."""
+    token = token_manager.get_token()
+    config = {
+        "base_url": OAuth2TokenManager.get_llm_base_url("gpt-4o-mini"),
+        "api_key": "placeholder",
+        "default_headers": {"api-key": token},
+    }
+    # Add app key if provided (for providers that require it)
+    if LLM_APP_KEY:
+        config["model_kwargs"] = {"user": json.dumps({"appkey": LLM_APP_KEY})}
+    return config
 
 
 # =============================================================================
@@ -83,7 +108,7 @@ instrumentor = LangchainInstrumentor()
 instrumentor.instrument()
 
 # =============================================================================
-# Sample data utilities
+# Sample data utilities (unchanged)
 # =============================================================================
 
 DESTINATIONS = {
@@ -127,7 +152,7 @@ def _compute_dates() -> tuple[str, str]:
 
 
 # =============================================================================
-# Tools exposed to agents
+# Tools exposed to agents (unchanged)
 # =============================================================================
 
 
@@ -193,11 +218,7 @@ def _model_name() -> str:
 
 
 def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
-    """
-    Create an LLM instance using OpenAI API directly.
-
-    Uses OPENAI_API_KEY environment variable for authentication.
-    """
+    """Create an LLM instance using OAuth2-authenticated endpoint."""
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner"]
     metadata = {
@@ -209,17 +230,28 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "ls_temperature": temperature,
     }
 
-    return ChatOpenAI(
-        model=model,
-        temperature=temperature,
-        tags=tags,
-        metadata=metadata,
-        # Uses OPENAI_API_KEY from environment automatically
-    )
+    # Get OAuth2 configuration with fresh token
+    oauth2_config = get_oauth2_openai_config()
+
+    llm_kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "tags": tags,
+        "metadata": metadata,
+        "base_url": oauth2_config["base_url"],
+        "api_key": oauth2_config["api_key"],
+        "default_headers": oauth2_config["default_headers"],
+    }
+
+    # Add model_kwargs if present (for providers that require app key)
+    if "model_kwargs" in oauth2_config:
+        llm_kwargs["model_kwargs"] = oauth2_config["model_kwargs"]
+
+    return ChatOpenAI(**llm_kwargs)
 
 
 # =============================================================================
-# Poison config helpers (for testing evaluation quality)
+# Poison config helpers (unchanged - keeping for completeness)
 # =============================================================================
 
 
@@ -301,7 +333,7 @@ def maybe_add_quality_noise(
 
 
 # =============================================================================
-# LangGraph nodes
+# LangGraph nodes (unchanged logic, uses OAuth2-authenticated LLM)
 # =============================================================================
 
 
