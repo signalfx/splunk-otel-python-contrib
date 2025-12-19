@@ -87,6 +87,27 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         elif event_type == CBEventType.FUNCTION_CALL:
             self._handle_function_call_end(event_id, payload, **kwargs)
 
+    def _get_active_parent_span(self) -> Optional[Any]:
+        """Get the currently active span to establish parent-child relationship.
+
+        Returns:
+            The active parent span, or None if no active span found.
+        """
+        # First try to get from active agent context (workflow-based agents)
+        parent_span = None
+        if self._handler._agent_context_stack:
+            # Get the current agent's span from the span registry
+            _, agent_run_id = self._handler._agent_context_stack[-1]
+            parent_span = self._handler._span_registry.get(agent_run_id)
+
+        # Fallback to OpenTelemetry context if no agent span found
+        if not parent_span:
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                parent_span = current_span
+
+        return parent_span
+
     def _handle_llm_start(
         self,
         event_id: str,
@@ -149,20 +170,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         llm_inv.framework = "llamaindex"
 
-        # Get the currently active span to establish parent-child relationship
-        # First try to get from active agent context (workflow-based agents)
-        parent_span = None
-        if self._handler._agent_context_stack:
-            # Get the current agent's span from the span registry
-            _, agent_run_id = self._handler._agent_context_stack[-1]
-            parent_span = self._handler._span_registry.get(agent_run_id)
-
-        # Fallback to OpenTelemetry context if no agent span found
-        if not parent_span:
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                parent_span = current_span
-
+        # Get the currently active parent span
+        parent_span = self._get_active_parent_span()
         if parent_span:
             llm_inv.parent_span = parent_span
 
@@ -284,20 +293,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         emb_inv.framework = "llamaindex"
 
-        # Get the currently active span to establish parent-child relationship
-        # First try to get from active agent context (workflow-based agents)
-        parent_span = None
-        if self._handler._agent_context_stack:
-            # Get the current agent's span from the span registry
-            _, agent_run_id = self._handler._agent_context_stack[-1]
-            parent_span = self._handler._span_registry.get(agent_run_id)
-
-        # Fallback to OpenTelemetry context if no agent span found
-        if not parent_span:
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                parent_span = current_span
-
+        # Get the currently active parent span
+        parent_span = self._get_active_parent_span()
         if parent_span:
             emb_inv.parent_span = parent_span
 

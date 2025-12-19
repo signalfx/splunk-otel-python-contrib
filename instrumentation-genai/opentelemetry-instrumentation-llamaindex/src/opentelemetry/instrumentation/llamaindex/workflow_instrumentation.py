@@ -145,7 +145,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     # Get TelemetryHandler from callback handler if available
     from llama_index.core import Settings
     from opentelemetry.util.genai.types import AgentInvocation
-    from opentelemetry import trace, context
+    from opentelemetry import context
 
     telemetry_handler = None
     for callback_handler in Settings.callback_manager.handlers:

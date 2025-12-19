@@ -8,9 +8,7 @@ OpenTelemetry instrumentation to capture traces and metrics.
 import asyncio
 import json
 import os
-from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Dict, Any
 
 from llama_index.core.agent import ReActAgent
 from llama_index.core.tools import FunctionTool
@@ -183,7 +181,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     departure_date = request_data.get('departure_date', '2024-06-01')
                     
                     print(f"\n{'='*60}")
-                    print(f"New Travel Planning Request")
+                    print("New Travel Planning Request")
                     print(f"{'='*60}")
                     print(f"Destination: {destination}")
                     print(f"Origin: {origin}")
@@ -244,7 +242,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                             raise
                     
                     print(f"\n{'='*60}")
-                    print(f"Planning Complete")
+                    print("Planning Complete")
                     print(f"{'='*60}\n")
                     
                     # Send response
@@ -304,7 +302,7 @@ def main():
     server = HTTPServer(('0.0.0.0', port), TravelPlannerHandler)
     
     print(f"\n{'='*60}")
-    print(f"Travel Planner Server Starting")
+    print("Travel Planner Server Starting")
     print(f"{'='*60}")
     print(f"Port: {port}")
     print(f"Health check: http://localhost:{port}/health")
