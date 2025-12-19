@@ -174,7 +174,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         # This pushes (agent_name, run_id) onto the _agent_context_stack
         # and stores the span in _span_registry[run_id]
         telemetry_handler.start_agent(root_agent)
-        
+
         # Capture the current context (which includes the active span)
         # so we can propagate it to async tasks
         parent_context = context.get_current()

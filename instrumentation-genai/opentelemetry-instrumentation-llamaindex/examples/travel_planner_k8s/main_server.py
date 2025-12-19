@@ -28,7 +28,7 @@ from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 # Setup Telemetry
 def setup_telemetry():
     """Initialize OpenTelemetry tracing and metrics.
-    
+
     Service name and OTLP endpoint are configured via environment variables:
     - OTEL_SERVICE_NAME
     - OTEL_EXPORTER_OTLP_ENDPOINT
@@ -46,7 +46,7 @@ def setup_telemetry():
 def search_flights(origin: str, destination: str, date: str) -> str:
     """Search for flights between two cities on a specific date."""
     print(f"  [Tool] Searching flights from {origin} to {destination} on {date}...")
-    
+
     # Simulate flight search results
     flight_price = 800
     return (
@@ -60,7 +60,7 @@ def search_flights(origin: str, destination: str, date: str) -> str:
 def search_hotels(city: str, check_in: str, check_out: str) -> str:
     """Search for hotels in a city for given check-in and check-out dates."""
     print(f"  [Tool] Searching hotels in {city} from {check_in} to {check_out}...")
-    
+
     # Simulate hotel search results
     nightly_rate = 200
     return (
@@ -74,13 +74,13 @@ def search_hotels(city: str, check_in: str, check_out: str) -> str:
 def search_activities(city: str) -> str:
     """Search for activities and attractions in a city."""
     print(f"  [Tool] Searching activities in {city}...")
-    
+
     activities = [
         f"City Tour of {city} - $50",
         f"Food Tour in {city} - $80",
         f"Museum Pass for {city} - $40",
     ]
-    
+
     return f"Recommended activities: {', '.join(activities)}"
 
 
@@ -98,10 +98,7 @@ def get_flight_agent():
         tools = [FunctionTool.from_defaults(fn=search_flights)]
         system_prompt = "You are a flight search specialist. Use the search_flights tool to find flights, then provide the result."
         _flight_agent = ReActAgent(
-            tools=tools,
-            llm=Settings.llm,
-            verbose=True,
-            system_prompt=system_prompt
+            tools=tools, llm=Settings.llm, verbose=True, system_prompt=system_prompt
         )
     return _flight_agent
 
@@ -114,10 +111,7 @@ def get_hotel_agent():
         tools = [FunctionTool.from_defaults(fn=search_hotels)]
         system_prompt = "You are a hotel search specialist. Use the search_hotels tool to find hotels, then provide the result."
         _hotel_agent = ReActAgent(
-            tools=tools,
-            llm=Settings.llm,
-            verbose=True,
-            system_prompt=system_prompt
+            tools=tools, llm=Settings.llm, verbose=True, system_prompt=system_prompt
         )
     return _hotel_agent
 
@@ -130,31 +124,28 @@ def get_activity_agent():
         tools = [FunctionTool.from_defaults(fn=search_activities)]
         system_prompt = "You are an activity recommendation specialist. Use the search_activities tool to find activities, then provide the result."
         _activity_agent = ReActAgent(
-            tools=tools,
-            llm=Settings.llm,
-            verbose=True,
-            system_prompt=system_prompt
+            tools=tools, llm=Settings.llm, verbose=True, system_prompt=system_prompt
         )
     return _activity_agent
 
 
 class TravelPlannerHandler(BaseHTTPRequestHandler):
     """HTTP request handler for travel planning."""
-    
+
     def do_GET(self):
         """Handle GET requests (health check)."""
-        if self.path == '/health':
+        if self.path == "/health":
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header("Content-type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({'status': 'healthy'}).encode())
+            self.wfile.write(json.dumps({"status": "healthy"}).encode())
         else:
             self.send_response(404)
             self.end_headers()
-    
+
     def do_POST(self):
         """Handle POST requests for travel planning."""
-        if self.path == '/plan':
+        if self.path == "/plan":
             # Create a root span for the HTTP request
             tracer = trace.get_tracer(__name__)
             with tracer.start_as_current_span(
@@ -164,22 +155,22 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     "http.method": "POST",
                     "http.target": "/plan",
                     "http.scheme": "http",
-                }
+                },
             ) as span:
                 try:
-                    content_length = int(self.headers['Content-Length'])
+                    content_length = int(self.headers["Content-Length"])
                     post_data = self.rfile.read(content_length)
-                    request_data = json.loads(post_data.decode('utf-8'))
-                    
+                    request_data = json.loads(post_data.decode("utf-8"))
+
                     # Extract parameters
-                    destination = request_data.get('destination', 'Paris')
-                    origin = request_data.get('origin', 'New York')
-                    budget = request_data.get('budget', 3000)
-                    duration = request_data.get('duration', 5)
-                    travelers = request_data.get('travelers', 2)
-                    interests = request_data.get('interests', ['sightseeing', 'food'])
-                    departure_date = request_data.get('departure_date', '2024-06-01')
-                    
+                    destination = request_data.get("destination", "Paris")
+                    origin = request_data.get("origin", "New York")
+                    budget = request_data.get("budget", 3000)
+                    duration = request_data.get("duration", 5)
+                    travelers = request_data.get("travelers", 2)
+                    interests = request_data.get("interests", ["sightseeing", "food"])
+                    departure_date = request_data.get("departure_date", "2024-06-01")
+
                     print(f"\n{'='*60}")
                     print("New Travel Planning Request")
                     print(f"{'='*60}")
@@ -190,47 +181,57 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     print(f"Travelers: {travelers}")
                     print(f"Interests: {', '.join(interests)}")
                     print(f"{'='*60}\n")
-                    
+
                     # Calculate check-out date
                     from datetime import datetime, timedelta
+
                     check_in = datetime.strptime(departure_date, "%Y-%m-%d")
                     check_out = check_in + timedelta(days=duration)
                     check_out_date = check_out.strftime("%Y-%m-%d")
-                    
+
                     # Run agents sequentially (like LangChain multi-agent approach)
                     async def run_agents():
                         results = []
-                        
+
                         # 1. Flight specialist agent
                         print("\n--- Flight Specialist Agent ---")
                         flight_agent = get_flight_agent()
                         flight_query = f"Search for flights from {origin} to {destination} departing on {departure_date}"
-                        flight_handler = flight_agent.run(user_msg=flight_query, max_iterations=3)
+                        flight_handler = flight_agent.run(
+                            user_msg=flight_query, max_iterations=3
+                        )
                         flight_response = await flight_handler
                         results.append(f"Flights: {flight_response}")
-                        
+
                         # 2. Hotel specialist agent
                         print("\n--- Hotel Specialist Agent ---")
                         hotel_agent = get_hotel_agent()
                         hotel_query = f"Search for hotels in {destination} from {departure_date} to {check_out_date}"
-                        hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
+                        hotel_handler = hotel_agent.run(
+                            user_msg=hotel_query, max_iterations=3
+                        )
                         hotel_response = await hotel_handler
                         results.append(f"Hotels: {hotel_response}")
-                        
+
                         # 3. Activity specialist agent
                         print("\n--- Activity Specialist Agent ---")
                         activity_agent = get_activity_agent()
                         activity_query = f"Recommend activities in {destination}"
-                        activity_handler = activity_agent.run(user_msg=activity_query, max_iterations=3)
+                        activity_handler = activity_agent.run(
+                            user_msg=activity_query, max_iterations=3
+                        )
                         activity_response = await activity_handler
                         results.append(f"Activities: {activity_response}")
-                        
+
                         return "\n\n".join(results)
-                    
+
                     try:
                         result = asyncio.run(run_agents())
                     except RuntimeError as e:
-                        if "asyncio.run() cannot be called from a running event loop" in str(e):
+                        if (
+                            "asyncio.run() cannot be called from a running event loop"
+                            in str(e)
+                        ):
                             # Fallback for when event loop is already running
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
@@ -240,45 +241,45 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                                 loop.close()
                         else:
                             raise
-                    
+
                     print(f"\n{'='*60}")
                     print("Planning Complete")
                     print(f"{'='*60}\n")
-                    
+
                     # Send response
                     self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
+                    self.send_header("Content-type", "application/json")
                     self.end_headers()
-                    
+
                     response_data = {
-                        'status': 'success',
-                        'request': request_data,
-                        'plan': result,
-                        'timestamp': datetime.utcnow().isoformat()
+                        "status": "success",
+                        "request": request_data,
+                        "plan": result,
+                        "timestamp": datetime.utcnow().isoformat(),
                     }
-                    
+
                     self.wfile.write(json.dumps(response_data, indent=2).encode())
                     span.set_attribute("http.status_code", 200)
-                    
+
                 except Exception as e:
                     print(f"Error processing request: {e}")
                     import traceback
+
                     traceback.print_exc()
-                    
+
                     span.set_attribute("http.status_code", 500)
                     span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-                    
+
                     self.send_response(500)
-                    self.send_header('Content-type', 'application/json')
+                    self.send_header("Content-type", "application/json")
                     self.end_headers()
-                    self.wfile.write(json.dumps({
-                        'status': 'error',
-                        'error': str(e)
-                    }).encode())
+                    self.wfile.write(
+                        json.dumps({"status": "error", "error": str(e)}).encode()
+                    )
         else:
             self.send_response(404)
             self.end_headers()
-    
+
     def log_message(self, format, *args):
         """Override to customize logging."""
         print(f"{self.address_string()} - {format % args}")
@@ -293,14 +294,14 @@ def main():
 
     # Setup telemetry
     setup_telemetry()
-    
+
     # Auto-instrument LlamaIndex (captures telemetry automatically via callbacks)
     LlamaindexInstrumentor().instrument()
-    
+
     # Start HTTP server
     port = int(os.getenv("PORT", "8080"))
-    server = HTTPServer(('0.0.0.0', port), TravelPlannerHandler)
-    
+    server = HTTPServer(("0.0.0.0", port), TravelPlannerHandler)
+
     print(f"\n{'='*60}")
     print("Travel Planner Server Starting")
     print(f"{'='*60}")
@@ -308,20 +309,20 @@ def main():
     print(f"Health check: http://localhost:{port}/health")
     print(f"Planning endpoint: POST http://localhost:{port}/plan")
     print(f"{'='*60}\n")
-    
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down server...")
         server.shutdown()
-        
+
         # Flush telemetry
         provider = trace.get_tracer_provider()
-        if hasattr(provider, 'force_flush'):
+        if hasattr(provider, "force_flush"):
             provider.force_flush()
-        if hasattr(provider, 'shutdown'):
+        if hasattr(provider, "shutdown"):
             provider.shutdown()
-    
+
     return 0
 
 
