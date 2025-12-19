@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llamaindex-travel-planner
+  namespace: llamaindex-travel-planner
+  labels:
+    app: llamaindex-travel-planner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llamaindex-travel-planner
+  template:
+    metadata:
+      labels:
+        app: llamaindex-travel-planner
+    spec:
+      containers:
+        - name: travel-planner
+          image: shuniche855/llamaindex-travel-planner:0.0.9
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # Python unbuffered output for real-time logging
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # Load OpenAI API key from secret
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-keys
+                  key: openai-api-key
+            # Enable OTEL SDK (disabled in Dockerfile during build)
+            - name: OTEL_SDK_DISABLED
+              value: "false"
+            # Service Name
+            - name: OTEL_SERVICE_NAME
+              value: "opentelemetry-python-llamaindex-travel-planner"
+            # Additional OTEL configuration
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=o11y-inframon-ai"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+            - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+              value: "DELTA"
+            - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+              value: "true"
+            - name: OTEL_PYTHON_EXCLUDED_URLS
+              value: "^(https?://)?[^/]+(/health)?$"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+              value: "SPAN_AND_EVENT"
+            - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+              value: "span_metric_event,splunk"
+            - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
+              value: "replace-category:SplunkEvaluationResults"
+            - name: OTEL_GENAI_EVAL_DEBUG_SKIPS
+              value: "true"
+            - name: OTEL_GENAI_EVAL_DEBUG_EACH
+              value: "false"
+            - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
+              value: "true"
+            - name: SPLUNK_PROFILER_ENABLED
+              value: "true"
+            # Set evaluation wait time to 10 seconds (short enough to avoid health check timeout)
+            - name: EVAL_WAIT_SECONDS
+              value: "10"
+            - name: PORT
+              value: "8080"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamaindex-travel-planner-service
+  namespace: llamaindex-travel-planner
+spec:
+  selector:
+    app: llamaindex-travel-planner
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP

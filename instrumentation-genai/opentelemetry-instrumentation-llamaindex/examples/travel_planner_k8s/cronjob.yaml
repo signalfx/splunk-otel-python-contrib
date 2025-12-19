@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: llamaindex-travel-planner-load-generator
+  namespace: llamaindex-travel-planner
+spec:
+  schedule: "0,30 16-23,0-2 * * 1-5" # Every 30 min, 8am-6pm PST Mon-Fri (16:00-02:00 UTC)
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: load-generator
+              image: curlimages/curl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Generating LlamaIndex travel planning requests..."
+
+                  # Travel destinations and parameters
+                  destinations="Tokyo Paris NewYork Sydney Barcelona Dubai London Singapore Rome Amsterdam"
+                  origins="Boston Chicago Seattle LosAngeles Miami Denver Atlanta Portland"
+                  budgets="2000 3000 1500 4000 2500 3500"
+                  durations="3 5 7 10 14"
+
+                  # Interest combinations
+                  interests_1="sightseeing food culture"
+                  interests_2="adventure shopping food"
+                  interests_3="culture sightseeing"
+                  interests_4="food adventure shopping"
+
+                  # Generate a random request
+                  RAND=$(date +%s)
+                  dest=$(echo $destinations | cut -d' ' -f$((($RAND % 10) + 1)))
+                  origin=$(echo $origins | cut -d' ' -f$((($RAND % 8) + 1)))
+                  budget=$(echo $budgets | cut -d' ' -f$((($RAND % 6) + 1)))
+                  duration=$(echo $durations | cut -d' ' -f$((($RAND % 5) + 1)))
+                  travelers=$((($RAND % 4) + 1))
+
+                  # Select random interests
+                  case $(($RAND % 4)) in
+                    0) interests=$interests_1;;
+                    1) interests=$interests_2;;
+                    2) interests=$interests_3;;
+                    *) interests=$interests_4;;
+                  esac
+
+                  # Convert interests to JSON array
+                  interest_json=$(echo $interests | awk '{
+                    printf "["
+                    for(i=1; i<=NF; i++) {
+                      if(i>1) printf ","
+                      printf "\"%s\"", $i
+                    }
+                    printf "]"
+                  }')
+
+                  echo "Planning trip:"
+                  echo "  From: $origin"
+                  echo "  To: $dest"
+                  echo "  Budget: \$$budget"
+                  echo "  Duration: $duration days"
+                  echo "  Travelers: $travelers"
+                  echo "  Interests: $interests"
+
+                  # Make request to the LlamaIndex travel planner service
+                  curl -X POST http://llamaindex-travel-planner-service.llamaindex-travel-planner.svc.cluster.local/plan \
+                    -H "Content-Type: application/json" \
+                    -d "{
+                      \"destination\": \"$dest\",
+                      \"origin\": \"$origin\",
+                      \"budget\": $budget,
+                      \"duration\": $duration,
+                      \"travelers\": $travelers,
+                      \"interests\": $interest_json,
+                      \"departure_date\": \"2024-06-15\"
+                    }" \
+                    --max-time 600 || echo "Request failed"
+
+                  echo "Load generation completed"
+          restartPolicy: OnFailure
+      backoffLimit: 3
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
