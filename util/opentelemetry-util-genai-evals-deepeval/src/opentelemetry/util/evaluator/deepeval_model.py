@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import time
 from typing import Any, Optional
 
 import requests
+
+_logger = logging.getLogger(__name__)
 
 
 class OAuth2TokenManager:
@@ -134,6 +137,9 @@ def create_eval_model() -> Any | None:
         DEEPEVAL_LLM_API_KEY: Static API key (if not using OAuth2)
         DEEPEVAL_LLM_CLIENT_APP_NAME: App key/name (passed in headers for some providers)
         DEEPEVAL_LLM_AUTH_HEADER: Auth header name (default: api-key)
+        DEEPEVAL_LLM_EXTRA_HEADERS: JSON string of additional HTTP headers (optional).
+            Note: LiteLLM does not support extra_headers via env vars natively,
+            so we provide this for API gateways requiring custom headers.
 
         OAuth2 Configuration (optional):
         DEEPEVAL_LLM_TOKEN_URL: OAuth2 token endpoint
@@ -170,6 +176,13 @@ def create_eval_model() -> Any | None:
         DEEPEVAL_LLM_PROVIDER=openai
         DEEPEVAL_LLM_API_KEY=<your-api-key>
         # Note: Do NOT set DEEPEVAL_LLM_TOKEN_URL when using static API key
+
+    Example - Azure OpenAI with Custom Headers (API Gateway):
+        DEEPEVAL_LLM_BASE_URL=https://your-gateway.example.com/openai/deployments
+        DEEPEVAL_LLM_MODEL=gpt-4o
+        DEEPEVAL_LLM_PROVIDER=azure
+        DEEPEVAL_LLM_API_KEY=<your-api-key>
+        DEEPEVAL_LLM_EXTRA_HEADERS={"system-code": "APP-123", "x-tenant-id": "tenant-abc"}
     """
     base_url = os.environ.get("DEEPEVAL_LLM_BASE_URL")
     if not base_url:
@@ -199,6 +212,33 @@ def create_eval_model() -> Any | None:
     # Build generation kwargs with extra headers
     generation_kwargs: dict[str, Any] = {}
     extra_headers: dict[str, str] = {}
+
+    # Parse custom headers from JSON environment variable.
+    # Note: LiteLLM does not natively support extra_headers via environment variables
+    # (see https://docs.litellm.ai/docs/completion/input#optional-fields).
+    # We provide DEEPEVAL_LLM_EXTRA_HEADERS to enable custom headers for API gateways
+    # that require additional headers (e.g., system-code for Azure OpenAI proxies).
+    # Example: DEEPEVAL_LLM_EXTRA_HEADERS='{"system-code": "APP-123"}'
+    extra_headers_json = os.environ.get("DEEPEVAL_LLM_EXTRA_HEADERS")
+    if extra_headers_json:
+        try:
+            custom_headers = json.loads(extra_headers_json)
+            if isinstance(custom_headers, dict):
+                extra_headers.update(custom_headers)
+            else:
+                _logger.warning(
+                    "DEEPEVAL_LLM_EXTRA_HEADERS must be a JSON object (dict), "
+                    "got %s. Custom headers will be ignored.",
+                    type(custom_headers).__name__,
+                )
+        except json.JSONDecodeError as e:
+            # Log warning without exposing potentially sensitive header values
+            _logger.warning(
+                "Failed to parse DEEPEVAL_LLM_EXTRA_HEADERS as JSON: %s. "
+                "Custom headers will be ignored. Expected format: "
+                '\'{"header-name": "header-value"}\'',
+                e.msg,
+            )
 
     # Add auth header
     if api_key:
