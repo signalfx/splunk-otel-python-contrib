@@ -1,0 +1,5 @@
+# Auto-enable Openlit span processor on package installation
+# This .pth file automatically imports the openlit module when the package is installed,
+# triggering the _auto_enable() function that registers the OpenlitSpanProcessor
+# with the global TracerProvider.
+import opentelemetry.util.genai.openlit

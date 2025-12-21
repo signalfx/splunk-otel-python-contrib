@@ -1,0 +1,12 @@
+# Minimal dependencies to run examples (like examples/openlit_example.py)
+# Usage: pip install -r requirements-examples.txt
+
+-e ../opentelemetry-util-genai
+-e .
+
+# OpenTelemetry SDK pieces used in the example
+opentelemetry-sdk>=1.31.1
+openlit
+python-dotenv
+openai
+# (ConsoleSpanExporter is in the SDK extras; no additional exporter deps needed.)
