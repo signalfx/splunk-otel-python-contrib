@@ -262,13 +262,13 @@ class TestExtraHeadersParsing:
                 assert extra_headers["api-key"] == "static-api-key-12345"
 
     def test_static_api_key_with_extra_headers(self):
-        """Test static API key combined with extra headers (Softbank use case)."""
+        """Test static API key combined with extra headers for API gateways."""
         env = {
             "DEEPEVAL_LLM_BASE_URL": "https://azure-gateway.example.com/openai/deployments",
             "DEEPEVAL_LLM_MODEL": "gpt-4o",
             "DEEPEVAL_LLM_PROVIDER": "azure",
             "DEEPEVAL_LLM_API_KEY": "azure-api-key",
-            "DEEPEVAL_LLM_EXTRA_HEADERS": '{"system-code": "SOFTBANK-APP-123"}',
+            "DEEPEVAL_LLM_EXTRA_HEADERS": '{"system-code": "APP-123"}',
             # No OAuth2 credentials - using static API key
         }
 
@@ -294,7 +294,7 @@ class TestExtraHeadersParsing:
                 extra_headers = call_kwargs["generation_kwargs"][
                     "extra_headers"
                 ]
-                assert extra_headers["system-code"] == "SOFTBANK-APP-123"
+                assert extra_headers["system-code"] == "APP-123"
                 assert extra_headers["api-key"] == "azure-api-key"
 
     def test_default_openai_with_only_openai_api_key(self):
