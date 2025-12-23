@@ -1,4 +1,5 @@
 """MCP tools for observability data (metrics, logs, traces)."""
+
 import logging
 import random
 from datetime import datetime, timedelta, timezone
@@ -534,18 +535,18 @@ async def metrics_query(
     scenario_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Query metrics for a service.
-    
+
     Args:
         service_id: The service identifier (e.g., "payment-service")
         metric_name: Name of the metric (e.g., "error_rate", "latency_p95")
         time_window: Time window for the query (e.g., "15m", "1h")
         scenario_id: Optional scenario ID for seeded data
-    
+
     Returns:
         Dict containing metric data with timestamps and values
-    
+
     Metric Selection Guidance by Alert Type:
-    - latency_spike alerts: Query latency_p95, cache_hit_rate, cache_miss_rate, 
+    - latency_spike alerts: Query latency_p95, cache_hit_rate, cache_miss_rate,
       database query performance metrics (query_performance)
     - error_rate_critical alerts: Query error_rate, downstream_service_error_rate,
       authentication_failure_rate (for auth services), token_validation_errors
@@ -556,7 +557,7 @@ async def metrics_query(
       (queue buildup is often caused by slow downstream services)
     - database_connection_pool alerts: Query connection_pool_usage, connection_pool_exhaustion_rate,
       database query performance metrics
-    
+
     Common metrics: error_rate, latency_p95, cache_hit_rate, downstream_service_error_rate,
     downstream_service_latency_p95, queue_depth, queue_processing_rate
     """
@@ -570,18 +571,24 @@ async def metrics_query(
                 "data_points": data,
                 "status": "success",
             }
-    
+
     # Generate synthetic data if not seeded
     now = datetime.now(timezone.utc)
     data_points = []
     for i in range(4):
         timestamp = now - timedelta(minutes=15 - i * 5)
-        value = random.uniform(0.1, 5.0) if "rate" in metric_name else random.uniform(100, 1000)
-        data_points.append({
-            "timestamp": timestamp.isoformat() + "Z",
-            "value": round(value, 2),
-        })
-    
+        value = (
+            random.uniform(0.1, 5.0)
+            if "rate" in metric_name
+            else random.uniform(100, 1000)
+        )
+        data_points.append(
+            {
+                "timestamp": timestamp.isoformat() + "Z",
+                "value": round(value, 2),
+            }
+        )
+
     return {
         "service_id": service_id,
         "metric_name": metric_name,
@@ -600,14 +607,14 @@ async def logs_search(
     scenario_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Search logs for a service.
-    
+
     Args:
         service_id: The service identifier
         query: Search query (e.g., "error", "timeout", "connection")
         time_window: Time window for the search
         limit: Maximum number of results
         scenario_id: Optional scenario ID for seeded data
-    
+
     Returns:
         Dict containing matching log entries
     """
@@ -617,10 +624,15 @@ async def logs_search(
         query_lower = query.lower()
         query_words = query_lower.split()
         filtered_logs = [
-            log for log in logs
+            log
+            for log in logs
             if query_lower in log.get("message", "").lower()
             or query_lower in log.get("level", "").lower()
-            or any(word in log.get("message", "").lower() for word in query_words if len(word) > 3)  # Match individual words (min 4 chars)
+            or any(
+                word in log.get("message", "").lower()
+                for word in query_words
+                if len(word) > 3
+            )  # Match individual words (min 4 chars)
         ]
         return {
             "service_id": service_id,
@@ -630,18 +642,20 @@ async def logs_search(
             "count": len(filtered_logs),
             "status": "success",
         }
-    
+
     # Generate synthetic logs if not seeded
     synthetic_logs = []
     now = datetime.now(timezone.utc)
     for i in range(min(limit, 5)):
-        synthetic_logs.append({
-            "timestamp": (now - timedelta(minutes=10 - i * 2)).isoformat() + "Z",
-            "level": random.choice(["ERROR", "WARN", "INFO"]),
-            "message": f"Synthetic log entry for {service_id}: {query}",
-            "service": service_id,
-        })
-    
+        synthetic_logs.append(
+            {
+                "timestamp": (now - timedelta(minutes=10 - i * 2)).isoformat() + "Z",
+                "level": random.choice(["ERROR", "WARN", "INFO"]),
+                "message": f"Synthetic log entry for {service_id}: {query}",
+                "service": service_id,
+            }
+        )
+
     return {
         "service_id": service_id,
         "query": query,
@@ -661,14 +675,14 @@ async def trace_query(
     scenario_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Query traces for a service.
-    
+
     Args:
         service_id: The service identifier
         operation: Optional operation name to filter by
         time_window: Time window for the query
         limit: Maximum number of traces
         scenario_id: Optional scenario ID for seeded data
-    
+
     Returns:
         Dict containing trace data
     """
@@ -684,19 +698,21 @@ async def trace_query(
             "count": len(traces),
             "status": "success",
         }
-    
+
     # Generate synthetic traces if not seeded
     synthetic_traces = []
     for i in range(min(limit, 3)):
-        synthetic_traces.append({
-            "trace_id": f"trace-{i:03d}",
-            "span_id": f"span-{i:03d}",
-            "service": service_id,
-            "operation": operation or "unknown",
-            "duration_ms": random.randint(100, 5000),
-            "status": random.choice(["ok", "error"]),
-        })
-    
+        synthetic_traces.append(
+            {
+                "trace_id": f"trace-{i:03d}",
+                "span_id": f"span-{i:03d}",
+                "service": service_id,
+                "operation": operation or "unknown",
+                "duration_ms": random.randint(100, 5000),
+                "status": random.choice(["ok", "error"]),
+            }
+        )
+
     return {
         "service_id": service_id,
         "operation": operation,
@@ -709,4 +725,3 @@ async def trace_query(
 
 if __name__ == "__main__":
     mcp.run(transport="stdio", show_banner=False)
-
