@@ -1,26 +1,14 @@
 """MCP tools for observability data (metrics, logs, traces)."""
-import json
 import logging
-import os
 import random
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastmcp import FastMCP
 
-# Suppress FastMCP startup banner and logs
-os.environ.setdefault("FASTMCP_QUIET", "1")
-logging.getLogger("fastmcp").setLevel(logging.CRITICAL)
-logging.getLogger("mcp").setLevel(logging.CRITICAL)
-# Suppress stdout for FastMCP banner (it prints directly to stdout)
-import sys
-from io import StringIO
-_original_stdout = sys.stdout
-_suppress_banner = StringIO()
-
-# Note: FastMCP banner is printed directly to stdout, so we can't easily suppress it
-# without intercepting stdout, which would break MCP communication
-# The environment variable and logging suppression help but don't fully eliminate it
+# Suppress MCP server startup logs
+logging.getLogger("mcp.server").setLevel(logging.WARNING)
+logging.getLogger("mcp").setLevel(logging.WARNING)
 
 mcp = FastMCP("observability-tools")
 

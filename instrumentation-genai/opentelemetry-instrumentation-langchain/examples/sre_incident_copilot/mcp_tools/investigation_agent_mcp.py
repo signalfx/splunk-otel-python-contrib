@@ -2,18 +2,14 @@
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
 from fastmcp import FastMCP
 
-# Suppress FastMCP startup banner and logs
-os.environ.setdefault("FASTMCP_QUIET", "1")
-logging.getLogger("fastmcp").setLevel(logging.CRITICAL)
-logging.getLogger("mcp").setLevel(logging.CRITICAL)
-# Note: FastMCP banner prints directly to stdout, which is hard to suppress
-# without breaking MCP communication. The environment variable helps but doesn't fully eliminate it.
+# Suppress MCP server startup logs
+logging.getLogger("mcp.server").setLevel(logging.WARNING)
+logging.getLogger("mcp").setLevel(logging.WARNING)
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
