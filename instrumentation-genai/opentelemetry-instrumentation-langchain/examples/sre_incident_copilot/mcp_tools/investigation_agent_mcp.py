@@ -14,8 +14,8 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents import investigation_agent
-from config import Config
+from agents import investigation_agent  # noqa: E402
+from config import Config  # noqa: E402
 
 mcp = FastMCP("investigation-agent")
 

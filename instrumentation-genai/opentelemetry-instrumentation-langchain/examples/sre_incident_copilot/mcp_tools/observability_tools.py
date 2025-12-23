@@ -560,9 +560,6 @@ async def metrics_query(
     Common metrics: error_rate, latency_p95, cache_hit_rate, downstream_service_error_rate,
     downstream_service_latency_p95, queue_depth, queue_processing_rate
     """
-    # Use scenario_id if provided, otherwise generate deterministic data
-    key = scenario_id or f"default-{service_id}-{metric_name}"
-    
     if scenario_id and scenario_id in SEEDED_METRICS_DATA:
         data = SEEDED_METRICS_DATA[scenario_id].get(metric_name, [])
         if data:
@@ -614,8 +611,6 @@ async def logs_search(
     Returns:
         Dict containing matching log entries
     """
-    key = scenario_id or f"default-{service_id}"
-    
     if scenario_id and scenario_id in SEEDED_LOGS_DATA:
         logs = SEEDED_LOGS_DATA[scenario_id]
         # Filter by query if provided - use word-based matching for better results
@@ -677,8 +672,6 @@ async def trace_query(
     Returns:
         Dict containing trace data
     """
-    key = scenario_id or f"default-{service_id}"
-    
     if scenario_id and scenario_id in SEEDED_TRACES_DATA:
         traces = SEEDED_TRACES_DATA[scenario_id]
         if operation:
