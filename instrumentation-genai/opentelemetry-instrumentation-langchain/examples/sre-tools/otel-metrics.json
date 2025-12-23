@@ -1,0 +1,290 @@
+[
+  {
+    "id": "metric_001",
+    "metric_name": "http.server.duration",
+    "resource": {
+      "service.name": "checkout-service",
+      "service.version": "1.2.3",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.flask",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:30:00Z",
+        "value": 245.5,
+        "unit": "ms",
+        "attributes": {
+          "http.method": "POST",
+          "http.route": "/api/checkout",
+          "http.status_code": 200,
+          "http.target": "/api/checkout/complete",
+          "trace_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_002",
+    "metric_name": "db.client.operation.duration",
+    "resource": {
+      "service.name": "user-service",
+      "service.version": "2.1.0",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.psycopg2",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:31:15Z",
+        "value": 1250.8,
+        "unit": "ms",
+        "attributes": {
+          "db.system": "postgresql",
+          "db.operation": "SELECT",
+          "db.name": "users_db",
+          "db.statement": "SELECT * FROM users WHERE id = $1",
+          "net.peer.name": "postgres-primary.internal",
+          "net.peer.port": 5432,
+          "trace_id": "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_003",
+    "metric_name": "http.client.duration",
+    "resource": {
+      "service.name": "api-gateway",
+      "service.version": "3.0.1",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.requests",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:32:00Z",
+        "value": 523.2,
+        "unit": "ms",
+        "attributes": {
+          "http.method": "GET",
+          "http.url": "https://payment-service/api/validate",
+          "http.status_code": 200,
+          "net.peer.name": "payment-service",
+          "http.response_content_length": 1024,
+          "trace_id": "c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_004",
+    "metric_name": "rpc.client.duration",
+    "resource": {
+      "service.name": "inventory-service",
+      "service.version": "1.5.2",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.grpc",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:33:30Z",
+        "value": 89.7,
+        "unit": "ms",
+        "attributes": {
+          "rpc.system": "grpc",
+          "rpc.service": "InventoryService",
+          "rpc.method": "CheckStock",
+          "rpc.grpc.status_code": 0,
+          "net.peer.name": "inventory-grpc.internal",
+          "net.peer.port": 50051,
+          "trace_id": "d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_005",
+    "metric_name": "messaging.publish.duration",
+    "resource": {
+      "service.name": "notification-service",
+      "service.version": "2.0.0",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.kafka",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:34:45Z",
+        "value": 34.1,
+        "unit": "ms",
+        "attributes": {
+          "messaging.system": "kafka",
+          "messaging.destination": "notifications.email",
+          "messaging.operation": "publish",
+          "messaging.kafka.partition": 2,
+          "messaging.message_id": "msg-12345",
+          "messaging.kafka.message.key": "user-789",
+          "trace_id": "e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_006",
+    "metric_name": "http.server.duration",
+    "resource": {
+      "service.name": "search-service",
+      "service.version": "1.8.0",
+      "deployment.environment": "staging"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.fastapi",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:35:20Z",
+        "value": 3500.0,
+        "unit": "ms",
+        "attributes": {
+          "http.method": "GET",
+          "http.route": "/api/search",
+          "http.status_code": 504,
+          "http.target": "/api/search?q=laptop",
+          "error": true,
+          "error.type": "TimeoutError",
+          "trace_id": "f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_007",
+    "metric_name": "db.client.operation.duration",
+    "resource": {
+      "service.name": "product-catalog",
+      "service.version": "1.3.1",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.redis",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:36:10Z",
+        "value": 12.3,
+        "unit": "ms",
+        "attributes": {
+          "db.system": "redis",
+          "db.operation": "GET",
+          "db.redis.database_index": 0,
+          "net.peer.name": "redis-cluster.internal",
+          "net.peer.port": 6379,
+          "cache.hit": false,
+          "db.statement": "GET product:12345",
+          "trace_id": "g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_008",
+    "metric_name": "function.duration",
+    "resource": {
+      "service.name": "analytics-engine",
+      "service.version": "2.2.0",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "custom.instrumentation",
+      "version": "1.0.0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:37:00Z",
+        "value": 5420.6,
+        "unit": "ms",
+        "attributes": {
+          "function.name": "process_analytics_batch",
+          "batch.size": 10000,
+          "processing.type": "aggregation",
+          "cpu.utilization": 0.92,
+          "trace_id": "h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_009",
+    "metric_name": "db.client.operation.duration",
+    "resource": {
+      "service.name": "order-service",
+      "service.version": "1.9.5",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.sqlalchemy",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:38:30Z",
+        "value": 678.4,
+        "unit": "ms",
+        "attributes": {
+          "db.system": "mysql",
+          "db.operation": "INSERT",
+          "db.name": "orders_db",
+          "db.statement": "INSERT INTO orders (user_id, total) VALUES (?, ?)",
+          "db.user": "order_writer",
+          "net.peer.name": "mysql-master.internal",
+          "net.peer.port": 3306,
+          "db.rows_affected": 1,
+          "trace_id": "i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4"
+        }
+      }
+    ]
+  },
+  {
+    "id": "metric_010",
+    "metric_name": "http.server.duration",
+    "resource": {
+      "service.name": "auth-service",
+      "service.version": "2.5.0",
+      "deployment.environment": "production"
+    },
+    "scope": {
+      "name": "opentelemetry.instrumentation.django",
+      "version": "0.45b0"
+    },
+    "data_points": [
+      {
+        "timestamp": "2025-01-15T10:39:15Z",
+        "value": 156.9,
+        "unit": "ms",
+        "attributes": {
+          "http.method": "POST",
+          "http.route": "/api/auth/login",
+          "http.status_code": 401,
+          "http.target": "/api/auth/login",
+          "error": true,
+          "error.type": "AuthenticationError",
+          "trace_id": "j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5"
+        }
+      }
+    ]
+  }
+]
