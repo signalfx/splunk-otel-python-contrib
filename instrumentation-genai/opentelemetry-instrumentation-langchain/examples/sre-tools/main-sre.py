@@ -272,7 +272,7 @@ Attributes: {json.dumps(dp.get('attributes', {}))}
     print(f"Loaded {len(documents)} metric data points")
 
 
-# MCP Tools
+# Tools
 @tool
 def retrieve_alerts(query: str, k: int = 3) -> str:
     """Retrieve relevant alerts from the knowledge base."""

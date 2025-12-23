@@ -1,6 +1,6 @@
 # Flask REST APIs for querying alerts, traces, metrics, and logs
 # Separate vector stores for each data type (alerts, traces, metrics, logs)
-# MCP tools (retrieve_alerts, retrieve_traces, retrieve_metrics, retrieve_logs)
+# Tools (retrieve_alerts, retrieve_traces, retrieve_metrics, retrieve_logs)
 # Correlation via trace IDs between different telemetry signals
 # Natural language queries powered by LangGraph and GPT-4
 # API endpoints:
@@ -315,7 +315,7 @@ Content: {content}
         print(f"Error loading runbook data: {e}")
         raise
 
-# MCP Tools
+# Tools
 @tool
 def retrieve_alerts(query: str, k: int = 3, severity_filter: str = None) -> str:
     """Retrieve relevant alerts from the knowledge base."""
