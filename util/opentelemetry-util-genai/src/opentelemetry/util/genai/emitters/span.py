@@ -69,6 +69,28 @@ _SPAN_ALLOWED_SUPPLEMENTAL_KEYS: tuple[str, ...] = (
 _SPAN_BLOCKED_SUPPLEMENTAL_KEYS: set[str] = {"request_top_p", "ls_temperature"}
 
 
+def _safe_exit_context(token: Any) -> None:
+    """Safely exit a context manager, handling cross-context detach errors.
+
+    When spans are created in one async context and finished in another,
+    the context detach can fail with a ValueError. OpenTelemetry prints
+    "Failed to detach context" to stderr before raising, so we suppress that.
+    """
+    import io
+    from contextlib import redirect_stderr
+
+    if token is None or not hasattr(token, "__exit__"):
+        return
+    try:
+        # Suppress stderr to avoid "Failed to detach context" message
+        with redirect_stderr(io.StringIO()):
+            token.__exit__(None, None, None)
+    except ValueError:
+        # Context was created in a different async context - this is expected
+        # when spans persist across different execution contexts
+        pass
+
+
 def _sanitize_span_attribute_value(value: Any) -> Optional[Any]:
     """Cast arbitrary invocation attribute values to OTEL-compatible types."""
 
@@ -163,6 +185,7 @@ class SpanEmitter(EmitterMeta):
             semconv_attrs[GenAI.GEN_AI_OPERATION_NAME] = (
                 enum_val.value if enum_val else "execute_tool"
             )
+            semconv_attrs[GenAI.GEN_AI_REQUEST_MODEL] = invocation.name
         elif isinstance(invocation, EmbeddingInvocation):
             semconv_attrs.setdefault(
                 GenAI.GEN_AI_REQUEST_MODEL, invocation.request_model
@@ -346,12 +369,7 @@ class SpanEmitter(EmitterMeta):
             if span is None:
                 return
             self._apply_finish_attrs(invocation)
-            token = getattr(invocation, "context_token", None)
-            if token is not None and hasattr(token, "__exit__"):
-                try:  # pragma: no cover
-                    token.__exit__(None, None, None)  # type: ignore[misc]
-                except Exception:  # pragma: no cover
-                    pass
+            _safe_exit_context(getattr(invocation, "context_token", None))
             span.end()
 
     def on_error(
@@ -375,18 +393,13 @@ class SpanEmitter(EmitterMeta):
                     ErrorAttributes.ERROR_TYPE, error.type.__qualname__
                 )
             self._apply_finish_attrs(invocation)
-            token = getattr(invocation, "context_token", None)
-            if token is not None and hasattr(token, "__exit__"):
-                try:  # pragma: no cover
-                    token.__exit__(None, None, None)  # type: ignore[misc]
-                except Exception:  # pragma: no cover
-                    pass
+            _safe_exit_context(getattr(invocation, "context_token", None))
             span.end()
 
     # ---- Workflow lifecycle ----------------------------------------------
     def _start_workflow(self, workflow: Workflow) -> None:
         """Start a workflow span."""
-        span_name = f"workflow {workflow.name}"
+        span_name = f"gen_ai.workflow {workflow.name}"
         parent_span = getattr(workflow, "parent_span", None)
         parent_ctx = (
             trace.set_span_in_context(parent_span)
@@ -449,12 +462,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
-        token = workflow.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(workflow.context_token)
         span.end()
 
     def _error_workflow(self, error: Error, workflow: Workflow) -> None:
@@ -470,12 +478,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
-        token = workflow.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(workflow.context_token)
         span.end()
 
     # ---- Agent lifecycle -------------------------------------------------
@@ -567,12 +570,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
-        token = agent.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(agent.context_token)
         span.end()
 
     def _error_agent(
@@ -590,12 +588,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
-        token = agent.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(agent.context_token)
         span.end()
 
     # ---- Step lifecycle --------------------------------------------------
@@ -666,12 +659,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
-        token = step.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(step.context_token)
         span.end()
 
     def _error_step(self, error: Error, step: Step) -> None:
@@ -689,12 +677,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
-        token = step.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(step.context_token)
         span.end()
 
     # ---- Embedding lifecycle ---------------------------------------------
@@ -742,12 +725,7 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 GenAI.GEN_AI_USAGE_INPUT_TOKENS, embedding.input_tokens
             )
-        token = embedding.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
+        _safe_exit_context(embedding.context_token)
         span.end()
 
     def _error_embedding(
@@ -773,4 +751,6 @@ class SpanEmitter(EmitterMeta):
                 token.__exit__(None, None, None)  # type: ignore[misc]
             except Exception:
                 pass
+        span.end()
+        _safe_exit_context(embedding.context_token)
         span.end()

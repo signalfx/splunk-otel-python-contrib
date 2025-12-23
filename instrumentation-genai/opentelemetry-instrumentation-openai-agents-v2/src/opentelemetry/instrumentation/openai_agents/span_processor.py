@@ -13,10 +13,12 @@ References:
 """
 
 # pylint: disable=too-many-lines,invalid-name,too-many-locals,too-many-branches,too-many-statements,too-many-return-statements,too-many-nested-blocks,too-many-arguments,too-many-instance-attributes,broad-exception-caught,no-self-use,consider-iterating-dictionary,unused-variable,unnecessary-pass
+# ruff: noqa: I001
 
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,6 +26,17 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Sequence
 from urllib.parse import urlparse
 
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
+from opentelemetry.util.genai.types import (
+    AgentInvocation,
+    LLMInvocation,
+    Step,
+    ToolCall,
+    Workflow,
+)
 from opentelemetry.util.genai.utils import gen_ai_json_dumps
 
 try:
@@ -71,6 +84,40 @@ from opentelemetry.trace import (
     set_span_in_context,
 )
 from opentelemetry.util.types import AttributeValue
+
+# ---------------------------------------------------------------------------
+# Global processor reference (for internal use)
+# ---------------------------------------------------------------------------
+
+_GLOBAL_PROCESSOR_REF: list = []  # Holds reference to active processor
+
+
+def stop_workflow(final_output: Optional[str] = None) -> None:
+    """Stop the current workflow span.
+
+    For multi-agent scenarios, call this after all agents complete to finalize
+    the workflow. For single-agent scenarios, this is called automatically
+    on shutdown() but can be called explicitly for immediate finalization.
+
+    Args:
+        final_output: Optional final output to set on the workflow.
+
+    Example:
+        from opentelemetry.instrumentation.openai_agents.span_processor import stop_workflow
+
+        # Run multiple agents - workflow persists across traces
+        Runner.run_sync(flight_agent, "Find flights")
+        Runner.run_sync(hotel_agent, "Find hotels")
+        result = Runner.run_sync(coordinator, "Create itinerary")
+
+        # Stop the workflow to finalize it
+        stop_workflow(final_output=result.final_output)
+    """
+    if _GLOBAL_PROCESSOR_REF:
+        processor = _GLOBAL_PROCESSOR_REF[0]
+        if hasattr(processor, "stop_workflow"):
+            processor.stop_workflow(final_output)
+
 
 # Import all semantic convention constants
 # ---- GenAI semantic convention helpers (embedded from constants.py) ----
@@ -426,6 +473,8 @@ def get_span_name(
 class GenAISemanticProcessor(TracingProcessor):
     """Trace processor adding GenAI semantic convention attributes with metrics."""
 
+    _handler: TelemetryHandler
+
     def __init__(
         self,
         tracer: Optional[Tracer] = None,
@@ -445,6 +494,7 @@ class GenAISemanticProcessor(TracingProcessor):
         base_url_default: Optional[str] = None,
         server_address_default: Optional[str] = None,
         server_port_default: Optional[int] = None,
+        tracer_provider: Optional[Any] = None,
     ):
         """Initialize processor with metrics support.
 
@@ -510,6 +560,24 @@ class GenAISemanticProcessor(TracingProcessor):
         self._tokens: dict[str, object] = {}
         self._span_parents: dict[str, Optional[str]] = {}
         self._agent_content: dict[str, Dict[str, list[Any]]] = {}
+
+        # util/genai integration (step 1 – workflow only)
+        # Pass tracer_provider to ensure handler uses correct resource/service name
+        self._handler = get_telemetry_handler(tracer_provider=tracer_provider)
+        self._workflow: Workflow | None = None
+        self._steps: dict[str, Step] = {}
+        self._llms: dict[str, LLMInvocation] = {}
+        self._tools: dict[str, ToolCall] = {}
+        # Track workflow input/output from agent spans
+        self._workflow_first_input: Optional[str] = None
+        self._workflow_last_output: Optional[str] = None
+        # Track agent spans per trace
+        self._trace_agent_count: dict[str, int] = {}
+        self._trace_first_agent_name: dict[str, str] = {}
+
+        # Register this processor globally for multi-agent workflow support
+        _GLOBAL_PROCESSOR_REF.clear()
+        _GLOBAL_PROCESSOR_REF.append(self)
 
         # Metrics configuration
         self._metrics_enabled = metrics_enabled
@@ -726,9 +794,11 @@ class GenAISemanticProcessor(TracingProcessor):
                         "parts": [
                             {
                                 "type": "text",
-                                "content": "readacted"
-                                if not self.include_sensitive_data
-                                else str(m),
+                                "content": (
+                                    "readacted"
+                                    if not self.include_sensitive_data
+                                    else str(m)
+                                ),
                             }
                         ],
                     }
@@ -779,9 +849,11 @@ class GenAISemanticProcessor(TracingProcessor):
                         parts.append(
                             {
                                 "type": "text",
-                                "content": "readacted"
-                                if not self.include_sensitive_data
-                                else str(p),
+                                "content": (
+                                    "readacted"
+                                    if not self.include_sensitive_data
+                                    else str(p)
+                                ),
                             }
                         )
 
@@ -791,9 +863,11 @@ class GenAISemanticProcessor(TracingProcessor):
                 parts.append(
                     {
                         "type": "text",
-                        "content": "readacted"
-                        if not self.include_sensitive_data
-                        else content,
+                        "content": (
+                            "readacted"
+                            if not self.include_sensitive_data
+                            else content
+                        ),
                     }
                 )
             elif isinstance(content, (list, tuple)):
@@ -805,12 +879,14 @@ class GenAISemanticProcessor(TracingProcessor):
                             parts.append(
                                 {
                                     "type": "text",
-                                    "content": "readacted"
-                                    if not self.include_sensitive_data
-                                    else (
-                                        txt
-                                        if isinstance(txt, str)
-                                        else str(item)
+                                    "content": (
+                                        "readacted"
+                                        if not self.include_sensitive_data
+                                        else (
+                                            txt
+                                            if isinstance(txt, str)
+                                            else str(item)
+                                        )
                                     ),
                                 }
                             )
@@ -819,18 +895,22 @@ class GenAISemanticProcessor(TracingProcessor):
                             parts.append(
                                 {
                                     "type": "text",
-                                    "content": "readacted"
-                                    if not self.include_sensitive_data
-                                    else str(item),
+                                    "content": (
+                                        "readacted"
+                                        if not self.include_sensitive_data
+                                        else str(item)
+                                    ),
                                 }
                             )
                     else:
                         parts.append(
                             {
                                 "type": "text",
-                                "content": "readacted"
-                                if not self.include_sensitive_data
-                                else str(item),
+                                "content": (
+                                    "readacted"
+                                    if not self.include_sensitive_data
+                                    else str(item)
+                                ),
                             }
                         )
 
@@ -1276,39 +1356,125 @@ class GenAISemanticProcessor(TracingProcessor):
             return SpanKind.INTERNAL  # Agent operations are internal
         return SpanKind.INTERNAL
 
+    def _format_input_message(self, content: str) -> str:
+        """Format input content as GenAI semantic convention message JSON."""
+        # Check if already JSON formatted
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return content  # Already in correct format
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Wrap in standard format
+        input_msg = {
+            "role": "user",
+            "parts": [{"type": "text", "content": content}],
+        }
+        return json.dumps([input_msg])
+
+    def _format_output_message(self, content: str) -> str:
+        """Format output content as GenAI semantic convention message JSON."""
+        # Check if already JSON formatted
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return content  # Already in correct format
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Wrap in standard format
+        output_msg = {
+            "role": "assistant",
+            "parts": [{"type": "text", "content": content}],
+            "finish_reason": "stop",
+        }
+        return json.dumps([output_msg])
+
     def on_trace_start(self, trace: Trace) -> None:
-        """Create root span when trace starts."""
-        if self._tracer:
-            attributes = {
-                GEN_AI_PROVIDER_NAME: self.system_name,
-                GEN_AI_SYSTEM_KEY: self.system_name,
-                GEN_AI_OPERATION_NAME: GenAIOperationName.INVOKE_AGENT,
-            }
-            # Legacy emission removed
+        """Create or reuse workflow span when trace starts.
 
-            # Add configured agent and server attributes
-            if self.agent_name:
-                attributes[GEN_AI_AGENT_NAME] = self.agent_name
-            if self.agent_id:
-                attributes[GEN_AI_AGENT_ID] = self.agent_id
-            if self.agent_description:
-                attributes[GEN_AI_AGENT_DESCRIPTION] = self.agent_description
-            attributes.update(self._get_server_attributes())
+        Workflow persists across multiple traces until stop_workflow() is called
+        or shutdown() is invoked. This supports multi-agent scenarios with
+        sequential Runner.run() calls.
+        """
+        if not self._tracer:
+            return
 
-            otel_span = self._tracer.start_span(
-                name=trace.name,
-                attributes=attributes,
-                kind=SpanKind.SERVER,  # Root span is typically server
+        try:
+            # Initialize tracking for this trace
+            self._trace_agent_count[trace.trace_id] = 0
+            self._trace_first_agent_name.pop(trace.trace_id, None)
+
+            # Only create workflow if one doesn't exist
+            # Workflow persists across traces for multi-agent support
+            if self._workflow is None:
+                # Reset workflow input/output tracking for new workflow
+                self._workflow_first_input = None
+                self._workflow_last_output = None
+
+                # Create workflow - will be named after first agent
+                self._workflow = Workflow(name="OpenAIAgents", attributes={})
+                self._handler.start_workflow(self._workflow)
+        except Exception as e:  # defensive – don't break existing spans
+            logger.debug(
+                "Failed to create workflow for trace %s: %s",
+                getattr(trace, "trace_id", "<unknown>"),
+                e,
+                exc_info=True,
             )
-            self._root_spans[trace.trace_id] = otel_span
+            self._workflow = None
 
     def on_trace_end(self, trace: Trace) -> None:
-        """End root span when trace ends."""
+        """Handle trace end - update workflow but don't stop it.
+
+        Workflow persists across traces until stop_workflow() is called
+        explicitly or shutdown() is invoked. This supports both single-agent
+        and multi-agent scenarios with sequential Runner.run() calls.
+        """
         if root_span := self._root_spans.pop(trace.trace_id, None):
             if root_span.is_recording():
                 root_span.set_status(Status(StatusCode.OK))
             root_span.end()
-        self._cleanup_spans_for_trace(trace.trace_id)
+
+        # Clean up trace-level tracking
+        self._trace_agent_count.pop(trace.trace_id, None)
+        self._trace_first_agent_name.pop(trace.trace_id, None)
+
+        # Update workflow input/output but DON'T stop it
+        # Workflow persists until stop_workflow() or shutdown()
+        if self._workflow is not None:
+            if self._workflow_first_input and not self._workflow.initial_input:
+                self._workflow.initial_input = self._workflow_first_input
+            if self._workflow_last_output:
+                self._workflow.final_output = self._workflow_last_output
+
+    def stop_workflow(self, final_output: Optional[str] = None) -> None:
+        """Stop the current workflow.
+
+        For multi-agent scenarios, call this explicitly after all agents complete.
+        For single-agent scenarios, this is called automatically on shutdown().
+
+        Args:
+            final_output: Optional final output to set on the workflow.
+        """
+        if self._workflow is not None:
+            # Set final output
+            if final_output:
+                self._workflow.final_output = self._format_output_message(
+                    final_output
+                )
+            elif self._workflow_last_output:
+                self._workflow.final_output = self._format_output_message(
+                    self._workflow_last_output
+                )
+            # Set initial input
+            if self._workflow_first_input and not self._workflow.initial_input:
+                self._workflow.initial_input = self._format_input_message(
+                    self._workflow_first_input
+                )
+            self._handler.stop_workflow(self._workflow)
+            self._workflow = None
+            self._workflow_first_input = None
+            self._workflow_last_output = None
 
     def on_span_start(self, span: Span[Any]) -> None:
         """Start child span for agent span."""
@@ -1378,6 +1544,62 @@ class GenAISemanticProcessor(TracingProcessor):
             attributes[GEN_AI_AGENT_DESCRIPTION] = agent_desc_override
         attributes.update(self._get_server_attributes())
 
+        # For agent spans, create a GenAI Step under the workflow and
+        # make the OpenAI Agents span a child of that Step span.
+        if _is_instance_of(span.span_data, AgentSpanData):
+            # Track agent count for this trace
+            trace_id = span.trace_id
+            if trace_id in self._trace_agent_count:
+                self._trace_agent_count[trace_id] += 1
+            else:
+                self._trace_agent_count[trace_id] = 1
+
+            # Store first agent name for workflow naming and update workflow name
+            if trace_id not in self._trace_first_agent_name and agent_name:
+                self._trace_first_agent_name[trace_id] = agent_name
+                # Update workflow name to first agent's name
+                if self._workflow is not None:
+                    self._workflow.name = agent_name
+
+        # Create step for every agent invocation under the workflow
+        if (
+            _is_instance_of(span.span_data, AgentSpanData)
+            and self._workflow is not None
+        ):
+            try:
+                step_attrs: dict[str, Any] = dict(attributes)
+                step = Step(
+                    name=agent_name or span_name,
+                    step_type="agent_start",
+                    attributes=step_attrs,
+                )
+
+                step.parent_run_id = self._workflow.run_id
+                # Set parent_span so step becomes child of workflow span
+                # This is critical for multi-agent scenarios where traces are separate
+                if hasattr(self._workflow, "span") and self._workflow.span:
+                    step.parent_span = self._workflow.span
+
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("input_messages"):
+                    step.input_data = safe_json_dumps(
+                        content["input_messages"]
+                    )
+
+                self._handler.start_step(step)
+                self._steps[str(span.span_id)] = step
+
+                # Use the Step's span as parent context for the OpenAI Agents span.
+                if hasattr(step, "span") and step.span:
+                    context = set_span_in_context(step.span)
+            except Exception as e:
+                logger.debug(
+                    "Failed to create step entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
+
         otel_span = self._tracer.start_span(
             name=span_name,
             context=context,
@@ -1387,10 +1609,125 @@ class GenAISemanticProcessor(TracingProcessor):
         self._otel_spans[span.span_id] = otel_span
         self._tokens[span.span_id] = attach(set_span_in_context(otel_span))
 
+        if _is_instance_of(span.span_data, AgentSpanData):
+            try:
+                agent_attrs: dict[str, Any] = dict(attributes)
+
+                agent_entity = AgentInvocation(
+                    name=agent_name or span_name,
+                    attributes=agent_attrs,
+                )
+
+                if self._workflow is not None:
+                    agent_entity.parent_run_id = self._workflow.run_id
+
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("input_messages"):
+                    agent_entity.input_context = safe_json_dumps(
+                        content["input_messages"]
+                    )
+
+                if agent_name:
+                    agent_entity.agent_name = agent_name
+
+                agent_entity.framework = "openai_agents"
+
+                self._handler.start_agent(agent_entity)
+            except Exception as e:
+                logger.debug(
+                    "Failed to create AgentInvocation entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
+
+        if _is_instance_of(span.span_data, GenerationSpanData):
+            try:
+                llm_attrs: dict[str, Any] = dict(attributes)
+
+                request_model = model or str(
+                    attributes.get(GEN_AI_REQUEST_MODEL, "unknown_model")
+                )
+
+                llm_entity = LLMInvocation(
+                    name=span_name,
+                    request_model=request_model,
+                    attributes=llm_attrs,
+                )
+
+                parent_run_id = None
+                parent_step = None
+                if span.parent_id is not None:
+                    parent_step = self._steps.get(str(span.parent_id))
+                if parent_step is not None:
+                    parent_run_id = parent_step.run_id
+                elif self._workflow is not None:
+                    parent_run_id = self._workflow.run_id
+                if parent_run_id is not None:
+                    llm_entity.parent_run_id = parent_run_id
+
+                self._handler.start_llm(llm_entity)
+                self._llms[str(span.span_id)] = llm_entity
+            except Exception as e:
+                logger.debug(
+                    "Failed to create LLMInvocation entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
+
+        if _is_instance_of(span.span_data, FunctionSpanData):
+            try:
+                tool_attrs: dict[str, Any] = dict(attributes)
+
+                content = self._agent_content.get(span.span_id)
+                tool_args = None
+                if content is not None:
+                    tool_args = content.get("tool_arguments")
+
+                tool_entity = ToolCall(
+                    name=getattr(span.span_data, "name", span_name),
+                    id=None,
+                    arguments=tool_args,
+                    attributes=tool_attrs,
+                )
+
+                # Parent to enclosing Step when available, otherwise to Workflow.
+                parent_run_id = None
+                parent_step = None
+                if span.parent_id is not None:
+                    parent_step = self._steps.get(str(span.parent_id))
+                if parent_step is not None:
+                    parent_run_id = parent_step.run_id
+                elif self._workflow is not None:
+                    parent_run_id = self._workflow.run_id
+                if parent_run_id is not None:
+                    tool_entity.parent_run_id = parent_run_id
+
+                tool_entity.framework = "openai_agents"
+                self._handler.start_tool_call(tool_entity)
+                self._tools[str(span.span_id)] = tool_entity
+            except Exception as e:
+                # Defensive: do not break span creation if util/genai fails.
+                logger.debug(
+                    "Failed to create ToolCall entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
+
     def on_span_end(self, span: Span[Any]) -> None:
         """Finalize span with attributes, events, and metrics."""
         if token := self._tokens.pop(span.span_id, None):
-            detach(token)
+            try:
+                detach(token)
+            except ValueError:
+                # Token was created in a different context (e.g., multi-agent scenario)
+                # This is expected when workflow spans persist across multiple traces
+                logger.debug(
+                    "Context detach failed for span %s (expected in multi-agent workflows)",
+                    getattr(span, "span_id", "<unknown>"),
+                )
 
         payload = self._build_content_payload(span)
         self._update_agent_aggregate(span, payload)
@@ -1422,7 +1759,67 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._agent_content.pop(span.span_id, None)
             self._span_parents.pop(span.span_id, None)
             return
-
+        key = str(span.span_id)
+        step = self._steps.pop(key, None)
+        if step is not None:
+            try:
+                # Attach input and output from agent/span
+                content = self._agent_content.get(span.span_id)
+                if content:
+                    if content.get("input_messages") and not step.input_data:
+                        step.input_data = safe_json_dumps(
+                            content["input_messages"]
+                        )
+                        # Track first input for workflow (default workflow path)
+                        if self._workflow_first_input is None:
+                            self._workflow_first_input = step.input_data
+                    if content.get("output_messages"):
+                        step.output_data = safe_json_dumps(
+                            content["output_messages"]
+                        )
+                        # Track last output for workflow (default workflow path)
+                        self._workflow_last_output = step.output_data
+                self._handler.stop_step(step)
+            except Exception as e:
+                logger.debug(
+                    "Failed to stop Step entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
+        # Stop any LLMInvocation associated with this span.
+        llm_entity = self._llms.pop(key, None)
+        if llm_entity is not None:
+            try:
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("output_messages"):
+                    llm_entity.output_messages = []
+                self._handler.stop_llm(llm_entity)
+            except Exception as e:
+                logger.debug(
+                    "Failed to stop LLMInvocation entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
+        # Stop any ToolCall associated with this span.
+        tool_entity = self._tools.pop(key, None)
+        if tool_entity is not None:
+            try:
+                content = self._agent_content.get(span.span_id)
+                if content and content.get("tool_result") is not None:
+                    serialized = safe_json_dumps(content["tool_result"])
+                    tool_entity.attributes.setdefault(
+                        "tool.response", serialized
+                    )
+                self._handler.stop_tool_call(tool_entity)
+            except Exception as e:
+                logger.debug(
+                    "Failed to stop ToolCall entity for span %s: %s",
+                    getattr(span, "span_id", "<unknown>"),
+                    e,
+                    exc_info=True,
+                )
         try:
             # Extract and set attributes
             attributes: dict[str, AttributeValue] = {}
@@ -1484,6 +1881,9 @@ class GenAISemanticProcessor(TracingProcessor):
 
     def shutdown(self) -> None:
         """Clean up resources on shutdown."""
+        # Stop any active workflow first
+        self.stop_workflow()
+
         for span_id, otel_span in list(self._otel_spans.items()):
             otel_span.set_status(
                 Status(StatusCode.ERROR, "Application shutdown")
@@ -1501,6 +1901,9 @@ class GenAISemanticProcessor(TracingProcessor):
         self._tokens.clear()
         self._span_parents.clear()
         self._agent_content.clear()
+
+        if _GLOBAL_PROCESSOR_REF and _GLOBAL_PROCESSOR_REF[0] is self:
+            _GLOBAL_PROCESSOR_REF.clear()
 
     def force_flush(self) -> None:
         """Force flush (no-op for this processor)."""
@@ -1791,9 +2194,11 @@ class GenAISemanticProcessor(TracingProcessor):
     def _clone_message(self, message: Any) -> Any:
         if isinstance(message, dict):
             return {
-                key: self._clone_message(value)
-                if isinstance(value, (dict, list))
-                else value
+                key: (
+                    self._clone_message(value)
+                    if isinstance(value, (dict, list))
+                    else value
+                )
                 for key, value in message.items()
             }
         if isinstance(message, list):
@@ -2186,4 +2591,5 @@ __all__ = [
     "normalize_provider",
     "normalize_output_type",
     "validate_tool_type",
+    "stop_workflow",
 ]

@@ -344,9 +344,9 @@ def run_agent_with_telemetry(question: str):
     telemetry_callback = TelemetryCallback()
 
     # 1. Start Workflow
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"QUESTION: {question}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     workflow = Workflow(
         name="capital_question_workflow",
@@ -358,9 +358,9 @@ def run_agent_with_telemetry(question: str):
     handler.start_workflow(workflow)
 
     # 2. Create Agent with all attributes populated
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Creating ReAct agent...")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
     agent_obj = AgentCreation(
         name="capital_agent",
         agent_type="react",
@@ -385,9 +385,9 @@ def run_agent_with_telemetry(question: str):
     handler.stop_agent(agent_obj)
 
     # 3. Invoke Agent
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Invoking agent...")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
     agent_invocation = AgentInvocation(
         name="capital_agent",
         agent_type="react",
@@ -618,7 +618,7 @@ def run_agent_with_telemetry(question: str):
     handler.stop_workflow(workflow)
 
     # Log captured telemetry summary
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Telemetry Summary:")
     print(f"  LLM calls captured: {len(telemetry_callback.llm_calls)}")
     print(f"  Tool calls captured: {len(telemetry_callback.tool_calls)}")
@@ -629,11 +629,11 @@ def run_agent_with_telemetry(question: str):
     print(f"  Chain/Graph executions: {len(telemetry_callback.chain_calls)}")
     if telemetry_callback.agent_actions:
         print(f"  Agent actions: {len(telemetry_callback.agent_actions)}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"FINAL ANSWER: {final_answer}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     return final_answer
 
@@ -657,9 +657,9 @@ def main():
     run_agent_with_telemetry(question)
 
     # Wait for metrics to export
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Waiting for metrics export...")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
     time.sleep(6)
 
 
