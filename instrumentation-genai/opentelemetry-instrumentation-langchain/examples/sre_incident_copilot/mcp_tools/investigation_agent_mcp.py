@@ -1,16 +1,31 @@
 """MCP server exposing Investigation Agent as a tool."""
+# Suppress MCP server startup logs - must be done FIRST, before any imports
+import logging
+import os
+import sys
+
+# Set environment variable to suppress FastMCP logs
+os.environ.setdefault("FASTMCP_QUIET", "1")
+
+# Suppress all MCP-related loggers before any MCP imports
+# Set root logger to WARNING to suppress INFO messages
+logging.basicConfig(level=logging.WARNING, stream=sys.stderr, format="")
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.WARNING)
+
+# Suppress specific loggers
+for logger_name in ["mcp.server", "mcp.server.server", "mcp", "fastmcp", "fastmcp.server"]:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
+    # Remove all handlers to prevent output
+    logger.handlers = []
 
 import asyncio
 import json
-import logging
-import sys
 from pathlib import Path
 
 from fastmcp import FastMCP
-
-# Suppress MCP server startup logs
-logging.getLogger("mcp.server").setLevel(logging.WARNING)
-logging.getLogger("mcp").setLevel(logging.WARNING)
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
