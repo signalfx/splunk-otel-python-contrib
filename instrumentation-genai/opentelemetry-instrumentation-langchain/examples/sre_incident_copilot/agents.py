@@ -2,10 +2,10 @@
 
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict
 
 from langchain.agents import create_agent as create_react_agent
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
 from config import Config
@@ -101,7 +101,7 @@ Output a JSON object with:
                 try:
                     investigation_result_data = json.loads(msg.content)
                     break
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
     # Parse the response
@@ -120,7 +120,7 @@ Output a JSON object with:
             triage_result = json.loads(content[json_start:json_end])
         else:
             triage_result = {"raw_response": content}
-    except:
+    except (json.JSONDecodeError, TypeError, ValueError):
         triage_result = {"raw_response": content}
 
     state["triage_result"] = triage_result
@@ -504,7 +504,7 @@ Output a JSON object with:
             action_plan = json.loads(content[json_start:json_end])
         else:
             action_plan = {"raw_response": content}
-    except:
+    except (json.JSONDecodeError, TypeError, ValueError):
         action_plan = {"raw_response": content}
 
     state["action_plan"] = action_plan
@@ -528,7 +528,7 @@ Output a JSON object with:
                 
                 # Skip if required fields are missing
                 if not clean_task_spec.get("title") or not clean_task_spec.get("description"):
-                    print(f"⚠️  Skipping task creation: missing required fields (title or description)")
+                    print("⚠️  Skipping task creation: missing required fields (title or description)")
                     continue
                 
                 task_result = task_writer.invoke(clean_task_spec)
@@ -562,7 +562,6 @@ def quality_gate_agent(state: Dict, config: Config) -> Dict:
     confidence_score = state.get("confidence_score", 0.5)
     hypotheses = state.get("hypotheses", [])
     action_plan = state.get("action_plan", {})
-    investigation_result = state.get("investigation_result", {})
 
     # Get alert info for requires_approval check
     alert_id = state.get("alert_id")
@@ -634,7 +633,7 @@ Output a JSON object with:
                 and evidence_count >= evidence_threshold,
                 "writeback_allowed": False,
             }
-    except:
+    except (json.JSONDecodeError, TypeError, ValueError, KeyError):
         quality_result = {
             "validation_passed": confidence_score >= confidence_threshold
             and evidence_count >= evidence_threshold,

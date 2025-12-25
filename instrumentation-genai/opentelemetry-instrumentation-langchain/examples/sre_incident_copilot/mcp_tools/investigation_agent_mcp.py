@@ -21,11 +21,11 @@ for logger_name in ["mcp.server", "mcp.server.server", "mcp", "fastmcp", "fastmc
     # Remove all handlers to prevent output
     logger.handlers = []
 
-import asyncio
-import json
-from pathlib import Path
+import asyncio  # noqa: E402
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP  # noqa: E402
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))

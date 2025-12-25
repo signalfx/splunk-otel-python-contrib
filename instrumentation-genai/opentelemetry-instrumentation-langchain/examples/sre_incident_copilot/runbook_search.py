@@ -1,6 +1,5 @@
 """Runbook search using RAG (Retrieval Augmented Generation)."""
 
-import os
 from pathlib import Path
 from typing import List, Optional
 

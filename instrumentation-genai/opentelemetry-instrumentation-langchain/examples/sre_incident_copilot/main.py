@@ -64,10 +64,6 @@ def route_after_action_planner(state: IncidentState) -> str:
 
 def route_after_quality_gate(state: IncidentState) -> str:
     """Route after quality gate - orchestrator decision with conditional logic."""
-    quality_result = state.get("quality_gate_result") or {}
-    validation_passed = quality_result.get("validation_passed", False)
-    confidence_score = state.get("confidence_score", 0.0)
-
     # Always end workflow (routing message will be printed after node execution)
     return END
 
@@ -318,7 +314,7 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
                 print(f"   → Routing to action_planner (service: {service_id})")
             else:
                 print(f"   → Routing to action_planner (service: {service_id})")
-                print(f"   ⚠️  Warning: Investigation not completed via agent-as-tool")
+                print("   ⚠️  Warning: Investigation not completed via agent-as-tool")
         elif node_name == "action_planner":
             action_plan = node_state.get("action_plan", {})
             mitigation_plan = (
@@ -340,7 +336,7 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
 
         previous_node = node_name
 
-    print(f"\n📋 Workflow execution summary:")
+    print("\n📋 Workflow execution summary:")
     print(f"   Nodes executed: {nodes_executed}")
     expected_nodes = ["triage", "action_planner", "quality_gate"]
     missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
@@ -349,7 +345,7 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
     
     # Check if investigation was done via agent-as-tool
     if final_state.get("hypotheses") or final_state.get("investigation_result"):
-        print(f"   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)")
+        print("   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)")
 
     return final_state
 
@@ -425,7 +421,7 @@ def main():
 
         # Print summary
         quality_result = final_state.get("quality_gate_result") or {}
-        print(f"\n📊 Quality Gate Results:")
+        print("\n📊 Quality Gate Results:")
         print(
             f"   Validation Passed: {quality_result.get('validation_passed', False) if quality_result else False}"
         )
@@ -435,7 +431,7 @@ def main():
         print(f"   Confidence Score: {final_state.get('confidence_score', 0.0):.2f}")
 
         # Print validation results
-        print(f"\n📈 Business Logic Validation:")
+        print("\n📈 Business Logic Validation:")
         print(
             f"   Overall Validation: {validation_report.get('validation_passed', False)}"
         )

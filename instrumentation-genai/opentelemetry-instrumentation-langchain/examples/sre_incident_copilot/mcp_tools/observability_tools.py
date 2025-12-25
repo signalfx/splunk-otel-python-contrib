@@ -21,11 +21,11 @@ for logger_name in ["mcp.server", "mcp.server.server", "mcp", "fastmcp", "fastmc
     # Remove all handlers to prevent output
     logger.handlers = []
 
-import random
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+import random  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
+from typing import Any, Dict, Optional  # noqa: E402
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP  # noqa: E402
 
 mcp = FastMCP("observability-tools")
 

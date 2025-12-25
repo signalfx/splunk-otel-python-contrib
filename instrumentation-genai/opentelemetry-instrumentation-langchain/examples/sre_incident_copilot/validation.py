@@ -6,7 +6,6 @@ instrumentation's completion callback mechanism. This module focuses on
 validating business logic and expected outcomes.
 """
 
-import json
 import logging
 from typing import Dict, Optional
 

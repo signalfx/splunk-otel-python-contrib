@@ -3,8 +3,6 @@
 import argparse
 import json
 import os
-import random
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -222,11 +220,11 @@ def main():
         print(f"\n📊 Summary saved to: {summary_file}")
 
     # Print summary
-    print(f"\n📈 Simulation Summary")
+    print("\n📈 Simulation Summary")
     print(f"   Total Runs: {summary['total_runs']}")
     print(f"   Passed: {summary['passed_runs']}")
     print(f"   Failed: {summary['failed_runs']}")
-    print(f"\nNote: Evaluation metrics are emitted as OTEL metrics/logs automatically")
+    print("\nNote: Evaluation metrics are emitted as OTEL metrics/logs automatically")
 
 
 if __name__ == "__main__":

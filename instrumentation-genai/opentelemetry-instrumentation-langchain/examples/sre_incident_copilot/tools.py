@@ -19,8 +19,8 @@ def debug_print(msg: str):
     """Print debug messages to stderr to avoid breaking MCP stdio protocol."""
     print(msg, file=sys.stderr)
 
-from data_loader import DataLoader
-from runbook_search import RunbookSearch
+from data_loader import DataLoader  # noqa: E402
+from runbook_search import RunbookSearch  # noqa: E402
 
 
 # Initialize shared resources
@@ -379,8 +379,6 @@ def investigation_agent_mcp(
     Returns:
         JSON string with investigation results
     """
-    import sys
-    from pathlib import Path
 
     mcp_script_path = os.path.join(
         os.path.dirname(__file__), "mcp_tools", "investigation_agent_mcp.py"
