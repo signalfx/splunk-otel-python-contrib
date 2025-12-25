@@ -1,0 +1,207 @@
+🔍 Validating All Scenarios (No Drift)
+================================================================================
+Found 10 scenarios to validate
+
+
+================================================================================
+Scenario: scenario-001
+  Alert: Payment Service Error Rate Spike
+  Service: payment-service
+  Expected Root Cause: database_connection_pool_exhaustion
+================================================================================
+
+🤖 Triage Agent
+   Status: investigation
+   → Routing to investigation (service: payment-service)
+🔧 [TOOL] metrics_query called: service_id=payment-service, metric_name=error_rate, scenario_id=scenario-001
+🔧 [TOOL] metrics_query called: service_id=payment-service, metric_name=latency_p95, scenario_id=scenario-001
+🔧 [TOOL] logs_search called: service_id=payment-service, query=error, scenario_id=scenario-001
+🔧 [TOOL] logs_search called: service_id=payment-service, query=warning, scenario_id=scenario-001
+🔧 [TOOL] trace_query called: service_id=payment-service, operation=None, scenario_id=scenario-001
+🔧 [TOOL] trace_query result: {"service_id": "payment-service", "operation": null, "time_window": "1h", "traces": [{"trace_id": "trace-001", "span_id": "span-001", "service": "payment-service", "operation": "process_payment", "dur...
+🔧 [TOOL] metrics_query result: {"service_id": "payment-service", "metric_name": "latency_p95", "time_window": "15m", "data_points": [{"timestamp": "2024-01-16T10:30:00Z", "value": 200}, {"timestamp": "2024-01-16T10:35:00Z", "value"...
+🔧 [TOOL] logs_search result: {"service_id": "payment-service", "query": "error", "time_window": "1h", "results": [{"timestamp": "2024-01-16T10:42:00Z", "level": "ERROR", "message": "Database connection pool exhausted, unable to a...
+🔧 [TOOL] metrics_query result: {"service_id": "payment-service", "metric_name": "error_rate", "time_window": "15m", "data_points": [{"timestamp": "2024-01-16T10:30:00Z", "value": 0.01}, {"timestamp": "2024-01-16T10:35:00Z", "value"...
+🔧 [TOOL] logs_search result: {"service_id": "payment-service", "query": "warning", "time_window": "1h", "results": [], "count": 0, "status": "success"}...
+
+🤖 Investigation Agent
+   Status: action_planner
+   → Routing to action_planner (2 hypotheses)
+   Investigation result keys: ['hypotheses', 'evidence_summary']
+   Service ID: payment-service
+
+🤖 Action Planner Agent
+   Status: quality_gate
+   → Routing to quality_gate (4 actions)
+
+🤖 Quality Gate Agent
+   Status: completed
+   → Quality gate passed (confidence: 0.85), ending workflow
+
+📋 Workflow execution summary:
+   Nodes executed: ['triage', 'investigation', 'action_planner', 'quality_gate']
+
+✅ PASS Validation Results:
+  Hypothesis Match: True (Expected: database_connection_pool_exhaustion)
+    Top Hypothesis: The spike in error rates is due to database connection pool exhaustion, leading to connection timeou...
+    Matched Keywords: ['database', 'connection', 'pool', 'exhaustion', 'connection', 'pool', 'database', 'connection pool']
+  Evidence Sufficient: True
+  Action Safe: True
+  Runbook Grounded: False
+
+================================================================================
+Scenario: scenario-002
+  Alert: User Service P95 Latency Spike
+  Service: user-service
+  Expected Root Cause: cache_miss_storm
+================================================================================
+
+🤖 Triage Agent
+   Status: investigation
+   → Routing to investigation (service: user-service)
+🔧 [TOOL] metrics_query called: service_id=user-service, metric_name=error_rate, scenario_id=scenario-002
+🔧 [TOOL] metrics_query called: service_id=user-service, metric_name=latency_p95, scenario_id=scenario-002
+🔧 [TOOL] logs_search called: service_id=user-service, query=error, scenario_id=scenario-002
+🔧 [TOOL] logs_search called: service_id=user-service, query=warning, scenario_id=scenario-002
+🔧 [TOOL] trace_query called: service_id=user-service, operation=None, scenario_id=scenario-002
+🔧 [TOOL] logs_search result: {"service_id": "user-service", "query": "warning", "time_window": "1h", "results": [], "count": 0, "status": "success"}...
+🔧 [TOOL] metrics_query result: {"service_id": "user-service", "metric_name": "error_rate", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:22:31.974599+00:00Z", "value": 1.84}, {"timestamp": "2025-12-23T16:27:31....
+🔧 [TOOL] metrics_query result: {"service_id": "user-service", "metric_name": "latency_p95", "time_window": "15m", "data_points": [{"timestamp": "2024-01-16T10:50:00Z", "value": 150}, {"timestamp": "2024-01-16T10:55:00Z", "value": 3...
+🔧 [TOOL] trace_query result: {"service_id": "user-service", "operation": null, "time_window": "15m", "traces": [{"trace_id": "trace-003", "span_id": "span-003", "service": "user-service", "operation": "get_user_profile", "duratio...
+🔧 [TOOL] logs_search result: {"service_id": "user-service", "query": "error", "time_window": "1h", "results": [], "count": 0, "status": "success"}...
+
+🤖 Investigation Agent
+   Status: action_planner
+   → Routing to action_planner (3 hypotheses)
+   Investigation result keys: ['hypotheses', 'evidence_summary']
+   Service ID: user-service
+
+🤖 Action Planner Agent
+   Status: quality_gate
+   → Routing to quality_gate (5 actions)
+
+🤖 Quality Gate Agent
+   Status: completed
+   → Quality gate passed (confidence: 0.85), ending workflow
+
+📋 Workflow execution summary:
+   Nodes executed: ['triage', 'investigation', 'action_planner', 'quality_gate']
+
+❌ FAIL Validation Results:
+  Hypothesis Match: False (Expected: cache_miss_storm)
+    Top Hypothesis: Increased latency in database queries is causing timeouts in the user service....
+    Reason: None of the expected keywords ['cache', 'miss', 'storm', 'cache', 'miss', 'storm', 'hit rate', 'cache hit', 'cache miss', 'eviction', 'cache performance'] found in hypothesis: 'increased latency in database queries is causing timeouts in the user service....'
+  Evidence Sufficient: True
+  Action Safe: True
+  Runbook Grounded: False
+
+================================================================================
+Scenario: scenario-003
+  Alert: API Gateway Error Rate Critical
+  Service: api-gateway
+  Expected Root Cause: recent_deployment_issue
+================================================================================
+
+🤖 Triage Agent
+   Status: investigation
+   → Routing to investigation (service: api-gateway)
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=error_rate, scenario_id=scenario-003
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=downstream_service_latency_p95, scenario_id=scenario-003
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=downstream_service_availability, scenario_id=scenario-003
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=downstream_service_error_rate, scenario_id=scenario-003
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=circuit_breaker_state, scenario_id=scenario-003
+🔧 [TOOL] logs_search called: service_id=api-gateway, query=error, scenario_id=scenario-003
+🔧 [TOOL] logs_search called: service_id=api-gateway, query=warning, scenario_id=scenario-003
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=network_latency, scenario_id=scenario-003
+🔧 [TOOL] metrics_query called: service_id=api-gateway, metric_name=network_error_rate, scenario_id=scenario-003
+🔧 [TOOL] trace_query called: service_id=api-gateway, operation=None, scenario_id=scenario-003
+🔧 [TOOL] trace_query result: {"service_id": "api-gateway", "operation": null, "time_window": "1h", "traces": [{"trace_id": "trace-005", "span_id": "span-005", "service": "api-gateway", "operation": "route_request", "duration_ms":...
+🔧 [TOOL] logs_search result: {"service_id": "api-gateway", "query": "error", "time_window": "1h", "results": [{"timestamp": "2024-01-16T11:13:00Z", "level": "ERROR", "message": "Downstream service error rate increased", "service"...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "downstream_service_error_rate", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:23:35.675618+00:00Z", "value": 1.56}, {"timestamp": "20...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "downstream_service_latency_p95", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:23:35.676575+00:00Z", "value": 891.23}, {"timestamp": ...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "network_error_rate", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:23:35.677876+00:00Z", "value": 3.32}, {"timestamp": "2025-12-23T16...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "downstream_service_availability", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:23:35.677576+00:00Z", "value": 490.02}, {"timestamp":...
+🔧 [TOOL] logs_search result: {"service_id": "api-gateway", "query": "warning", "time_window": "1h", "results": [], "count": 0, "status": "success"}...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "network_latency", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:23:35.677719+00:00Z", "value": 753.41}, {"timestamp": "2025-12-23T16:...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "circuit_breaker_state", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:23:35.676528+00:00Z", "value": 264.78}, {"timestamp": "2025-12-...
+🔧 [TOOL] metrics_query result: {"service_id": "api-gateway", "metric_name": "error_rate", "time_window": "15m", "data_points": [{"timestamp": "2024-01-16T11:10:00Z", "value": 0.01}, {"timestamp": "2024-01-16T11:12:00Z", "value": 5....
+
+🤖 Investigation Agent
+   Status: action_planner
+   → Routing to action_planner (3 hypotheses)
+   Investigation result keys: ['hypotheses', 'evidence_summary']
+   Service ID: api-gateway
+
+🤖 Action Planner Agent
+   Status: quality_gate
+   → Routing to quality_gate (4 actions)
+
+🤖 Quality Gate Agent
+   Status: completed
+   → Quality gate passed (confidence: 0.85), ending workflow
+
+📋 Workflow execution summary:
+   Nodes executed: ['triage', 'investigation', 'action_planner', 'quality_gate']
+
+❌ FAIL Validation Results:
+  Hypothesis Match: False (Expected: recent_deployment_issue)
+    Top Hypothesis: Increased error rates in the downstream service are causing the spike in error rates for the api-gat...
+    Reason: None of the expected keywords ['recent', 'deployment', 'issue', 'deployment', 'deploy', 'release', 'version', 'rollout', 'new version'] found in hypothesis: 'increased error rates in the downstream service are causing the spike in error rates for the api-gateway....'
+  Evidence Sufficient: True
+  Action Safe: False
+  Runbook Grounded: False
+
+================================================================================
+Scenario: scenario-004
+  Alert: Database Connection Pool Exhausted
+  Service: database-primary
+  Expected Root Cause: connection_leak
+================================================================================
+
+🤖 Triage Agent
+   Status: investigation
+   → Routing to investigation (service: database-primary)
+🔧 [TOOL] metrics_query called: service_id=database-primary, metric_name=active_connections, scenario_id=scenario-004
+🔧 [TOOL] metrics_query called: service_id=database-primary, metric_name=error_rate, scenario_id=scenario-004
+🔧 [TOOL] metrics_query called: service_id=database-primary, metric_name=latency_p95, scenario_id=scenario-004
+🔧 [TOOL] logs_search called: service_id=database-primary, query=connection leak, scenario_id=scenario-004
+🔧 [TOOL] logs_search called: service_id=database-primary, query=error, scenario_id=scenario-004
+🔧 [TOOL] trace_query called: service_id=database-primary, operation=None, scenario_id=scenario-004
+🔧 [TOOL] logs_search result: {"service_id": "database-primary", "query": "connection leak", "time_window": "1h", "results": [], "count": 0, "status": "success"}...
+🔧 [TOOL] logs_search result: {"service_id": "database-primary", "query": "error", "time_window": "1h", "results": [{"timestamp": "2024-01-16T11:28:00Z", "level": "ERROR", "message": "Database connection pool exhausted", "service"...
+🔧 [TOOL] trace_query result: {"service_id": "database-primary", "operation": null, "time_window": "1h", "traces": [{"trace_id": "trace-007", "span_id": "span-007", "service": "database-primary", "operation": "query", "duration_ms...
+🔧 [TOOL] metrics_query result: {"service_id": "database-primary", "metric_name": "active_connections", "time_window": "15m", "data_points": [{"timestamp": "2024-01-16T11:25:00Z", "value": 80}, {"timestamp": "2024-01-16T11:28:00Z", ...
+🔧 [TOOL] metrics_query result: {"service_id": "database-primary", "metric_name": "latency_p95", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:24:45.936984+00:00Z", "value": 733.78}, {"timestamp": "2025-12-23T16...
+🔧 [TOOL] metrics_query result: {"service_id": "database-primary", "metric_name": "error_rate", "time_window": "15m", "data_points": [{"timestamp": "2025-12-23T16:24:45.939050+00:00Z", "value": 0.63}, {"timestamp": "2025-12-23T16:29...
+
+🤖 Investigation Agent
+   Status: action_planner
+   → Routing to action_planner (3 hypotheses)
+   Investigation result keys: ['hypotheses', 'evidence_summary']
+   Service ID: database-primary
+
+🤖 Action Planner Agent
+   Status: quality_gate
+   → Routing to quality_gate (4 actions)
+
+🤖 Quality Gate Agent
+   Status: completed
+   → Quality gate passed (confidence: 0.85), ending workflow
+
+📋 Workflow execution summary:
+   Nodes executed: ['triage', 'investigation', 'action_planner', 'quality_gate']
+
+❌ FAIL Validation Results:
+  Hypothesis Match: True (Expected: connection_leak)
+    Top Hypothesis: The database connection pool is exhausted due to high active connections....
+    Matched Keywords: ['connection', 'connection', 'database', 'pool']
+  Evidence Sufficient: True
+  Action Safe: False
+  Runbook Grounded: False
+
+================================================================================
+Scenario: scenario-005
+  Alert: Redis Cache Memory Pressure
+  Service: redis-cache
+  Expected Root Cause: cache_key_explosion
+================================================================================

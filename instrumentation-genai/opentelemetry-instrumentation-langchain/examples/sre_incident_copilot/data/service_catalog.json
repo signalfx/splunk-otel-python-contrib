@@ -1,0 +1,149 @@
+{
+  "services": [
+    {
+      "id": "payment-service",
+      "name": "Payment Service",
+      "team": "payments-team",
+      "owner": "alice@example.com",
+      "region": "us-east-1",
+      "dependencies": ["database-primary", "redis-cache"],
+      "slo": {
+        "availability": 99.9,
+        "latency_p95": 200,
+        "error_rate": 0.01
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-15T10:30:00Z",
+        "version": "v2.3.1",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "user-service",
+      "name": "User Service",
+      "team": "identity-team",
+      "owner": "bob@example.com",
+      "region": "us-west-2",
+      "dependencies": ["database-primary", "auth-service"],
+      "slo": {
+        "availability": 99.95,
+        "latency_p95": 150,
+        "error_rate": 0.005
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-14T15:20:00Z",
+        "version": "v1.8.2",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "api-gateway",
+      "name": "API Gateway",
+      "team": "platform-team",
+      "owner": "charlie@example.com",
+      "region": "us-east-1",
+      "dependencies": [],
+      "slo": {
+        "availability": 99.99,
+        "latency_p95": 50,
+        "error_rate": 0.001
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-16T08:00:00Z",
+        "version": "v3.1.0",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "database-primary",
+      "name": "Primary Database",
+      "team": "data-platform-team",
+      "owner": "diana@example.com",
+      "region": "us-east-1",
+      "dependencies": [],
+      "slo": {
+        "availability": 99.99,
+        "latency_p95": 10,
+        "error_rate": 0.0001
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-10T12:00:00Z",
+        "version": "postgres-14.5",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "redis-cache",
+      "name": "Redis Cache",
+      "team": "platform-team",
+      "owner": "charlie@example.com",
+      "region": "us-east-1",
+      "dependencies": [],
+      "slo": {
+        "availability": 99.9,
+        "latency_p95": 5,
+        "error_rate": 0.001
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-12T09:15:00Z",
+        "version": "redis-7.0",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "auth-service",
+      "name": "Authentication Service",
+      "team": "identity-team",
+      "owner": "bob@example.com",
+      "region": "us-west-2",
+      "dependencies": ["database-primary"],
+      "slo": {
+        "availability": 99.95,
+        "latency_p95": 100,
+        "error_rate": 0.005
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-13T14:45:00Z",
+        "version": "v2.0.1",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "notification-service",
+      "name": "Notification Service",
+      "team": "messaging-team",
+      "owner": "eve@example.com",
+      "region": "us-east-1",
+      "dependencies": ["database-primary"],
+      "slo": {
+        "availability": 99.8,
+        "latency_p95": 300,
+        "error_rate": 0.02
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-11T11:30:00Z",
+        "version": "v1.5.3",
+        "environment": "production"
+      }
+    },
+    {
+      "id": "analytics-service",
+      "name": "Analytics Service",
+      "team": "data-team",
+      "owner": "frank@example.com",
+      "region": "us-west-2",
+      "dependencies": ["database-primary", "redis-cache"],
+      "slo": {
+        "availability": 99.5,
+        "latency_p95": 500,
+        "error_rate": 0.05
+      },
+      "deployment_info": {
+        "last_deploy": "2024-01-09T16:20:00Z",
+        "version": "v3.2.0",
+        "environment": "production"
+      }
+    }
+  ]
+}
+
