@@ -152,20 +152,28 @@ Output a JSON object with:
             if "evidence_summary" in investigation_result_data:
                 if "investigation_result" not in state:
                     state["investigation_result"] = {}
-                state["investigation_result"]["evidence_summary"] = investigation_result_data["evidence_summary"]
+                state["investigation_result"]["evidence_summary"] = (
+                    investigation_result_data["evidence_summary"]
+                )
             if "evidence_types" in investigation_result_data:
                 if "investigation_result" not in state:
                     state["investigation_result"] = {}
-                state["investigation_result"]["evidence_types"] = investigation_result_data["evidence_types"]
+                state["investigation_result"]["evidence_types"] = (
+                    investigation_result_data["evidence_types"]
+                )
             # Extract confidence_score
             if "confidence_score" in investigation_result_data:
-                state["confidence_score"] = investigation_result_data["confidence_score"]
+                state["confidence_score"] = investigation_result_data[
+                    "confidence_score"
+                ]
             elif "investigation_result" in investigation_result_data:
                 inv_result = investigation_result_data["investigation_result"]
                 if isinstance(inv_result, dict) and "confidence_score" in inv_result:
                     state["confidence_score"] = inv_result["confidence_score"]
 
-    state["current_agent"] = "action_planner"  # Next agent is action_planner (investigation done as tool)
+    state["current_agent"] = (
+        "action_planner"  # Next agent is action_planner (investigation done as tool)
+    )
 
     return state
 
@@ -525,17 +533,22 @@ Output a JSON object with:
                 }
                 if "assignee" in task_spec:
                     clean_task_spec["assignee"] = task_spec["assignee"]
-                
+
                 # Skip if required fields are missing
-                if not clean_task_spec.get("title") or not clean_task_spec.get("description"):
-                    print("⚠️  Skipping task creation: missing required fields (title or description)")
+                if not clean_task_spec.get("title") or not clean_task_spec.get(
+                    "description"
+                ):
+                    print(
+                        "⚠️  Skipping task creation: missing required fields (title or description)"
+                    )
                     continue
-                
+
                 task_result = task_writer.invoke(clean_task_spec)
                 tasks_created.append(json.loads(task_result))
             except Exception as e:
                 print(f"⚠️  Error creating task: {e}")
                 import traceback
+
                 traceback.print_exc()
 
     state["tickets_created"] = tasks_created

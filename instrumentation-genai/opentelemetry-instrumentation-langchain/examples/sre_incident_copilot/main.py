@@ -24,7 +24,7 @@ from incident_types import IncidentState
 
 def route_after_triage(state: IncidentState) -> str:
     """Route after triage agent - orchestrator decision.
-    
+
     Note: Investigation is done as agent-as-tool (investigation_agent_mcp called by triage),
     so we route directly to action_planner.
     """
@@ -70,7 +70,7 @@ def route_after_quality_gate(state: IncidentState) -> str:
 
 def build_workflow(config: Config) -> StateGraph:
     """Build the LangGraph workflow with conditional routing (orchestrator pattern).
-    
+
     Note: Investigation Agent is called as a tool (agent-as-tool pattern) by Triage Agent,
     not as a separate node in the workflow.
     """
@@ -310,7 +310,9 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
             hypotheses = node_state.get("hypotheses", [])
             investigation_result = node_state.get("investigation_result", {})
             if hypotheses or investigation_result:
-                print(f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)")
+                print(
+                    f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)"
+                )
                 print(f"   → Routing to action_planner (service: {service_id})")
             else:
                 print(f"   → Routing to action_planner (service: {service_id})")
@@ -342,10 +344,12 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
     missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
     if missing_nodes:
         print(f"   ⚠️  Missing nodes: {missing_nodes}")
-    
+
     # Check if investigation was done via agent-as-tool
     if final_state.get("hypotheses") or final_state.get("investigation_result"):
-        print("   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)")
+        print(
+            "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
+        )
 
     return final_state
 

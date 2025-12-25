@@ -14,10 +14,12 @@ from mcp.client.stdio import stdio_client
 # Suppress MCP client logging
 logging.getLogger("mcp").setLevel(logging.ERROR)
 
+
 # Use stderr for debug output to avoid interfering with MCP stdio communication
 def debug_print(msg: str):
     """Print debug messages to stderr to avoid breaking MCP stdio protocol."""
     print(msg, file=sys.stderr)
+
 
 from data_loader import DataLoader  # noqa: E402
 from runbook_search import RunbookSearch  # noqa: E402
@@ -57,7 +59,9 @@ def runbook_search(query: str, k: int = 3) -> str:
     """
     debug_print(f"🔧 [TOOL] runbook_search called: query={query[:100]}..., k={k}")
     results = _runbook_search.search(query, k=k)
-    debug_print(f"🔧 [TOOL] runbook_search result: Found {len(results)} runbook sections")
+    debug_print(
+        f"🔧 [TOOL] runbook_search result: Found {len(results)} runbook sections"
+    )
     if results:
         for i, r in enumerate(results[:2], 1):  # Show first 2
             debug_print(
@@ -82,7 +86,7 @@ async def _call_mcp_tool(
     env = os.environ.copy()
     env.setdefault("FASTMCP_QUIET", "1")
     env.setdefault("PYTHONUNBUFFERED", "1")
-    
+
     server_params = StdioServerParameters(
         command="python",
         args=[mcp_script_path],
@@ -388,7 +392,7 @@ def investigation_agent_mcp(
     env = os.environ.copy()
     env.setdefault("FASTMCP_QUIET", "1")
     env.setdefault("PYTHONUNBUFFERED", "1")
-    
+
     server_params = StdioServerParameters(
         command="python",
         args=[mcp_script_path],

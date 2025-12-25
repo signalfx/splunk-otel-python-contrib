@@ -1,4 +1,5 @@
 """MCP server exposing Investigation Agent as a tool."""
+
 # Suppress MCP server startup logs - must be done FIRST, before any imports
 import logging
 import os
@@ -14,7 +15,13 @@ root_logger = logging.getLogger()
 root_logger.setLevel(logging.WARNING)
 
 # Suppress specific loggers
-for logger_name in ["mcp.server", "mcp.server.server", "mcp", "fastmcp", "fastmcp.server"]:
+for logger_name in [
+    "mcp.server",
+    "mcp.server.server",
+    "mcp",
+    "fastmcp",
+    "fastmcp.server",
+]:
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.WARNING)
     logger.propagate = False
