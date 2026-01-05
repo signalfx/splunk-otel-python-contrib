@@ -9,19 +9,22 @@ import asyncio
 import base64
 import json
 import os
-import sys
-import time
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import requests
 from llama_index.core.agent import ReActAgent
-from llama_index.core.base.llms.types import ChatMessage, ChatResponse, CompletionResponse, LLMMetadata, MessageRole
+from llama_index.core.base.llms.types import (
+    ChatMessage,
+    ChatResponse,
+    CompletionResponse,
+    LLMMetadata,
+    MessageRole,
+)
 from llama_index.core.llms import CustomLLM
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
-from llama_index.core import Settings
 
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
@@ -36,7 +39,7 @@ from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 # OAuth2 Token Manager for CircuIT
 class OAuth2TokenManager:
     """Manages OAuth2 token lifecycle for CircuIT.
-    
+
     Handles token retrieval, file-based caching, and automatic refresh with a 5-minute buffer.
     """
 
@@ -200,7 +203,7 @@ _llm_instance = None
 def get_llm():
     """Get or create LLM instance (OpenAI or CircuIT based on env vars)."""
     global _llm_instance
-    
+
     if _llm_instance is None:
         # Check for CircuIT credentials first
         circuit_vars = {
@@ -210,10 +213,12 @@ def get_llm():
             "CIRCUIT_CLIENT_SECRET": os.getenv("CIRCUIT_CLIENT_SECRET"),
             "CIRCUIT_APP_KEY": os.getenv("CIRCUIT_APP_KEY"),
         }
-        
+
         # Check if all CircuIT vars are set and not empty
-        has_circuit = all(val is not None and val.strip() != "" for val in circuit_vars.values())
-        
+        has_circuit = all(
+            val is not None and val.strip() != "" for val in circuit_vars.values()
+        )
+
         if has_circuit:
             print("✓ Using CircuIT LLM")
             print(f"  Base URL: {circuit_vars['CIRCUIT_BASE_URL']}")
@@ -235,13 +240,17 @@ def get_llm():
             _llm_instance = OpenAI(model="gpt-4o-mini", temperature=0)
         else:
             # Debug: show which vars are missing
-            missing = [name for name, val in circuit_vars.items() if not val or val.strip() == ""]
+            missing = [
+                name
+                for name, val in circuit_vars.items()
+                if not val or val.strip() == ""
+            ]
             error_msg = "No LLM credentials found.\n"
             if missing:
                 error_msg += f"Missing CircuIT variables: {', '.join(missing)}\n"
             error_msg += "Set either OPENAI_API_KEY or all CIRCUIT_* variables."
             raise ValueError(error_msg)
-    
+
     return _llm_instance
 
 
@@ -362,9 +371,9 @@ async def invoke_workflow(
 ) -> str:
     """
     Orchestrates the multi-agent travel planning workflow.
-    
+
     Workflow: invoke_workflow → flight_specialist → hotel_specialist → activity_specialist
-    
+
     Args:
         origin: Departure city
         destination: Arrival city
@@ -374,7 +383,7 @@ async def invoke_workflow(
         duration: Trip duration in days
         travelers: Number of travelers
         interests: List of traveler interests
-        
+
     Returns:
         Aggregated results from all specialist agents
     """
@@ -391,7 +400,9 @@ async def invoke_workflow(
     # 2. Hotel Specialist Agent
     print("\n--- Hotel Specialist Agent ---")
     hotel_agent = get_hotel_agent()
-    hotel_query = f"Search for hotels in {destination} from {departure_date} to {check_out_date}"
+    hotel_query = (
+        f"Search for hotels in {destination} from {departure_date} to {check_out_date}"
+    )
     hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
     hotel_response = await hotel_handler
     results.append(f"Hotels: {hotel_response}")
