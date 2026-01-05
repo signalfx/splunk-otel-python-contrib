@@ -6,11 +6,19 @@ OpenTelemetry instrumentation to capture traces and metrics.
 """
 
 import asyncio
+import base64
 import json
 import os
+import sys
+import time
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any
 
+import requests
 from llama_index.core.agent import ReActAgent
+from llama_index.core.base.llms.types import ChatMessage, ChatResponse, CompletionResponse, LLMMetadata, MessageRole
+from llama_index.core.llms import CustomLLM
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
 from llama_index.core import Settings
@@ -23,6 +31,218 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
+
+
+# OAuth2 Token Manager for CircuIT
+class OAuth2TokenManager:
+    """Manages OAuth2 token lifecycle for CircuIT.
+    
+    Handles token retrieval, file-based caching, and automatic refresh with a 5-minute buffer.
+    """
+
+    def __init__(
+        self,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        scope: str = None,
+        cache_file: str = "/tmp/circuit_token_cache.json",
+    ):
+        self.token_url = token_url
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.scope = scope
+        self.cache_file = cache_file
+
+    def _get_cached_token(self):
+        """Get token from cache file if valid."""
+        if not os.path.exists(self.cache_file):
+            return None
+
+        try:
+            with open(self.cache_file, "r") as f:
+                cache_data = json.load(f)
+
+            expires_at = datetime.fromisoformat(cache_data["expires_at"])
+            if datetime.now() < expires_at - timedelta(minutes=5):
+                return cache_data["access_token"]
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+        return None
+
+    def _fetch_new_token(self):
+        """Request a new access token from the OAuth2 server."""
+        # Create Basic Auth header
+        credentials = f"{self.client_id}:{self.client_secret}"
+        encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+        headers = {
+            "Authorization": f"Basic {encoded_credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        data = {"grant_type": "client_credentials"}
+        if self.scope:
+            data["scope"] = self.scope
+
+        response = requests.post(self.token_url, headers=headers, data=data)
+        response.raise_for_status()
+
+        token_data = response.json()
+        expires_in = token_data.get("expires_in", 3600)
+        expires_at = datetime.now() + timedelta(seconds=expires_in)
+
+        # Cache token to file with secure permissions
+        cache_data = {
+            "access_token": token_data["access_token"],
+            "expires_at": expires_at.isoformat(),
+        }
+
+        with open(self.cache_file, "w") as f:
+            json.dump(cache_data, f, indent=2)
+        os.chmod(self.cache_file, 0o600)  # rw------- (owner only)
+
+        return token_data["access_token"]
+
+    def get_token(self) -> str:
+        """Get a valid access token, refreshing if necessary."""
+        token = self._get_cached_token()
+        if token:
+            return token
+        return self._fetch_new_token()
+
+    def cleanup_token_cache(self):
+        """Securely remove token cache file."""
+        if os.path.exists(self.cache_file):
+            # Overwrite file with zeros before deletion for security
+            with open(self.cache_file, "r+b") as f:
+                length = f.seek(0, 2)  # Get file size
+                f.seek(0)
+                f.write(b"\0" * length)  # Overwrite with zeros
+            os.remove(self.cache_file)
+
+
+# Custom LLM for CircuIT
+class CircuITLLM(CustomLLM):
+    """Custom LLM implementation for Cisco CircuIT OAuth2 gateway."""
+
+    api_url: str
+    token_manager: OAuth2TokenManager
+    app_key: str
+    model_name: str = "gpt-4o-mini"
+    temperature: float = 0.0
+
+    @property
+    def metadata(self) -> LLMMetadata:
+        return LLMMetadata(
+            model_name=self.model_name,
+            context_window=128000,
+            num_output=4096,
+        )
+
+    def chat(self, messages: list[ChatMessage], **kwargs: Any) -> ChatResponse:
+        """Send chat request to CircuIT."""
+        access_token = self.token_manager.get_token()
+
+        # Convert LlamaIndex ChatMessage to OpenAI format
+        api_messages = [
+            {"role": msg.role.value, "content": msg.content} for msg in messages
+        ]
+
+        # CircuIT requires appkey in user field as JSON string
+        user_field = json.dumps({"appkey": self.app_key})
+
+        payload = {
+            "messages": api_messages,
+            "temperature": self.temperature,
+            "user": user_field,
+        }
+
+        headers = {
+            "api-key": access_token,
+            "Content-Type": "application/json",
+        }
+
+        response = requests.post(self.api_url, headers=headers, json=payload)
+        response.raise_for_status()
+
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+
+        return ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content=content),
+            raw=result,
+        )
+
+    async def achat(self, messages: list[ChatMessage], **kwargs: Any) -> ChatResponse:
+        """Async chat (uses sync implementation for now)."""
+        return self.chat(messages, **kwargs)
+
+    def stream_chat(self, messages: list[ChatMessage], **kwargs: Any):
+        """Stream chat (non-streaming implementation - yields single response)."""
+        # CircuIT doesn't support streaming, so just yield the complete response
+        response = self.chat(messages, **kwargs)
+        yield response
+
+    def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
+        """Complete is not used by ReActAgent, but required by interface."""
+        raise NotImplementedError("Use chat() instead")
+
+    def stream_complete(self, prompt: str, **kwargs: Any):
+        """Stream complete not implemented."""
+        raise NotImplementedError("Use chat() instead")
+
+
+# LLM Configuration
+_llm_instance = None
+
+
+def get_llm():
+    """Get or create LLM instance (OpenAI or CircuIT based on env vars)."""
+    global _llm_instance
+    
+    if _llm_instance is None:
+        # Check for CircuIT credentials first
+        circuit_vars = {
+            "CIRCUIT_BASE_URL": os.getenv("CIRCUIT_BASE_URL"),
+            "CIRCUIT_TOKEN_URL": os.getenv("CIRCUIT_TOKEN_URL"),
+            "CIRCUIT_CLIENT_ID": os.getenv("CIRCUIT_CLIENT_ID"),
+            "CIRCUIT_CLIENT_SECRET": os.getenv("CIRCUIT_CLIENT_SECRET"),
+            "CIRCUIT_APP_KEY": os.getenv("CIRCUIT_APP_KEY"),
+        }
+        
+        # Check if all CircuIT vars are set and not empty
+        has_circuit = all(val is not None and val.strip() != "" for val in circuit_vars.values())
+        
+        if has_circuit:
+            print("✓ Using CircuIT LLM")
+            print(f"  Base URL: {circuit_vars['CIRCUIT_BASE_URL']}")
+            token_manager = OAuth2TokenManager(
+                token_url=circuit_vars["CIRCUIT_TOKEN_URL"],
+                client_id=circuit_vars["CIRCUIT_CLIENT_ID"],
+                client_secret=circuit_vars["CIRCUIT_CLIENT_SECRET"],
+                scope=os.getenv("CIRCUIT_SCOPE"),
+            )
+            _llm_instance = CircuITLLM(
+                api_url=circuit_vars["CIRCUIT_BASE_URL"],
+                token_manager=token_manager,
+                app_key=circuit_vars["CIRCUIT_APP_KEY"],
+                model_name="gpt-4o-mini",
+                temperature=0,
+            )
+        elif os.getenv("OPENAI_API_KEY"):
+            print("✓ Using OpenAI LLM")
+            _llm_instance = OpenAI(model="gpt-4o-mini", temperature=0)
+        else:
+            # Debug: show which vars are missing
+            missing = [name for name, val in circuit_vars.items() if not val or val.strip() == ""]
+            error_msg = "No LLM credentials found.\n"
+            if missing:
+                error_msg += f"Missing CircuIT variables: {', '.join(missing)}\n"
+            error_msg += "Set either OPENAI_API_KEY or all CIRCUIT_* variables."
+            raise ValueError(error_msg)
+    
+    return _llm_instance
 
 
 # Setup Telemetry
@@ -94,11 +314,11 @@ def get_flight_agent():
     """Get or create the flight search agent."""
     global _flight_agent
     if _flight_agent is None:
-        Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
+        llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_flights)]
         system_prompt = "You are a flight search specialist. Use the search_flights tool to find flights, then provide the result."
         _flight_agent = ReActAgent(
-            tools=tools, llm=Settings.llm, verbose=True, system_prompt=system_prompt
+            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
         )
     return _flight_agent
 
@@ -107,11 +327,11 @@ def get_hotel_agent():
     """Get or create the hotel search agent."""
     global _hotel_agent
     if _hotel_agent is None:
-        Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
+        llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_hotels)]
         system_prompt = "You are a hotel search specialist. Use the search_hotels tool to find hotels, then provide the result."
         _hotel_agent = ReActAgent(
-            tools=tools, llm=Settings.llm, verbose=True, system_prompt=system_prompt
+            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
         )
     return _hotel_agent
 
@@ -120,13 +340,71 @@ def get_activity_agent():
     """Get or create the activity search agent."""
     global _activity_agent
     if _activity_agent is None:
-        Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
+        llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_activities)]
         system_prompt = "You are an activity recommendation specialist. Use the search_activities tool to find activities, then provide the result."
         _activity_agent = ReActAgent(
-            tools=tools, llm=Settings.llm, verbose=True, system_prompt=system_prompt
+            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
         )
     return _activity_agent
+
+
+# Multi-Agent Workflow Orchestrator
+async def invoke_workflow(
+    origin: str,
+    destination: str,
+    departure_date: str,
+    check_out_date: str,
+    budget: int = 3000,
+    duration: int = 5,
+    travelers: int = 2,
+    interests: list = None,
+) -> str:
+    """
+    Orchestrates the multi-agent travel planning workflow.
+    
+    Workflow: invoke_workflow → flight_specialist → hotel_specialist → activity_specialist
+    
+    Args:
+        origin: Departure city
+        destination: Arrival city
+        departure_date: Departure date (YYYY-MM-DD)
+        check_out_date: Hotel check-out date (YYYY-MM-DD)
+        budget: Total budget in USD
+        duration: Trip duration in days
+        travelers: Number of travelers
+        interests: List of traveler interests
+        
+    Returns:
+        Aggregated results from all specialist agents
+    """
+    results = []
+
+    # 1. Flight Specialist Agent
+    print("\n--- Flight Specialist Agent ---")
+    flight_agent = get_flight_agent()
+    flight_query = f"Search for flights from {origin} to {destination} departing on {departure_date}"
+    flight_handler = flight_agent.run(user_msg=flight_query, max_iterations=3)
+    flight_response = await flight_handler
+    results.append(f"Flights: {flight_response}")
+
+    # 2. Hotel Specialist Agent
+    print("\n--- Hotel Specialist Agent ---")
+    hotel_agent = get_hotel_agent()
+    hotel_query = f"Search for hotels in {destination} from {departure_date} to {check_out_date}"
+    hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
+    hotel_response = await hotel_handler
+    results.append(f"Hotels: {hotel_response}")
+
+    # 3. Activity Specialist Agent
+    print("\n--- Activity Specialist Agent ---")
+    activity_agent = get_activity_agent()
+    activity_query = f"Recommend activities in {destination}"
+    activity_handler = activity_agent.run(user_msg=activity_query, max_iterations=3)
+    activity_response = await activity_handler
+    results.append(f"Activities: {activity_response}")
+
+    return "\n\n".join(results)
 
 
 class TravelPlannerHandler(BaseHTTPRequestHandler):
@@ -183,50 +461,24 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     print(f"{'='*60}\n")
 
                     # Calculate check-out date
-                    from datetime import datetime, timedelta
-
                     check_in = datetime.strptime(departure_date, "%Y-%m-%d")
                     check_out = check_in + timedelta(days=duration)
                     check_out_date = check_out.strftime("%Y-%m-%d")
 
-                    # Run agents sequentially (like LangChain multi-agent approach)
-                    async def run_agents():
-                        results = []
-
-                        # 1. Flight specialist agent
-                        print("\n--- Flight Specialist Agent ---")
-                        flight_agent = get_flight_agent()
-                        flight_query = f"Search for flights from {origin} to {destination} departing on {departure_date}"
-                        flight_handler = flight_agent.run(
-                            user_msg=flight_query, max_iterations=3
-                        )
-                        flight_response = await flight_handler
-                        results.append(f"Flights: {flight_response}")
-
-                        # 2. Hotel specialist agent
-                        print("\n--- Hotel Specialist Agent ---")
-                        hotel_agent = get_hotel_agent()
-                        hotel_query = f"Search for hotels in {destination} from {departure_date} to {check_out_date}"
-                        hotel_handler = hotel_agent.run(
-                            user_msg=hotel_query, max_iterations=3
-                        )
-                        hotel_response = await hotel_handler
-                        results.append(f"Hotels: {hotel_response}")
-
-                        # 3. Activity specialist agent
-                        print("\n--- Activity Specialist Agent ---")
-                        activity_agent = get_activity_agent()
-                        activity_query = f"Recommend activities in {destination}"
-                        activity_handler = activity_agent.run(
-                            user_msg=activity_query, max_iterations=3
-                        )
-                        activity_response = await activity_handler
-                        results.append(f"Activities: {activity_response}")
-
-                        return "\n\n".join(results)
-
+                    # Invoke the multi-agent workflow
                     try:
-                        result = asyncio.run(run_agents())
+                        result = asyncio.run(
+                            invoke_workflow(
+                                origin=origin,
+                                destination=destination,
+                                departure_date=departure_date,
+                                check_out_date=check_out_date,
+                                budget=budget,
+                                duration=duration,
+                                travelers=travelers,
+                                interests=interests,
+                            )
+                        )
                     except RuntimeError as e:
                         if (
                             "asyncio.run() cannot be called from a running event loop"
@@ -236,7 +488,18 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
-                                result = loop.run_until_complete(run_agents())
+                                result = loop.run_until_complete(
+                                    invoke_workflow(
+                                        origin=origin,
+                                        destination=destination,
+                                        departure_date=departure_date,
+                                        check_out_date=check_out_date,
+                                        budget=budget,
+                                        duration=duration,
+                                        travelers=travelers,
+                                        interests=interests,
+                                    )
+                                )
                             finally:
                                 loop.close()
                         else:
@@ -255,7 +518,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                         "status": "success",
                         "request": request_data,
                         "plan": result,
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now().isoformat(),
                     }
 
                     self.wfile.write(json.dumps(response_data, indent=2).encode())
@@ -287,16 +550,18 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
 
 def main():
     """Start the travel planner server."""
-    # Check for API Key
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY environment variable is not set.")
-        return 1
-
-    # Setup telemetry
+    # Setup telemetry first
     setup_telemetry()
 
     # Auto-instrument LlamaIndex (captures telemetry automatically via callbacks)
     LlamaindexInstrumentor().instrument()
+
+    # Try to initialize LLM - this will fail with a clear error if credentials are missing
+    try:
+        get_llm()
+    except ValueError as e:
+        print(f"Error: {e}")
+        return 1
 
     # Start HTTP server
     port = int(os.getenv("PORT", "8080"))

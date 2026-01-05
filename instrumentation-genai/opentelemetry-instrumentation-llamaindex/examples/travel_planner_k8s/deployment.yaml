@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: travel-planner
-          image: shuniche855/llamaindex-travel-planner:0.0.9
+          image: shuniche855/llamaindex-travel-planner:0.0.10
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -26,12 +26,44 @@ spec:
             # Python unbuffered output for real-time logging
             - name: PYTHONUNBUFFERED
               value: "1"
-            # Load OpenAI API key from secret
+            # Load OpenAI API key from secret (optional - for OpenAI LLM)
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: openai-api-keys
                   key: openai-api-key
+                  optional: true
+            # CircuIT OAuth2 credentials (optional - for CircuIT LLM)
+            - name: CIRCUIT_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: base-url
+                  optional: true
+            - name: CIRCUIT_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: token-url
+                  optional: true
+            - name: CIRCUIT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: client-id
+                  optional: true
+            - name: CIRCUIT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: client-secret
+                  optional: true
+            - name: CIRCUIT_APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: app-key
+                  optional: true
             # Enable OTEL SDK (disabled in Dockerfile during build)
             - name: OTEL_SDK_DISABLED
               value: "false"
