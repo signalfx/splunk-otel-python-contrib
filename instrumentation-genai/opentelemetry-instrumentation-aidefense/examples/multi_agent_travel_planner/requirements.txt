@@ -1,0 +1,28 @@
+# OpenTelemetry core
+opentelemetry-api>=1.38.0
+opentelemetry-sdk>=1.38.0
+opentelemetry-instrumentation>=0.59b0
+opentelemetry-semantic-conventions>=0.59b0
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+
+# Splunk GenAI packages (from git - not yet on PyPI)
+# util-genai with security_event_id support
+git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=util/opentelemetry-util-genai
+
+# AI Defense instrumentation (from git - not yet on PyPI)
+git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=instrumentation-genai/opentelemetry-instrumentation-aidefense
+
+# LangChain instrumentation (from git - not yet on PyPI)
+git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=instrumentation-genai/opentelemetry-instrumentation-langchain
+
+# Cisco AI Defense SDK
+cisco-aidefense-sdk>=2.0.0
+
+# LangChain / LangGraph
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langgraph>=0.2.0
+
+# HTTP client
+requests>=2.31.0
+
