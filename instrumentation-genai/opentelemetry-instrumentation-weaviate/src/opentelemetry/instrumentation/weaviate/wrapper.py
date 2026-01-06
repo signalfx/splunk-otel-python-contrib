@@ -93,16 +93,25 @@ class _WeaviateConnectionWrapper:
             # For connect_to_local(), return_value is the created client
             client_obj = return_value if return_value is not None else instance
 
-            if hasattr(client_obj, "_connection") and client_obj._connection is not None:
+            if (
+                hasattr(client_obj, "_connection")
+                and client_obj._connection is not None
+            ):
                 if hasattr(client_obj._connection, "url"):
                     connection_url = client_obj._connection.url
-                    connection_host, connection_port = parse_url_to_host_port(connection_url)
+                    connection_host, connection_port = parse_url_to_host_port(
+                        connection_url
+                    )
                 elif hasattr(client_obj._connection, "grpc_address"):
                     # Try gRPC address
                     grpc_addr = client_obj._connection.grpc_address
                     if grpc_addr:
-                        connection_host = grpc_addr.split(":")[0] if ":" in grpc_addr else grpc_addr
-                        connection_port = int(grpc_addr.split(":")[1]) if ":" in grpc_addr else None
+                        connection_host = (
+                            grpc_addr.split(":")[0] if ":" in grpc_addr else grpc_addr
+                        )
+                        connection_port = (
+                            int(grpc_addr.split(":")[1]) if ":" in grpc_addr else None
+                        )
 
         # Set context after extracting connection info
         _connection_host_context.set(connection_host)

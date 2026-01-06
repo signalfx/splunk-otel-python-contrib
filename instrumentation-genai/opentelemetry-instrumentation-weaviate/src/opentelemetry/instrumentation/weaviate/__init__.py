@@ -97,10 +97,11 @@ class WeaviateInstrumentor(BaseInstrumentor):
             weaviate_version = WEAVIATE_V3
 
         self._instrument_client(weaviate_version, tracer)
-        
+
         # Wrap v4 connection functions to capture connection info
         if weaviate_version == WEAVIATE_V4:
             from .mapping import CONNECTION_WRAPPING
+
             for conn_wrap in CONNECTION_WRAPPING:
                 try:
                     wrap_function_wrapper(

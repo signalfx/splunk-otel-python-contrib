@@ -4,7 +4,7 @@ import weaviate.classes as wvc
 
 def main():
     CLASS_NAME = "Article"
-    
+
     # Connect to local Weaviate instance
     client = weaviate.connect_to_local()
     print("Connected to local Weaviate instance")

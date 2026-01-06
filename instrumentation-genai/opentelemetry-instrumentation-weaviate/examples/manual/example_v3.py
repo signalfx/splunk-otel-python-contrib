@@ -141,7 +141,7 @@ def query_raw(client):
 
 def query_near_text(client, text):
     """Query using nearText to find similar articles with distance/certainty/score.
-    
+
     Note: This requires a vectorizer (text2vec-ollama) to be configured in the schema,
     which is done in create_schema(). Requires Ollama to be running.
     """
@@ -199,13 +199,15 @@ def example_schema_workflow(client):
     print("Aggregate result:", json.dumps(aggregate_result, indent=2))
     raw_result = query_raw(client)
     print("Raw result: ", json.dumps(raw_result, indent=2))
-    
+
     # Try near_text query (requires vectorizer and Ollama)
     try:
         near_text_result = query_near_text(client, "book")
         print("Near text result: ", json.dumps(near_text_result, indent=2))
     except Exception as e:
-        print(f"Near text query skipped (requires Ollama running at http://ollama:11434): {e}")
+        print(
+            f"Near text query skipped (requires Ollama running at http://ollama:11434): {e}"
+        )
 
     delete_schema(client)
     print("Deleted schema")
@@ -223,9 +225,7 @@ if __name__ == "__main__":
         print("Warning: No API key found for Cohere or OpenAI")
 
     if (cluster_name := os.getenv("WEAVIATE_CLUSTER_URL")) is not None:
-        auth_config = weaviate.auth.AuthApiKey(
-            api_key=os.environ["WEAVIATE_API_KEY"]
-        )
+        auth_config = weaviate.auth.AuthApiKey(api_key=os.environ["WEAVIATE_API_KEY"])
         client = weaviate.Client(
             url=os.getenv("WEAVIATE_CLUSTER_URL"),
             auth_client_secret=auth_config,

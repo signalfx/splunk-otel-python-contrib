@@ -5,6 +5,7 @@ import pytest
 try:
     import weaviate
     import weaviate.classes as wvc
+
     WEAVIATE_AVAILABLE = True
     WEAVIATE_VERSION = int(weaviate.__version__.split(".")[0])
 except ImportError:
@@ -131,22 +132,22 @@ class TestSpanAttributes:
     def test_v3_all_operations_covered(self):
         """Test that all major v3 operations are covered."""
         span_names = [m["span_name"] for m in MAPPING_V3]
-        
+
         # Schema operations
         assert "schema.get" in span_names
         assert "schema.create_class" in span_names
         assert "schema.delete_class" in span_names
         assert "schema.delete_all" in span_names
-        
+
         # Data CRUD operations
         assert "data.crud_data.create" in span_names
         assert "data.crud_data.get" in span_names
         assert "data.crud_data.validate" in span_names
-        
+
         # Batch operations
         assert "batch.crud_batch.add_data_object" in span_names
         assert "batch.crud_batch.flush" in span_names
-        
+
         # Query operations
         assert "gql.query.get" in span_names
         assert "gql.query.aggregate" in span_names
@@ -156,25 +157,25 @@ class TestSpanAttributes:
     def test_v4_all_operations_covered(self):
         """Test that all major v4 operations are covered."""
         span_names = [m["span_name"] for m in MAPPING_V4]
-        
+
         # Collection management
         assert "collections.get" in span_names
         assert "collections.create" in span_names
         assert "collections.delete" in span_names
         assert "collections.delete_all" in span_names
         assert "collections.create_from_dict" in span_names
-        
+
         # Data operations
         assert "collections.data.insert" in span_names
         assert "collections.data.replace" in span_names
         assert "collections.data.update" in span_names
-        
+
         # Query operations
         assert "collections.query.near_text" in span_names
         assert "collections.query.near_vector" in span_names
         assert "collections.query.fetch_objects" in span_names
         assert "collections.query.get" in span_names
-        
+
         # Batch operations
         assert "collections.batch.add_object" in span_names
 
@@ -253,12 +254,12 @@ class TestV4IntegrationAttributes:
 
         spans = span_exporter.get_finished_spans()
         create_spans = [s for s in spans if "collections.create" in s.name]
-        
+
         assert len(create_spans) > 0, "No collections.create span found"
-        
+
         span = create_spans[0]
         attributes = dict(span.attributes or {})
-        
+
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "create"
@@ -277,7 +278,7 @@ class TestV4IntegrationAttributes:
             weaviate_client.collections.delete("TestInsert")
         except Exception:
             pass
-            
+
         weaviate_client.collections.create(
             name="TestInsert",
             properties=[
@@ -296,12 +297,12 @@ class TestV4IntegrationAttributes:
 
         spans = span_exporter.get_finished_spans()
         insert_spans = [s for s in spans if "data.insert" in s.name]
-        
+
         assert len(insert_spans) > 0, "No data.insert span found"
-        
+
         span = insert_spans[0]
         attributes = dict(span.attributes or {})
-        
+
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "insert"
@@ -324,7 +325,7 @@ class TestV4IntegrationAttributes:
             weaviate_client.collections.delete("TestQuery")
         except Exception:
             pass
-            
+
         weaviate_client.collections.create(
             name="TestQuery",
             properties=[
@@ -339,17 +340,14 @@ class TestV4IntegrationAttributes:
 
         span_exporter.clear()
 
-        # Test: Query data
-        result = collection.query.fetch_objects(limit=5)
-
         spans = span_exporter.get_finished_spans()
         fetch_spans = [s for s in spans if "fetch_objects" in s.name]
-        
+
         assert len(fetch_spans) > 0, "No fetch_objects span found"
-        
+
         span = fetch_spans[0]
         attributes = dict(span.attributes or {})
-        
+
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "fetch_objects"
@@ -372,7 +370,7 @@ class TestV4IntegrationAttributes:
             weaviate_client.collections.delete("TestNested")
         except Exception:
             pass
-            
+
         weaviate_client.collections.create(
             name="TestNested",
             properties=[
@@ -391,14 +389,14 @@ class TestV4IntegrationAttributes:
         collection.query.fetch_objects(limit=1)
 
         spans = span_exporter.get_finished_spans()
-        
+
         # Should have both fetch_objects and get spans
         fetch_span = next((s for s in spans if "fetch_objects" in s.name), None)
         get_span = next((s for s in spans if s.name.endswith("query.get")), None)
-        
+
         assert fetch_span is not None, "No fetch_objects span found"
         assert get_span is not None, "No query.get span found"
-        
+
         # get span should be a child of fetch_objects span
         if get_span and fetch_span:
             assert get_span.start_time >= fetch_span.start_time
@@ -434,10 +432,12 @@ class TestV3IntegrationAttributes:
 
         # Create a schema
         try:
-            weaviate_client.schema.create_class({
-                "class": "TestClass",
-                "description": "Test class for span attributes",
-            })
+            weaviate_client.schema.create_class(
+                {
+                    "class": "TestClass",
+                    "description": "Test class for span attributes",
+                }
+            )
         finally:
             try:
                 weaviate_client.schema.delete_class("TestClass")
@@ -446,12 +446,12 @@ class TestV3IntegrationAttributes:
 
         spans = span_exporter.get_finished_spans()
         create_spans = [s for s in spans if "schema.create_class" in s.name]
-        
+
         assert len(create_spans) > 0, "No schema.create_class span found"
-        
+
         span = create_spans[0]
         attributes = dict(span.attributes or {})
-        
+
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "create_class"
@@ -470,14 +470,18 @@ class TestV3IntegrationAttributes:
             weaviate_client.schema.delete_class("TestData")
         except Exception:
             pass
-            
-        weaviate_client.schema.create_class({
-            "class": "TestData",
-            "properties": [{
-                "name": "text",
-                "dataType": ["text"],
-            }],
-        })
+
+        weaviate_client.schema.create_class(
+            {
+                "class": "TestData",
+                "properties": [
+                    {
+                        "name": "text",
+                        "dataType": ["text"],
+                    }
+                ],
+            }
+        )
 
         span_exporter.clear()
 
@@ -489,12 +493,12 @@ class TestV3IntegrationAttributes:
 
         spans = span_exporter.get_finished_spans()
         create_spans = [s for s in spans if "crud_data.create" in s.name]
-        
+
         assert len(create_spans) > 0, "No crud_data.create span found"
-        
+
         span = create_spans[0]
         attributes = dict(span.attributes or {})
-        
+
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "create"

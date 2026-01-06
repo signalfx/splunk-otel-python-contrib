@@ -60,13 +60,34 @@ def extract_collection_name(
         if kwargs and "request" in kwargs and hasattr(kwargs["request"], "collection"):
             collection_name = kwargs["request"].collection
 
-        # Check if the instance has a collection attribute
-        # TODO: Check V3
+        # V4: Check if instance has _name attribute directly (for Collection objects)
+        elif hasattr(instance, "_name"):
+            collection_name = instance._name
+
+        # V4: Check if instance has name attribute directly
+        elif hasattr(instance, "name"):
+            collection_name = instance.name
+
+        # V4: For data/query operations, check if instance has _collection attribute
         elif hasattr(instance, "_collection"):
             if hasattr(instance._collection, "_name"):
                 collection_name = instance._collection._name
             elif hasattr(instance._collection, "name"):
                 collection_name = instance._collection.name
+
+        # V3: Check for class_name in kwargs (common in v3 operations)
+        elif kwargs and "class_name" in kwargs:
+            collection_name = kwargs["class_name"]
+
+        # V3: Check for class_name as first positional argument
+        elif args and len(args) > 0 and isinstance(args[0], str):
+            # For v3 operations like client.query.get(class_name, ...)
+            if (
+                "query" in module_name
+                or "schema" in module_name
+                or "data" in module_name
+            ):
+                collection_name = args[0]
 
         return collection_name
 

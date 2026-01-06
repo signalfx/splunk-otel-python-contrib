@@ -68,7 +68,7 @@ WeaviateInstrumentor().instrument()
 
 def create_schema(client):
     """Create a collection.
-    
+
     Note: Vectorizer configuration is optional. If text2vec-ollama module is available,
     you can enable it by setting vectorizer_config parameter.
     """
@@ -165,7 +165,7 @@ def create_batch(collection):
 
 def query_fetch_objects(collection):
     """Fetch objects using fetch_objects method.
-    
+
     Note: This internally calls _QueryGRPC.get() which will generate
     both 'collections.query.fetch_objects' and 'collections.query.get' spans.
     """
@@ -180,7 +180,7 @@ def query_fetch_objects(collection):
 
 def query_near_text(collection):
     """Query using near_text to find similar articles with distance/certainty/score.
-    
+
     Note: This requires a vectorizer (text2vec-ollama) to be configured in the schema,
     which is done in create_schema(). Requires Ollama to be running.
     """
@@ -192,12 +192,12 @@ def query_near_text(collection):
     )
 
 
-#TODO: Not instrumented
+# TODO: Not instrumented
 def query_aggregate(collection):
     return collection.aggregate.over_all(total_count=True)
 
 
-#TODO: Not instrumented
+# TODO: Not instrumented
 def query_raw(client):
     return client.graphql_raw_query(RAW_QUERY)
 
@@ -227,18 +227,20 @@ def example_schema_workflow(client):
     print("Retrieved obj: ", obj)
 
     create_batch(collection)
-    
+
     # Query objects (internally calls both fetch_objects and get)
     result = query_fetch_objects(collection)
     print("Query result:", result)
-    
+
     # Try near_text query (requires vectorizer and Ollama)
     try:
         near_text_result = query_near_text(collection)
         print("Near text result:", near_text_result)
     except Exception as e:
-        print(f"Near text query skipped (requires Ollama running at http://ollama:11434): {e}")
-    
+        print(
+            f"Near text query skipped (requires Ollama running at http://ollama:11434): {e}"
+        )
+
     aggregate_result = query_aggregate(collection)
     print("Aggregate result:", aggregate_result)
     raw_result = query_raw(client)
