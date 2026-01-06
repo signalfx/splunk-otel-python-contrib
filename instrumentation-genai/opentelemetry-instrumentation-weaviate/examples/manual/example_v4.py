@@ -51,7 +51,7 @@ trace.set_tracer_provider(tracer_provider)
 
 # Add OTLP exporter (reads from OTEL_EXPORTER_OTLP_ENDPOINT env var)
 otlp_exporter = OTLPSpanExporter(
-    endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
+    endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317"),
     headers=(),
 )
 otlp_processor = BatchSpanProcessor(otlp_exporter)
@@ -67,22 +67,54 @@ WeaviateInstrumentor().instrument()
 
 
 def create_schema(client):
-    client.collections.create(
-        name=CLASS_NAME,
-        description="An Article class to store a text",
-        properties=[
-            wvc.config.Property(
-                name="author",
-                data_type=wvc.config.DataType.TEXT,
-                description="The name of the author",
+    """Create a collection.
+    
+    Note: Vectorizer configuration is optional. If text2vec-ollama module is available,
+    you can enable it by setting vectorizer_config parameter.
+    """
+    # Try to create with vectorizer first, fall back to none if module not available
+    try:
+        client.collections.create(
+            name=CLASS_NAME,
+            description="An Article class to store a text",
+            vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_ollama(
+                api_endpoint="http://ollama:11434",
+                model="nomic-embed-text:latest",
             ),
-            wvc.config.Property(
-                name="text",
-                data_type=wvc.config.DataType.TEXT,
-                description="The text content",
-            ),
-        ],
-    )
+            properties=[
+                wvc.config.Property(
+                    name="author",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="The name of the author",
+                ),
+                wvc.config.Property(
+                    name="text",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="The text content",
+                ),
+            ],
+        )
+        print("Collection created with text2vec-ollama vectorizer")
+    except Exception as e:
+        print(f"Could not create with vectorizer ({e}), creating without vectorizer...")
+        # Create without vectorizer
+        client.collections.create(
+            name=CLASS_NAME,
+            description="An Article class to store a text",
+            properties=[
+                wvc.config.Property(
+                    name="author",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="The name of the author",
+                ),
+                wvc.config.Property(
+                    name="text",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="The text content",
+                ),
+            ],
+        )
+        print("Collection created without vectorizer (near_text queries will not work)")
 
 
 def get_collection(client):
@@ -131,7 +163,12 @@ def create_batch(collection):
             batch.add_object(properties=obj)
 
 
-def query_get(collection):
+def query_fetch_objects(collection):
+    """Fetch objects using fetch_objects method.
+    
+    Note: This internally calls _QueryGRPC.get() which will generate
+    both 'collections.query.fetch_objects' and 'collections.query.get' spans.
+    """
     return collection.query.fetch_objects(
         limit=5,
         return_properties=[
@@ -141,10 +178,26 @@ def query_get(collection):
     )
 
 
+def query_near_text(collection):
+    """Query using near_text to find similar articles with distance/certainty/score.
+    
+    Note: This requires a vectorizer (text2vec-ollama) to be configured in the schema,
+    which is done in create_schema(). Requires Ollama to be running.
+    """
+    return collection.query.near_text(
+        query="lost while writing",
+        limit=3,
+        return_metadata=["distance", "certainty", "score"],
+        return_properties=["author", "text"],
+    )
+
+
+#TODO: Not instrumented
 def query_aggregate(collection):
     return collection.aggregate.over_all(total_count=True)
 
 
+#TODO: Not instrumented
 def query_raw(client):
     return client.graphql_raw_query(RAW_QUERY)
 
@@ -154,40 +207,6 @@ def validate(collection, uuid=None):
     if uuid:
         return collection.query.fetch_object_by_id(uuid)
     return None
-
-
-def create_schemas(client):
-    client.collections.create_from_dict(
-        {
-            "class": "Author",
-            "description": "An author that writes an article",
-            "properties": [
-                {
-                    "name": "name",
-                    "dataType": ["string"],
-                    "description": "The name of the author",
-                },
-            ],
-        },
-    )
-    client.collections.create_from_dict(
-        {
-            "class": CLASS_NAME,
-            "description": "An Article class to store a text",
-            "properties": [
-                {
-                    "name": "author",
-                    "dataType": ["Author"],
-                    "description": "The author",
-                },
-                {
-                    "name": "text",
-                    "dataType": ["text"],
-                    "description": "The text content",
-                },
-            ],
-        },
-    )
 
 
 def delete_all(client):
@@ -208,8 +227,18 @@ def example_schema_workflow(client):
     print("Retrieved obj: ", obj)
 
     create_batch(collection)
-    result = query_get(collection)
+    
+    # Query objects (internally calls both fetch_objects and get)
+    result = query_fetch_objects(collection)
     print("Query result:", result)
+    
+    # Try near_text query (requires vectorizer and Ollama)
+    try:
+        near_text_result = query_near_text(collection)
+        print("Near text result:", near_text_result)
+    except Exception as e:
+        print(f"Near text query skipped (requires Ollama running at http://ollama:11434): {e}")
+    
     aggregate_result = query_aggregate(collection)
     print("Aggregate result:", aggregate_result)
     raw_result = query_raw(client)
@@ -217,11 +246,6 @@ def example_schema_workflow(client):
 
     delete_collection(client)
     print("Deleted schema")
-
-
-def example_schema_workflow2(client):
-    delete_all(client)
-    create_schemas(client)
 
 
 if __name__ == "__main__":
@@ -235,9 +259,7 @@ if __name__ == "__main__":
     print("Connected to local Weaviate instance")
 
     try:
-        example_schema_workflow2(client)
         example_schema_workflow(client)
-        delete_all(client)
     finally:
         # Ensure all spans are exported before exiting
         tracer_provider.force_flush(timeout_millis=5000)
