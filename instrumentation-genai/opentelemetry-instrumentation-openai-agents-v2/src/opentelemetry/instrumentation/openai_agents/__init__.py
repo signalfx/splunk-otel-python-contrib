@@ -15,6 +15,7 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import get_tracer
+from opentelemetry.util.genai.handler import get_telemetry_handler
 
 from .package import _instruments
 from .span_processor import (
@@ -164,7 +165,11 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
         server_address = kwargs.get("server_address")
         server_port = kwargs.get("server_port")
 
+        # Create telemetry handler with tracer_provider for correct resource/service name
+        handler = get_telemetry_handler(tracer_provider=tracer_provider)
+
         processor = GenAISemanticProcessor(
+            handler=handler,
             tracer=tracer,
             system_name=system,
             include_sensitive_data=content_mode
@@ -183,7 +188,6 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             base_url_default="https://api.openai.com",
             server_address_default="api.openai.com",
             server_port_default=443,
-            tracer_provider=tracer_provider,
         )
 
         tracing = _load_tracing_module()

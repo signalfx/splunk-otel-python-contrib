@@ -98,11 +98,16 @@ def _collect(iterator) -> dict[str, Any]:
 
 @pytest.fixture
 def processor_setup():
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
     provider = TracerProvider()
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     tracer = provider.get_tracer(__name__)
-    processor = sp.GenAISemanticProcessor(tracer=tracer, system_name="openai")
+    handler = get_telemetry_handler(tracer_provider=provider)
+    processor = sp.GenAISemanticProcessor(
+        handler=handler, tracer=tracer, system_name="openai"
+    )
     yield processor, exporter
     processor.shutdown()
     exporter.clear()
@@ -543,15 +548,17 @@ def test_chat_span_renamed_with_model(processor_setup):
     assert "chat gpt-4o" in span_names
 
 
-def test_workflow_and_step_entities_created(processor_setup):
+def test_workflow_and_agent_spans_created(processor_setup):
+    """Test that workflow wraps invoke_agent spans directly (no step wrapper)."""
     processor, exporter = processor_setup
 
-    trace = FakeTrace(name="workflow", trace_id="trace-steps")
+    trace = FakeTrace(name="workflow", trace_id="trace-agents")
     processor.on_trace_start(trace)
 
     # Workflow entity should be created when the trace starts.
+    # Name comes from trace.name if available, otherwise defaults to "OpenAIAgents"
     assert processor._workflow is not None
-    assert getattr(processor._workflow, "name", None) == "OpenAIAgents"
+    assert getattr(processor._workflow, "name", None) == "workflow"
 
     agent_span = FakeSpan(
         trace_id=trace.trace_id,
@@ -567,16 +574,11 @@ def test_workflow_and_step_entities_created(processor_setup):
 
     processor.on_span_start(agent_span)
 
-    # A Step entity should be created and linked to the workflow.
-    step = processor._steps.get(agent_span.span_id)
-    assert step is not None
-    assert getattr(step, "parent_run_id", None) == processor._workflow.run_id
+    # Agent spans should be direct children of workflow (no step wrapper)
+    # The invoke_agent span is parented to the workflow span directly
 
     processor.on_span_end(agent_span)
     processor.on_trace_end(trace)
-
-    # Step map should be cleared once the agent span ends.
-    assert agent_span.span_id not in processor._steps
 
     # Workflow persists across traces until stop_workflow() (multi-agent support).
     assert processor._workflow is not None
@@ -584,7 +586,7 @@ def test_workflow_and_step_entities_created(processor_setup):
     processor.stop_workflow()
     assert processor._workflow is None
 
-    # Exported spans remain valid.
+    # Exported spans remain valid - invoke_agent directly under workflow.
     finished = exporter.get_finished_spans()
     names = {span.name for span in finished}
     assert "invoke_agent Helper" in names
@@ -634,6 +636,7 @@ def test_workflow_persists_across_multiple_traces(processor_setup):
 
 
 def test_llm_and_tool_entities_lifecycle(processor_setup):
+    """Test LLM and tool entity lifecycle - parented to workflow directly."""
     processor, exporter = processor_setup
 
     trace = FakeTrace(name="workflow", trace_id="trace-llm-tool")
@@ -665,11 +668,10 @@ def test_llm_and_tool_entities_lifecycle(processor_setup):
 
     processor.on_span_start(generation_span)
 
-    # LLMInvocation may be created; when present it should be parented to the Step.
+    # LLMInvocation may be created; when present it should be parented to workflow
     llm_entity = processor._llms.get(generation_span.span_id)
-    step = processor._steps.get(agent_span.span_id)
-    if llm_entity is not None and step is not None:
-        assert getattr(llm_entity, "parent_run_id", None) == step.run_id
+    if llm_entity is not None and processor._workflow is not None:
+        assert getattr(llm_entity, "parent_run_id", None) == processor._workflow.run_id
 
     processor.on_span_end(generation_span)
     assert generation_span.span_id not in processor._llms
@@ -690,8 +692,9 @@ def test_llm_and_tool_entities_lifecycle(processor_setup):
     tool_entity = processor._tools.get(function_span.span_id)
     assert tool_entity is not None
 
-    if step is not None:
-        assert getattr(tool_entity, "parent_run_id", None) == step.run_id
+    # Tool should be parented to workflow
+    if processor._workflow is not None:
+        assert getattr(tool_entity, "parent_run_id", None) == processor._workflow.run_id
 
     processor.on_span_end(function_span)
     processor.on_span_end(agent_span)
@@ -699,7 +702,6 @@ def test_llm_and_tool_entities_lifecycle(processor_setup):
 
     # Internal maps should be cleaned up.
     assert function_span.span_id not in processor._tools
-    assert agent_span.span_id not in processor._steps
 
     # Sanity check that spans were exported as usual.
     exported_names = {span.name for span in exporter.get_finished_spans()}

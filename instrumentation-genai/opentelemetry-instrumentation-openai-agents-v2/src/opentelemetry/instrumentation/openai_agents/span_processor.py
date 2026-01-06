@@ -28,12 +28,10 @@ from urllib.parse import urlparse
 
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
-    get_telemetry_handler,
 )
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     LLMInvocation,
-    Step,
     ToolCall,
     Workflow,
 )
@@ -95,9 +93,13 @@ _GLOBAL_PROCESSOR_REF: list = []  # Holds reference to active processor
 def stop_workflow(final_output: Optional[str] = None) -> None:
     """Stop the current workflow span.
 
-    For multi-agent scenarios, call this after all agents complete to finalize
-    the workflow. For single-agent scenarios, this is called automatically
-    on shutdown() but can be called explicitly for immediate finalization.
+    For multi-agent scenarios, call this explicitly after all agents complete
+    to finalize the workflow with proper output. While shutdown() will also
+    stop any active workflow, it is intended for cleanup during application
+    termination and should not be relied upon for normal workflow completion.
+
+    For single-agent scenarios, this can be called explicitly for immediate
+    finalization, or the workflow will be stopped when shutdown() is invoked.
 
     Args:
         final_output: Optional final output to set on the workflow.
@@ -473,10 +475,9 @@ def get_span_name(
 class GenAISemanticProcessor(TracingProcessor):
     """Trace processor adding GenAI semantic convention attributes with metrics."""
 
-    _handler: TelemetryHandler
-
     def __init__(
         self,
+        handler: TelemetryHandler,
         tracer: Optional[Tracer] = None,
         system_name: str = "openai",
         include_sensitive_data: bool = True,
@@ -494,7 +495,6 @@ class GenAISemanticProcessor(TracingProcessor):
         base_url_default: Optional[str] = None,
         server_address_default: Optional[str] = None,
         server_port_default: Optional[int] = None,
-        tracer_provider: Optional[Any] = None,
     ):
         """Initialize processor with metrics support.
 
@@ -561,11 +561,9 @@ class GenAISemanticProcessor(TracingProcessor):
         self._span_parents: dict[str, Optional[str]] = {}
         self._agent_content: dict[str, Dict[str, list[Any]]] = {}
 
-        # util/genai integration (step 1 – workflow only)
-        # Pass tracer_provider to ensure handler uses correct resource/service name
-        self._handler = get_telemetry_handler(tracer_provider=tracer_provider)
+        # util/genai integration
+        self._handler = handler
         self._workflow: Workflow | None = None
-        self._steps: dict[str, Step] = {}
         self._llms: dict[str, LLMInvocation] = {}
         self._tools: dict[str, ToolCall] = {}
         # Track workflow input/output from agent spans
@@ -1396,9 +1394,6 @@ class GenAISemanticProcessor(TracingProcessor):
         or shutdown() is invoked. This supports multi-agent scenarios with
         sequential Runner.run() calls.
         """
-        if not self._tracer:
-            return
-
         try:
             # Initialize tracking for this trace
             self._trace_agent_count[trace.trace_id] = 0
@@ -1411,8 +1406,10 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._workflow_first_input = None
                 self._workflow_last_output = None
 
-                # Create workflow - will be named after first agent
-                self._workflow = Workflow(name="OpenAIAgents", attributes={})
+                # Use trace name from context if available (e.g., from `with trace("name"):`)
+                # Falls back to "OpenAIAgents" if trace has no name attribute
+                workflow_name = getattr(trace, "name", None) or "OpenAIAgents"
+                self._workflow = Workflow(name=workflow_name, attributes={})
                 self._handler.start_workflow(self._workflow)
         except Exception as e:  # defensive – don't break existing spans
             logger.debug(
@@ -1561,45 +1558,21 @@ class GenAISemanticProcessor(TracingProcessor):
                 if self._workflow is not None:
                     self._workflow.name = agent_name
 
-        # Create step for every agent invocation under the workflow
+        # For agent spans, use workflow span as parent context so invoke_agent spans
+        # are direct children of the workflow span (gen_ai.workflow -> invoke_agent)
         if (
             _is_instance_of(span.span_data, AgentSpanData)
             and self._workflow is not None
+            and hasattr(self._workflow, "span")
+            and self._workflow.span
         ):
-            try:
-                step_attrs: dict[str, Any] = dict(attributes)
-                step = Step(
-                    name=agent_name or span_name,
-                    step_type="agent_start",
-                    attributes=step_attrs,
-                )
+            context = set_span_in_context(self._workflow.span)
 
-                step.parent_run_id = self._workflow.run_id
-                # Set parent_span so step becomes child of workflow span
-                # This is critical for multi-agent scenarios where traces are separate
-                if hasattr(self._workflow, "span") and self._workflow.span:
-                    step.parent_span = self._workflow.span
-
-                content = self._agent_content.get(span.span_id)
-                if content and content.get("input_messages"):
-                    step.input_data = safe_json_dumps(
-                        content["input_messages"]
-                    )
-
-                self._handler.start_step(step)
-                self._steps[str(span.span_id)] = step
-
-                # Use the Step's span as parent context for the OpenAI Agents span.
-                if hasattr(step, "span") and step.span:
-                    context = set_span_in_context(step.span)
-            except Exception as e:
-                logger.debug(
-                    "Failed to create step entity for span %s: %s",
-                    getattr(span, "span_id", "<unknown>"),
-                    e,
-                    exc_info=True,
-                )
-
+        # Create OTel span to bridge OpenAI Agents tracing to OpenTelemetry.
+        # This span is distinct from the AgentInvocation entity created below via the handler.
+        # The OTel span provides standard trace context propagation and span hierarchy,
+        # while AgentInvocation provides semantic GenAI structuring for observability backends.
+        # Both are needed: OTel span for trace visualization, AgentInvocation for GenAI semantics.
         otel_span = self._tracer.start_span(
             name=span_name,
             context=context,
@@ -1692,17 +1665,9 @@ class GenAISemanticProcessor(TracingProcessor):
                     attributes=tool_attrs,
                 )
 
-                # Parent to enclosing Step when available, otherwise to Workflow.
-                parent_run_id = None
-                parent_step = None
-                if span.parent_id is not None:
-                    parent_step = self._steps.get(str(span.parent_id))
-                if parent_step is not None:
-                    parent_run_id = parent_step.run_id
-                elif self._workflow is not None:
-                    parent_run_id = self._workflow.run_id
-                if parent_run_id is not None:
-                    tool_entity.parent_run_id = parent_run_id
+                # Parent to Workflow directly (no step wrapper)
+                if self._workflow is not None:
+                    tool_entity.parent_run_id = self._workflow.run_id
 
                 tool_entity.framework = "openai_agents"
                 self._handler.start_tool_call(tool_entity)
@@ -1760,33 +1725,20 @@ class GenAISemanticProcessor(TracingProcessor):
             self._span_parents.pop(span.span_id, None)
             return
         key = str(span.span_id)
-        step = self._steps.pop(key, None)
-        if step is not None:
-            try:
-                # Attach input and output from agent/span
-                content = self._agent_content.get(span.span_id)
-                if content:
-                    if content.get("input_messages") and not step.input_data:
-                        step.input_data = safe_json_dumps(
-                            content["input_messages"]
-                        )
-                        # Track first input for workflow (default workflow path)
-                        if self._workflow_first_input is None:
-                            self._workflow_first_input = step.input_data
-                    if content.get("output_messages"):
-                        step.output_data = safe_json_dumps(
-                            content["output_messages"]
-                        )
-                        # Track last output for workflow (default workflow path)
-                        self._workflow_last_output = step.output_data
-                self._handler.stop_step(step)
-            except Exception as e:
-                logger.debug(
-                    "Failed to stop Step entity for span %s: %s",
-                    getattr(span, "span_id", "<unknown>"),
-                    e,
-                    exc_info=True,
-                )
+
+        # Track workflow input/output from agent spans directly (no step wrapper)
+        if _is_instance_of(span.span_data, AgentSpanData):
+            content = self._agent_content.get(span.span_id)
+            if content:
+                if content.get("input_messages"):
+                    input_data = safe_json_dumps(content["input_messages"])
+                    if self._workflow_first_input is None:
+                        self._workflow_first_input = input_data
+                if content.get("output_messages"):
+                    self._workflow_last_output = safe_json_dumps(
+                        content["output_messages"]
+                    )
+
         # Stop any LLMInvocation associated with this span.
         llm_entity = self._llms.pop(key, None)
         if llm_entity is not None:
