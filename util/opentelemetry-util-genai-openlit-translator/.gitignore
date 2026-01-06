@@ -1,0 +1,8 @@
+.env
+
+__pycache__/
+.vscode/
+*.pyc
+.DS_Store
+
+# Ignore example output files
