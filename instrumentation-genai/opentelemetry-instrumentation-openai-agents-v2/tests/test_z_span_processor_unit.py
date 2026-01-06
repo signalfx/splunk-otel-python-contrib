@@ -671,7 +671,10 @@ def test_llm_and_tool_entities_lifecycle(processor_setup):
     # LLMInvocation may be created; when present it should be parented to workflow
     llm_entity = processor._llms.get(generation_span.span_id)
     if llm_entity is not None and processor._workflow is not None:
-        assert getattr(llm_entity, "parent_run_id", None) == processor._workflow.run_id
+        assert (
+            getattr(llm_entity, "parent_run_id", None)
+            == processor._workflow.run_id
+        )
 
     processor.on_span_end(generation_span)
     assert generation_span.span_id not in processor._llms
@@ -694,7 +697,10 @@ def test_llm_and_tool_entities_lifecycle(processor_setup):
 
     # Tool should be parented to workflow
     if processor._workflow is not None:
-        assert getattr(tool_entity, "parent_run_id", None) == processor._workflow.run_id
+        assert (
+            getattr(tool_entity, "parent_run_id", None)
+            == processor._workflow.run_id
+        )
 
     processor.on_span_end(function_span)
     processor.on_span_end(agent_span)
