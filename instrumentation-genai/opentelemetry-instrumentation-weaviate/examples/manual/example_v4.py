@@ -194,11 +194,12 @@ def query_near_text(collection):
 
 # TODO: Not instrumented
 def query_aggregate(collection):
+    """Query aggregate statistics over all objects in the collection."""
     return collection.aggregate.over_all(total_count=True)
 
 
-# TODO: Not instrumented
 def query_raw(client):
+    """Execute a raw GraphQL query."""
     return client.graphql_raw_query(RAW_QUERY)
 
 

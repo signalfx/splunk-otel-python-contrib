@@ -118,6 +118,12 @@ MAPPING_V4: list[dict[str, str]] = [
         "span_name": "collections.query.fetch_objects",
     },
     {
+        "module": "weaviate.collections.queries.fetch_object_by_id",
+        "name": "_FetchObjectByIDQuery",
+        "function": "fetch_object_by_id",
+        "span_name": "collections.query.fetch_object_by_id",
+    },
+    {
         "module": "weaviate.collections.grpc.query",
         "name": "_QueryGRPC",
         "function": "get",
@@ -178,5 +184,12 @@ MAPPING_V4: list[dict[str, str]] = [
         "name": "_BatchCollection",
         "function": "add_object",
         "span_name": "collections.batch.add_object",
+    },
+    # GraphQL raw query
+    {
+        "module": "weaviate.client",
+        "name": "WeaviateClient",
+        "function": "graphql_raw_query",
+        "span_name": "graphql.raw_query",
     },
 ]
