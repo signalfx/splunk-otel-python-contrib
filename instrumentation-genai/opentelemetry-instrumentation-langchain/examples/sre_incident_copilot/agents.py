@@ -1,9 +1,11 @@
 """Agent implementations for SRE Incident Copilot."""
 
+import base64
 import json
 import os
 from typing import Dict
 
+import requests
 from langchain.agents import create_agent as create_react_agent
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
@@ -21,20 +23,63 @@ from tools import (
 )
 
 
+def _get_oauth_token(config: Config) -> str:
+    """Get OAuth2 token for Cisco endpoint using Basic Auth."""
+    if not config.oauth_token_url:
+        return config.openai_api_key
+
+    # Create Basic Auth header
+    credentials = f"{config.oauth_client_id}:{config.oauth_client_secret}"
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    data = {"grant_type": "client_credentials"}
+
+    response = requests.post(config.oauth_token_url, headers=headers, data=data)
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+
 def _create_llm(agent_name: str, temperature: float, config: Config) -> ChatOpenAI:
     """Create an LLM instance with metadata for tracing."""
     model = config.openai_model
-    return ChatOpenAI(
-        model=model,
-        temperature=temperature,
-        tags=[f"agent:{agent_name}", "sre-incident-copilot"],
-        metadata={
+
+    # Prepare kwargs for ChatOpenAI
+    llm_kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "tags": [f"agent:{agent_name}", "sre-incident-copilot"],
+        "metadata": {
             "agent_name": agent_name,
             "agent_type": agent_name,
             "model": model,
             "temperature": temperature,
         },
-    )
+    }
+
+    # Add custom base URL if configured
+    if config.openai_base_url:
+        llm_kwargs["base_url"] = config.openai_base_url
+
+    # Handle OAuth2 authentication for Cisco
+    if config.oauth_token_url:
+        token = _get_oauth_token(config)
+        # Cisco expects the token in 'api-key' header
+        llm_kwargs["api_key"] = token
+        llm_kwargs["default_headers"] = {"api-key": token}
+        # App key goes in the 'user' field of each request
+        if config.oauth_app_key:
+            llm_kwargs["model_kwargs"] = {
+                "user": f'{{"appkey":"{config.oauth_app_key}"}}'
+            }
+    else:
+        llm_kwargs["api_key"] = config.openai_api_key
+
+    return ChatOpenAI(**llm_kwargs)
 
 
 def triage_agent(state: Dict, config: Config) -> Dict:

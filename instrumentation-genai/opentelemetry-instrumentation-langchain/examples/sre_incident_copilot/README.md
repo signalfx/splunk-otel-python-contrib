@@ -5,6 +5,7 @@ A production-style demo application showcasing GenAI observability capabilities 
 ## Overview
 
 The SRE Incident Copilot demonstrates an agentic workflow that:
+
 - Investigates alerts using realistic observability tooling (metrics/logs/traces search via MCP)
 - Produces actionable incident artifacts (tasks, notifications, postmortem drafts)
 - Emits comprehensive OpenTelemetry telemetry for the agent workflow
@@ -35,7 +36,7 @@ graph LR
     C --> D[Action Planner Agent]
     D --> E[Quality Gate Agent]
     E --> F[Artifacts]
-    
+
     C --> G[MCP Tools]
     B --> H[Runbook RAG]
     D --> I[Task Writer]
@@ -70,6 +71,7 @@ pip install -r requirements.txt
 ```
 
 **Important**: Always activate the virtual environment before running the application:
+
 ```bash
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
@@ -91,6 +93,7 @@ SCENARIO_ID=scenario-001
 ### Run a Single Scenario
 
 **Make sure the venv is activated first:**
+
 ```bash
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 python main.py --scenario scenario-001
@@ -105,6 +108,7 @@ python main.py --scenario scenario-001 --manual-instrumentation
 ### Run Simulation with Drift
 
 **Make sure the venv is activated first:**
+
 ```bash
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 python simulation_runner.py \
@@ -124,6 +128,7 @@ python main.py --scenario scenario-001
 ```
 
 Validation checks:
+
 - Hypothesis matching (top hypothesis contains expected root cause keywords)
 - Evidence sufficiency (collects expected evidence types)
 - Action safety (actions are safe given confidence level)
@@ -164,27 +169,36 @@ kubectl apply -f k8s-cronjob.yaml
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `main.py` | Workflow orchestration, artifact generation |
-| `agents.py` | Triage, Investigation, Action Planner, Quality Gate agents |
-| `tools.py` | LangChain tools including MCP tool wrappers |
-| `mcp_tools/observability_tools.py` | MCP server for metrics/logs/traces |
-| `mcp_tools/investigation_agent_mcp.py` | Investigation Agent as MCP tool |
-| `runbook_search.py` | RAG implementation for runbook search |
-| `validation.py` | Business logic validation harness |
-| `simulation_runner.py` | Batch simulation with drift modes |
+| File                                   | Purpose                                                    |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `main.py`                              | Workflow orchestration, artifact generation                |
+| `agents.py`                            | Triage, Investigation, Action Planner, Quality Gate agents |
+| `tools.py`                             | LangChain tools including MCP tool wrappers                |
+| `mcp_tools/observability_tools.py`     | MCP server for metrics/logs/traces                         |
+| `mcp_tools/investigation_agent_mcp.py` | Investigation Agent as MCP tool                            |
+| `runbook_search.py`                    | RAG implementation for runbook search                      |
+| `validation.py`                        | Business logic validation harness                          |
+| `simulation_runner.py`                 | Batch simulation with drift modes                          |
 
 ## Environment Variables
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `OPENAI_API_KEY` | OpenAI API key | Required |
-| `OPENAI_MODEL` | Model to use | `gpt-4o-mini` |
-| `OTEL_SERVICE_NAME` | Service name for telemetry | `sre-incident-copilot` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint | Optional |
-| `SCENARIO_ID` | Scenario to run | Required |
-| `DATA_DIR` | Data directory | `data` |
-| `ARTIFACTS_DIR` | Artifacts directory | `artifacts` |
-| `CONFIDENCE_THRESHOLD` | Minimum confidence for actions | `0.7` |
-| `EVIDENCE_COUNT_THRESHOLD` | Minimum evidence pieces | `3` |
+| Variable                      | Purpose                        | Default                |
+| ----------------------------- | ------------------------------ | ---------------------- |
+| `OPENAI_API_KEY`              | OpenAI API key                 | Required               |
+| `OPENAI_MODEL`                | Model to use                   | `gpt-4o-mini`          |
+| `OPENAI_BASE_URL`             | Custom LLM endpoint            | Optional               |
+| `OAUTH_TOKEN_URL`             | OAuth2 token endpoint          | Optional               |
+| `OAUTH_CLIENT_ID`             | OAuth2 client ID               | Optional               |
+| `OAUTH_CLIENT_SECRET`         | OAuth2 client secret           | Optional               |
+| `OAUTH_APP_KEY`               | OAuth2 app key                 | Optional               |
+| `AZURE_OPENAI_ENDPOINT`       | Azure OpenAI endpoint          | Optional               |
+| `AZURE_OPENAI_API_KEY`        | Azure OpenAI API key           | Optional               |
+| `AZURE_OPENAI_API_VERSION`    | Azure OpenAI API version       | `2024-02-01`           |
+| `AZURE_EMBEDDING_DEPLOYMENT`  | Azure embedding deployment     | Optional               |
+| `OTEL_SERVICE_NAME`           | Service name for telemetry     | `sre-incident-copilot` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint                  | Optional               |
+| `SCENARIO_ID`                 | Scenario to run                | Required               |
+| `DATA_DIR`                    | Data directory                 | `data`                 |
+| `ARTIFACTS_DIR`               | Artifacts directory            | `artifacts`            |
+| `CONFIDENCE_THRESHOLD`        | Minimum confidence for actions | `0.7`                  |
+| `EVIDENCE_COUNT_THRESHOLD`    | Minimum evidence pieces        | `3`                    |
