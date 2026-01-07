@@ -77,15 +77,6 @@ class _WeaviateConnectionWrapper:
         # Call the wrapped method to create the client
         return_value = wrapped(*args, **kwargs)
 
-        # if (
-        #     not connection_url
-        #     and hasattr(instance, "_connection")
-        #     and instance._connection is not None
-        # ):
-        #     connection_url = instance._connection.url
-        #     if connection_url:
-        #         connection_host, connection_port = parse_url_to_host_port(connection_url)
-
         # For v4, try to extract from the created client after initialization
         # This handles cases like connect_to_local() where URL is set internally
         if not connection_url:
