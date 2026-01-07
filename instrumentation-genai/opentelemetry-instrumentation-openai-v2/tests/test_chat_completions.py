@@ -520,11 +520,26 @@ def chat_completion_tool_call(
     # sanity check
     assert "stop" in response_1.choices[0].finish_reason
 
-    # validate both calls
     spans = span_exporter.get_finished_spans()
-    assert len(spans) == 2
+
+    chat_spans = [
+        span
+        for span in spans
+        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
+        == GenAIAttributes.GenAiOperationNameValues.CHAT.value
+    ]
+    tool_spans = [
+        span
+        for span in spans
+        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
+        == GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
+    ]
+
+    assert len(chat_spans) == 2
+    assert len(tool_spans) == 2
+
     assert_all_attributes(
-        spans[0],
+        chat_spans[0],
         llm_model_value,
         response_0.id,
         response_0.model,
@@ -532,13 +547,21 @@ def chat_completion_tool_call(
         response_0.usage.completion_tokens,
     )
     assert_all_attributes(
-        spans[1],
+        chat_spans[1],
         llm_model_value,
         response_1.id,
         response_1.model,
         response_1.usage.prompt_tokens,
         response_1.usage.completion_tokens,
     )
+
+    for span in tool_spans:
+        assert (
+            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
+            == "get_current_weather"
+        )
+        assert span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
+        assert span.parent.span_id == chat_spans[0].context.span_id
 
     logs = log_exporter.get_finished_logs()
     assert len(logs) == 9  # 3 logs for first completion, 6 for second
@@ -548,14 +571,14 @@ def chat_completion_tool_call(
         {"content": messages_value[0]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[0], "gen_ai.system.message", system_message, spans[0]
+        logs[0], "gen_ai.system.message", system_message, chat_spans[0]
     )
 
     user_message = (
         {"content": messages_value[1]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[1], "gen_ai.user.message", user_message, spans[0]
+        logs[1], "gen_ai.user.message", user_message, chat_spans[0]
     )
 
     function_call_0 = {"name": "get_current_weather"}
@@ -591,21 +614,21 @@ def chat_completion_tool_call(
             ],
         },
     }
-    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, spans[0])
+    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, chat_spans[0])
 
     # call two
     system_message = (
         {"content": messages_value[0]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[3], "gen_ai.system.message", system_message, spans[1]
+        logs[3], "gen_ai.system.message", system_message, chat_spans[1]
     )
 
     user_message = (
         {"content": messages_value[1]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[4], "gen_ai.user.message", user_message, spans[1]
+        logs[4], "gen_ai.user.message", user_message, chat_spans[1]
     )
 
     assistant_tool_call = {"tool_calls": messages_value[2]["tool_calls"]}
@@ -614,7 +637,7 @@ def chat_completion_tool_call(
         assistant_tool_call["tool_calls"][1]["function"]["arguments"] = None
 
     assert_message_in_logs(
-        logs[5], "gen_ai.assistant.message", assistant_tool_call, spans[1]
+        logs[5], "gen_ai.assistant.message", assistant_tool_call, chat_spans[1]
     )
 
     tool_message_0 = {
@@ -623,7 +646,7 @@ def chat_completion_tool_call(
     }
 
     assert_message_in_logs(
-        logs[6], "gen_ai.tool.message", tool_message_0, spans[1]
+        logs[6], "gen_ai.tool.message", tool_message_0, chat_spans[1]
     )
 
     tool_message_1 = {
@@ -632,7 +655,7 @@ def chat_completion_tool_call(
     }
 
     assert_message_in_logs(
-        logs[7], "gen_ai.tool.message", tool_message_1, spans[1]
+        logs[7], "gen_ai.tool.message", tool_message_1, chat_spans[1]
     )
 
     message = {
@@ -646,7 +669,7 @@ def chat_completion_tool_call(
         "finish_reason": "stop",
         "message": message,
     }
-    assert_message_in_logs(logs[8], "gen_ai.choice", choice, spans[1])
+    assert_message_in_logs(logs[8], "gen_ai.choice", choice, chat_spans[1])
 
 
 @pytest.mark.vcr()
@@ -953,14 +976,40 @@ def chat_completion_multiple_tools_streaming(
     assert "tool_calls" == finish_reason
 
     spans = span_exporter.get_finished_spans()
+    chat_spans = [
+        span
+        for span in spans
+        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
+        == GenAIAttributes.GenAiOperationNameValues.CHAT.value
+    ]
+    tool_spans = [
+        span
+        for span in spans
+        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
+        == GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
+    ]
+
+    assert len(chat_spans) == 1
+    assert len(tool_spans) == 2
+
     assert_all_attributes(
-        spans[0],
+        chat_spans[0],
         llm_model_value,
         response_stream_id,
         response_stream_model,
         response_stream_usage.prompt_tokens,
         response_stream_usage.completion_tokens,
     )
+
+    for span in tool_spans:
+        assert (
+            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
+            == "get_current_weather"
+        )
+        assert span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
+        # Verify parent relationship
+        assert span.parent is not None
+        assert span.parent.span_id == chat_spans[0].context.span_id
 
     logs = log_exporter.get_finished_logs()
     assert len(logs) == 3
@@ -969,7 +1018,7 @@ def chat_completion_multiple_tools_streaming(
         {"content": messages_value[0]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[0], "gen_ai.system.message", system_message, spans[0]
+        logs[0], "gen_ai.system.message", system_message, chat_spans[0]
     )
 
     user_message = (
@@ -978,7 +1027,7 @@ def chat_completion_multiple_tools_streaming(
         else None
     )
     assert_message_in_logs(
-        logs[1], "gen_ai.user.message", user_message, spans[0]
+        logs[1], "gen_ai.user.message", user_message, chat_spans[0]
     )
 
     choice_event = {
@@ -1010,7 +1059,7 @@ def chat_completion_multiple_tools_streaming(
             ],
         },
     }
-    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, spans[0])
+    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, chat_spans[0])
 
 
 def assert_message_in_logs(log, event_name, expected_content, parent_span):
