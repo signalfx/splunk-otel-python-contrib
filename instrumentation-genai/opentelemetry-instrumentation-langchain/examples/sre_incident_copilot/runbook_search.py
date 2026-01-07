@@ -25,7 +25,7 @@ class RunbookSearch:
         self.data_dir = Path(data_dir)
         self.persist_dir = persist_dir
         self.data_loader = DataLoader(data_dir)
-        
+
         # Azure OpenAI Embeddings configuration
         self.embeddings = AzureOpenAIEmbeddings(
             azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),

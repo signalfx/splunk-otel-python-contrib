@@ -3,7 +3,6 @@
 import base64
 import json
 import os
-import time
 from typing import Dict
 
 import requests
@@ -28,18 +27,18 @@ def _get_oauth_token(config: Config) -> str:
     """Get OAuth2 token for Cisco endpoint using Basic Auth."""
     if not config.oauth_token_url:
         return config.openai_api_key
-    
+
     # Create Basic Auth header
     credentials = f"{config.oauth_client_id}:{config.oauth_client_secret}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
-    
+
     headers = {
         "Authorization": f"Basic {encoded_credentials}",
         "Content-Type": "application/x-www-form-urlencoded",
     }
-    
+
     data = {"grant_type": "client_credentials"}
-    
+
     response = requests.post(config.oauth_token_url, headers=headers, data=data)
     response.raise_for_status()
     return response.json()["access_token"]
@@ -48,7 +47,7 @@ def _get_oauth_token(config: Config) -> str:
 def _create_llm(agent_name: str, temperature: float, config: Config) -> ChatOpenAI:
     """Create an LLM instance with metadata for tracing."""
     model = config.openai_model
-    
+
     # Prepare kwargs for ChatOpenAI
     llm_kwargs = {
         "model": model,
@@ -61,11 +60,11 @@ def _create_llm(agent_name: str, temperature: float, config: Config) -> ChatOpen
             "temperature": temperature,
         },
     }
-    
+
     # Add custom base URL if configured
     if config.openai_base_url:
         llm_kwargs["base_url"] = config.openai_base_url
-    
+
     # Handle OAuth2 authentication for Cisco
     if config.oauth_token_url:
         token = _get_oauth_token(config)
@@ -74,10 +73,12 @@ def _create_llm(agent_name: str, temperature: float, config: Config) -> ChatOpen
         llm_kwargs["default_headers"] = {"api-key": token}
         # App key goes in the 'user' field of each request
         if config.oauth_app_key:
-            llm_kwargs["model_kwargs"] = {"user": f'{{"appkey":"{config.oauth_app_key}"}}'}
+            llm_kwargs["model_kwargs"] = {
+                "user": f'{{"appkey":"{config.oauth_app_key}"}}'
+            }
     else:
         llm_kwargs["api_key"] = config.openai_api_key
-    
+
     return ChatOpenAI(**llm_kwargs)
 
 

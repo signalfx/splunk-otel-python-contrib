@@ -13,7 +13,7 @@ class Config:
     openai_api_key: str
     openai_model: str = "gpt-4o-mini"
     openai_base_url: Optional[str] = None
-    
+
     # OAuth2 for Cisco (optional)
     oauth_token_url: Optional[str] = None
     oauth_client_id: Optional[str] = None
