@@ -149,7 +149,7 @@ def _build_chat_invocation(
         ),
         provider="openai",
         framework="openai-sdk",
-        system=GenAIAttributes.GenAiSystemValues.OPENAI.value,
+        system=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
         request_temperature=_clean(kwargs.get("temperature")),
         request_top_p=_clean(kwargs.get("p") or kwargs.get("top_p")),
         request_max_tokens=_clean(kwargs.get("max_tokens")),
@@ -266,7 +266,7 @@ def _build_embedding_invocation(
         input_texts=_normalize_input_texts(kwargs.get("input")),
         provider="openai",
         framework="openai-sdk",
-        system=GenAIAttributes.GenAiSystemValues.OPENAI.value,
+        system=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
     )
 
     if "dimensions" in kwargs and value_is_set(kwargs.get("dimensions")):
@@ -592,7 +592,7 @@ def _record_metrics(
 ):
     common_attributes = {
         GenAIAttributes.GEN_AI_OPERATION_NAME: operation_name,
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiSystemValues.OPENAI.value,
+        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
         GenAIAttributes.GEN_AI_REQUEST_MODEL: request_attributes[
             GenAIAttributes.GEN_AI_REQUEST_MODEL
         ],
@@ -910,7 +910,7 @@ class StreamWrapper:
                 }
 
                 event_attributes = {
-                    GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiSystemValues.OPENAI.value
+                    GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value
                 }
                 context = (
                     set_span_in_context(self.span, get_current())

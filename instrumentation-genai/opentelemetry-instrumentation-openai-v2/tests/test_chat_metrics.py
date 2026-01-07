@@ -51,7 +51,7 @@ def assert_all_metric_attributes(data_point):
     assert GenAIAttributes.GEN_AI_SYSTEM in data_point.attributes
     assert (
         data_point.attributes[GenAIAttributes.GEN_AI_SYSTEM]
-        == GenAIAttributes.GenAiSystemValues.OPENAI.value
+        == GenAIAttributes.GenAiProviderNameValues.OPENAI.value
     )
     assert GenAIAttributes.GEN_AI_REQUEST_MODEL in data_point.attributes
     assert (

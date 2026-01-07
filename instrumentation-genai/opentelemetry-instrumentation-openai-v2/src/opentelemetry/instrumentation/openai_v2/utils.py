@@ -198,7 +198,7 @@ def get_llm_request_attributes(
 
     attributes = {
         GenAIAttributes.GEN_AI_OPERATION_NAME: operation_name,
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiSystemValues.OPENAI.value,
+        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
         GenAIAttributes.GEN_AI_REQUEST_MODEL: kwargs.get("model"),
     }
 
