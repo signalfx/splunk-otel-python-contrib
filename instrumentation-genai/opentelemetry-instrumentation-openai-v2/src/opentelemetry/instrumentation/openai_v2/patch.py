@@ -266,7 +266,7 @@ def _build_embedding_invocation(
         input_texts=_normalize_input_texts(kwargs.get("input")),
         provider="openai",
         framework="openai-sdk",
-        system=GenAIAttributes.GenAiSystemValues.OPENAI.value,
+        system=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
     )
 
     if "dimensions" in kwargs and value_is_set(kwargs.get("dimensions")):
