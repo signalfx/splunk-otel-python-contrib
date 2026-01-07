@@ -86,18 +86,6 @@ OPENAI_MODEL=gpt-4o-mini
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 OTEL_SERVICE_NAME=sre-incident-copilot
 SCENARIO_ID=scenario-001
-# Cisco LLM OAuth2
-OAUTH_TOKEN_URL=https://your-oauth-endpoint/token
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_APP_KEY=your-app-key
-OPENAI_BASE_URL=https://your-cisco-llm-endpoint
-
-# Azure OpenAI Embeddings
-AZURE_OPENAI_ENDPOINT=https://etser-mf7gfr7m-eastus2.cognitiveservices.azure.com/
-AZURE_OPENAI_API_KEY=your-api-key
-AZURE_OPENAI_API_VERSION=2024-02-01
-AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-large
 ```
 
 ## Usage
@@ -198,6 +186,15 @@ kubectl apply -f k8s-cronjob.yaml
 | ----------------------------- | ------------------------------ | ---------------------- |
 | `OPENAI_API_KEY`              | OpenAI API key                 | Required               |
 | `OPENAI_MODEL`                | Model to use                   | `gpt-4o-mini`          |
+| `OPENAI_BASE_URL`             | Custom LLM endpoint            | Optional               |
+| `OAUTH_TOKEN_URL`             | OAuth2 token endpoint          | Optional               |
+| `OAUTH_CLIENT_ID`             | OAuth2 client ID               | Optional               |
+| `OAUTH_CLIENT_SECRET`         | OAuth2 client secret           | Optional               |
+| `OAUTH_APP_KEY`               | OAuth2 app key                 | Optional               |
+| `AZURE_OPENAI_ENDPOINT`       | Azure OpenAI endpoint          | Optional               |
+| `AZURE_OPENAI_API_KEY`        | Azure OpenAI API key           | Optional               |
+| `AZURE_OPENAI_API_VERSION`    | Azure OpenAI API version       | `2024-02-01`           |
+| `AZURE_EMBEDDING_DEPLOYMENT`  | Azure embedding deployment     | Optional               |
 | `OTEL_SERVICE_NAME`           | Service name for telemetry     | `sre-incident-copilot` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint                  | Optional               |
 | `SCENARIO_ID`                 | Scenario to run                | Required               |
