@@ -47,12 +47,13 @@ def assert_all_attributes(
     response_service_tier: Optional[str] = None,
 ):
     assert span.name == f"{operation_name} {request_model}"
+    assert span.attributes is not None
     assert (
         operation_name
         == span.attributes[GenAIAttributes.GEN_AI_OPERATION_NAME]
     )
     assert (
-        GenAIAttributes.GenAiSystemValues.OPENAI.value
+        GenAIAttributes.GenAiProviderNameValues.OPENAI.value
         == span.attributes[GenAIAttributes.GEN_AI_SYSTEM]
     )
     assert (

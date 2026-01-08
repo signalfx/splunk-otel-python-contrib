@@ -25,8 +25,8 @@ opentelemetry-instrumentation-openai>=0.30.0
 splunk-otel-util-genai>=0.1.4
 splunk-otel-genai-emitters-splunk
 splunk-otel-util-genai-evals
-# OAuth2/LiteLLM support for custom eval providers (v0.1.7+)
-splunk-otel-genai-evals-deepeval>=0.1.7
+# OAuth2/LiteLLM support for custom eval providers (v0.1.8+ adds DEEPEVAL_LLM_EXTRA_HEADERS)
+splunk-otel-genai-evals-deepeval>=0.1.8
 litellm>=1.0.0  # Required for OAuth2-based custom eval providers
 splunk-otel-instrumentation-langchain
 

@@ -108,7 +108,7 @@ def get_property_value(obj, property_name):
 
 def message_to_event(message, capture_content):
     attributes = {
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiSystemValues.OPENAI.value
+        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value
     }
     role = get_property_value(message, "role")
     content = get_property_value(message, "content")
@@ -134,7 +134,7 @@ def message_to_event(message, capture_content):
 
 def choice_to_event(choice, capture_content):
     attributes = {
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiSystemValues.OPENAI.value
+        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value
     }
 
     body = {
@@ -198,7 +198,7 @@ def get_llm_request_attributes(
 
     attributes = {
         GenAIAttributes.GEN_AI_OPERATION_NAME: operation_name,
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiSystemValues.OPENAI.value,
+        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
         GenAIAttributes.GEN_AI_REQUEST_MODEL: kwargs.get("model"),
     }
 

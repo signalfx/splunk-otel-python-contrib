@@ -32,6 +32,8 @@ from opentelemetry.trace import Span, SpanContext
 # Backward compatibility: older semconv builds may miss new GEN_AI attributes
 if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
+# Import security attribute from centralized attributes module
+from opentelemetry.util.genai.attributes import GEN_AI_SECURITY_EVENT_ID
 from opentelemetry.util.types import AttributeValue
 
 ContextToken = Token  # simple alias; avoid TypeAlias warning tools
@@ -278,6 +280,11 @@ class LLMInvocation(GenAI):
             "semconv": GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SYSTEM_FINGERPRINT
         },
     )
+    # Security inspection attribute (Cisco AI Defense)
+    security_event_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": GEN_AI_SECURITY_EVENT_ID},
+    )
 
 
 @dataclass
@@ -447,5 +454,6 @@ __all__ = [
     "AgentCreation",
     "AgentInvocation",
     "Step",
-    # backward compatibility normalization helpers
+    # Security semconv constant (Cisco AI Defense) - re-exported from attributes
+    "GEN_AI_SECURITY_EVENT_ID",
 ]
