@@ -1,4 +1,13 @@
 from crewai import Agent, Crew, Task, Process
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk import trace as trace_sdk
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+    BatchSpanProcessor,
+)
+from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 
 # Disable CrewAI's built-in telemetry
 import os
@@ -48,22 +57,12 @@ crew = Crew(
     verbose=True,
 )
 
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk import trace as trace_sdk
-from opentelemetry.sdk.trace.export import (
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
-    BatchSpanProcessor,
-)
 
 tracer_provider = trace_sdk.TracerProvider()
 tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 # CRITICAL: Register the tracer provider globally so it can be flushed
 trace.set_tracer_provider(tracer_provider)
-
-from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 
 CrewAIInstrumentor().instrument(tracer_provider=tracer_provider)
 
