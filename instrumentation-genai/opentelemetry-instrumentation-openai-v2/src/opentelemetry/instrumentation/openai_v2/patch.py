@@ -28,7 +28,7 @@ from opentelemetry.semconv._incubating.attributes import (
 from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
 )
-from opentelemetry.trace import Span, SpanKind, Tracer
+from opentelemetry.trace import Span
 from opentelemetry.trace.propagation import set_span_in_context
 from opentelemetry.util.genai.handler import (
     Error as InvocationError,
@@ -278,7 +278,9 @@ def _build_embedding_invocation(
 
     if attributes:
         if ServerAttributes.SERVER_ADDRESS in attributes:
-            invocation.server_address = attributes[ServerAttributes.SERVER_ADDRESS]
+            invocation.server_address = attributes[
+                ServerAttributes.SERVER_ADDRESS
+            ]
         if ServerAttributes.SERVER_PORT in attributes:
             invocation.server_port = attributes[ServerAttributes.SERVER_PORT]
 
@@ -483,9 +485,7 @@ def embeddings_create(
                     kwargs.get("input", ""),
                 )
 
-            _apply_embedding_response_to_invocation(
-                invocation, parsed_result
-            )
+            _apply_embedding_response_to_invocation(invocation, parsed_result)
             handler.stop_embedding(invocation)
             return result
 
@@ -547,9 +547,7 @@ def async_embeddings_create(
                     kwargs.get("input", ""),
                 )
 
-            _apply_embedding_response_to_invocation(
-                invocation, parsed_result
-            )
+            _apply_embedding_response_to_invocation(invocation, parsed_result)
             handler.stop_embedding(invocation)
             return result
 
