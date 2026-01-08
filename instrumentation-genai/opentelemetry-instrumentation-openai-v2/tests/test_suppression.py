@@ -39,7 +39,7 @@ def test_chat_completion_suppressed(
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": "Say hello"}],
+            messages=[{"role": "user", "content": "Say this is a test"}],
         )
         assert response is not None
     finally:
@@ -65,7 +65,7 @@ async def test_async_chat_completion_suppressed(
     try:
         response = await async_openai_client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": "Say hello"}],
+            messages=[{"role": "user", "content": "Say this is a test"}],
         )
         assert response is not None
     finally:
@@ -90,7 +90,7 @@ def test_embeddings_suppressed(
     try:
         response = openai_client.embeddings.create(
             model="text-embedding-3-small",
-            input="Hello world",
+            input="This is a test for embeddings",
         )
         assert response is not None
     finally:
@@ -116,7 +116,7 @@ async def test_async_embeddings_suppressed(
     try:
         response = await async_openai_client.embeddings.create(
             model="text-embedding-3-small",
-            input="Hello world",
+            input="This is a test for async embeddings",
         )
         assert response is not None
     finally:
@@ -134,7 +134,7 @@ def test_chat_completion_not_suppressed_by_default(
     """Test that chat completions are instrumented normally when suppression key is not set."""
     response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": "Say hello"}],
+        messages=[{"role": "user", "content": "Say this is a test"}],
     )
     assert response is not None
 
