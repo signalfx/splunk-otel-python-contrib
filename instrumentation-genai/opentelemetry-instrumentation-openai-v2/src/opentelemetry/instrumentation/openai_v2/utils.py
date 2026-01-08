@@ -28,9 +28,6 @@ from opentelemetry.semconv._incubating.attributes import (
 from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
 )
-from opentelemetry.util.genai.attributes import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
-)
 from opentelemetry.semconv.attributes import (
     error_attributes as ErrorAttributes,
 )

@@ -20,8 +20,8 @@ from typing import Any, Iterable, Optional
 
 from openai import Stream
 
-from opentelemetry._logs import Logger, LogRecord
 from opentelemetry import context as context_api
+from opentelemetry._logs import Logger, LogRecord
 from opentelemetry.context import get_current
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
@@ -919,7 +919,6 @@ class ChoiceBuffer:
                 self.tool_calls_buffers[idx].append_arguments(
                     tool_call.function.arguments
                 )
-
 
 class StreamWrapper:
     span: Span

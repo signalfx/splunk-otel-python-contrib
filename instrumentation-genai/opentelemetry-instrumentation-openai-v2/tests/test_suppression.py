@@ -18,8 +18,8 @@ This prevents duplicate telemetry when multiple instrumentations (e.g., LangChai
 """
 
 import pytest
-from opentelemetry import context as context_api
 
+from opentelemetry import context as context_api
 from opentelemetry.util.genai.attributes import (
     SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
 )
@@ -32,7 +32,9 @@ def test_chat_completion_suppressed(
     """Test that chat completions are not instrumented when suppression key is set."""
     # Set suppression key in context
     token = context_api.attach(
-        context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+        context_api.set_value(
+            SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+        )
     )
     try:
         response = openai_client.chat.completions.create(
@@ -56,7 +58,9 @@ async def test_async_chat_completion_suppressed(
     """Test that async chat completions are not instrumented when suppression key is set."""
     # Set suppression key in context
     token = context_api.attach(
-        context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+        context_api.set_value(
+            SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+        )
     )
     try:
         response = await async_openai_client.chat.completions.create(
@@ -79,7 +83,9 @@ def test_embeddings_suppressed(
     """Test that embeddings are not instrumented when suppression key is set."""
     # Set suppression key in context
     token = context_api.attach(
-        context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+        context_api.set_value(
+            SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+        )
     )
     try:
         response = openai_client.embeddings.create(
@@ -103,7 +109,9 @@ async def test_async_embeddings_suppressed(
     """Test that async embeddings are not instrumented when suppression key is set."""
     # Set suppression key in context
     token = context_api.attach(
-        context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+        context_api.set_value(
+            SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+        )
     )
     try:
         response = await async_openai_client.embeddings.create(
