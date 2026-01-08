@@ -560,7 +560,9 @@ def chat_completion_tool_call(
             span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
             == "get_current_weather"
         )
-        assert span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
+        assert (
+            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
+        )
         assert span.parent.span_id == chat_spans[0].context.span_id
 
     logs = log_exporter.get_finished_logs()
@@ -614,7 +616,9 @@ def chat_completion_tool_call(
             ],
         },
     }
-    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, chat_spans[0])
+    assert_message_in_logs(
+        logs[2], "gen_ai.choice", choice_event, chat_spans[0]
+    )
 
     # call two
     system_message = (
@@ -1006,7 +1010,9 @@ def chat_completion_multiple_tools_streaming(
             span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
             == "get_current_weather"
         )
-        assert span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
+        assert (
+            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
+        )
         # Verify parent relationship
         assert span.parent is not None
         assert span.parent.span_id == chat_spans[0].context.span_id
@@ -1059,7 +1065,9 @@ def chat_completion_multiple_tools_streaming(
             ],
         },
     }
-    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, chat_spans[0])
+    assert_message_in_logs(
+        logs[2], "gen_ai.choice", choice_event, chat_spans[0]
+    )
 
 
 def assert_message_in_logs(log, event_name, expected_content, parent_span):

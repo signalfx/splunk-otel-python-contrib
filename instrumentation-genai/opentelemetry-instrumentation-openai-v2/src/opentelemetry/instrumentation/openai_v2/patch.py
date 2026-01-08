@@ -39,6 +39,8 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
+)
+from opentelemetry.util.genai.types import (
     ToolCall as GenAIToolCall,
 )
 
@@ -296,9 +298,9 @@ def _build_tool_call_invocation(
             tool_call_id
         )
     if description:
-        genai_tool_call.attributes[
-            GenAIAttributes.GEN_AI_TOOL_DESCRIPTION
-        ] = description
+        genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_DESCRIPTION] = (
+            description
+        )
 
     return genai_tool_call, tool_call_type
 
@@ -772,7 +774,9 @@ def _set_response_attributes(
         )
 
     if handler:
-        _emit_tool_call_spans_from_response(handler, span, result, capture_content)
+        _emit_tool_call_spans_from_response(
+            handler, span, result, capture_content
+        )
 
 
 def _emit_tool_call_spans_from_response(
@@ -916,7 +920,6 @@ class ChoiceBuffer:
             )
 
 
-
 class StreamWrapper:
     span: Span
     response_id: Optional[str] = None
@@ -965,7 +968,9 @@ class StreamWrapper:
                     if tool_call_state is None:
                         continue
                     tool_call, tool_type = tool_call_state.finalize()
-                    tool_call.provider = GenAIAttributes.GenAiProviderNameValues.OPENAI.value
+                    tool_call.provider = (
+                        GenAIAttributes.GenAiProviderNameValues.OPENAI.value
+                    )
                     parts.append(tool_call)
 
             finish_reason = choice.finish_reason or "error"
