@@ -31,6 +31,9 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.trace import Span
 from opentelemetry.trace.propagation import set_span_in_context
+from opentelemetry.util.genai.attributes import (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
 from opentelemetry.util.genai.handler import (
     Error as InvocationError,
 )
@@ -40,9 +43,6 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
-)
-from opentelemetry.util.genai.attributes import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
 )
 from opentelemetry.util.genai.types import (
     ToolCall as GenAIToolCall,
