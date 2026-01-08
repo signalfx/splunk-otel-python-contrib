@@ -914,10 +914,16 @@ class ChoiceBuffer:
                 self._parent_span,
                 self._capture_content,
             )
+            # Preserve initial arguments from the first chunk
+            if hasattr(tool_call.function, "arguments"):
+                self.tool_calls_buffers[idx].append_arguments(
+                    tool_call.function.arguments
+                )
         else:
-            self.tool_calls_buffers[idx].append_arguments(
-                tool_call.function.arguments
-            )
+            if hasattr(tool_call.function, "arguments"):
+                self.tool_calls_buffers[idx].append_arguments(
+                    tool_call.function.arguments
+                )
 
 
 class StreamWrapper:
