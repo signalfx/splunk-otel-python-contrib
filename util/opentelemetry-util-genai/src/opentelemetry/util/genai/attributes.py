@@ -65,3 +65,6 @@ GEN_AI_RETRIEVAL_DOCUMENTS = "gen_ai.retrieval.documents"
 # Server attributes (from semantic conventions)
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
+
+# Security attributes (Cisco AI Defense)
+GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
