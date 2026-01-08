@@ -1,5 +1,15 @@
 from crewai import Agent, Task, Crew, Process
 from langchain_openai import ChatOpenAI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk import trace as trace_sdk
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+    BatchSpanProcessor,
+)
+from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
+from crewai_tools import ScrapeWebsiteTool, SerperDevTool
 
 import os
 
@@ -7,8 +17,6 @@ import os
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 os.environ["OPENAI_MODEL_NAME"] = "gpt-3.5-turbo"
 # os.environ["OPENAI_MODEL_NAME"] = 'gpt-4o-mini'
-
-from crewai_tools import ScrapeWebsiteTool, SerperDevTool
 
 search_tool = SerperDevTool()
 scrape_tool = ScrapeWebsiteTool()
@@ -155,17 +163,6 @@ financial_trading_inputs = {
     "trading_strategy_preference": "Day Trading",
     "news_impact_consideration": True,
 }
-
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk import trace as trace_sdk
-from opentelemetry.sdk.trace.export import (
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
-    BatchSpanProcessor,
-)
-
-from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 
 tracer_provider = trace_sdk.TracerProvider()
 tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
