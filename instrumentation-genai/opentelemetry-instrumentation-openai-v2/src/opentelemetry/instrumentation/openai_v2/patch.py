@@ -41,13 +41,15 @@ from opentelemetry.util.genai.types import (
     OutputMessage,
     Text,
 )
+from opentelemetry.util.genai.attributes import (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
 from opentelemetry.util.genai.types import (
     ToolCall as GenAIToolCall,
 )
 
 from .instruments import Instruments
 from .utils import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
     choice_to_event,
     get_llm_request_attributes,
     handle_span_exception,
