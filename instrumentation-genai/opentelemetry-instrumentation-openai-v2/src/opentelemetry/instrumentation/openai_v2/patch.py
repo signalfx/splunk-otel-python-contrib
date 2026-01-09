@@ -200,7 +200,7 @@ def _build_output_messages_from_response(
     for choice in getattr(result, "choices", []) or []:
         message = getattr(choice, "message", None)
         role = getattr(message, "role", None) if message else None
-        parts: list[Text] = []
+        parts: list[MessagePart] = []
         content = getattr(message, "content", None) if message else None
         if content is not None:
             parts = _to_text_parts(content, capture_content)
