@@ -16,8 +16,6 @@
 
 from typing import Optional
 
-DEFAULT_SERVER_ADDRESS = "api.openai.com"
-
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
@@ -25,6 +23,8 @@ from opentelemetry.semconv._incubating.attributes import (
 from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
 )
+
+DEFAULT_SERVER_ADDRESS = "api.openai.com"
 
 
 def _assert_optional_attribute(span, attribute_name, expected_value):

@@ -81,9 +81,7 @@ class OpenAIInstrumentor(BaseInstrumentor):
         wrap_function_wrapper(
             module="openai.resources.chat.completions",
             name="Completions.create",
-            wrapper=chat_completions_create(
-                is_content_enabled(), handler
-            ),
+            wrapper=chat_completions_create(is_content_enabled(), handler),
         )
 
         wrap_function_wrapper(
@@ -98,17 +96,13 @@ class OpenAIInstrumentor(BaseInstrumentor):
         wrap_function_wrapper(
             module="openai.resources.embeddings",
             name="Embeddings.create",
-            wrapper=embeddings_create(
-                is_content_enabled(), handler
-            ),
+            wrapper=embeddings_create(is_content_enabled(), handler),
         )
 
         wrap_function_wrapper(
             module="openai.resources.embeddings",
             name="AsyncEmbeddings.create",
-            wrapper=async_embeddings_create(
-                is_content_enabled(), handler
-            ),
+            wrapper=async_embeddings_create(is_content_enabled(), handler),
         )
 
     def _uninstrument(self, **kwargs):

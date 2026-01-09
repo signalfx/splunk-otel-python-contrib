@@ -714,9 +714,7 @@ def test_chat_completion_streaming(
     assert body["gen_ai.output.messages"] == [
         {
             "role": "assistant",
-            "parts": [
-                {"type": "text", "content": response_stream_result}
-            ],
+            "parts": [{"type": "text", "content": response_stream_result}],
             "finish_reason": "stop",
         }
     ]
@@ -770,9 +768,7 @@ def test_chat_completion_streaming_not_complete(
     assert body["gen_ai.output.messages"] == [
         {
             "role": "assistant",
-            "parts": [
-                {"type": "text", "content": response_stream_result}
-            ],
+            "parts": [{"type": "text", "content": response_stream_result}],
             "finish_reason": "error",
         }
     ]
@@ -935,7 +931,6 @@ def test_chat_completion_with_content_span_unsampled(
     assert logs[0].log_record.trace_id is not None
     assert logs[0].log_record.span_id is not None
     assert logs[0].log_record.trace_flags == 0
-
 
 
 def chat_completion_multiple_tools_streaming(

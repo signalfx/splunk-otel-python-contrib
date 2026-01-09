@@ -570,9 +570,7 @@ async def test_async_chat_completion_streaming(
     assert body["gen_ai.output.messages"] == [
         {
             "role": "assistant",
-            "parts": [
-                {"type": "text", "content": response_stream_result}
-            ],
+            "parts": [{"type": "text", "content": response_stream_result}],
             "finish_reason": "stop",
         }
     ]
@@ -629,9 +627,7 @@ async def test_async_chat_completion_streaming_not_complete(
     assert body["gen_ai.output.messages"] == [
         {
             "role": "assistant",
-            "parts": [
-                {"type": "text", "content": response_stream_result}
-            ],
+            "parts": [{"type": "text", "content": response_stream_result}],
             "finish_reason": "error",
         }
     ]
@@ -792,9 +788,7 @@ async def test_async_chat_completion_streaming_unsampled(
     assert body["gen_ai.output.messages"] == [
         {
             "role": "assistant",
-            "parts": [
-                {"type": "text", "content": response_stream_result}
-            ],
+            "parts": [{"type": "text", "content": response_stream_result}],
             "finish_reason": "stop",
         }
     ]
@@ -802,7 +796,6 @@ async def test_async_chat_completion_streaming_unsampled(
     assert logs[0].log_record.trace_id is not None
     assert logs[0].log_record.span_id is not None
     assert logs[0].log_record.trace_flags == 0
-
 
 
 async def async_chat_completion_multiple_tools_streaming(
