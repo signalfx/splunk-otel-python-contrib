@@ -29,7 +29,7 @@ class _InvocationState:
 class _InvocationManager:
     """
     Manages LlamaIndex invocations and their parent/child relationships.
-    
+
     This replaces the entity registry pattern from TelemetryHandler, as the
     handler is dropping support for entity tracking.
     """
@@ -53,7 +53,9 @@ class _InvocationManager:
             parent_invocation_state = self._invocations[parent_id]
             parent_invocation_state.children.append(event_id)
 
-    def get_invocation(self, event_id: str) -> Optional[Union[LLMInvocation, EmbeddingInvocation]]:
+    def get_invocation(
+        self, event_id: str
+    ) -> Optional[Union[LLMInvocation, EmbeddingInvocation]]:
         """Get an invocation by event_id."""
         invocation_state = self._invocations.get(event_id)
         return invocation_state.invocation if invocation_state else None

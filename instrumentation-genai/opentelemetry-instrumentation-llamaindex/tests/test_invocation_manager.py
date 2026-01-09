@@ -19,9 +19,7 @@ def mock_invocation():
     return mock.Mock(spec=LLMInvocation)
 
 
-def test_add_invocation_state_without_parent(
-    invocation_manager, mock_invocation
-):
+def test_add_invocation_state_without_parent(invocation_manager, mock_invocation):
     event_id = "event-123"
     invocation_manager.add_invocation_state(
         event_id=event_id,

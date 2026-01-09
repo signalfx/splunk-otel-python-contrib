@@ -6,7 +6,6 @@ from llama_index.core.callbacks.schema import CBEventType
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     EmbeddingInvocation,
-    Error,
     InputMessage,
     LLMInvocation,
     OutputMessage,
@@ -27,7 +26,7 @@ def _safe_str(value: Any) -> str:
 
 def _get_attr(obj: Any, key: str, default: Any = None) -> Any:
     """Get attribute from dict-like or regular object.
-    
+
     Uses try-except to support any dict-like object that implements .get(),
     not just dict instances. Falls back to getattr for regular objects.
     """
@@ -107,7 +106,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         model_name = (
             serialized.get("model") or serialized.get("model_name") or "unknown"
         )
-        
+
         # Extract additional parameters if available
         temperature = serialized.get("temperature")
         max_tokens = serialized.get("max_tokens")
@@ -169,7 +168,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Start the LLM invocation
         llm_inv = self._handler.start_llm(llm_inv)
-        
+
         # Store in invocation manager
         self._invocation_manager.add_invocation_state(
             event_id=event_id,
@@ -230,7 +229,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Stop the LLM invocation
         llm_inv = self._handler.stop_llm(llm_inv)
-        
+
         # Clean up from invocation manager if span is complete
         if not llm_inv.span.is_recording():
             self._invocation_manager.delete_invocation_state(event_id)
@@ -270,7 +269,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Start the embedding invocation
         emb_inv = self._handler.start_embedding(emb_inv)
-        
+
         # Store in invocation manager
         self._invocation_manager.add_invocation_state(
             event_id=event_id,
@@ -314,7 +313,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Stop the embedding invocation
         emb_inv = self._handler.stop_embedding(emb_inv)
-        
+
         # Clean up from invocation manager if span is complete
         if not emb_inv.span.is_recording():
             self._invocation_manager.delete_invocation_state(event_id)
