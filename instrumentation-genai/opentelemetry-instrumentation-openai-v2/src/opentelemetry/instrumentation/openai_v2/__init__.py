@@ -52,6 +52,7 @@ from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.metrics import get_meter
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import get_tracer
+from opentelemetry.util.genai.handler import get_telemetry_handler
 
 from .instruments import Instruments
 from .patch import (
@@ -95,11 +96,18 @@ class OpenAIInstrumentor(BaseInstrumentor):
 
         instruments = Instruments(self._meter)
 
+        # Create telemetry handler with the user's providers
+        handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            logger_provider=logger_provider,
+        )
+
         wrap_function_wrapper(
             module="openai.resources.chat.completions",
             name="Completions.create",
             wrapper=chat_completions_create(
-                tracer, logger, instruments, is_content_enabled()
+                logger, instruments, is_content_enabled(), handler
             ),
         )
 
@@ -107,7 +115,7 @@ class OpenAIInstrumentor(BaseInstrumentor):
             module="openai.resources.chat.completions",
             name="AsyncCompletions.create",
             wrapper=async_chat_completions_create(
-                tracer, logger, instruments, is_content_enabled()
+                logger, instruments, is_content_enabled(), handler
             ),
         )
 
