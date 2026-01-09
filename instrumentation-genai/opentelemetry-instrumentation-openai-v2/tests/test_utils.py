@@ -16,6 +16,8 @@
 
 from typing import Optional
 
+DEFAULT_SERVER_ADDRESS = "api.openai.com"
+
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
@@ -41,7 +43,7 @@ def assert_all_attributes(
     input_tokens: Optional[int] = None,
     output_tokens: Optional[int] = None,
     operation_name: str = "chat",
-    server_address: str = "api.openai.com",
+    server_address: str = DEFAULT_SERVER_ADDRESS,
     server_port: int = 443,
     request_service_tier: Optional[str] = None,
     response_service_tier: Optional[str] = None,
@@ -98,6 +100,17 @@ def assert_log_parent(log, span):
         assert (
             log.log_record.trace_flags == span.get_span_context().trace_flags
         )
+
+
+def assert_handler_event(log, parent_span):
+    """Assert log record is the unified GenAI handler event and return its body."""
+    assert (
+        log.log_record.event_name
+        == "gen_ai.client.inference.operation.details"
+    )
+    assert log.log_record.body is not None
+    assert_log_parent(log, parent_span)
+    return dict(log.log_record.body)
 
 
 def remove_none_values(body):

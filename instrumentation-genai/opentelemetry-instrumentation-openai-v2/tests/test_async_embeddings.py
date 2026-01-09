@@ -26,7 +26,7 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.semconv._incubating.metrics import gen_ai_metrics
 
-from .test_utils import assert_all_attributes
+from .test_utils import DEFAULT_SERVER_ADDRESS, assert_all_attributes
 
 
 @pytest.mark.asyncio
@@ -227,7 +227,7 @@ def assert_embedding_attributes(
         response_model=response.model,
         input_tokens=response.usage.prompt_tokens,
         operation_name="embeddings",
-        server_address="api.openai.com",
+        server_address=DEFAULT_SERVER_ADDRESS,
     )
 
     # Assert embeddings-specific attributes

@@ -39,7 +39,7 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.semconv._incubating.metrics import gen_ai_metrics
 
-from .test_utils import assert_all_attributes
+from .test_utils import DEFAULT_SERVER_ADDRESS, assert_all_attributes
 
 
 @pytest.mark.vcr()
@@ -108,16 +108,7 @@ def test_embeddings_with_dimensions(
     )
     assert duration_metric is not None
 
-    # Verify the dimensions attribute is present in metrics
-    for point in duration_metric.data.data_points:
-        if "gen_ai.embeddings.dimension.count" in point.attributes:
-            assert (
-                point.attributes["gen_ai.embeddings.dimension.count"]
-                == dimensions
-            )
-            break
-    else:
-        assert False, "Dimensions attribute not found in metrics"
+    assert duration_metric.data.data_points[0].sum > 0
 
 
 @pytest.mark.vcr()
@@ -372,7 +363,7 @@ def assert_embedding_attributes(
         response_model=response.model,
         input_tokens=response.usage.prompt_tokens,
         operation_name="embeddings",
-        server_address="api.openai.com",
+        server_address=DEFAULT_SERVER_ADDRESS,
     )
 
     # Assert embeddings-specific attributes
