@@ -117,7 +117,22 @@ def _apply_sampled_for_evaluation(
     span: Span,
     is_sampled: bool,
 ) -> None:
-    span.set_attribute("gen_ai.evaluation.sampled", is_sampled)
+    # Check if span is recording before setting attribute
+    # This handles ReadableSpan which has already ended, gracefully
+    if (
+        span is not None
+        and hasattr(span, "is_recording")
+        and span.is_recording()
+    ):
+        span.set_attribute("gen_ai.evaluation.sampled", is_sampled)
+    elif span is not None and hasattr(span, "_attributes"):
+        # Fallback for ReadableSpan: directly mutate _attributes
+        try:
+            span._attributes["gen_ai.evaluation.sampled"] = str(
+                is_sampled
+            ).lower()
+        except Exception:
+            pass
 
 
 class SpanEmitter(EmitterMeta):
@@ -201,6 +216,12 @@ class SpanEmitter(EmitterMeta):
         provider = getattr(invocation, "provider", None)
         if provider:
             span.set_attribute(GEN_AI_PROVIDER_NAME, provider)
+        server_address = getattr(invocation, "server_address", None)
+        if server_address:
+            span.set_attribute(SERVER_ADDRESS, server_address)
+        server_port = getattr(invocation, "server_port", None)
+        if server_port:
+            span.set_attribute(SERVER_PORT, server_port)
         # framework (named field)
         if isinstance(invocation, LLMInvocation) and invocation.framework:
             span.set_attribute("gen_ai.framework", invocation.framework)
@@ -339,14 +360,22 @@ class SpanEmitter(EmitterMeta):
             span = getattr(invocation, "span", None)
             if span is None:
                 return
-            self._apply_finish_attrs(invocation)
+            # Check if span is still recording (not already ended)
+            # This allows reusing on_end with ReadableSpan from translators
+            is_recording = (
+                hasattr(span, "is_recording") and span.is_recording()
+            )
+            if is_recording:
+                self._apply_finish_attrs(invocation)
             token = getattr(invocation, "context_token", None)
             if token is not None and hasattr(token, "__exit__"):
                 try:  # pragma: no cover
                     token.__exit__(None, None, None)  # type: ignore[misc]
                 except Exception:  # pragma: no cover
                     pass
-            span.end()
+            # Only end span if it's still recording
+            if is_recording:
+                span.end()
 
     def on_error(
         self, error: Error, invocation: LLMInvocation | EmbeddingInvocation
@@ -712,10 +741,6 @@ class SpanEmitter(EmitterMeta):
         self._apply_start_attrs(embedding)
 
         # Set embedding-specific start attributes
-        if embedding.server_address:
-            span.set_attribute(SERVER_ADDRESS, embedding.server_address)
-        if embedding.server_port:
-            span.set_attribute(SERVER_PORT, embedding.server_port)
         if embedding.encoding_formats:
             span.set_attribute(
                 GEN_AI_REQUEST_ENCODING_FORMATS, embedding.encoding_formats
@@ -771,3 +796,4 @@ class SpanEmitter(EmitterMeta):
                 token.__exit__(None, None, None)  # type: ignore[misc]
             except Exception:
                 pass
+        span.end()

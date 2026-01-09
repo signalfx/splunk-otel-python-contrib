@@ -47,6 +47,7 @@ from .deepeval_metrics import (
 from .deepeval_metrics import (
     instantiate_metrics as _instantiate_metrics,
 )
+from .deepeval_model import create_eval_model as _create_eval_model
 from .deepeval_runner import run_evaluation as _run_deepeval
 
 try:  # Optional debug logging import
@@ -614,7 +615,32 @@ class DeepevalEvaluator(Evaluator):
     # per-metric param check handled in deepeval_metrics
 
     @staticmethod
-    def _default_model() -> str | None:
+    def _default_model() -> str | Any | None:
+        """
+        Get the default model for evaluations.
+
+        Returns either:
+        - A LiteLLMModel instance if DEEPEVAL_LLM_BASE_URL is configured
+        - A model name string for standard OpenAI usage
+
+        Environment Variables (for custom model):
+            DEEPEVAL_LLM_BASE_URL: Custom LLM endpoint
+            DEEPEVAL_LLM_MODEL: Model name
+            DEEPEVAL_LLM_PROVIDER: Provider identifier
+            DEEPEVAL_LLM_TOKEN_URL: OAuth2 token endpoint
+            DEEPEVAL_LLM_CLIENT_ID: OAuth2 client ID
+            DEEPEVAL_LLM_CLIENT_SECRET: OAuth2 client secret
+            DEEPEVAL_LLM_CLIENT_APP_NAME: App key (for Cisco-style providers)
+        """
+        # Check for custom OAuth2/LiteLLM provider first
+        try:
+            custom_model = _create_eval_model()
+            if custom_model is not None:
+                return custom_model
+        except Exception:
+            pass  # Fall back to standard OpenAI
+
+        # Fall back to model name for standard OpenAI
         model = (
             os.getenv("DEEPEVAL_EVALUATION_MODEL")
             or os.getenv("DEEPEVAL_MODEL")

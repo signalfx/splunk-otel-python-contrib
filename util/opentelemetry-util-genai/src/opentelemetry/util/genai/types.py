@@ -24,11 +24,16 @@ from uuid import UUID, uuid4
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
 )
+from opentelemetry.semconv.attributes import (
+    server_attributes as ServerAttributes,
+)
 from opentelemetry.trace import Span, SpanContext
 
 # Backward compatibility: older semconv builds may miss new GEN_AI attributes
 if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
+# Import security attribute from centralized attributes module
+from opentelemetry.util.genai.attributes import GEN_AI_SECURITY_EVENT_ID
 from opentelemetry.util.types import AttributeValue
 
 ContextToken = Token  # simple alias; avoid TypeAlias warning tools
@@ -172,6 +177,14 @@ class LLMInvocation(GenAI):
     request_model: str = field(
         metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_MODEL}
     )
+    server_address: Optional[str] = field(
+        default=None,
+        metadata={"semconv": ServerAttributes.SERVER_ADDRESS},
+    )
+    server_port: Optional[int] = field(
+        default=None,
+        metadata={"semconv": ServerAttributes.SERVER_PORT},
+    )
     input_messages: List[InputMessage] = field(
         default_factory=_new_input_messages
     )
@@ -266,6 +279,11 @@ class LLMInvocation(GenAI):
         metadata={
             "semconv": GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SYSTEM_FINGERPRINT
         },
+    )
+    # Security inspection attribute (Cisco AI Defense)
+    security_event_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": GEN_AI_SECURITY_EVENT_ID},
     )
 
 
@@ -436,5 +454,6 @@ __all__ = [
     "AgentCreation",
     "AgentInvocation",
     "Step",
-    # backward compatibility normalization helpers
+    # Security semconv constant (Cisco AI Defense) - re-exported from attributes
+    "GEN_AI_SECURITY_EVENT_ID",
 ]
