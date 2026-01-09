@@ -121,7 +121,9 @@ def instrument_no_content(tracer_provider, logger_provider, meter_provider):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "False"}
     )
-    os.environ.update({OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"})
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
     if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
@@ -145,7 +147,9 @@ def instrument_with_content(tracer_provider, logger_provider, meter_provider):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True"}
     )
-    os.environ.update({OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"})
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
     if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
@@ -171,7 +175,9 @@ def instrument_with_content_unsampled(
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True"}
     )
-    os.environ.update({OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"})
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
 
     tracer_provider = TracerProvider(sampler=ALWAYS_OFF)
     tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))

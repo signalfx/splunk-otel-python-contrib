@@ -64,13 +64,6 @@ def set_server_address_and_port(client_instance, attributes):
         attributes[ServerAttributes.SERVER_PORT] = port
 
 
-def get_property_value(obj, property_name):
-    if isinstance(obj, dict):
-        return obj.get(property_name, None)
-
-    return getattr(obj, property_name, None)
-
-
 def set_span_attributes(span, attributes: dict):
     for field, value in attributes.model_dump(by_alias=True).items():
         set_span_attribute(span, field, value)
