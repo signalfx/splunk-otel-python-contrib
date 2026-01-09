@@ -15,21 +15,31 @@
 """
 OpenTelemetry Cisco AI Defense Instrumentation
 
-Wrapper-based instrumentation for Cisco AI Defense Python SDK using splunk-otel-util-genai.
+Wrapper-based instrumentation for Cisco AI Defense using splunk-otel-util-genai.
 
-This instrumentation captures security inspection events from AI Defense API mode,
-adding the critical `gen_ai.security.event_id` span attribute for security event correlation.
+This instrumentation supports two modes:
 
-Supported methods:
-- ChatInspectionClient: inspect_prompt, inspect_response, inspect_conversation
-- HttpInspectionClient: inspect_request, inspect_response
+1. **SDK Mode**: Wraps cisco-aidefense-sdk methods to capture security inspection events
+   - ChatInspectionClient: inspect_prompt, inspect_response, inspect_conversation
+   - HttpInspectionClient: inspect_request, inspect_response
 
-Note: Proxy mode (x-cisco-ai-defense-tenant-api-key header) is not yet supported.
+2. **Gateway Mode**: Wraps HTTP client (httpx) to capture the X-Cisco-AI-Defense-Event-Id
+   header from responses when LLM calls are proxied through AI Defense Gateway.
+   - Automatically detects AI Defense Gateway URLs
+   - Adds gen_ai.security.event_id to the current span (e.g., LangChain spans)
+   - Supported providers: OpenAI, Azure OpenAI, AWS Bedrock, Google Vertex, Cohere, Mistral
+
+The critical `gen_ai.security.event_id` span attribute enables security event correlation
+in Splunk APM and other observability platforms.
 """
 
-from typing import Collection, Optional
+import logging
+import os
+import re
+from typing import Collection, List, Optional
 
 from wrapt import wrap_function_wrapper
+from opentelemetry import trace
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.util.genai.handler import TelemetryHandler
@@ -41,39 +51,156 @@ from opentelemetry.util.genai.types import (
     Error,
 )
 
+_logger = logging.getLogger(__name__)
+
 _instruments = ("cisco-aidefense-sdk >= 2.0.0",)
+
+# AI Defense Gateway URL patterns
+# These patterns identify requests going through AI Defense Gateway
+AI_DEFENSE_GATEWAY_PATTERNS = [
+    # Primary AI Defense Gateway endpoints
+    r"gateway\.aidefense\.security\.cisco\.com",
+    r"\.aidefense\.cisco\.com",
+    # Regional variants
+    r"us\.gateway\.aidefense",
+    r"eu\.gateway\.aidefense",
+    r"apjc\.gateway\.aidefense",
+]
+
+# Compiled regex patterns for efficient matching
+_gateway_patterns_compiled: List[re.Pattern] = []
+
+# Header containing the security event ID from AI Defense Gateway
+AI_DEFENSE_EVENT_ID_HEADER = "X-Cisco-AI-Defense-Event-Id"
+AI_DEFENSE_EVENT_ID_HEADER_LOWER = "x-cisco-ai-defense-event-id"
+
+# Span attribute for security event ID
+GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
 
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
 
 
+def _get_gateway_patterns() -> List[re.Pattern]:
+    """
+    Get compiled regex patterns for AI Defense Gateway URL matching.
+
+    Includes both built-in patterns and custom patterns from environment variable.
+    """
+    global _gateway_patterns_compiled
+
+    if _gateway_patterns_compiled:
+        return _gateway_patterns_compiled
+
+    patterns = list(AI_DEFENSE_GATEWAY_PATTERNS)
+
+    # Add custom patterns from environment variable
+    custom_patterns = os.environ.get("OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS", "")
+    if custom_patterns:
+        for pattern in custom_patterns.split(","):
+            pattern = pattern.strip()
+            if pattern:
+                # Escape special regex chars if it looks like a literal string
+                if not any(c in pattern for c in r".*+?^${}[]|\()"):
+                    pattern = re.escape(pattern)
+                patterns.append(pattern)
+
+    _gateway_patterns_compiled = [re.compile(p, re.IGNORECASE) for p in patterns]
+    return _gateway_patterns_compiled
+
+
+def _is_aidefense_gateway_url(url: str) -> bool:
+    """
+    Check if URL matches AI Defense Gateway patterns.
+
+    Args:
+        url: The URL to check (can be full URL or just host)
+
+    Returns:
+        True if the URL appears to be an AI Defense Gateway endpoint
+    """
+    if not url:
+        return False
+
+    patterns = _get_gateway_patterns()
+    for pattern in patterns:
+        if pattern.search(url):
+            return True
+
+    return False
+
+
+def _extract_event_id_from_headers(headers) -> Optional[str]:
+    """
+    Extract X-Cisco-AI-Defense-Event-Id from HTTP response headers.
+
+    Handles various header container types (dict, httpx.Headers, etc.)
+    """
+    if not headers:
+        return None
+
+    try:
+        # Try exact case first
+        if hasattr(headers, "get"):
+            event_id = headers.get(AI_DEFENSE_EVENT_ID_HEADER)
+            if event_id:
+                return event_id
+            # Try lowercase (headers are often case-insensitive)
+            event_id = headers.get(AI_DEFENSE_EVENT_ID_HEADER_LOWER)
+            if event_id:
+                return event_id
+
+        # For dict-like objects, try case-insensitive search
+        if hasattr(headers, "items"):
+            for key, value in headers.items():
+                if key.lower() == AI_DEFENSE_EVENT_ID_HEADER_LOWER:
+                    return value
+
+        return None
+    except Exception:
+        return None
+
+
 class AIDefenseInstrumentor(BaseInstrumentor):
     """
-    OpenTelemetry instrumentation for Cisco AI Defense Python SDK.
+    OpenTelemetry instrumentation for Cisco AI Defense.
 
     This instrumentor provides standardized telemetry for AI Defense security
-    inspection operations, capturing the event_id and inspection results as
-    span attributes under the gen_ai.security.* namespace.
+    operations, supporting two modes:
+
+    1. **SDK Mode**: Wraps cisco-aidefense-sdk methods to capture security
+       inspection events as dedicated spans.
+
+    2. **Gateway Mode**: Wraps HTTP clients (httpx) to capture the
+       X-Cisco-AI-Defense-Event-Id header when LLM calls are proxied through
+       AI Defense Gateway. The event_id is added to the current span.
+
+    Supported LLM providers for Gateway Mode:
+    - OpenAI (api.openai.com)
+    - Azure OpenAI (*.openai.azure.com)
+    - AWS Bedrock (bedrock-runtime.*.amazonaws.com)
+    - Google Vertex AI (*aiplatform.googleapis.com)
+    - Cohere (api.cohere.com)
+    - Mistral (api.mistral.ai)
 
     The primary attribute captured is `gen_ai.security.event_id`, which is
     essential for correlating security events in Splunk APM and GDI pipelines.
-
-    Note: This instrumentation covers API mode only. Proxy mode (header-based
-    event_id via x-cisco-ai-defense-tenant-api-key) is not yet supported.
     """
+
+    # Track which wrappers were applied for uninstrumentation
+    _sdk_mode_applied: bool = False
+    _gateway_mode_applied: bool = False
 
     def instrumentation_dependencies(self) -> Collection[str]:
         return _instruments
 
     def _instrument(self, **kwargs):
-        """Apply instrumentation to AI Defense SDK components."""
+        """Apply instrumentation to AI Defense SDK and Gateway Mode."""
         global _handler
 
         # Initialize TelemetryHandler with tracer provider
         tracer_provider = kwargs.get("tracer_provider")
         if not tracer_provider:
-            from opentelemetry import trace
-
             tracer_provider = trace.get_tracer_provider()
 
         meter_provider = kwargs.get("meter_provider")
@@ -86,67 +213,280 @@ class AIDefenseInstrumentor(BaseInstrumentor):
             tracer_provider=tracer_provider, meter_provider=meter_provider
         )
 
-        # ChatInspectionClient methods
-        wrap_function_wrapper(
-            "aidefense.runtime.chat_inspect",
-            "ChatInspectionClient.inspect_prompt",
-            _wrap_chat_inspect_prompt,
-        )
-        wrap_function_wrapper(
-            "aidefense.runtime.chat_inspect",
-            "ChatInspectionClient.inspect_response",
-            _wrap_chat_inspect_response,
-        )
-        wrap_function_wrapper(
-            "aidefense.runtime.chat_inspect",
-            "ChatInspectionClient.inspect_conversation",
-            _wrap_chat_inspect_conversation,
-        )
+        # SDK Mode: Wrap AI Defense SDK methods (if SDK is installed)
+        self._instrument_sdk_mode()
 
-        # HttpInspectionClient methods
-        wrap_function_wrapper(
-            "aidefense.runtime.http_inspect",
-            "HttpInspectionClient.inspect_request",
-            _wrap_http_inspect_request,
-        )
-        wrap_function_wrapper(
-            "aidefense.runtime.http_inspect",
-            "HttpInspectionClient.inspect_response",
-            _wrap_http_inspect_response,
-        )
-        wrap_function_wrapper(
-            "aidefense.runtime.http_inspect",
-            "HttpInspectionClient.inspect_request_from_http_library",
-            _wrap_http_inspect_request_from_library,
-        )
-        wrap_function_wrapper(
-            "aidefense.runtime.http_inspect",
-            "HttpInspectionClient.inspect_response_from_http_library",
-            _wrap_http_inspect_response_from_library,
-        )
+        # Gateway Mode: Wrap HTTP clients to capture gateway headers
+        self._instrument_gateway_mode()
+
+    def _instrument_sdk_mode(self):
+        """Instrument AI Defense SDK methods (SDK Mode)."""
+        try:
+            # ChatInspectionClient methods
+            wrap_function_wrapper(
+                "aidefense.runtime.chat_inspect",
+                "ChatInspectionClient.inspect_prompt",
+                _wrap_chat_inspect_prompt,
+            )
+            wrap_function_wrapper(
+                "aidefense.runtime.chat_inspect",
+                "ChatInspectionClient.inspect_response",
+                _wrap_chat_inspect_response,
+            )
+            wrap_function_wrapper(
+                "aidefense.runtime.chat_inspect",
+                "ChatInspectionClient.inspect_conversation",
+                _wrap_chat_inspect_conversation,
+            )
+
+            # HttpInspectionClient methods
+            wrap_function_wrapper(
+                "aidefense.runtime.http_inspect",
+                "HttpInspectionClient.inspect_request",
+                _wrap_http_inspect_request,
+            )
+            wrap_function_wrapper(
+                "aidefense.runtime.http_inspect",
+                "HttpInspectionClient.inspect_response",
+                _wrap_http_inspect_response,
+            )
+            wrap_function_wrapper(
+                "aidefense.runtime.http_inspect",
+                "HttpInspectionClient.inspect_request_from_http_library",
+                _wrap_http_inspect_request_from_library,
+            )
+            wrap_function_wrapper(
+                "aidefense.runtime.http_inspect",
+                "HttpInspectionClient.inspect_response_from_http_library",
+                _wrap_http_inspect_response_from_library,
+            )
+
+            self._sdk_mode_applied = True
+            _logger.debug("AI Defense SDK Mode instrumentation applied")
+        except ImportError:
+            _logger.debug(
+                "cisco-aidefense-sdk not installed, skipping SDK Mode instrumentation"
+            )
+        except Exception as e:
+            _logger.debug("Failed to apply SDK Mode instrumentation: %s", e)
+
+    def _instrument_gateway_mode(self):
+        """
+        Instrument HTTP clients for Gateway Mode.
+
+        Wraps httpx (used by OpenAI, Anthropic, Cohere, Mistral SDKs) to capture
+        X-Cisco-AI-Defense-Event-Id header from responses when LLM calls are
+        proxied through AI Defense Gateway.
+
+        This approach works for all LLM providers that use httpx:
+        - OpenAI SDK
+        - Azure OpenAI (via OpenAI SDK)
+        - Anthropic SDK
+        - Cohere SDK
+        - Mistral SDK
+        - Google Vertex AI SDK (uses google-auth-httplib2 but we also wrap httpx)
+        - AWS Bedrock (uses botocore/urllib3, wrapped separately)
+        """
+        # Wrap httpx (covers OpenAI, Anthropic, Cohere, Mistral, etc.)
+        try:
+            wrap_function_wrapper(
+                "httpx",
+                "Client.send",
+                _wrap_httpx_send_for_gateway,
+            )
+            wrap_function_wrapper(
+                "httpx",
+                "AsyncClient.send",
+                _wrap_async_httpx_send_for_gateway,
+            )
+            self._gateway_mode_applied = True
+            _logger.debug("AI Defense Gateway Mode instrumentation applied for httpx")
+        except ImportError:
+            _logger.debug("httpx not installed, skipping httpx instrumentation")
+        except Exception as e:
+            _logger.debug("Failed to wrap httpx: %s", e)
+
+        # Wrap botocore for AWS Bedrock
+        try:
+            wrap_function_wrapper(
+                "botocore.httpsession",
+                "URLLib3Session.send",
+                _wrap_botocore_send_for_gateway,
+            )
+            _logger.debug(
+                "AI Defense Gateway Mode instrumentation applied for botocore (AWS)"
+            )
+        except ImportError:
+            _logger.debug("botocore not installed, skipping AWS instrumentation")
+        except Exception as e:
+            _logger.debug("Failed to wrap botocore: %s", e)
 
     def _uninstrument(self, **kwargs):
-        """Remove instrumentation from AI Defense SDK components."""
-        unwrap("aidefense.runtime.chat_inspect.ChatInspectionClient", "inspect_prompt")
-        unwrap(
-            "aidefense.runtime.chat_inspect.ChatInspectionClient", "inspect_response"
-        )
-        unwrap(
-            "aidefense.runtime.chat_inspect.ChatInspectionClient",
-            "inspect_conversation",
-        )
-        unwrap("aidefense.runtime.http_inspect.HttpInspectionClient", "inspect_request")
-        unwrap(
-            "aidefense.runtime.http_inspect.HttpInspectionClient", "inspect_response"
-        )
-        unwrap(
-            "aidefense.runtime.http_inspect.HttpInspectionClient",
-            "inspect_request_from_http_library",
-        )
-        unwrap(
-            "aidefense.runtime.http_inspect.HttpInspectionClient",
-            "inspect_response_from_http_library",
-        )
+        """Remove instrumentation from AI Defense SDK and Gateway Mode."""
+        # SDK Mode
+        if self._sdk_mode_applied:
+            try:
+                unwrap(
+                    "aidefense.runtime.chat_inspect.ChatInspectionClient",
+                    "inspect_prompt",
+                )
+                unwrap(
+                    "aidefense.runtime.chat_inspect.ChatInspectionClient",
+                    "inspect_response",
+                )
+                unwrap(
+                    "aidefense.runtime.chat_inspect.ChatInspectionClient",
+                    "inspect_conversation",
+                )
+                unwrap(
+                    "aidefense.runtime.http_inspect.HttpInspectionClient",
+                    "inspect_request",
+                )
+                unwrap(
+                    "aidefense.runtime.http_inspect.HttpInspectionClient",
+                    "inspect_response",
+                )
+                unwrap(
+                    "aidefense.runtime.http_inspect.HttpInspectionClient",
+                    "inspect_request_from_http_library",
+                )
+                unwrap(
+                    "aidefense.runtime.http_inspect.HttpInspectionClient",
+                    "inspect_response_from_http_library",
+                )
+            except Exception:
+                pass
+            self._sdk_mode_applied = False
+
+        # Gateway Mode
+        if self._gateway_mode_applied:
+            try:
+                unwrap("httpx.Client", "send")
+                unwrap("httpx.AsyncClient", "send")
+            except Exception:
+                pass
+
+            try:
+                unwrap("botocore.httpsession.URLLib3Session", "send")
+            except Exception:
+                pass
+
+            self._gateway_mode_applied = False
+
+
+# ============================================================================
+# Gateway Mode Wrappers - httpx (OpenAI, Cohere, Mistral, etc.)
+# ============================================================================
+
+
+def _wrap_httpx_send_for_gateway(wrapped, instance, args, kwargs):
+    """
+    Wrap httpx.Client.send to capture AI Defense Gateway event_id.
+
+    This wrapper intercepts HTTP responses and checks if they came from
+    AI Defense Gateway. If so, it extracts the X-Cisco-AI-Defense-Event-Id
+    header and adds it to the current span.
+
+    This works because:
+    1. LLM instrumentations (LangChain, OpenAI, etc.) create spans at a higher level
+    2. Those spans are still active when httpx makes the actual HTTP call
+    3. We add the event_id to that active span
+    """
+    response = wrapped(*args, **kwargs)
+
+    try:
+        # Get the request URL from the response
+        request = response.request if hasattr(response, "request") else None
+        url = str(request.url) if request and hasattr(request, "url") else ""
+
+        # Check if response is from AI Defense Gateway
+        if url and _is_aidefense_gateway_url(url):
+            event_id = _extract_event_id_from_headers(response.headers)
+            if event_id:
+                span = trace.get_current_span()
+                if span and span.is_recording():
+                    span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
+                    _logger.debug(
+                        "Added AI Defense event_id to span from httpx: %s...",
+                        event_id[:20] if len(event_id) > 20 else event_id,
+                    )
+    except Exception as e:
+        _logger.debug("Failed to extract AI Defense event_id from httpx: %s", e)
+
+    return response
+
+
+async def _wrap_async_httpx_send_for_gateway(wrapped, instance, args, kwargs):
+    """
+    Wrap httpx.AsyncClient.send to capture AI Defense Gateway event_id.
+
+    Async version of _wrap_httpx_send_for_gateway.
+    """
+    response = await wrapped(*args, **kwargs)
+
+    try:
+        # Get the request URL from the response
+        request = response.request if hasattr(response, "request") else None
+        url = str(request.url) if request and hasattr(request, "url") else ""
+
+        # Check if response is from AI Defense Gateway
+        if url and _is_aidefense_gateway_url(url):
+            event_id = _extract_event_id_from_headers(response.headers)
+            if event_id:
+                span = trace.get_current_span()
+                if span and span.is_recording():
+                    span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
+                    _logger.debug(
+                        "Added AI Defense event_id to span from async httpx: %s...",
+                        event_id[:20] if len(event_id) > 20 else event_id,
+                    )
+    except Exception as e:
+        _logger.debug("Failed to extract AI Defense event_id from async httpx: %s", e)
+
+    return response
+
+
+# ============================================================================
+# Gateway Mode Wrappers - botocore (AWS Bedrock)
+# ============================================================================
+
+
+def _wrap_botocore_send_for_gateway(wrapped, instance, args, kwargs):
+    """
+    Wrap botocore URLLib3Session.send to capture AI Defense Gateway event_id.
+
+    AWS Bedrock uses botocore which uses urllib3 for HTTP requests.
+    This wrapper intercepts responses and extracts the AI Defense event_id.
+    """
+    response = wrapped(*args, **kwargs)
+
+    try:
+        # Get request from args (first positional argument is the AWSRequest)
+        request = args[0] if args else None
+        url = request.url if request and hasattr(request, "url") else ""
+
+        # Check if response is from AI Defense Gateway
+        if url and _is_aidefense_gateway_url(url):
+            # botocore response has headers as a dict-like object
+            headers = getattr(response, "headers", None)
+            event_id = _extract_event_id_from_headers(headers)
+            if event_id:
+                span = trace.get_current_span()
+                if span and span.is_recording():
+                    span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
+                    _logger.debug(
+                        "Added AI Defense event_id to span from botocore: %s...",
+                        event_id[:20] if len(event_id) > 20 else event_id,
+                    )
+    except Exception as e:
+        _logger.debug("Failed to extract AI Defense event_id from botocore: %s", e)
+
+    return response
+
+
+# ============================================================================
+# SDK Mode Wrappers - ChatInspectionClient
+# ============================================================================
 
 
 def _wrap_chat_inspect_prompt(wrapped, instance, args, kwargs):
@@ -283,6 +623,11 @@ def _wrap_chat_inspect_conversation(wrapped, instance, args, kwargs):
         except Exception:
             pass
         raise
+
+
+# ============================================================================
+# SDK Mode Wrappers - HttpInspectionClient
+# ============================================================================
 
 
 def _wrap_http_inspect_request(wrapped, instance, args, kwargs):
@@ -477,8 +822,13 @@ def _wrap_http_inspect_response_from_library(wrapped, instance, args, kwargs):
         raise
 
 
+# ============================================================================
+# SDK Mode Helper Functions
+# ============================================================================
+
+
 def _get_server_address(instance) -> Optional[str]:
-    """Extract the server address from the client instance."""
+    """Extract the server address from the AI Defense client instance."""
     try:
         return getattr(instance.config, "runtime_base_url", None)
     except Exception:
