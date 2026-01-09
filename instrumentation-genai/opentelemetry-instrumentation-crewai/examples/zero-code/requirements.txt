@@ -1,0 +1,35 @@
+# Core CrewAI dependencies
+crewai>=0.70.0
+crewai-tools>=0.12.0
+
+# OpenAI
+openai>=1.0.0
+
+# OpenTelemetry core packages
+opentelemetry-api>=1.38.0
+opentelemetry-sdk>=1.38.0
+opentelemetry-exporter-otlp-proto-http>=1.38.0
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+opentelemetry-instrumentation>=0.59b0
+opentelemetry-semantic-conventions>=0.59b0
+
+# Splunk GenAI utilities and emitters
+splunk-otel-util-genai>=0.1.4
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval>=0.1.6
+
+# OpenTelemetry Distro (for zero-code instrumentation)
+opentelemetry-distro>=0.59b0
+
+# DeepEval for evaluations
+deepeval>=3.0.0
+
+# Other dependencies
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+requests>=2.25.0
+
+opentelemetry-instrumentation-openai
+opentelemetry-instrumentation-chromadb
+opentelemetry-instrumentation-requests
