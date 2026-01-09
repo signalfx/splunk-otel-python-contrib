@@ -21,7 +21,6 @@ from urllib.parse import urlparse
 from httpx import URL
 from openai import NotGiven
 
-from opentelemetry._logs import LogRecord
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
 )
@@ -44,40 +43,6 @@ def is_content_enabled() -> bool:
     )
 
     return capture_content.lower() == "true"
-
-
-def extract_tool_calls(item, capture_content):
-    tool_calls = get_property_value(item, "tool_calls")
-    if tool_calls is None:
-        return None
-
-    calls = []
-    for tool_call in tool_calls:
-        tool_call_dict = {}
-        call_id = get_property_value(tool_call, "id")
-        if call_id:
-            tool_call_dict["id"] = call_id
-
-        tool_type = get_property_value(tool_call, "type")
-        if tool_type:
-            tool_call_dict["type"] = tool_type
-
-        func = get_property_value(tool_call, "function")
-        if func:
-            tool_call_dict["function"] = {}
-
-            name = get_property_value(func, "name")
-            if name:
-                tool_call_dict["function"]["name"] = name
-
-            arguments = get_property_value(func, "arguments")
-            if capture_content and arguments:
-                if isinstance(arguments, str):
-                    arguments = arguments.replace("\n", "")
-                tool_call_dict["function"]["arguments"] = arguments
-
-        calls.append(tool_call_dict)
-    return calls
 
 
 def set_server_address_and_port(client_instance, attributes):
@@ -104,65 +69,6 @@ def get_property_value(obj, property_name):
         return obj.get(property_name, None)
 
     return getattr(obj, property_name, None)
-
-
-def message_to_event(message, capture_content):
-    attributes = {
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value
-    }
-    role = get_property_value(message, "role")
-    content = get_property_value(message, "content")
-
-    body = {}
-    if capture_content and content:
-        body["content"] = content
-    if role == "assistant":
-        tool_calls = extract_tool_calls(message, capture_content)
-        if tool_calls:
-            body = {"tool_calls": tool_calls}
-    elif role == "tool":
-        tool_call_id = get_property_value(message, "tool_call_id")
-        if tool_call_id:
-            body["id"] = tool_call_id
-
-    return LogRecord(
-        event_name=f"gen_ai.{role}.message",
-        attributes=attributes,
-        body=body if body else None,
-    )
-
-
-def choice_to_event(choice, capture_content):
-    attributes = {
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value
-    }
-
-    body = {
-        "index": choice.index,
-        "finish_reason": choice.finish_reason or "error",
-    }
-
-    if choice.message:
-        message = {
-            "role": (
-                choice.message.role
-                if choice.message and choice.message.role
-                else None
-            )
-        }
-        tool_calls = extract_tool_calls(choice.message, capture_content)
-        if tool_calls:
-            message["tool_calls"] = tool_calls
-        content = get_property_value(choice.message, "content")
-        if capture_content and content:
-            message["content"] = content
-        body["message"] = message
-
-    return LogRecord(
-        event_name="gen_ai.choice",
-        attributes=attributes,
-        body=body,
-    )
 
 
 def set_span_attributes(span, attributes: dict):
