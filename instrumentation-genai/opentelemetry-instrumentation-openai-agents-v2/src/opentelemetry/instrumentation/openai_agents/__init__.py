@@ -13,8 +13,6 @@ from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
-from opentelemetry.semconv.schemas import Schemas
-from opentelemetry.trace import get_tracer
 from opentelemetry.util.genai.handler import get_telemetry_handler
 
 from .package import _instruments
@@ -134,12 +132,6 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             return
 
         tracer_provider = kwargs.get("tracer_provider")
-        tracer = get_tracer(
-            __name__,
-            "",
-            tracer_provider,
-            schema_url=Schemas.V1_28_0.value,
-        )
 
         system_override = kwargs.get("system") or os.getenv(
             _SYSTEM_OVERRIDE_ENV
@@ -170,7 +162,6 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
 
         processor = GenAISemanticProcessor(
             handler=handler,
-            tracer=tracer,
             system_name=system,
             include_sensitive_data=content_mode
             != ContentCaptureMode.NO_CONTENT,

@@ -179,6 +179,7 @@ def create_flight_agent() -> Agent:
     """Create the flight specialist agent."""
     return Agent(
         name="Flight Specialist",
+        model="gpt-5-nano",
         instructions=(
             "You are a flight specialist. Search for the best flight options "
             "using the search_flights tool. Provide clear recommendations including "
@@ -192,6 +193,7 @@ def create_hotel_agent() -> Agent:
     """Create the hotel specialist agent."""
     return Agent(
         name="Hotel Specialist",
+        model="gpt-5-nano",
         instructions=(
             "You are a hotel specialist. Find the best accommodation using the "
             "search_hotels tool. Provide detailed recommendations including "
@@ -205,6 +207,7 @@ def create_activity_agent() -> Agent:
     """Create the activity specialist agent."""
     return Agent(
         name="Activity Specialist",
+        model="gpt-5-nano",
         instructions=(
             "You are an activities specialist. Curate memorable experiences using "
             "the search_activities tool. Provide detailed activity recommendations "
@@ -218,6 +221,7 @@ def create_coordinator_agent() -> Agent:
     """Create the travel coordinator agent that synthesizes the final itinerary."""
     return Agent(
         name="Travel Coordinator",
+        model="gpt-5-nano",
         instructions=(
             "You are a travel coordinator. Synthesize flight, hotel, and activity information "
             "into a comprehensive, well-organized travel itinerary with clear sections."
