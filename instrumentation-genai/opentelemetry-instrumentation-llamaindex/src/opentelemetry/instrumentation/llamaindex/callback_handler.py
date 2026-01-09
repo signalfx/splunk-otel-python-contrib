@@ -24,10 +24,15 @@ def _safe_str(value: Any) -> str:
 
 
 def _get_attr(obj: Any, key: str, default: Any = None) -> Any:
-    """Get attribute from dict or object."""
-    if isinstance(obj, dict):
+    """Get attribute from dict-like or regular object.
+    
+    Uses try-except to support any dict-like object that implements .get(),
+    not just dict instances. Falls back to getattr for regular objects.
+    """
+    try:
         return obj.get(key, default)
-    return getattr(obj, key, default)
+    except AttributeError:
+        return getattr(obj, key, default)
 
 
 class LlamaindexCallbackHandler(BaseCallbackHandler):
