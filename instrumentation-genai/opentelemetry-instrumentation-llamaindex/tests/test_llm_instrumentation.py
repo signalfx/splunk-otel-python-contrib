@@ -49,17 +49,19 @@ def test_with_openai():
     print(f"\nResponse: {response.message.content}")
 
     if hasattr(response, "raw") and response.raw:
-        if isinstance(response.raw, dict):
+        # Try dict-like .get() first (works with any dict-like object), fallback to getattr
+        try:
             usage = response.raw.get("usage", {})
-        else:
+        except AttributeError:
             usage = getattr(response.raw, "usage", None)
 
         if usage:
-            if isinstance(usage, dict):
+            # Same pattern for usage object - try .get() first for dict-like objects
+            try:
                 prompt_tokens = usage.get("prompt_tokens")
                 completion_tokens = usage.get("completion_tokens")
                 total_tokens = usage.get("total_tokens")
-            else:
+            except AttributeError:
                 prompt_tokens = getattr(usage, "prompt_tokens", None)
                 completion_tokens = getattr(usage, "completion_tokens", None)
                 total_tokens = getattr(usage, "total_tokens", None)
