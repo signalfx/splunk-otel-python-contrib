@@ -165,6 +165,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         super().__init__()
         self._handler = telemetry_handler
 
+    def _resolve_parent_span(self, parent_run_id: Optional[UUID]) -> Any:
+        """Resolve parent_run_id to an actual OpenTelemetry Span from the handler's registry.
+
+        This enables proper parent-child span linking in traces.
+        """
+        if parent_run_id is None:
+            return None
+        return self._handler.get_span_by_run_id(parent_run_id)
+
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
         visited = set()
@@ -197,6 +206,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         agent.input_context = _serialize(inputs)
         agent.agent_name = _safe_str(agent_name) if agent_name else name
         agent.parent_run_id = parent_run_id
+        # Resolve parent_run_id to actual span for proper parent-child linking
+        agent.parent_span = self._resolve_parent_span(parent_run_id)
         agent.framework = "langchain"
         if metadata:
             if metadata.get("agent_type"):
@@ -302,6 +313,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         attributes=tool_attrs,
                     )
                     tool.framework = "langchain"
+                    # Resolve parent_run_id to actual span for proper parent-child linking
+                    tool.parent_span = self._resolve_parent_span(parent_run_id)
                     if context_agent is not None and context_agent_name is not None:
                         tool.agent_name = context_agent_name
                         tool.agent_id = str(context_agent.run_id)
@@ -320,6 +333,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     step_type="chain",
                     attributes=attrs,
                 )
+                # Resolve parent_run_id to actual span for proper parent-child linking
+                step.parent_span = self._resolve_parent_span(parent_run_id)
                 if context_agent is not None:
                     if context_agent_name is not None:
                         step.agent_name = context_agent_name
@@ -440,6 +455,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             run_id=run_id,
             parent_run_id=parent_run_id,
         )
+        # Resolve parent_run_id to actual span for proper parent-child linking
+        inv.parent_span = self._resolve_parent_span(parent_run_id)
         if provider:
             inv.provider = provider
         if parent_run_id is not None:
@@ -601,6 +618,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             attributes=attrs,
         )
         tool.framework = "langchain"
+        # Resolve parent_run_id to actual span for proper parent-child linking
+        tool.parent_span = self._resolve_parent_span(parent_run_id)
         if context_agent is not None and context_agent_name is not None:
             tool.agent_name = context_agent_name
             tool.agent_id = str(context_agent.run_id)
