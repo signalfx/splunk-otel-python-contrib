@@ -410,7 +410,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Handle retrieval start - create RetrievalInvocation for retrieve task.
-        
+
         If no valid parent exists, automatically creates a root Workflow to hold
         the RAG operations. Sets proper parent-child span relationships.
         """
@@ -482,7 +482,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Handle retrieval end - update RetrievalInvocation with retrieved nodes.
-        
+
         Extracts document count, relevance scores, and document IDs from the
         retrieved nodes and stores them as attributes.
         """
