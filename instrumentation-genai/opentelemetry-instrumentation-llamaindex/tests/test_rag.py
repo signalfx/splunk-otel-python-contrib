@@ -14,34 +14,39 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from opentelemetry import trace
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
-from opentelemetry.sdk.trace import TracerProvider, ReadableSpan
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor, SpanExporter, SpanExportResult
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 
 
 class DebugSpanExporter(SpanExporter):
     """Custom exporter that shows parent-child relationships clearly."""
-    
+
     def export(self, spans):
         for span in spans:
             parent_id = span.parent.span_id if span.parent else "None (ROOT)"
             operation = span.attributes.get("gen_ai.operation.name", "unknown")
-            span_kind = span.attributes.get("gen_ai.system", "unknown")
-            
+
             print(f"\n{'='*60}")
             print(f"Span: {span.name}")
             print(f"  Operation: {operation}")
             print(f"  Span ID: {format(span.context.span_id, '016x')}")
-            print(f"  Parent ID: {parent_id if isinstance(parent_id, str) else format(parent_id, '016x')}")
+            print(
+                f"  Parent ID: {parent_id if isinstance(parent_id, str) else format(parent_id, '016x')}"
+            )
             print(f"  Trace ID: {format(span.context.trace_id, '032x')}")
-            
+
             # Show key attributes
             if "gen_ai.request.model" in span.attributes:
                 print(f"  Model: {span.attributes['gen_ai.request.model']}")
             if "db.operation.name" in span.attributes:
                 print(f"  DB Operation: {span.attributes['db.operation.name']}")
-                
+
         return SpanExportResult.SUCCESS
-    
+
     def shutdown(self):
         pass
 
