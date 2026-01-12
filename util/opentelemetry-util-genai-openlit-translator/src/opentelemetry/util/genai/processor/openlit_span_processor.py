@@ -26,14 +26,28 @@ from typing import Any, Callable, Dict, List, Optional
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
-from opentelemetry.trace import Span
+from opentelemetry.trace import Span, set_span_in_context
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
     get_telemetry_handler,
 )
-from opentelemetry.util.genai.types import LLMInvocation
+from opentelemetry.util.genai.span_context import extract_span_context
+from opentelemetry.util.genai.types import (
+    AgentCreation,
+    AgentInvocation,
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+    Workflow,
+)
 
 from .message_reconstructor import reconstruct_messages_from_openlit
+
+try:
+    from opentelemetry.util.genai.version import __version__
+except ImportError:
+    __version__ = "0.0.0"
 
 _ENV_RULES = "OTEL_GENAI_SPAN_TRANSFORM_RULES"
 
@@ -366,8 +380,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                         and hasattr(translated_parent_span, "is_recording")
                         and translated_parent_span.is_recording()
                     ):
-                        from opentelemetry.trace import set_span_in_context
-
                         parent_context = set_span_in_context(
                             translated_parent_span
                         )
@@ -377,7 +389,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             )
 
             invocation.parent_context = parent_context
-            handler.start_llm(invocation)
+            handler.start(invocation)
 
             # CRITICAL: Track synthetic span ID IMMEDIATELY after creation to prevent recursion
             # We use a set instead of span attributes because ReadableSpan is immutable
@@ -397,10 +409,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                 if not synthetic_span_id:
                     # Try alternative way to get span ID
                     try:
-                        from opentelemetry.util.genai.span_context import (
-                            extract_span_context,
-                        )
-
                         span_ctx = extract_span_context(synthetic_span)
                         synthetic_span_id = (
                             span_ctx.span_id if span_ctx else None
@@ -534,13 +542,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                     "[OPENLIT_PROCESSOR] LLM span detected: %s, running evaluations on mutated span",
                     span.name,
                 )
-                # MUTATION-ONLY MODE with EVALUATIONS using handler.stop_llm():
-                # We've already mutated the original span's attributes and instrumentation scope.
-                # Now we use handler.stop_llm() to get full functionality:
-                # - Sets end_time
-                # - Sets sample_for_evaluation
-                # - Calls _emitter.on_end() (sets gen_ai.evaluation.sampled)
-                # - Calls _notify_completion() (triggers evaluation callbacks)
                 #
                 # The emitter's on_end() has been modified to handle ReadableSpan gracefully
                 # by checking is_recording() before trying to set attributes or end the span.
@@ -576,23 +577,23 @@ class OpenlitSpanProcessor(SpanProcessor):
                             span._start_time / 1e9
                         )  # Convert ns to seconds  # type: ignore[attr-defined]
 
-                    # Use handler.stop_llm() for full functionality
+                    # Use handler.finish() for full functionality
                     # This will:
                     # 1. Set end_time if not set
                     # 2. Determine sample_for_evaluation
                     # 3. Call _emitter.on_end() - which handles ReadableSpan gracefully
                     # 4. Call _notify_completion() - triggers evaluation callbacks
                     try:
-                        handler.stop_llm(invocation)
+                        handler.finish(invocation)
                         _logger.debug(
-                            "[OPENLIT_PROCESSOR] stop_llm completed for span: %s, sampled=%s, trace_id=%s",
+                            "[OPENLIT_PROCESSOR] finish completed for span: %s, sampled=%s, trace_id=%s",
                             span.name,
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
                     except Exception as stop_err:
                         _logger.warning(
-                            "[OPENLIT_PROCESSOR] handler.stop_llm failed: %s",
+                            "[OPENLIT_PROCESSOR] handler.finish failed: %s",
                             stop_err,
                         )
                 else:
@@ -645,7 +646,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                         )
                         for invocation in reversed(invocations_to_close):
                             try:
-                                handler.stop_llm(invocation)
+                                handler.finish(invocation)
                             except Exception as stop_err:
                                 _logger.warning(
                                     "Failed to stop invocation: %s", stop_err
@@ -1022,10 +1023,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                     # This ensures the span appears as if it came from our GenAI handler
                     # instead of the original OpenLit tracer
                     try:
-                        from opentelemetry.util.genai.version import (
-                            __version__,
-                        )
-
                         new_scope = InstrumentationScope(
                             name="opentelemetry.util.genai.handler",
                             version=__version__,
@@ -1102,7 +1099,6 @@ class OpenlitSpanProcessor(SpanProcessor):
     ) -> Optional[str]:
         if not name_transformations:
             return None
-        import fnmatch
 
         for pattern, new_name in name_transformations.items():
             try:
@@ -1121,12 +1117,6 @@ class OpenlitSpanProcessor(SpanProcessor):
         LangChain messages have .content directly, but GenAI SDK expects
         messages with .parts containing Text/ToolCall objects.
         """
-        from opentelemetry.util.genai.types import (
-            InputMessage,
-            OutputMessage,
-            Text,
-        )
-
         if not langchain_messages:
             return []
 
@@ -1227,7 +1217,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         attribute_transformations: Optional[Dict[str, Any]] = None,
         name_transformations: Optional[Dict[str, str]] = None,
         openlit_attributes: Optional[Dict[str, Any]] = None,
-    ) -> LLMInvocation:
+    ) -> Optional[AgentCreation | AgentInvocation | Workflow | LLMInvocation]:
         # CRITICAL: Read from _attributes (the live/mutated dict), NOT from .attributes
         # The .attributes property returns a frozen/cached snapshot that doesn't reflect mutations.
         # This is important because _mutate_span_if_needed() modifies _attributes directly.
@@ -1417,43 +1407,211 @@ class OpenlitSpanProcessor(SpanProcessor):
             span_id,
         )
 
-        # CRITICAL: Don't create invocation if we don't have messages
-        # Without messages, we can't run evaluations, so there's no point in creating a synthetic span
-        if not input_messages or not output_messages:
-            _logger.warning(
-                "[OPENLIT_PROCESSOR] Skipping invocation creation - no messages available! "
-                "span=%s, span_id=%s, is_llm=%s, is_agent=%s, is_task=%s",
-                existing_span.name,
-                span_id,
-                "llm"
-                in str(base_attrs.get("gen_ai.operation.name", "")).lower(),
-                "agent" in str(base_attrs.get("gen_ai.span.kind", "")).lower(),
-                "task" in str(base_attrs.get("gen_ai.span.kind", "")).lower(),
-            )
-            return None
+        # Determine invocation type based on operation name
+        operation_name = base_attrs.get("gen_ai.operation.name", "")
 
-        # Check if output messages have empty parts
-        # Example: [OutputMessage(role='assistant', parts=[], finish_reason='stop')]
-        if output_messages and all(not msg.parts for msg in output_messages):
-            _logger.warning(
-                "[OPENLIT_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
-                "span=%s, span_id=%s, output_messages=%s",
-                existing_span.name,
-                span_id,
-                output_messages,
+        if operation_name == "invoke_workflow":
+            # Create Workflow invocation
+            invocation = Workflow(
+                name=base_attrs.get("gen_ai.workflow.name")
+                or existing_span.name,
+                workflow_type=base_attrs.get("gen_ai.workflow.type") or None,
+                description=base_attrs.get("gen_ai.workflow.description"),
+                framework=base_attrs.get("gen_ai.framework"),
+                attributes=base_attrs,
             )
-            return None
+            # Extract initial input from messages or attributes
+            if input_messages:
+                invocation.initial_input = " ".join(
+                    part.content
+                    for msg in input_messages
+                    for part in msg.parts
+                    if hasattr(part, "content")
+                )
+            elif not invocation.initial_input:
+                # Try to extract from attributes
+                invocation.initial_input = (
+                    base_attrs.get("initial_input")
+                    or base_attrs.get("input")
+                    or base_attrs.get("input_context")
+                    or base_attrs.get("query")
+                )
 
-        invocation = LLMInvocation(
-            request_model=str(request_model),
-            attributes=base_attrs,
-            input_messages=input_messages or [],
-            output_messages=output_messages or [],
-        )
-        # Mark operation heuristically from original span name
-        lowered = existing_span.name.lower()
-        if lowered.startswith("embed"):
-            invocation.operation = "embedding"  # type: ignore[attr-defined]
-        elif lowered.startswith("chat"):
-            invocation.operation = "chat"  # type: ignore[attr-defined]
-        return invocation
+            # Extract final output from messages or attributes
+            if output_messages:
+                invocation.final_output = " ".join(
+                    part.content
+                    for msg in output_messages
+                    for part in msg.parts
+                    if hasattr(part, "content")
+                )
+            elif not invocation.final_output:
+                # Try to extract from attributes
+                invocation.final_output = (
+                    base_attrs.get("final_output")
+                    or base_attrs.get("output")
+                    or base_attrs.get("output_result")
+                    or base_attrs.get("response")
+                )
+            return invocation
+
+        elif operation_name == "create_agent":
+            # Create AgentCreation invocation
+            invocation = AgentCreation(
+                name=base_attrs.get("gen_ai.agent.name") or existing_span.name,
+                agent_type=base_attrs.get("gen_ai.agent.type") or None,
+                description=base_attrs.get("gen_ai.agent.description"),
+                model=request_model,
+                framework=base_attrs.get("gen_ai.framework"),
+                attributes=base_attrs,
+            )
+            # Extract tools if available
+            tools_str = base_attrs.get("gen_ai.agent.tools")
+            if tools_str:
+                try:
+                    invocation.tools = (
+                        json.loads(tools_str)
+                        if isinstance(tools_str, str)
+                        else tools_str
+                    )
+                except Exception:
+                    pass
+            # Extract system instructions
+            invocation.system_instructions = (
+                base_attrs.get("gen_ai.system.instructions") or None
+            )
+            # Extract input context from messages or attributes
+            if input_messages:
+                invocation.input_context = " ".join(
+                    part.content
+                    for msg in input_messages
+                    for part in msg.parts
+                    if hasattr(part, "content")
+                )
+            elif not invocation.input_context:
+                # Try to extract from attributes
+                invocation.input_context = (
+                    base_attrs.get("input_context")
+                    or base_attrs.get("input")
+                    or base_attrs.get("initial_input")
+                )
+            return invocation
+
+        elif operation_name == "invoke_agent":
+            # Create AgentInvocation
+            invocation = AgentInvocation(
+                name=base_attrs.get("gen_ai.agent.name") or existing_span.name,
+                agent_type=base_attrs.get("gen_ai.agent.type"),
+                description=base_attrs.get("gen_ai.agent.description"),
+                model=request_model,
+                framework=base_attrs.get("gen_ai.framework"),
+                attributes=base_attrs,
+            )
+            # Extract tools if available
+            tools_str = base_attrs.get("gen_ai.agent.tools")
+            if tools_str:
+                try:
+                    invocation.tools = (
+                        json.loads(tools_str)
+                        if isinstance(tools_str, str)
+                        else tools_str
+                    )
+                except Exception:
+                    pass
+            # Extract system instructions
+            invocation.system_instructions = (
+                base_attrs.get("gen_ai.system.instructions") or None
+            )
+
+            # Extract input from messages or attributes
+            if input_messages:
+                invocation.input_context = " ".join(
+                    part.content
+                    for msg in input_messages
+                    for part in msg.parts
+                    if hasattr(part, "content")
+                )
+            elif not invocation.input_context:
+                # Try to extract from attributes
+                invocation.input_context = (
+                    base_attrs.get("input_context")
+                    or base_attrs.get("input")
+                    or base_attrs.get("initial_input")
+                    or base_attrs.get("prompt")
+                    or base_attrs.get("query")
+                )
+
+            # Extract output from messages or attributes
+            if output_messages:
+                invocation.output_result = " ".join(
+                    part.content
+                    for msg in output_messages
+                    for part in msg.parts
+                    if hasattr(part, "content")
+                )
+            elif not invocation.output_result:
+                # Try to extract from attributes
+                invocation.output_result = (
+                    base_attrs.get("output_result")
+                    or base_attrs.get("output")
+                    or base_attrs.get("final_output")
+                    or base_attrs.get("response")
+                    or base_attrs.get("answer")
+                )
+
+            # Skip if no input/output available for evaluation
+            if not invocation.input_context and not invocation.output_result:
+                _logger.warning(
+                    "[OPENLIT_PROCESSOR] Skipping AgentInvocation - no input/output available! "
+                    "span=%s, span_id=%s",
+                    existing_span.name,
+                    span_id,
+                )
+                return None
+            return None
+        else:
+            # Create LLMInvocation (default for chat, completion, embedding)
+            # CRITICAL: LLM invocations require messages for evaluation
+            if not input_messages or not output_messages:
+                _logger.warning(
+                    "[OPENLIT_PROCESSOR] Skipping LLM invocation creation - no messages available! "
+                    "span=%s, span_id=%s",
+                    existing_span.name,
+                    span_id,
+                )
+                return None
+
+            if output_messages and all(
+                not msg.parts for msg in output_messages
+            ):
+                _logger.warning(
+                    "[OPENLIT_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
+                    "span=%s, span_id=%s, output_messages=%s",
+                    existing_span.name,
+                    span_id,
+                    output_messages,
+                )
+                return None
+
+            invocation = LLMInvocation(
+                request_model=str(request_model),
+                attributes=base_attrs,
+                input_messages=input_messages or [],
+                output_messages=output_messages or [],
+            )
+            # Mark operation heuristically from original span name or operation attribute
+            if operation_name:
+                if "embed" in operation_name.lower():
+                    invocation.operation = "embedding"  # type: ignore[attr-defined]
+                elif "chat" in operation_name.lower():
+                    invocation.operation = "chat"  # type: ignore[attr-defined]
+                elif "completion" in operation_name.lower():
+                    invocation.operation = "completion"  # type: ignore[attr-defined]
+            else:
+                # Fallback to inferring from span name
+                lowered = existing_span.name.lower()
+                if lowered.startswith("embed"):
+                    invocation.operation = "embedding"  # type: ignore[attr-defined]
+                elif lowered.startswith("chat"):
+                    invocation.operation = "chat"  # type: ignore[attr-defined]
+            return invocation
