@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re as _re
 from typing import Any, Dict, Optional, Sequence
 
 from opentelemetry._logs import Logger, get_logger
@@ -21,6 +22,8 @@ from ..attributes import (
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_ID,
+    SERVER_ADDRESS,
+    SERVER_PORT,
 )
 from ..interfaces import EmitterMeta
 from ..span_context import (
@@ -76,8 +79,6 @@ def _canonicalize_metric_name(raw_name: str) -> Optional[str]:
     if lowered == "faithfulness":
         return "hallucination"
     # Normalize punctuation/whitespace to underscores for pattern matching
-    import re as _re  # local import to avoid global cost
-
     normalized = _re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
     if normalized in {"answer_relevancy", "answer_relevance", "relevance"}:
         return "relevance"
@@ -259,7 +260,7 @@ class EvaluationMetricsEmitter(_EvaluationEmitterBase):
             # Fallbacks: if instrumentation didn't populate agent_name/id fields explicitly but
             # the invocation is an AgentInvocation, derive them from core fields to preserve identity.
             try:
-                from opentelemetry.util.genai.types import (
+                from opentelemetry.util.genai.types import (  # noqa: PLC0415
                     AgentInvocation as _AI,  # local import to avoid cycle
                 )
 
@@ -282,6 +283,13 @@ class EvaluationMetricsEmitter(_EvaluationEmitterBase):
             provider = getattr(invocation, "provider", None)
             if provider:
                 attrs[GEN_AI_PROVIDER_NAME] = provider
+            # Add server.address and server.port when available
+            server_address = getattr(invocation, "server_address", None)
+            if server_address:
+                attrs[SERVER_ADDRESS] = server_address
+            server_port = getattr(invocation, "server_port", None)
+            if server_port is not None:
+                attrs[SERVER_PORT] = server_port
             if res.label is not None:
                 attrs[GEN_AI_EVALUATION_SCORE_LABEL] = res.label
             # Propagate evaluator-derived pass boolean if present
@@ -376,7 +384,7 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
             agent_name = getattr(invocation, "agent_name", None)
             agent_id = getattr(invocation, "agent_id", None)
             try:
-                from opentelemetry.util.genai.types import (
+                from opentelemetry.util.genai.types import (  # noqa: PLC0415
                     AgentInvocation as _AI,  # local import to avoid cycle
                 )
 
