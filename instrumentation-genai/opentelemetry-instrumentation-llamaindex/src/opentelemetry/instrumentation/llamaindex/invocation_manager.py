@@ -49,7 +49,9 @@ class _InvocationManager:
         self,
         event_id: str,
         parent_id: Optional[str],
-        invocation: Union[LLMInvocation, EmbeddingInvocation, AgentInvocation, ToolCall],
+        invocation: Union[
+            LLMInvocation, EmbeddingInvocation, AgentInvocation, ToolCall
+        ],
     ) -> None:
         """Add an invocation to the manager."""
         invocation_state = _InvocationState(invocation=invocation)
