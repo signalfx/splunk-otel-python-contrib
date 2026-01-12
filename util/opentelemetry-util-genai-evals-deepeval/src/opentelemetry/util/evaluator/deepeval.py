@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import time
 import re as _re
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
@@ -298,6 +300,69 @@ def _apply_sentiment_postprocessing(
 _METRIC_REGISTRY: Mapping[str, str] = _DEEPEVAL_METRIC_REGISTRY
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    error_msg = str(exc).lower()
+    if any(
+        indicator in error_msg
+        for indicator in [
+            "rate limit",
+            "ratelimit",
+            "429",
+            "too many requests",
+            "quota exceeded",
+            "resource exhausted",
+        ]
+    ):
+        return True
+    exc_type = type(exc).__name__
+    if exc_type in ["RateLimitError", "APIError"]:
+        return True
+    return False
+
+
+def _run_with_retry(
+    test_case: Any,
+    metrics: Sequence[Any],
+    debug_log: Any,
+    max_retries: int = 3,
+    initial_backoff: float = 1.0,
+) -> Any:
+    retry_count = 0
+    backoff_time = initial_backoff
+    last_exception = None
+
+    while retry_count <= max_retries:
+        try:
+            return _run_deepeval(test_case, metrics, debug_log)
+        except Exception as exc:
+            last_exception = exc
+            if not _is_rate_limit_error(exc):
+                raise
+
+            if retry_count >= max_retries:
+                _LOGGER.warning(
+                    "Deepeval rate limit: exhausted %d retries", max_retries
+                )
+                raise
+
+            retry_count += 1
+            jitter = random.uniform(0, 0.1 * backoff_time)
+            sleep_time = backoff_time + jitter
+
+            _LOGGER.info(
+                "Deepeval rate limit: retry %d/%d after %.2fs - %s",
+                retry_count,
+                max_retries,
+                sleep_time,
+                str(exc)[:100],
+            )
+            time.sleep(sleep_time)
+            backoff_time *= 2
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Unexpected retry loop exit")
+
+
 class DeepevalEvaluator(Evaluator):
     """Evaluator using Deepeval as an LLM-as-a-judge backend."""
 
@@ -460,7 +525,14 @@ class DeepevalEvaluator(Evaluator):
                 "No Deepeval metrics available", RuntimeError
             )
         try:
-            evaluation = _run_deepeval(test_case, metrics, genai_debug_log)
+            max_retries = 3
+            try:
+                max_retries = int(os.getenv("DEEPEVAL_RATE_LIMIT_RETRIES", "3"))
+            except (ValueError, TypeError):
+                pass
+            evaluation = _run_with_retry(
+                test_case, metrics, genai_debug_log, max_retries=max_retries
+            )
             genai_debug_log(
                 "evaluator.deepeval.complete",
                 invocation
