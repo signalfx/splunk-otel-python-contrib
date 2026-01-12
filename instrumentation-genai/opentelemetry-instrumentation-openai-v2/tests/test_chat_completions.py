@@ -1017,7 +1017,7 @@ def assert_message_in_logs(log, event_name, expected_content, parent_span):
     assert log.log_record.event_name == event_name
     assert (
         log.log_record.attributes[GenAIAttributes.GEN_AI_SYSTEM]
-        == GenAIAttributes.GenAiSystemValues.OPENAI.value
+        == GenAIAttributes.GenAiProviderNameValues.OPENAI.value
     )
 
     if not expected_content:
