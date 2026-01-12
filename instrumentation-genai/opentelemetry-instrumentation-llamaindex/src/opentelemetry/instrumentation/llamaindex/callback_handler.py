@@ -65,6 +65,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         """End a trace - required by BaseCallbackHandler."""
         pass
 
+    def _get_parent_span(self, parent_id: str) -> Optional[Any]:
+        """Get parent span from invocation manager using parent_id."""
+        if not parent_id:
+            return None
+        parent_entity = self._invocation_manager.get_invocation(parent_id)
+        if parent_entity:
+            return getattr(parent_entity, "span", None)
+        return None
+
     def on_event_start(
         self,
         event_type: CBEventType,
@@ -195,8 +204,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             request_presence_penalty=presence_penalty,
             request_stop_sequences=stop if stop else [],
             request_seed=seed,
+            parent_run_id=parent_id if parent_id else None,
         )
         llm_inv.framework = "llamaindex"
+
+        # Get parent span before starting the invocation
+        parent_span = self._get_parent_span(parent_id)
+        if parent_span:
+            llm_inv.parent_span = parent_span
 
         # Start the LLM invocation
         llm_inv = self._handler.start_llm(llm_inv)
@@ -263,7 +278,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         llm_inv = self._handler.stop_llm(llm_inv)
 
         # Clean up from invocation manager if span is complete
-        if not llm_inv.span.is_recording():
+        if not llm_inv.span or not llm_inv.span.is_recording():
             self._invocation_manager.delete_invocation_state(event_id)
 
     def _handle_embedding_start(
@@ -296,14 +311,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             input_texts=[],  # Will be populated on end event
             provider=provider,
             attributes={},
-            run_id=event_id,
+            parent_run_id=parent_id if parent_id else None,
         )
         emb_inv.framework = "llamaindex"
         if provider:
             emb_inv.provider = provider
 
-        # Get the currently active parent span
-        parent_span = self._get_active_parent_span()
+        # Get parent span before starting the invocation
+        parent_span = self._get_parent_span(parent_id)
         if parent_span:
             emb_inv.parent_span = parent_span
 
@@ -353,7 +368,10 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Stop the embedding invocation
         emb_inv = self._handler.stop_embedding(emb_inv)
-        self._handler.stop_embedding(emb_inv)
+
+        # Clean up from invocation manager if span is complete
+        if not emb_inv.span or not emb_inv.span.is_recording():
+            self._invocation_manager.delete_invocation_state(event_id)
 
     def _find_nearest_agent(
         self, parent_id: Optional[str]
@@ -363,7 +381,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             return None
         current_id = parent_id
         while current_id:
-            entity = self._handler.get_entity(current_id)
+            entity = self._invocation_manager.get_invocation(current_id)
             if isinstance(entity, AgentInvocation):
                 return entity
             # Move to parent
@@ -429,7 +447,20 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if model_name:
             agent_invocation.model = _safe_str(model_name)
 
-        self._handler.start_agent(agent_invocation)
+        # Get parent span before starting the invocation
+        parent_span = self._get_parent_span(parent_id)
+        if parent_span:
+            agent_invocation.parent_span = parent_span
+
+        # Start the agent invocation
+        agent_invocation = self._handler.start_agent(agent_invocation)
+
+        # Store in invocation manager
+        self._invocation_manager.add_invocation_state(
+            event_id=event_id,
+            parent_id=parent_id if parent_id else None,
+            invocation=agent_invocation,
+        )
 
     def _handle_agent_step_end(
         self,
@@ -441,7 +472,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not self._handler:
             return
 
-        agent_invocation = self._handler.get_entity(event_id)
+        agent_invocation = self._invocation_manager.get_invocation(event_id)
         if not agent_invocation or not isinstance(agent_invocation, AgentInvocation):
             return
 
@@ -453,6 +484,10 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Stop the agent invocation
         self._handler.stop_agent(agent_invocation)
+
+        # Clean up from invocation manager if span is complete
+        if not agent_invocation.span or not agent_invocation.span.is_recording():
+            self._invocation_manager.delete_invocation_state(event_id)
 
     def _handle_function_call_start(
         self,
@@ -510,8 +545,20 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 tool_call.agent_name = _safe_str(agent_name)  # type: ignore[attr-defined]
             tool_call.agent_id = str(context_agent.run_id)  # type: ignore[attr-defined]
 
+        # Get parent span before starting the tool call
+        parent_span = self._get_parent_span(parent_id)
+        if parent_span:
+            tool_call.parent_span = parent_span  # type: ignore[attr-defined]
+
         # Start the tool call
-        self._handler.start_tool_call(tool_call)
+        tool_call = self._handler.start_tool_call(tool_call)
+
+        # Store in invocation manager
+        self._invocation_manager.add_invocation_state(
+            event_id=event_id,
+            parent_id=parent_id if parent_id else None,
+            invocation=tool_call,
+        )
 
     def _handle_function_call_end(
         self,
@@ -523,10 +570,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not self._handler:
             return
 
-        # Clean up from invocation manager if span is complete
-        if not emb_inv.span.is_recording():
-            self._invocation_manager.delete_invocation_state(event_id)
-        tool_call = self._handler.get_entity(event_id)
+        tool_call = self._invocation_manager.get_invocation(event_id)
         if not tool_call or not isinstance(tool_call, ToolCall):
             return
 
@@ -539,3 +583,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Stop the tool call
         self._handler.stop_tool_call(tool_call)
+
+        # Clean up from invocation manager if span is complete
+        if not tool_call.span or not tool_call.span.is_recording():
+            self._invocation_manager.delete_invocation_state(event_id)
