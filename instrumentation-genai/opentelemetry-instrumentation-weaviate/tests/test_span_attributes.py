@@ -340,6 +340,9 @@ class TestV4IntegrationAttributes:
 
         span_exporter.clear()
 
+        # Test: Fetch objects
+        collection.query.fetch_objects(limit=1)
+
         spans = span_exporter.get_finished_spans()
         fetch_spans = [s for s in spans if "fetch_objects" in s.name]
 

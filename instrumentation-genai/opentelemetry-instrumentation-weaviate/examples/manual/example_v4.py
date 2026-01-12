@@ -15,9 +15,12 @@ import os
 import weaviate
 import weaviate.classes as wvc
 
-from opentelemetry import trace
+from opentelemetry import trace, metrics
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
     OTLPSpanExporter,
+)
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+    OTLPMetricExporter,
 )
 from opentelemetry.instrumentation.weaviate import WeaviateInstrumentor
 from opentelemetry.sdk.resources import Resource
@@ -25,6 +28,11 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     ConsoleSpanExporter,
+)
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    PeriodicExportingMetricReader,
+    ConsoleMetricExporter,
 )
 from opentelemetry.semconv.resource import ResourceAttributes
 
@@ -62,8 +70,34 @@ console_exporter = ConsoleSpanExporter()
 console_processor = BatchSpanProcessor(console_exporter)
 tracer_provider.add_span_processor(console_processor)
 
-# Now instrument Weaviate
-WeaviateInstrumentor().instrument()
+# Set up the meter provider for metrics
+meter_provider = MeterProvider(resource=resource)
+metrics.set_meter_provider(meter_provider)
+
+# Add OTLP metric exporter
+otlp_metric_exporter = OTLPMetricExporter(
+    endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317"),
+    headers=(),
+)
+otlp_metric_reader = PeriodicExportingMetricReader(
+    otlp_metric_exporter,
+    export_interval_millis=5000,  # Export every 5 seconds
+)
+meter_provider.add_metric_reader(otlp_metric_reader)
+
+# Add console metric exporter to see metrics in terminal
+console_metric_exporter = ConsoleMetricExporter()
+console_metric_reader = PeriodicExportingMetricReader(
+    console_metric_exporter,
+    export_interval_millis=5000,
+)
+meter_provider.add_metric_reader(console_metric_reader)
+
+# Now instrument Weaviate with both trace and metric providers
+WeaviateInstrumentor().instrument(
+    tracer_provider=tracer_provider,
+    meter_provider=meter_provider,
+)
 
 
 def create_schema(client):

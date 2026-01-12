@@ -52,6 +52,7 @@ from opentelemetry.instrumentation.weaviate.version import __version__
 # Potentially not needed.
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import Tracer, get_tracer
+from opentelemetry.metrics import Meter, get_meter
 
 from .mapping import MAPPING_V3, MAPPING_V4
 from .wrapper import (
@@ -84,6 +85,21 @@ class WeaviateInstrumentor(BaseInstrumentor):
             __version__,
             tracer_provider,
             schema_url=Schemas.V1_28_0.value,
+        )
+
+        meter_provider = kwargs.get("meter_provider")
+        meter = get_meter(
+            __name__,
+            __version__,
+            meter_provider,
+            schema_url=Schemas.V1_28_0.value,
+        )
+        
+        # Create the duration histogram once to be shared across all wrappers
+        duration_histogram = meter.create_histogram(
+            name="db.client.operation.duration",
+            unit="ms",
+            description="Duration of Weaviate database operations",
         )
 
         try:
@@ -119,7 +135,7 @@ class WeaviateInstrumentor(BaseInstrumentor):
             wrap_function_wrapper(
                 module=to_wrap["module"],
                 name=name,
-                wrapper=_WeaviateOperationWrapper(tracer, wrap_properties=to_wrap),
+                wrapper=_WeaviateOperationWrapper(tracer, duration_histogram, wrap_properties=to_wrap),
             )
 
     def _uninstrument(self, **kwargs: Any) -> None:

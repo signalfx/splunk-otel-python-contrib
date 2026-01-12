@@ -17,11 +17,13 @@ Wrapper classes for Weaviate instrumentation.
 """
 
 import json
+import time
 from contextvars import ContextVar
 from typing import Any, Dict, Optional
 
 from opentelemetry.instrumentation.utils import is_instrumentation_enabled
 from opentelemetry.instrumentation.weaviate.config import Config
+from opentelemetry.metrics import Histogram
 from opentelemetry.semconv.attributes import (
     db_attributes as DbAttributes,
 )
@@ -29,6 +31,8 @@ from opentelemetry.semconv.attributes import (
     server_attributes as ServerAttributes,
 )
 from opentelemetry.trace import SpanKind, Tracer
+from opentelemetry import trace
+from opentelemetry.util.types import AttributeValue
 
 from .mapping import SPAN_NAME_PREFIX
 from .utils import (
@@ -115,9 +119,10 @@ class _WeaviateOperationWrapper:
     """A wrapper that intercepts Weaviate client operations to create database spans with Weaviate attributes."""
 
     def __init__(
-        self, tracer: Tracer, wrap_properties: Optional[Dict[str, str]] = None
+        self, tracer: Tracer, duration_histogram: Histogram, wrap_properties: Optional[Dict[str, str]] = None
     ) -> None:
         self.tracer = tracer
+        self.duration_histogram = duration_histogram
         self.wrap_properties = wrap_properties or {}
 
     def __call__(self, wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
@@ -137,30 +142,60 @@ class _WeaviateOperationWrapper:
             getattr(wrapped, "__name__", "unknown"),
         )
         name = f"{SPAN_NAME_PREFIX}.{name}"
+        
+        # Extract metadata before starting span (needed for both span attributes and metrics)
+        module_name = self.wrap_properties.get("module", "")
+        function_name = self.wrap_properties.get("function", "")
+        connection_host = _connection_host_context.get()
+        connection_port = _connection_port_context.get()
+        collection_name = extract_collection_name(
+            wrapped, instance, args, kwargs, module_name, function_name
+        )
+        
         with self.tracer.start_as_current_span(name, kind=SpanKind.CLIENT) as span:
             span.set_attribute(DbAttributes.DB_SYSTEM_NAME, "weaviate")
 
-            # Extract operation name dynamically from the function call
-            module_name = self.wrap_properties.get("module", "")
-            function_name = self.wrap_properties.get("function", "")
-            span.set_attribute(DbAttributes.DB_OPERATION_NAME, function_name)
-
-            # Extract collection name from the operation
-            collection_name = extract_collection_name(
-                wrapped, instance, args, kwargs, module_name, function_name
-            )
+            if function_name:
+                span.set_attribute(DbAttributes.DB_OPERATION_NAME, function_name)
             if collection_name:
-                # Use a Weaviate-specific collection attribute similar to MongoDB's DB_MONGODB_COLLECTION
                 span.set_attribute("db.weaviate.collection.name", collection_name)
 
-            connection_host = _connection_host_context.get()
-            connection_port = _connection_port_context.get()
             if connection_host is not None:
                 span.set_attribute(ServerAttributes.SERVER_ADDRESS, connection_host)
             if connection_port is not None:
                 span.set_attribute(ServerAttributes.SERVER_PORT, connection_port)
 
-            return_value = wrapped(*args, **kwargs)
+            # Record operation duration as a metric
+            start_time = time.perf_counter()
+            try:
+                return_value = wrapped(*args, **kwargs)
+            finally:
+                duration_ms = (time.perf_counter() - start_time) * 1000
+                
+                # Build metric attributes
+                metric_attributes: Dict[str, AttributeValue] = {
+                    "db.system": "weaviate",
+                }
+                if function_name:
+                    metric_attributes["db.operation.name"] = function_name
+                if collection_name:
+                    metric_attributes["db.collection.name"] = collection_name
+                if connection_host is not None:
+                    metric_attributes["server.address"] = connection_host
+                if connection_port is not None:
+                    metric_attributes["server.port"] = connection_port
+                
+                # Record the duration metric with span context to link metric to trace
+                try:
+                    context = trace.set_span_in_context(span)
+                except (TypeError, ValueError, AttributeError):
+                    context = None
+                
+                self.duration_histogram.record(
+                    duration_ms, 
+                    attributes=metric_attributes,
+                    context=context
+                )
 
             # Extract documents from similarity search operations
             if self._is_similarity_search():

@@ -8,6 +8,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 
 @pytest.fixture(scope="function")
@@ -22,6 +24,18 @@ def tracer_provider(span_exporter):
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(span_exporter))
     return provider
+
+
+@pytest.fixture(scope="function")
+def metric_reader():
+    """Create an in-memory metric reader for testing."""
+    return InMemoryMetricReader()
+
+
+@pytest.fixture(scope="function")
+def meter_provider(metric_reader):
+    """Create a meter provider with in-memory reader."""
+    return MeterProvider(metric_readers=[metric_reader])
 
 
 @pytest.fixture(scope="function")
