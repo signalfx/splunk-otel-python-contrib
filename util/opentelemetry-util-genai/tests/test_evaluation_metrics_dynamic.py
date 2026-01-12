@@ -132,11 +132,15 @@ def test_single_metric_mode_all_evaluations_to_one_histogram():
     eval_names = [p[1]["gen_ai.evaluation.name"] for p in score_hist.points]
     assert eval_names == ["bias", "toxicity", "bias", "sentiment"]
 
-    # Attribute propagation
+    # Attribute propagation - single metric mode should NOT have gen_ai.operation.name
     for _, attrs, _ in score_hist.points:
-        assert attrs["gen_ai.operation.name"] == "evaluation"
+        assert (
+            "gen_ai.operation.name" not in attrs
+        )  # Should not be present in single metric mode
         assert "gen_ai.evaluation.name" in attrs
-        assert attrs.get("gen_ai.evaluation.score.units") == "score"
+        assert (
+            "gen_ai.evaluation.score.units" not in attrs
+        )  # Should not be present in single metric mode
 
     # Check label propagation
     labels = [
