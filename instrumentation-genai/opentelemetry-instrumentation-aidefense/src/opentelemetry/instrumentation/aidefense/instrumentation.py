@@ -407,9 +407,13 @@ def _wrap_httpx_send_for_gateway(wrapped, instance, args, kwargs):
                 if span and span.is_recording():
                     span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
                     _logger.debug(
-                        "Added AI Defense event_id to span from httpx: %s...",
-                        event_id[:20] if len(event_id) > 20 else event_id,
+                        "SUCCESS: Added gen_ai.security.event_id=%s to span",
+                        event_id,
                     )
+            else:
+                _logger.debug(
+                    "No event_id in response (request may not have triggered security)"
+                )
     except Exception as e:
         _logger.debug("Failed to extract AI Defense event_id from httpx: %s", e)
 
@@ -422,6 +426,7 @@ async def _wrap_async_httpx_send_for_gateway(wrapped, instance, args, kwargs):
 
     Async version of _wrap_httpx_send_for_gateway.
     """
+    _logger.debug("httpx.AsyncClient.send wrapper called")
     response = await wrapped(*args, **kwargs)
 
     try:
@@ -437,9 +442,13 @@ async def _wrap_async_httpx_send_for_gateway(wrapped, instance, args, kwargs):
                 if span and span.is_recording():
                     span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
                     _logger.debug(
-                        "Added AI Defense event_id to span from async httpx: %s...",
-                        event_id[:20] if len(event_id) > 20 else event_id,
+                        "SUCCESS: Added gen_ai.security.event_id=%s to span",
+                        event_id,
                     )
+            else:
+                _logger.debug(
+                    "No event_id in async response (request may not have triggered security)"
+                )
     except Exception as e:
         _logger.debug("Failed to extract AI Defense event_id from async httpx: %s", e)
 
@@ -458,6 +467,7 @@ def _wrap_botocore_send_for_gateway(wrapped, instance, args, kwargs):
     AWS Bedrock uses botocore which uses urllib3 for HTTP requests.
     This wrapper intercepts responses and extracts the AI Defense event_id.
     """
+    _logger.debug("Botocore URLLib3Session.send wrapper called")
     response = wrapped(*args, **kwargs)
 
     try:
