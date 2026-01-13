@@ -5,10 +5,11 @@ This server exposes an HTTP endpoint for travel planning requests and uses
 OpenTelemetry instrumentation to capture traces and metrics.
 """
 
+import os
+
 import asyncio
 import base64
 import json
-import os
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
@@ -256,12 +257,6 @@ def get_llm():
 
 # Setup Telemetry
 def setup_telemetry():
-    """Initialize OpenTelemetry tracing and metrics.
-
-    Service name and OTLP endpoint are configured via environment variables:
-    - OTEL_SERVICE_NAME
-    - OTEL_EXPORTER_OTLP_ENDPOINT
-    """
     trace.set_tracer_provider(TracerProvider())
     trace.get_tracer_provider().add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter())
@@ -520,19 +515,6 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     print("Planning Complete")
                     print(f"{'='*60}\n")
 
-                    # Send response
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-
-                    response_data = {
-                        "status": "success",
-                        "request": request_data,
-                        "plan": result,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-
-                    self.wfile.write(json.dumps(response_data, indent=2).encode())
                     span.set_attribute("http.status_code", 200)
 
                 except Exception as e:
@@ -564,8 +546,12 @@ def main():
     # Setup telemetry first
     setup_telemetry()
 
-    # Auto-instrument LlamaIndex (captures telemetry automatically via callbacks)
-    LlamaindexInstrumentor().instrument()
+    # Auto-instrument LlamaIndex - pass meter_provider to enable metrics
+    tracer_provider = trace.get_tracer_provider()
+    meter_provider = metrics.get_meter_provider()
+    LlamaindexInstrumentor().instrument(
+        tracer_provider=tracer_provider, meter_provider=meter_provider
+    )
 
     # Try to initialize LLM - this will fail with a clear error if credentials are missing
     try:
@@ -592,12 +578,13 @@ def main():
         print("\nShutting down server...")
         server.shutdown()
 
-        # Flush telemetry
-        provider = trace.get_tracer_provider()
-        if hasattr(provider, "force_flush"):
-            provider.force_flush()
-        if hasattr(provider, "shutdown"):
-            provider.shutdown()
+        tracer_provider = trace.get_tracer_provider()
+        if hasattr(tracer_provider, "shutdown"):
+            tracer_provider.shutdown()
+
+        meter_provider = metrics.get_meter_provider()
+        if hasattr(meter_provider, "shutdown"):
+            meter_provider.shutdown()
 
     return 0
 
