@@ -178,6 +178,32 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             current = getattr(entity, "parent_run_id", None)
         return None
 
+    def _find_nearest_provider_context(self, run_id: Optional[UUID]) -> Optional[str]:
+        """Find provider from nearest parent that has one (Agent, Workflow, or Step).
+
+        This enables provider inheritance for tools even when no AgentInvocation exists
+        in the hierarchy (e.g., single-workflow patterns like healthcare-agent).
+
+        Args:
+            run_id: The run_id to start searching from.
+
+        Returns:
+            The provider string if found, None otherwise.
+        """
+        current = run_id
+        visited: set[UUID] = set()
+        while current is not None and current not in visited:
+            visited.add(current)
+            entity = self._handler.get_entity(current)
+            if entity is None:
+                break
+            # Check if entity has provider set (works for Agent, Workflow, Step)
+            provider = getattr(entity, "provider", None)
+            if provider:
+                return _safe_str(provider)
+            current = getattr(entity, "parent_run_id", None)
+        return None
+
     def _start_agent_invocation(
         self,
         *,
@@ -567,14 +593,33 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if context_agent
             else None
         )
-        id_source = payload.get("id") or extra.get("id")
-        if isinstance(id_source, (list, tuple)):
-            id_value = ".".join(_safe_str(part) for part in id_source)
-        elif id_source is not None:
-            id_value = _safe_str(id_source)
-        else:
-            id_value = None
+
+        # Extract tool_call_id from multiple possible locations:
+        # 1. extra.tool_call_id - LangGraph ToolNode passes it here
+        # 2. metadata.tool_call_id - some frameworks pass it in metadata
+        # 3. inputs dict with tool_call_id key
+        # 4. Fall back to serialized.id only if it looks like a tool_call_id (not module path)
+        tool_call_id = (
+            extra.get("tool_call_id")
+            or (metadata.get("tool_call_id") if metadata else None)
+            or (inputs.get("tool_call_id") if isinstance(inputs, dict) else None)
+        )
+        if tool_call_id is not None:
+            tool_call_id = _safe_str(tool_call_id)
+
+        # Legacy fallback: serialized.id is often the tool's module path (e.g., ["langchain", "tools", "search"])
+        # Only use it as fallback if it looks like a tool_call_id (string, not a list)
+        if tool_call_id is None:
+            id_source = payload.get("id") or extra.get("id")
+            if isinstance(id_source, str) and not id_source.startswith("["):
+                tool_call_id = _safe_str(id_source)
+
         arguments: Any = inputs if inputs is not None else input_str
+        # Extract tool description from serialized (LangChain provides this)
+        tool_description = payload.get("description")
+        if tool_description is not None:
+            tool_description = _safe_str(tool_description)
+
         existing = self._handler.get_entity(run_id)
         if isinstance(existing, ToolCall):
             if arguments is not None:
@@ -589,12 +634,23 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     existing.agent_name = context_agent_name
                 if not getattr(existing, "agent_id", None):
                     existing.agent_id = str(context_agent.run_id)
+            # Inherit provider from ANY parent context (Agent, Workflow, or Step)
+            if not getattr(existing, "provider", None):
+                inherited_provider = self._find_nearest_provider_context(parent_run_id)
+                if inherited_provider:
+                    existing.provider = inherited_provider
+            # Update tool_call_id if we found it and it's not set
+            if tool_call_id and not existing.id:
+                existing.id = tool_call_id
+            # Store tool description if available and not already set
+            if tool_description and "tool.description" not in existing.attributes:
+                existing.attributes["tool.description"] = tool_description
             if existing.framework is None:
                 existing.framework = "langchain"
             return
         tool = ToolCall(
             name=name,
-            id=id_value,
+            id=tool_call_id,
             arguments=arguments,
             run_id=run_id,
             parent_run_id=parent_run_id,
@@ -604,12 +660,24 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if context_agent is not None and context_agent_name is not None:
             tool.agent_name = context_agent_name
             tool.agent_id = str(context_agent.run_id)
+        # Inherit provider from ANY parent context (Agent, Workflow, or Step)
+        inherited_provider = self._find_nearest_provider_context(parent_run_id)
+        if inherited_provider:
+            tool.provider = inherited_provider
+        # Also check metadata for provider hint (some frameworks pass it there)
+        if not tool.provider and metadata:
+            provider_hint = metadata.get("ls_provider") or metadata.get("provider")
+            if provider_hint:
+                tool.provider = _safe_str(provider_hint)
         if arguments is not None:
             serialized_args = _serialize(arguments)
             if serialized_args is not None:
                 tool.attributes.setdefault("tool.arguments", serialized_args)
         if inputs is None and input_str:
             tool.attributes.setdefault("tool.input_str", _safe_str(input_str))
+        # Store tool description if available
+        if tool_description:
+            tool.attributes.setdefault("tool.description", tool_description)
         self._handler.start_tool_call(tool)
 
     def on_tool_end(

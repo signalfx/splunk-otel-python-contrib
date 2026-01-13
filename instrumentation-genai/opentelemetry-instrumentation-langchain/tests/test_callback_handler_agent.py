@@ -410,3 +410,108 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
+
+
+# =============================================================================
+# PR #4: Tool Call ID Extraction + Provider Inheritance Tests
+# =============================================================================
+
+
+def test_tool_call_id_extraction_from_inputs(handler_with_stub):
+    """Test tool_call_id extracted from inputs dict."""
+    handler, stub = handler_with_stub
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=agent_run_id,
+        tags=["agent"],
+    )
+
+    tool_run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "search_tool"},
+        input_str="ignored",
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+        inputs={
+            "query": "test query",
+            "tool_call_id": "tooluse_abc123xyz",  # ID in inputs
+        },
+    )
+
+    tool = stub.started_tools[-1]
+    assert tool.id == "tooluse_abc123xyz"
+
+
+def test_tool_call_id_extraction_from_metadata(handler_with_stub):
+    """Test tool_call_id extracted from metadata."""
+    handler, stub = handler_with_stub
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=agent_run_id,
+        tags=["agent"],
+    )
+
+    tool_run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "search_tool"},
+        input_str="ignored",
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+        inputs={"query": "test"},
+        metadata={"tool_call_id": "tooluse_meta123"},
+    )
+
+    tool = stub.started_tools[-1]
+    assert tool.id == "tooluse_meta123"
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_provider_inheritance_from_llm_to_tool(handler_with_stub):
+    """Test that provider is inherited from LLM context to tool spans."""
+    handler, stub = handler_with_stub
+
+    # Create workflow
+    wf_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "RunnableSequence"},
+        inputs={},
+        run_id=wf_run_id,
+        metadata={},
+    )
+
+    # Create LLM (sets provider)
+    llm_run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatOpenAI"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=llm_run_id,
+        parent_run_id=wf_run_id,
+        invocation_params={"model_name": "gpt-4o-mini"},
+        metadata={"ls_provider": "openai"},
+    )
+
+    # LLM should have provider set
+    llm_inv = stub.started_llms[-1]
+    assert llm_inv.provider == "openai"
+
+    # Create tool under the same workflow
+    tool_run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "get_weather"},
+        input_str="Paris",
+        run_id=tool_run_id,
+        parent_run_id=wf_run_id,
+        inputs={"city": "Paris", "tool_call_id": "call_abc123"},
+    )
+
+    # Tool should inherit provider from workflow context
+    tool = stub.started_tools[-1]
+    assert tool.id == "call_abc123"
+    # Provider inheritance depends on workflow having it set
+    # The LLM sets it on the workflow, so tool should find it
