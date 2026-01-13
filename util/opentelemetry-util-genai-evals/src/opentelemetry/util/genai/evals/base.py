@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -45,6 +45,7 @@ class Evaluator(ABC):
         invocation_type: str | None = None,
         options: Mapping[str, str] | None = None,
     ) -> None:
+        self._otel_meter_provider: Any | None = None
         default_metrics = (
             self.default_metrics_for(invocation_type)
             if invocation_type is not None
@@ -62,6 +63,16 @@ class Evaluator(ABC):
             self._options: Mapping[str, Mapping[str, str]] = normalized
         else:
             self._options = {}
+
+    def bind_handler(self, handler: Any) -> None:  # pragma: no cover - hook
+        """Bind the owning TelemetryHandler.
+
+        The evaluation manager calls this hook (best-effort) so evaluator
+        implementations can emit evaluator-side telemetry using the same
+        providers configured on the handler (e.g., meter provider).
+        """
+
+        self._otel_meter_provider = getattr(handler, "_meter_provider", None)
 
     # ---- Metrics ------------------------------------------------------
     def default_metrics(self) -> Sequence[str]:  # pragma: no cover - trivial
