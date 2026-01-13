@@ -1,0 +1,220 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: customer-support-crew-zero-code
+  namespace: o11y-4-ai-admehra
+  labels:
+    app: customer-support-crew-zero-code
+    component: telemetry
+  annotations:
+    description: "Customer support CrewAI with zero-code OpenTelemetry instrumentation"
+    git-commit: "c08d3c5"
+spec:
+  # Run every 4 hours from 8 AM to 4 PM PST on weekdays (Monday-Friday)
+  # Times in PST: 8am, 12pm, 4pm
+  schedule: "0 8,12,16 * * 1-5"
+  timeZone: "America/Los_Angeles"
+  suspend: false
+  
+  # Keep last 3 successful and 1 failed job for debugging
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: customer-support-crew-zero-code
+        component: telemetry
+    spec:
+      template:
+        metadata:
+          labels:
+            app: customer-support-crew-zero-code
+            component: telemetry
+        spec:
+          restartPolicy: OnFailure
+          
+          containers:
+            - name: customer-support-crew-zero-code
+              image: admehra621/customer-support-crew-zero-code:latest
+              imagePullPolicy: Always
+              
+              env:
+                # === GenAI Semantic Conventions (REQUIRED) ===
+                - name: OTEL_SEMCONV_STABILITY_OPT_IN
+                  value: "gen_ai_latest_experimental"
+                
+                # === OpenTelemetry Resource Attributes ===
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=o11y-inframon-ai,git.commit.id=c08d3c5"
+                
+                # === Service name for telemetry ===
+                - name: OTEL_SERVICE_NAME
+                  value: "customer-support-crew-zero-code"
+                
+                # === OpenAI Configuration ===
+                - name: OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openai-credentials
+                      key: api-key
+                
+                - name: OPENAI_MODEL_NAME
+                  value: "gpt-4o-mini"
+                
+                # === Serper API Key for web search ===
+                - name: SERPER_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openai-credentials
+                      key: serper-api-key
+                
+                # === LLM OAuth2 Credentials ===
+                - name: LLM_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: client-id
+                
+                - name: LLM_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: client-secret
+                
+                - name: LLM_TOKEN_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: token-url
+                
+                - name: LLM_BASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: base-url
+                
+                - name: LLM_APP_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: app-key
+                
+                # === CrewAI Configuration ===
+                - name: CREWAI_DISABLE_TELEMETRY
+                  value: "true"
+                
+                # === Deepeval Telemetry Opt-Out ===
+                - name: DEEPEVAL_TELEMETRY_OPT_OUT
+                  value: "YES"
+                
+                # === GenAI Content Capture ===
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+                  value: "SPAN_AND_EVENT"
+                
+                # === GenAI Emitters Configuration (aligned with code: span_metric) ===
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+                  value: "span_metric"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
+                  value: "replace-category:SplunkEvaluationResults"
+                
+                # === Evaluation Settings ===
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
+                  value: "true"
+                
+                # === OpenTelemetry Logs Exporter ===
+                - name: OTEL_LOGS_EXPORTER
+                  value: "otlp"
+                
+                # === Get the host IP for Splunk OTEL agent ===
+                - name: SPLUNK_OTEL_AGENT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                
+                # === OpenTelemetry OTLP endpoint using Splunk agent ===
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://$(SPLUNK_OTEL_AGENT):4317"
+                
+                # === OTLP Protocol (grpc) ===
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "grpc"
+                
+                # === Explicit Exporter Configuration (required for auto-instrumentation) ===
+                - name: OTEL_TRACES_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_METRICS_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                
+                - name: OTEL_LOG_LEVEL
+                  value: "info"
+                
+                # === Exclude health check URLs ===
+                - name: OTEL_PYTHON_EXCLUDED_URLS
+                  value: "^(https?://)?[^/]+(/)?$"
+                
+                # === Traces Sampler Configuration ===
+                - name: OTEL_TRACES_SAMPLER
+                  value: "parentbased_traceidratio"
+                
+                - name: OTEL_TRACES_SAMPLER_ARG
+                  value: "1.0"
+                
+                # === Enable Python logging auto instrumentation ===
+                - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+                  value: "true"
+                
+                # === Enable log correlation ===
+                - name: OTEL_PYTHON_LOG_CORRELATION
+                  value: "true"
+                
+                # === Enable CrewAI content capture ===
+                - name: OTEL_INSTRUMENTATION_CREWAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                
+                # === Enable Splunk profiler ===
+                - name: SPLUNK_PROFILER_ENABLED
+                  value: "true"
+                
+                # === Unbuffered Python output ===
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+                
+                # === GenAI evaluation sampling rate ===
+                - name: OTEL_GENAI_EVALUATION_SAMPLING_RATE
+                  value: "1"
+                
+                # === Batch Span Processor Configuration (for short-lived containers) ===
+                # Reduce batch delay for faster export in K8s jobs
+                - name: OTEL_BSP_SCHEDULE_DELAY
+                  value: "1000"
+                
+                # Export timeout
+                - name: OTEL_BSP_EXPORT_TIMEOUT
+                  value: "30000"
+                
+                # Max queue size
+                - name: OTEL_BSP_MAX_QUEUE_SIZE
+                  value: "2048"
+                
+                # Max export batch size
+                - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
+                  value: "512"
+              
+              # === Resource limits ===
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "500m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+
