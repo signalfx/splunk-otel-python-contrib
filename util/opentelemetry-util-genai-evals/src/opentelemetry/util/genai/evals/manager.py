@@ -35,6 +35,7 @@ from .env import (
     read_aggregation_flag,
     read_interval,
     read_raw_evaluators,
+    read_evaluation_queue_size,
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
@@ -95,7 +96,7 @@ class Manager(CompletionCallback):
         )
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
-        self._queue: queue.Queue[GenAI] = queue.Queue()
+        self._queue: queue.Queue[GenAI] = queue.Queue(maxsize=read_evaluation_queue_size())
         self._shutdown = threading.Event()
         self._worker: threading.Thread | None = None
         if self.has_evaluators:
@@ -104,7 +105,7 @@ class Manager(CompletionCallback):
                 name="opentelemetry-genai-evaluator",
                 daemon=True,
             )
-            self._worker.start()
+            # self._worker.start()
 
     # CompletionCallback -------------------------------------------------
     def on_completion(self, invocation: GenAI) -> None:
@@ -149,6 +150,13 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
+        except queue.Full:
+            # TODO: add queue size metric
+            # if hasattr(invocation, "span") and invocation.span and hasattr(invocation.span, "attributes"):
+            #     invocation.span.set_attribute("gen_ai.evaluation.error_type", "client_evaluation_queue_full")
+            _LOGGER.warning(
+                "Evaluation queue is full, dropping invocation. Consider increasing queue size or evaluation throughput."
+            )
         except Exception:  # pragma: no cover - defensive
             _LOGGER.debug(
                 "Failed to enqueue invocation for evaluation", exc_info=True

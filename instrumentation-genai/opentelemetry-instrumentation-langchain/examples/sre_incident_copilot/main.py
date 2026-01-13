@@ -21,6 +21,10 @@ from data_loader import DataLoader
 from validation import ValidationHarness
 from incident_types import IncidentState
 
+from opentelemetry.instrumentation.langchain import LangChainInstrumentor
+
+# Set up instrumentation
+LangChainInstrumentor().instrument()
 
 def route_after_triage(state: IncidentState) -> str:
     """Route after triage agent - orchestrator decision.
