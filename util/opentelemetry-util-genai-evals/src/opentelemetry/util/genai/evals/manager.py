@@ -209,7 +209,7 @@ class Manager(CompletionCallback):
 
     def get_error_summary(self) -> dict[str, Any]:
         """Get summary of tracked errors for diagnostics.
-        
+
         Returns:
             Dictionary with error counts and statistics
         """
@@ -225,9 +225,9 @@ class Manager(CompletionCallback):
             try:
                 self._process_invocation(invocation)
             except Exception as exc:  # pragma: no cover - defensive
-                invocation_id = getattr(invocation, "trace_id", None) or getattr(
-                    invocation, "span_id", None
-                )
+                invocation_id = getattr(
+                    invocation, "trace_id", None
+                ) or getattr(invocation, "span_id", None)
                 _LOGGER.error(
                     "Evaluator processing failed",
                     extra={
@@ -274,7 +274,9 @@ class Manager(CompletionCallback):
             invocation, "span_id", None
         )
         for descriptor in evaluators:
-            evaluator_name = getattr(descriptor, "__class__", type(descriptor)).__name__
+            evaluator_name = getattr(
+                descriptor, "__class__", type(descriptor)
+            ).__name__
             try:
                 results = descriptor.evaluate(invocation)
             except Exception as exc:  # pragma: no cover - defensive
@@ -324,11 +326,11 @@ class Manager(CompletionCallback):
         flattened: list[EvaluationResult] = []
         for bucket in buckets:
             flattened.extend(bucket)
-        
+
         invocation_id = getattr(invocation, "trace_id", None) or getattr(
             invocation, "span_id", None
         )
-        
+
         if aggregate:
             if flattened:
                 attrs = getattr(invocation, "attributes", None)
@@ -357,7 +359,10 @@ class Manager(CompletionCallback):
                         recovery_action="results_dropped",
                         operational_impact="Evaluation results lost",
                         severity="error",
-                        details={"result_count": len(flattened), "aggregated": True},
+                        details={
+                            "result_count": len(flattened),
+                            "aggregated": True,
+                        },
                     )
             return flattened
         # Non-aggregated path: emit each bucket individually (legacy behavior)
@@ -386,7 +391,10 @@ class Manager(CompletionCallback):
                         recovery_action="bucket_dropped",
                         operational_impact="Partial evaluation results lost",
                         severity="error",
-                        details={"result_count": len(bucket), "aggregated": False},
+                        details={
+                            "result_count": len(bucket),
+                            "aggregated": False,
+                        },
                     )
         return flattened
 
@@ -492,7 +500,9 @@ class Manager(CompletionCallback):
                 extra={
                     "error_type": "config_parse_error",
                     "component": "manager",
-                    "config_value": raw[:200] if len(raw) <= 200 else raw[:200] + "...",
+                    "config_value": raw[:200]
+                    if len(raw) <= 200
+                    else raw[:200] + "...",
                     "exception_type": type(exc).__name__,
                     "available_evaluators": available,
                 },
@@ -507,7 +517,9 @@ class Manager(CompletionCallback):
                 operational_impact="All evaluations disabled",
                 severity="error",
                 details={
-                    "config_snippet": raw[:200] if len(raw) <= 200 else raw[:200] + "...",
+                    "config_snippet": raw[:200]
+                    if len(raw) <= 200
+                    else raw[:200] + "...",
                     "available_evaluators": available,
                 },
             )

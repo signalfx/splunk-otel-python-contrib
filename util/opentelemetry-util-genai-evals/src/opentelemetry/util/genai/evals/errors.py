@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 @dataclass
 class ErrorEvent:
     """Structured error event for evaluation failures.
-    
+
     Provides comprehensive context for debugging and operational monitoring.
     """
 
@@ -84,7 +84,7 @@ class ErrorTracker:
         details: dict[str, Any] | None = None,
     ) -> ErrorEvent:
         """Record an error event with context.
-        
+
         Args:
             error_type: Type of error (e.g., "evaluator_error", "handler_error")
             component: Component where error occurred
@@ -97,7 +97,7 @@ class ErrorTracker:
             operational_impact: Impact on evaluation results
             severity: Error severity level
             details: Additional structured context
-            
+
         Returns:
             ErrorEvent instance
         """
