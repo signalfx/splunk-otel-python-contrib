@@ -101,6 +101,7 @@ class CrewAIInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs):
         """Remove instrumentation from CrewAI components."""
+
         def _safe_unwrap(module: str, name: str):
             try:
                 unwrap(module, name)
