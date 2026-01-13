@@ -326,11 +326,29 @@ opentelemetry-instrument --traces_exporter otlp python your_app.py
 - **SDK Mode**: See `examples/multi_agent_travel_planner/` - Explicit security checks with `inspect_prompt()`
 - **Gateway Mode**: See `examples/gateway/multi_agent_travel_planner/` - LLM calls through AI Defense Gateway
 
+## Code Structure
+
+The instrumentation follows the DRY (Don't Repeat Yourself) principle:
+
+```
+src/opentelemetry/instrumentation/aidefense/
+├── __init__.py           # Package exports
+├── instrumentation.py    # Main instrumentor and wrappers
+├── instruments.py        # Reusable helpers (DRY)
+└── version.py            # Package version
+```
+
+**`instruments.py`** provides common utilities to reduce code repetition:
+- `create_ai_defense_invocation()` - Creates standardized LLMInvocation for AI Defense
+- `create_input_message()` - Creates InputMessage with automatic content truncation
+- `execute_with_telemetry()` - Handles common wrapper pattern (start, execute, stop/fail)
+- `get_server_address()` - Extracts server address from client instance
+
 ## Requirements
 
 - Python >= 3.9
 - opentelemetry-api >= 1.38.0
-- splunk-otel-util-genai >= 0.1.4
+- splunk-otel-util-genai >= 0.1.5
 - For SDK Mode: cisco-aidefense-sdk >= 2.0.0
 - For Gateway Mode: httpx (for OpenAI, Cohere, Mistral) or boto3 (for AWS Bedrock)
 

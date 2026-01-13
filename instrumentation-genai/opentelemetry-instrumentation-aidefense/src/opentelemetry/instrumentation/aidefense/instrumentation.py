@@ -45,10 +45,18 @@ from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     LLMInvocation,
-    InputMessage,
     OutputMessage,
     Text,
-    Error,
+)
+
+from opentelemetry.instrumentation.aidefense.instruments import (
+    add_event_id_to_current_span,
+    create_ai_defense_invocation,
+    create_input_message,
+    execute_with_telemetry,
+    get_server_address,
+    MAX_SHORT_CONTENT_LENGTH,
+    MAX_MESSAGES_IN_CONVERSATION,
 )
 
 _logger = logging.getLogger(__name__)
@@ -393,30 +401,7 @@ def _wrap_httpx_send_for_gateway(wrapped, instance, args, kwargs):
     3. We add the event_id to that active span
     """
     response = wrapped(*args, **kwargs)
-
-    try:
-        # Get the request URL from the response
-        request = response.request if hasattr(response, "request") else None
-        url = str(request.url) if request and hasattr(request, "url") else ""
-
-        # Check if response is from AI Defense Gateway
-        if url and _is_aidefense_gateway_url(url):
-            event_id = _extract_event_id_from_headers(response.headers)
-            if event_id:
-                span = trace.get_current_span()
-                if span and span.is_recording():
-                    span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
-                    _logger.debug(
-                        "SUCCESS: Added gen_ai.security.event_id=%s to span",
-                        event_id,
-                    )
-            else:
-                _logger.debug(
-                    "No event_id in response (request may not have triggered security)"
-                )
-    except Exception as e:
-        _logger.debug("Failed to extract AI Defense event_id from httpx: %s", e)
-
+    _try_add_gateway_event_id_from_httpx_response(response, "httpx")
     return response
 
 
@@ -426,33 +411,39 @@ async def _wrap_async_httpx_send_for_gateway(wrapped, instance, args, kwargs):
 
     Async version of _wrap_httpx_send_for_gateway.
     """
-    _logger.debug("httpx.AsyncClient.send wrapper called")
     response = await wrapped(*args, **kwargs)
+    _try_add_gateway_event_id_from_httpx_response(response, "async httpx")
+    return response
 
+
+def _try_add_gateway_event_id_from_httpx_response(response, source: str) -> None:
+    """
+    Try to extract and add AI Defense event_id from httpx response to current span.
+
+    Args:
+        response: httpx response object
+        source: Description for logging (e.g., "httpx", "async httpx")
+    """
     try:
-        # Get the request URL from the response
         request = response.request if hasattr(response, "request") else None
         url = str(request.url) if request and hasattr(request, "url") else ""
 
-        # Check if response is from AI Defense Gateway
         if url and _is_aidefense_gateway_url(url):
             event_id = _extract_event_id_from_headers(response.headers)
             if event_id:
-                span = trace.get_current_span()
-                if span and span.is_recording():
-                    span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
+                if add_event_id_to_current_span(event_id):
                     _logger.debug(
-                        "SUCCESS: Added gen_ai.security.event_id=%s to span",
+                        "SUCCESS: Added gen_ai.security.event_id=%s to span from %s",
                         event_id,
+                        source,
                     )
             else:
                 _logger.debug(
-                    "No event_id in async response (request may not have triggered security)"
+                    "No event_id in %s response (request may not have triggered security)",
+                    source,
                 )
     except Exception as e:
-        _logger.debug("Failed to extract AI Defense event_id from async httpx: %s", e)
-
-    return response
+        _logger.debug("Failed to extract AI Defense event_id from %s: %s", source, e)
 
 
 # ============================================================================
@@ -467,31 +458,38 @@ def _wrap_botocore_send_for_gateway(wrapped, instance, args, kwargs):
     AWS Bedrock uses botocore which uses urllib3 for HTTP requests.
     This wrapper intercepts responses and extracts the AI Defense event_id.
     """
-    _logger.debug("Botocore URLLib3Session.send wrapper called")
     response = wrapped(*args, **kwargs)
+    _try_add_gateway_event_id_from_botocore_response(response, args)
+    return response
 
+
+def _try_add_gateway_event_id_from_botocore_response(response, args) -> None:
+    """
+    Try to extract and add AI Defense event_id from botocore response to current span.
+
+    Args:
+        response: botocore response object
+        args: Original function args (first arg is the AWSRequest)
+    """
     try:
-        # Get request from args (first positional argument is the AWSRequest)
         request = args[0] if args else None
         url = request.url if request and hasattr(request, "url") else ""
 
-        # Check if response is from AI Defense Gateway
         if url and _is_aidefense_gateway_url(url):
-            # botocore response has headers as a dict-like object
             headers = getattr(response, "headers", None)
             event_id = _extract_event_id_from_headers(headers)
             if event_id:
-                span = trace.get_current_span()
-                if span and span.is_recording():
-                    span.set_attribute(GEN_AI_SECURITY_EVENT_ID, event_id)
+                if add_event_id_to_current_span(event_id):
                     _logger.debug(
-                        "Added AI Defense event_id to span from botocore: %s...",
-                        event_id[:20] if len(event_id) > 20 else event_id,
+                        "SUCCESS: Added gen_ai.security.event_id=%s to span from botocore",
+                        event_id,
                     )
+            else:
+                _logger.debug(
+                    "No event_id in botocore response (request may not have triggered security)"
+                )
     except Exception as e:
         _logger.debug("Failed to extract AI Defense event_id from botocore: %s", e)
-
-    return response
 
 
 # ============================================================================
@@ -505,41 +503,19 @@ def _wrap_chat_inspect_prompt(wrapped, instance, args, kwargs):
 
     Captures the user prompt being inspected and the resulting security event_id.
     """
-    try:
-        handler = _handler
-        prompt = kwargs.get("prompt") or (args[0] if args else "")
-
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=[
-                InputMessage(role="user", parts=[Text(content=str(prompt)[:1000])])
-            ],
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    prompt = kwargs.get("prompt") or (args[0] if args else "")
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=[create_input_message("user", prompt)],
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 def _wrap_chat_inspect_response(wrapped, instance, args, kwargs):
@@ -548,43 +524,19 @@ def _wrap_chat_inspect_response(wrapped, instance, args, kwargs):
 
     Captures the AI response being inspected and the resulting security event_id.
     """
-    try:
-        handler = _handler
-        response = kwargs.get("response") or (args[0] if args else "")
-
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=[
-                InputMessage(
-                    role="assistant", parts=[Text(content=str(response)[:1000])]
-                )
-            ],
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    response = kwargs.get("response") or (args[0] if args else "")
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=[create_input_message("assistant", response)],
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 def _wrap_chat_inspect_conversation(wrapped, instance, args, kwargs):
@@ -593,46 +545,27 @@ def _wrap_chat_inspect_conversation(wrapped, instance, args, kwargs):
 
     Captures the full conversation being inspected and the resulting security event_id.
     """
-    try:
-        handler = _handler
-        messages = kwargs.get("messages") or (args[0] if args else [])
+    messages = kwargs.get("messages") or (args[0] if args else [])
 
-        # Convert AI Defense messages to InputMessage format
-        input_msgs = []
-        for msg in messages[:10]:  # Limit to 10 messages for span size
-            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
-            content = getattr(msg, "content", "")[:500]
-            input_msgs.append(InputMessage(role=role, parts=[Text(content=content)]))
+    # Convert AI Defense messages to InputMessage format
+    input_msgs = []
+    for msg in messages[:MAX_MESSAGES_IN_CONVERSATION]:
+        role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+        content = getattr(msg, "content", "")[:MAX_SHORT_CONTENT_LENGTH]
+        input_msgs.append(create_input_message(role, content, MAX_SHORT_CONTENT_LENGTH))
 
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=input_msgs,
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=input_msgs,
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 # ============================================================================
@@ -646,42 +579,20 @@ def _wrap_http_inspect_request(wrapped, instance, args, kwargs):
 
     Captures HTTP request inspection with method and URL context.
     """
-    try:
-        handler = _handler
-        method = kwargs.get("method") or (args[0] if args else "")
-        url = kwargs.get("url") or (args[1] if len(args) > 1 else "")
-
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=[
-                InputMessage(role="user", parts=[Text(content=f"{method} {url}")])
-            ],
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    method = kwargs.get("method") or (args[0] if args else "")
+    url = kwargs.get("url") or (args[1] if len(args) > 1 else "")
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=[create_input_message("user", f"{method} {url}")],
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 def _wrap_http_inspect_response(wrapped, instance, args, kwargs):
@@ -690,45 +601,20 @@ def _wrap_http_inspect_response(wrapped, instance, args, kwargs):
 
     Captures HTTP response inspection with status code and URL context.
     """
-    try:
-        handler = _handler
-        status_code = kwargs.get("status_code") or (args[0] if args else 0)
-        url = kwargs.get("url") or (args[1] if len(args) > 1 else "")
-
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=[
-                InputMessage(
-                    role="assistant",
-                    parts=[Text(content=f"HTTP {status_code} from {url}")],
-                )
-            ],
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    status_code = kwargs.get("status_code") or (args[0] if args else 0)
+    url = kwargs.get("url") or (args[1] if len(args) > 1 else "")
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=[create_input_message("assistant", f"HTTP {status_code} from {url}")],
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 def _wrap_http_inspect_request_from_library(wrapped, instance, args, kwargs):
@@ -737,49 +623,21 @@ def _wrap_http_inspect_request_from_library(wrapped, instance, args, kwargs):
 
     Handles requests from HTTP libraries like `requests`.
     """
-    try:
-        handler = _handler
-        http_request = kwargs.get("http_request") or (args[0] if args else None)
-
-        # Extract method and URL from request object
-        method = (
-            getattr(http_request, "method", "UNKNOWN") if http_request else "UNKNOWN"
-        )
-        url = getattr(http_request, "url", "") if http_request else ""
-
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=[
-                InputMessage(
-                    role="user", parts=[Text(content=f"{method} {url}"[:1000])]
-                )
-            ],
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    http_request = kwargs.get("http_request") or (args[0] if args else None)
+    method = getattr(http_request, "method", "UNKNOWN") if http_request else "UNKNOWN"
+    url = getattr(http_request, "url", "") if http_request else ""
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=[create_input_message("user", f"{method} {url}")],
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 def _wrap_http_inspect_response_from_library(wrapped, instance, args, kwargs):
@@ -788,61 +646,26 @@ def _wrap_http_inspect_response_from_library(wrapped, instance, args, kwargs):
 
     Handles responses from HTTP libraries like `requests`.
     """
-    try:
-        handler = _handler
-        http_response = kwargs.get("http_response") or (args[0] if args else None)
-
-        # Extract status code and URL from response object
-        status_code = getattr(http_response, "status_code", 0) if http_response else 0
-        url = getattr(http_response, "url", "") if http_response else ""
-
-        invocation = LLMInvocation(
-            request_model="cisco-ai-defense",
-            server_address=_get_server_address(instance),
-            operation="chat",
-            system="aidefense",
-            framework="aidefense",
-            input_messages=[
-                InputMessage(
-                    role="assistant",
-                    parts=[Text(content=f"HTTP {status_code} from {url}"[:1000])],
-                )
-            ],
-        )
-
-        handler.start_llm(invocation)
-    except Exception:
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        try:
-            _populate_invocation_from_result(invocation, result)
-            handler.stop_llm(invocation)
-        except Exception:
-            pass
-
-        return result
-    except Exception as exc:
-        try:
-            handler.fail(invocation, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    http_response = kwargs.get("http_response") or (args[0] if args else None)
+    status_code = getattr(http_response, "status_code", 0) if http_response else 0
+    url = getattr(http_response, "url", "") if http_response else ""
+    invocation = create_ai_defense_invocation(
+        server_address=get_server_address(instance),
+        input_messages=[create_input_message("assistant", f"HTTP {status_code} from {url}")],
+    )
+    return execute_with_telemetry(
+        handler=_handler,
+        invocation=invocation,
+        wrapped=wrapped,
+        args=args,
+        kwargs=kwargs,
+        result_processor=_populate_invocation_from_result,
+    )
 
 
 # ============================================================================
 # SDK Mode Helper Functions
 # ============================================================================
-
-
-def _get_server_address(instance) -> Optional[str]:
-    """Extract the server address from the AI Defense client instance."""
-    try:
-        return getattr(instance.config, "runtime_base_url", None)
-    except Exception:
-        return None
 
 
 def _populate_invocation_from_result(invocation: LLMInvocation, result) -> None:

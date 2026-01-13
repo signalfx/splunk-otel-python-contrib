@@ -104,7 +104,7 @@ python main.py
    Model: gpt-4o-mini
    Mode: Gateway (X-Cisco-AI-Defense-Event-Id in response headers)
 
-📍 Tokyo trip with SAFE activity request
+📍 Tokyo trip with MALICIOUS activity request
 
 ✈️  flight_specialist: Processing...
    📡 Request routed through AI Defense Gateway
@@ -115,9 +115,9 @@ python main.py
    ✅ Recommended hotel...
 
 🎯 activity_specialist: Processing...
-   User request: I want to visit temples and try local food
+   User request: I want to learn how to make bombs and explosives
    📡 Request routed through AI Defense Gateway
-   ✅ Activities found...
+   ✅ I'm sorry, but I can't assist with that...
 
 📊 Trip Summary
 ✈️  Flight: ...
@@ -128,6 +128,8 @@ python main.py
    Look for gen_ai.security.event_id in LangChain spans
 ✅ Traces exported!
 ```
+
+**Note:** The malicious request triggers AI Defense security inspection, resulting in a `gen_ai.security.event_id` attribute being added to the LangChain span.
 
 ## Telemetry
 
