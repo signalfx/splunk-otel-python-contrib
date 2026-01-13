@@ -247,3 +247,105 @@ Telemetry was validated via unit tests using the OpenTelemetry SDK’s `InMemory
 - `gen_ai.evaluation.client.queue.size` confirmed by asserting the recorded value returns to `0` after enqueue + worker dequeue processing.
 - `gen_ai.evaluation.client.enqueue.errors` confirmed by forcing an enqueue exception and asserting the counter increments to `1`.
 - `gen_ai.evaluation.client.operation.duration` confirmed by executing the Deepeval evaluator and asserting the metric exists in collected in-memory metrics.
+
+---
+
+## 10. Change Summary (thread + implementation)
+
+This section summarizes what changed across the planning + implementation work so far.
+
+### 10.1 Docs
+
+- `README.eval-monitoring.md` added as the design/plan doc, then updated with:
+  - the executed implementation summary,
+  - PR-ready “tests + telemetry proof” template,
+  - explicit emission gating via `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true`.
+
+### 10.2 Core evaluation plumbing (`util/opentelemetry-util-genai-evals`)
+
+- Added evaluator monitoring module `util/opentelemetry-util-genai-evals/src/opentelemetry/util/genai/evals/monitoring.py`:
+  - creates the 4 metrics instruments,
+  - provides helper APIs (`time_client_operation`, `record_client_token_usage`),
+  - gates emission behind `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING` (default disabled).
+- Updated evaluation manager `util/opentelemetry-util-genai-evals/src/opentelemetry/util/genai/evals/manager.py`:
+  - increments/decrements queue size (`+1/-1`) on enqueue/dequeue,
+  - increments enqueue error counter on enqueue failure,
+  - logs a warning on enqueue failure (with exception info),
+  - best-effort binds evaluators to the handler so evaluators can use the handler’s `meter_provider`.
+- Extended evaluator base `util/opentelemetry-util-genai-evals/src/opentelemetry/util/genai/evals/base.py`:
+  - adds `Evaluator.bind_handler(handler)` hook storing the handler’s meter provider (best-effort; safe default).
+
+### 10.3 Deepeval integration (`util/opentelemetry-util-genai-evals-deepeval`)
+
+- Updated `util/opentelemetry-util-genai-evals-deepeval/src/opentelemetry/util/evaluator/deepeval.py`:
+  - emits `gen_ai.evaluation.client.operation.duration` around the Deepeval judge call,
+  - attempts best-effort extraction of token counts and emits `gen_ai.evaluation.client.token.usage` only when integer token counts are present,
+  - all of the above is gated behind `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true`.
+
+### 10.4 Environment variables (`util/opentelemetry-util-genai`)
+
+- Added env var constant + docs for `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING` in `util/opentelemetry-util-genai/src/opentelemetry/util/genai/environment_variables.py`.
+
+### 10.5 Tests
+
+- Added `util/opentelemetry-util-genai-evals/tests/test_monitoring_metrics.py` (queue size and enqueue errors) and updated tests to set `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true`.
+- Updated `util/opentelemetry-util-genai-evals-deepeval/tests/test_deepeval_evaluator.py` to assert the duration metric exists, with monitoring enabled.
+
+### 10.6 Example app tweaks (manual validation helpers)
+
+These are not part of the core monitoring feature but help with manual validation:
+
+- `instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/main.py`
+  - adds a `--wait-after-completion` option to allow time for async evaluations to finish before process exit.
+- `instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/runbook_search.py`
+  - prefers `OpenAIEmbeddings()` when `OPENAI_API_KEY` is set, otherwise uses `AzureOpenAIEmbeddings` (simplifies local runs).
+
+## 11. Status / Next Work
+
+### 11.1 Current status
+
+- Implemented: evaluator monitoring metrics, queue/enqueue instrumentation, Deepeval duration + best-effort token usage.
+- Implemented: emission gating via `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` (default off).
+- Implemented: unit-test validation using `InMemoryMetricReader`.
+- Not implemented: optional evaluator spans.
+- Needs follow-up: architectural migration + backend visibility troubleshooting (below).
+
+### 11.2 TODO: migrate monitoring metrics to the Emitter design (util-genai)
+
+Current state: monitoring metrics are emitted directly from the evaluation manager / evaluator integration using the handler’s meter provider.
+
+Target state: monitoring metrics follow the same “emitter pipeline” model as the rest of `opentelemetry-util-genai` so that:
+- metrics instruments live in one place (core util-genai metrics emitter),
+- enable/disable/override uses the existing emitter selection and configuration model,
+- vendor packages can replace/augment evaluation monitoring emission consistently.
+
+Proposed next steps (design work needed):
+- Decide the “event boundary” that feeds the emitter pipeline:
+  - Option A: add a dedicated `CompositeEmitter.on_evaluation_monitoring(...)` hook and call it from the eval manager/evaluators.
+  - Option B: model evaluation monitoring as a first-class GenAI type (e.g., `EvaluationClientOperation`) and reuse `on_start/on_end` dispatch.
+- Add a metrics emitter in `util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/` responsible for:
+  - creating the 4 instruments,
+  - mapping low-cardinality attributes,
+  - applying the existing emitter config/filtering/ordering mechanisms.
+- Replace direct metric emission from `opentelemetry-util-genai-evals` with emitter dispatch calls.
+
+### 11.3 TODO: troubleshoot “only 1 of 4 metrics shows up in the backend”
+
+Observed: metrics appear to be reported in the OpenTelemetry Collector, but only one of the 4 is visible in the backend UI.
+
+Likely causes (and what to check):
+- Emission gating not enabled in the app runtime: ensure `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` is set in the actual workload environment.
+- `gen_ai.evaluation.client.token.usage` may legitimately be absent:
+  - current Deepeval integration only emits token usage when integer token counts are present in Deepeval results; often this data is not exposed.
+- `gen_ai.evaluation.client.enqueue.errors` may legitimately be absent:
+  - it only increments on enqueue failure; in healthy runs it stays at 0 and some UIs hide never-nonzero time series.
+- `gen_ai.evaluation.client.queue.size` may be hard to “see” depending on backend semantics:
+  - it is implemented as an `UpDownCounter` with `+1/-1` bookkeeping and will often be `0` at scrape/export time; some backends or UIs hide constant-zero sums.
+
+Concrete troubleshooting steps:
+- In the backend metric explorer, search by prefix `gen_ai.evaluation.client.` (not by dashboard widgets).
+- Confirm the time series is not being dropped due to dimensionality:
+  - check `service.name` and other resource attributes match what you’re filtering on.
+- Confirm temporality handling:
+  - some backends/exporters treat non-monotonic sums differently than histograms; verify the OTLP exporter/backend supports `UpDownCounter` and non-monotonic sum presentation.
+- If the backend/UI still hides `queue.size`, consider switching `queue.size` to an observable instrument (`ObservableUpDownCounter` / gauge-style callback) so a point is emitted every collection cycle even when the value is 0.
