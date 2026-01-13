@@ -15,6 +15,7 @@ opentelemetry-semantic-conventions>=0.59b0
 
 # Splunk GenAI utilities and emitters
 splunk-otel-util-genai>=0.1.4
+splunk-otel-util-genai-test
 splunk-otel-genai-emitters-splunk
 splunk-otel-util-genai-evals
 splunk-otel-genai-evals-deepeval>=0.1.6

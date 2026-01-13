@@ -352,20 +352,20 @@ class TelemetryCallback(BaseCallbackHandler):
         )
 
 
-# Initialize Cisco token manager
-cisco_client_id = os.getenv("CISCO_CLIENT_ID")
-cisco_client_secret = os.getenv("CISCO_CLIENT_SECRET")
-cisco_app_key = os.getenv("CISCO_APP_KEY")
+# Initialize OAuth2 token manager (Cisco Chat AI in this example)
+oauth_client_id = os.getenv("OAUTH2_CLIENT_ID")
+oauth_client_secret = os.getenv("OAUTH2_CLIENT_SECRET")
+oauth_app_key = os.getenv("OAUTH2_APP_KEY")
 
-if not all([cisco_client_id, cisco_client_secret, cisco_app_key]):
+if not all([oauth_client_id, oauth_client_secret, oauth_app_key]):
     print(
-        "ERROR: Missing Cisco credentials. Please set CISCO_CLIENT_ID, CISCO_CLIENT_SECRET, and CISCO_APP_KEY environment variables."
+        "ERROR: Missing OAuth2 credentials. Please set OAUTH2_CLIENT_ID, OAUTH2_CLIENT_SECRET, and OAUTH2_APP_KEY environment variables."
     )
     token_manager = None
     model = None
 else:
     token_manager = TokenManager(
-        cisco_client_id, cisco_client_secret, cisco_app_key
+        oauth_client_id, oauth_client_secret, oauth_app_key
     )
 
     # Initialize the model with Cisco AI service
@@ -379,7 +379,7 @@ else:
             base_url="https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini",
             model="gpt-4o-mini",
             default_headers={"api-key": access_token},
-            model_kwargs={"user": f'{{"appkey": "{cisco_app_key}"}}'},
+            model_kwargs={"user": f'{{"appkey": "{oauth_app_key}"}}'},
         )
         print("Cisco AI model initialized successfully")
     except Exception as e:
@@ -468,9 +468,9 @@ def home():
                 }
             },
             "required_env_vars": [
-                "CISCO_CLIENT_ID",
-                "CISCO_CLIENT_SECRET",
-                "CISCO_APP_KEY",
+                "OAUTH2_CLIENT_ID",
+                "OAUTH2_CLIENT_SECRET",
+                "OAUTH2_APP_KEY",
             ],
         }
     )

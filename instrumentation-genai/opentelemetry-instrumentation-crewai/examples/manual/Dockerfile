@@ -10,9 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy only the CrewAI instrumentation package and manual example
 COPY instrumentation-genai/opentelemetry-instrumentation-crewai /app/opentelemetry-instrumentation-crewai
+# Copy the shared OAuth2 helper package (not part of core util-genai)
+COPY util/opentelemetry-util-genai-test /app/opentelemetry-util-genai-test
 
 # Set working directory to manual example
 WORKDIR /app/opentelemetry-instrumentation-crewai/examples/manual
+
+# Install shared OAuth2 helper from local source (ensures availability even if not on PyPI)
+RUN pip install --no-cache-dir /app/opentelemetry-util-genai-test
 
 # Install Python dependencies (including genai utils from PyPI)
 RUN pip install --no-cache-dir -r requirements.txt
@@ -23,7 +28,7 @@ RUN pip install --no-cache-dir /app/opentelemetry-instrumentation-crewai[instrum
 # Verify packages are installed correctly
 RUN python3 -c "from opentelemetry.instrumentation.crewai import CrewAIInstrumentor; print('✓ CrewAI instrumentation available')" && \
     python3 -c "from opentelemetry.util.genai.handler import get_telemetry_handler; print('✓ GenAI handler available (from PyPI)')" && \
-    python3 -c "from util import CiscoTokenManager; print('✓ CiscoTokenManager available')"
+    python3 -c "from opentelemetry.util.oauth2_token_manager import OAuth2TokenManager; print('✓ OAuth2TokenManager available')"
 
 # Set default environment variables
 ENV OTEL_PYTHON_LOG_CORRELATION=true \

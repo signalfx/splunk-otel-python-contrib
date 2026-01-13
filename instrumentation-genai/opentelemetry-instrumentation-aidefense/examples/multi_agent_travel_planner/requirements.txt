@@ -8,6 +8,7 @@ opentelemetry-exporter-otlp-proto-grpc>=1.38.0
 # Splunk GenAI packages (from git - not yet on PyPI)
 # util-genai with security_event_id support
 git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=util/opentelemetry-util-genai
+git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=util/opentelemetry-util-genai-test
 
 # AI Defense instrumentation (from git - not yet on PyPI)
 git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=instrumentation-genai/opentelemetry-instrumentation-aidefense
@@ -25,4 +26,3 @@ langgraph>=0.2.0
 
 # HTTP client
 requests>=2.31.0
-

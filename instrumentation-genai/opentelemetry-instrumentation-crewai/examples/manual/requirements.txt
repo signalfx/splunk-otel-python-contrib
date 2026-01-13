@@ -18,6 +18,7 @@ opentelemetry-instrumentation-openai>=0.30.0
 
 # Splunk GenAI utilities and emitters
 splunk-otel-util-genai>=0.1.4
+splunk-otel-util-genai-test
 splunk-otel-genai-emitters-splunk
 splunk-otel-util-genai-evals
 splunk-otel-genai-evals-deepeval>=0.1.6
@@ -29,4 +30,3 @@ deepeval>=3.0.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 requests>=2.25.0
-

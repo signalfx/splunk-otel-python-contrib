@@ -95,7 +95,7 @@ def _assert_credentials(
 ) -> Tuple[str, str]:
     if not client_id or not client_secret:
         raise RuntimeError(
-            "CISCO_CLIENT_ID and CISCO_CLIENT_SECRET must be set in the environment."
+            "OAUTH2_CLIENT_ID and OAUTH2_CLIENT_SECRET must be set in the environment."
         )
     return client_id, client_secret
 
@@ -103,10 +103,10 @@ def _assert_credentials(
 def build_token_manager(cache_file: str = DEFAULT_CACHE_FILE) -> TokenManager:
     """Return a TokenManager using Cisco CircuIT credentials from env."""
     client_id, client_secret = _assert_credentials(
-        os.getenv("CISCO_CLIENT_ID"),
-        os.getenv("CISCO_CLIENT_SECRET"),
+        os.getenv("OAUTH2_CLIENT_ID"),
+        os.getenv("OAUTH2_CLIENT_SECRET"),
     )
-    app_key = os.getenv("CISCO_APP_KEY")
+    app_key = os.getenv("OAUTH2_APP_KEY")
     return TokenManager(client_id, client_secret, app_key, cache_file)
 
 

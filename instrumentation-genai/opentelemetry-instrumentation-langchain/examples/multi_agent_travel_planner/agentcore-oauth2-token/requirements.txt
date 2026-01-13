@@ -23,6 +23,7 @@ opentelemetry-instrumentation-openai>=0.30.0
 
 # Splunk GenAI utilities and emitters
 splunk-otel-util-genai>=0.1.4
+splunk-otel-util-genai-test
 splunk-otel-genai-emitters-splunk
 splunk-otel-util-genai-evals
 # OAuth2/LiteLLM support for custom eval providers (v0.1.8+ adds DEEPEVAL_LLM_EXTRA_HEADERS)
@@ -33,12 +34,9 @@ splunk-otel-instrumentation-langchain
 # DeepEval for evaluations
 deepeval>=3.0.0
 
-# Note: OAuth2TokenManager is in local util/ directory (no external package needed)
+# Note: OAuth2TokenManager is provided by splunk-otel-util-genai-test (`opentelemetry.util.oauth2_token_manager`)
 
 # Other dependencies
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 requests>=2.25.0
-
-
-

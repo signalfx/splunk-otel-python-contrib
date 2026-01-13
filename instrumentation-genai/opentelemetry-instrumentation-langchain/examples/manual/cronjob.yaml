@@ -41,17 +41,17 @@ spec:
                   value: "true"
                 - name: SPLUNK_PROFILER_ENABLED
                   value: "true"
-                - name: CISCO_CLIENT_ID
+                - name: OAUTH2_CLIENT_ID
                   valueFrom:
                     secretKeyRef:
                       name: cisco-oauth-secrets
                       key: client-id
-                - name: CISCO_CLIENT_SECRET
+                - name: OAUTH2_CLIENT_SECRET
                   valueFrom:
                     secretKeyRef:
                       name: cisco-oauth-secrets
                       key: client-secret
-                - name: CISCO_APP_KEY
+                - name: OAUTH2_APP_KEY
                   valueFrom:
                     secretKeyRef:
                       name: cisco-oauth-secrets

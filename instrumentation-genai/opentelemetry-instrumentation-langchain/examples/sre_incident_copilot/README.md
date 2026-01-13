@@ -187,10 +187,10 @@ kubectl apply -f k8s-cronjob.yaml
 | `OPENAI_API_KEY`              | OpenAI API key                 | Required               |
 | `OPENAI_MODEL`                | Model to use                   | `gpt-4o-mini`          |
 | `OPENAI_BASE_URL`             | Custom LLM endpoint            | Optional               |
-| `OAUTH_TOKEN_URL`             | OAuth2 token endpoint          | Optional               |
-| `OAUTH_CLIENT_ID`             | OAuth2 client ID               | Optional               |
-| `OAUTH_CLIENT_SECRET`         | OAuth2 client secret           | Optional               |
-| `OAUTH_APP_KEY`               | OAuth2 app key                 | Optional               |
+| `OAUTH2_TOKEN_URL`             | OAuth2 token endpoint          | Optional               |
+| `OAUTH2_CLIENT_ID`             | OAuth2 client ID               | Optional               |
+| `OAUTH2_CLIENT_SECRET`         | OAuth2 client secret           | Optional               |
+| `OAUTH2_APP_KEY`               | OAuth2 app key                 | Optional               |
 | `AZURE_OPENAI_ENDPOINT`       | Azure OpenAI endpoint          | Optional               |
 | `AZURE_OPENAI_API_KEY`        | Azure OpenAI API key           | Optional               |
 | `AZURE_OPENAI_API_VERSION`    | Azure OpenAI API version       | `2024-02-01`           |

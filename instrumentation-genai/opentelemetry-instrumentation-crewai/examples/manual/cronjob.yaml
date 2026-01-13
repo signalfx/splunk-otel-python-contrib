@@ -70,20 +70,20 @@ spec:
                       name: openai-credentials
                       key: serper-api-key
                 
-                # === Cisco API Credentials ===
-                - name: CISCO_CLIENT_ID
+                # === OAuth2 Credentials (Cisco Chat AI in this example) ===
+                - name: OAUTH2_CLIENT_ID
                   valueFrom:
                     secretKeyRef:
                       name: cisco-credentials
                       key: client-id
                 
-                - name: CISCO_CLIENT_SECRET
+                - name: OAUTH2_CLIENT_SECRET
                   valueFrom:
                     secretKeyRef:
                       name: cisco-credentials
                       key: client-secret
                 
-                - name: CISCO_APP_KEY
+                - name: OAUTH2_APP_KEY
                   valueFrom:
                     secretKeyRef:
                       name: cisco-credentials
@@ -190,4 +190,3 @@ spec:
                 limits:
                   memory: "1Gi"
                   cpu: "1000m"
-

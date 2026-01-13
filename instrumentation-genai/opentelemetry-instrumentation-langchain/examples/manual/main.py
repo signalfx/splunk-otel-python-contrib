@@ -852,17 +852,17 @@ def main():
     # Set up instrumentation
     LangchainInstrumentor().instrument()
 
-    # Set up Cisco CircuIT credentials from environment
-    cisco_client_id = os.getenv("CISCO_CLIENT_ID")
-    cisco_client_secret = os.getenv("CISCO_CLIENT_SECRET")
-    cisco_app_key = os.getenv("CISCO_APP_KEY")
+    # Set up OAuth2 credentials for Cisco CircuIT from environment
+    oauth_client_id = os.getenv("OAUTH2_CLIENT_ID")
+    oauth_client_secret = os.getenv("OAUTH2_CLIENT_SECRET")
+    oauth_app_key = os.getenv("OAUTH2_APP_KEY")
     token_manager = TokenManager(
-        cisco_client_id, cisco_client_secret, cisco_app_key, "/tmp/.token.json"
+        oauth_client_id, oauth_client_secret, oauth_app_key, "/tmp/.token.json"
     )
     api_key = token_manager.get_token()
 
     # ChatOpenAI setup
-    user_md = {"appkey": cisco_app_key} if cisco_app_key else {}
+    user_md = {"appkey": oauth_app_key} if oauth_app_key else {}
     llm = ChatOpenAI(
         model="gpt-5-nano",
         temperature=0.1,

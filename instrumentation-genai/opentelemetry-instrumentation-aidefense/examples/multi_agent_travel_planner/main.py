@@ -24,9 +24,9 @@ This example demonstrates:
 
 Usage:
     export AI_DEFENSE_API_KEY="your-key"
-    export LLM_CLIENT_ID="your-client-id"
-    export LLM_CLIENT_SECRET="your-client-secret"
-    export LLM_APP_KEY="your-app-key"  # optional
+    export OAUTH2_CLIENT_ID="your-client-id"
+    export OAUTH2_CLIENT_SECRET="your-client-secret"
+    export OAUTH2_APP_KEY="your-app-key"  # optional
 
     python main.py
 """
@@ -95,12 +95,12 @@ from langchain.agents import create_agent  # noqa: E402
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from langgraph.graph.message import AnyMessage, add_messages  # noqa: E402
 
-from util import OAuth2TokenManager  # noqa: E402
+from opentelemetry.util.oauth2_token_manager import OAuth2TokenManager  # noqa: E402
 
 # ============================================================================
 # Configuration
 # ============================================================================
-LLM_APP_KEY = os.environ.get("LLM_APP_KEY", "")
+OAUTH2_APP_KEY = os.environ.get("OAUTH2_APP_KEY", "")
 token_manager = OAuth2TokenManager()
 
 # AI Defense client (initialized in main)
@@ -118,8 +118,8 @@ def create_llm(agent_name: str, temperature: float = 0.5) -> ChatOpenAI:
         base_url=OAuth2TokenManager.get_llm_base_url(model),
         api_key="placeholder",
         default_headers={"api-key": token},
-        model_kwargs={"user": json.dumps({"appkey": LLM_APP_KEY})}
-        if LLM_APP_KEY
+        model_kwargs={"user": json.dumps({"appkey": OAUTH2_APP_KEY})}
+        if OAUTH2_APP_KEY
         else {},
         temperature=temperature,
         tags=[f"agent:{agent_name}", "travel-planner"],
@@ -404,7 +404,7 @@ def main():
     print("=" * 70)
 
     # Validate environment
-    required = ["AI_DEFENSE_API_KEY", "LLM_CLIENT_ID", "LLM_CLIENT_SECRET"]
+    required = ["AI_DEFENSE_API_KEY", "OAUTH2_CLIENT_ID", "OAUTH2_CLIENT_SECRET"]
     missing = [k for k in required if not os.environ.get(k)]
     if missing:
         print(f"\n❌ Missing: {', '.join(missing)}")

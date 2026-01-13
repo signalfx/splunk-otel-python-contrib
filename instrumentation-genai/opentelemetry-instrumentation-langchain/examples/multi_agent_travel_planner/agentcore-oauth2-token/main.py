@@ -48,14 +48,14 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-# OAuth2 authentication (local util module for AgentCore deployment)
-from util import OAuth2TokenManager
+# OAuth2 authentication (shared util module)
+from opentelemetry.util.oauth2_token_manager import OAuth2TokenManager
 
 # =============================================================================
 # OAuth2 LLM Configuration
 # =============================================================================
 
-LLM_APP_KEY = os.environ.get("LLM_APP_KEY") or os.environ.get("CISCO_APP_KEY")
+OAUTH2_APP_KEY = os.environ.get("OAUTH2_APP_KEY")
 token_manager = OAuth2TokenManager()
 
 
@@ -68,8 +68,8 @@ def get_oauth2_openai_config() -> dict:
         "default_headers": {"api-key": token},
     }
     # Add app key if provided (for providers that require it)
-    if LLM_APP_KEY:
-        config["model_kwargs"] = {"user": json.dumps({"appkey": LLM_APP_KEY})}
+    if OAUTH2_APP_KEY:
+        config["model_kwargs"] = {"user": json.dumps({"appkey": OAUTH2_APP_KEY})}
     return config
 
 

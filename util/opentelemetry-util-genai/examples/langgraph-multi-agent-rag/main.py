@@ -310,10 +310,10 @@ def convert_messages_to_telemetry(messages):
 # Exclude Cisco URLs from HTTP instrumentation
 excluded_urls = [
     os.getenv(
-        "CISCO_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token"
+        "OAUTH2_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token"
     ),
     os.getenv(
-        "CISCO_BASE_URL",
+        "OAUTH2_LLM_BASE_URL",
         "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini",
     ),
 ]
@@ -501,16 +501,16 @@ def setup_weaviate_schema_and_data(client):
         return False
 
 
-# Initialize Cisco Token Manager
-cisco_client_id = os.getenv("CISCO_CLIENT_ID")
-cisco_client_secret = os.getenv("CISCO_CLIENT_SECRET")
-cisco_app_key = os.getenv("CISCO_APP_KEY")
+# Initialize OAuth2 Token Manager (Cisco Chat AI in this example)
+oauth_client_id = os.getenv("OAUTH2_CLIENT_ID")
+oauth_client_secret = os.getenv("OAUTH2_CLIENT_SECRET")
+oauth_app_key = os.getenv("OAUTH2_APP_KEY")
 
-if not all([cisco_client_id, cisco_client_secret, cisco_app_key]):
+if not all([oauth_client_id, oauth_client_secret, oauth_app_key]):
     token_manager = None
 else:
     token_manager = TokenManager(
-        cisco_client_id, cisco_client_secret, cisco_app_key
+        oauth_client_id, oauth_client_secret, oauth_app_key
     )
 
 # Initialize Weaviate
@@ -531,12 +531,12 @@ def create_cisco_llm(callbacks=None):
             temperature=0.7,  # Increased from 0.1 for more variation
             api_key="dummy-key",
             base_url=os.getenv(
-                "CISCO_BASE_URL",
+                "OAUTH2_LLM_BASE_URL",
                 "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini",
             ),
             model="gpt-4o-mini",
             default_headers={"api-key": access_token},
-            model_kwargs={"user": f'{{"appkey": "{cisco_app_key}"}}'},
+            model_kwargs={"user": f'{{"appkey": "{oauth_app_key}"}}'},
             callbacks=callbacks if callbacks else [],
         )
     except Exception as e:

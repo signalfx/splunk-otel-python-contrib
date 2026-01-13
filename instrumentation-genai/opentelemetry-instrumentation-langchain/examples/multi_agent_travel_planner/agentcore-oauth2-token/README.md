@@ -42,7 +42,9 @@ This example uses OAuth2 client credentials flow for two separate purposes:
 │  ┌──────────────────┐    OAuth2 Token    ┌──────────────────────────────┐   │
 │  │  OAuth2          │  ───────────────►  │  Identity Provider           │   │
 │  │  TokenManager    │                    │  (Token Endpoint)            │   │
-│  │  (util/)         │  ◄───────────────  │                              │   │
+│  │  (opentelemetry. │  ◄───────────────  │                              │   │
+│  │   util.oauth2_   │                    │                              │   │
+│  │   token_manager) │                    │                              │   │
 │  └────────┬─────────┘    Access Token    └──────────────────────────────┘   │
 │           │                                                                  │
 │           ▼                                                                  │
@@ -81,13 +83,13 @@ These variables configure the `OAuth2TokenManager` for LLM calls:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `LLM_CLIENT_ID` | OAuth2 client ID | Yes |
-| `LLM_CLIENT_SECRET` | OAuth2 client secret | Yes |
-| `LLM_TOKEN_URL` | OAuth2 token endpoint | Yes |
-| `LLM_BASE_URL` | LLM endpoint base URL | Yes |
-| `LLM_APP_KEY` | Application key (if required by provider) | Optional |
+| `OAUTH2_CLIENT_ID` | OAuth2 client ID | Yes |
+| `OAUTH2_CLIENT_SECRET` | OAuth2 client secret | Yes |
+| `OAUTH2_TOKEN_URL` | OAuth2 token endpoint | Yes |
+| `OAUTH2_LLM_BASE_URL` | LLM endpoint base URL | Yes |
+| `OAUTH2_APP_KEY` | OAuth2 app key (if required by provider) | Optional |
 
-> **Backward Compatibility:** The `OAuth2TokenManager` also reads legacy `CISCO_*` environment variables for backward compatibility.
+The `OAuth2TokenManager` reads only `OAUTH2_*` environment variables (no aliases).
 
 ### DeepEval Custom LLM Authentication (v0.1.8+)
 
@@ -142,11 +144,11 @@ Test the application locally before deploying to AWS:
 
 ```bash
 # Set environment variables for LLM OAuth2
-export LLM_CLIENT_ID=<your-client-id>
-export LLM_CLIENT_SECRET=<your-client-secret>
-export LLM_TOKEN_URL=<your-oauth2-token-url>
-export LLM_BASE_URL=<your-llm-base-url>
-export LLM_APP_KEY=<your-app-key>  # Optional
+export OAUTH2_CLIENT_ID=<your-client-id>
+export OAUTH2_CLIENT_SECRET=<your-client-secret>
+export OAUTH2_TOKEN_URL=<your-oauth2-token-url>
+export OAUTH2_LLM_BASE_URL=<your-llm-base-url>
+export OAUTH2_APP_KEY=<your-app-key>  # Optional
 
 # Set environment variables for DeepEval OAuth2
 export DEEPEVAL_LLM_BASE_URL=<your-eval-llm-endpoint>
@@ -190,11 +192,11 @@ NLB_DNS=$(kubectl get svc splunk-otel-collector -n splunk-monitoring \
 
 # Deploy to AWS with full OAuth2 configuration
 agentcore deploy --force-rebuild-deps --auto-update-on-conflict \
-  --env LLM_CLIENT_ID=<your-client-id> \
-  --env LLM_CLIENT_SECRET=<your-client-secret> \
-  --env LLM_TOKEN_URL=<your-oauth2-token-url> \
-  --env LLM_BASE_URL=<your-llm-base-url> \
-  --env LLM_APP_KEY=<your-app-key> \
+  --env OAUTH2_CLIENT_ID=<your-client-id> \
+  --env OAUTH2_CLIENT_SECRET=<your-client-secret> \
+  --env OAUTH2_TOKEN_URL=<your-oauth2-token-url> \
+  --env OAUTH2_LLM_BASE_URL=<your-llm-base-url> \
+  --env OAUTH2_APP_KEY=<your-app-key> \
   --env DEEPEVAL_LLM_BASE_URL=<your-eval-llm-endpoint>/gpt-4o-mini \
   --env DEEPEVAL_LLM_MODEL=gpt-4o-mini \
   --env DEEPEVAL_LLM_PROVIDER=openai \
@@ -365,9 +367,6 @@ agentcore-oauth2-token/
 ├── requirements.txt         # Python dependencies (includes deepeval v0.1.7+)
 ├── images/
 │   └── image.png            # Screenshot of Splunk APM with evaluations
-├── util/
-│   ├── __init__.py
-│   └── oauth2_token_manager.py  # Generic OAuth2 token management for LLM calls
 └── README.md                # This file
 ```
 
@@ -375,7 +374,7 @@ agentcore-oauth2-token/
 
 | File | Purpose |
 |------|---------|
-| `util/oauth2_token_manager.py` | Generic OAuth2 client credentials flow for LLM authentication |
+| `opentelemetry.util.oauth2_token_manager` | Generic OAuth2 client credentials flow for LLM authentication |
 | `main.py` | LangChain multi-agent workflow with OTel instrumentation |
 | `requirements.txt` | Includes `splunk-otel-genai-evals-deepeval>=0.1.8` and `litellm` |
 

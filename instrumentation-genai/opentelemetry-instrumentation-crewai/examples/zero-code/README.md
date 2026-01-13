@@ -31,9 +31,9 @@ The example uses Cisco Chat AI via OAuth2 authentication:
 
 ```bash
 # In .env
-CISCO_CLIENT_ID=your-cisco-client-id
-CISCO_CLIENT_SECRET=your-cisco-client-secret
-CISCO_APP_KEY=your-cisco-app-key
+OAUTH2_CLIENT_ID=your-cisco-client-id
+OAUTH2_CLIENT_SECRET=your-cisco-client-secret
+OAUTH2_APP_KEY=your-cisco-app-key
 ```
 
 ### Option 2: OpenAI API (Direct)
@@ -92,13 +92,12 @@ dotenv run -- opentelemetry-instrument \
 ```
 zero-code/
 ├── customer_support.py    # CrewAI application with Cisco LLM integration
-├── util/
-│   ├── __init__.py
-│   └── cisco_token_manager.py  # OAuth2 token management for Cisco LLM
 ├── requirements.txt       # Python dependencies
 ├── env.example           # Environment variable template
 └── README.md             # This file
 ```
+
+Shared app logic lives in `../_shared/customer_support_app.py` (used by both the manual and zero-code examples).
 
 ## What Gets Instrumented
 
@@ -125,9 +124,9 @@ gen_ai.workflow crew
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CISCO_CLIENT_ID` | Cisco OAuth2 client ID | - |
-| `CISCO_CLIENT_SECRET` | Cisco OAuth2 client secret | - |
-| `CISCO_APP_KEY` | Cisco app key for API access | - |
+| `OAUTH2_CLIENT_ID` | OAuth2 client ID (Cisco Chat AI in this example) | - |
+| `OAUTH2_CLIENT_SECRET` | OAuth2 client secret (Cisco Chat AI in this example) | - |
+| `OAUTH2_APP_KEY` | OAuth2 app key (Cisco Chat AI) | - |
 | `OPENAI_API_KEY` | OpenAI API key (alternative to Cisco) | - |
 | `OTEL_SERVICE_NAME` | Service name in traces | `unknown_service` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL | `http://localhost:4317` |
@@ -157,9 +156,9 @@ Normal warning, safe to ignore. Means auto-instrumentation is working correctly.
 Ensure `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric` is set in your `.env` file.
 
 **Cisco token errors?**  
-1. Verify `CISCO_CLIENT_ID` and `CISCO_CLIENT_SECRET` are correct
+1. Verify `OAUTH2_CLIENT_ID` and `OAUTH2_CLIENT_SECRET` are correct
 2. Check that your credentials have access to the Chat AI API
-3. Ensure `CISCO_APP_KEY` is set for API authorization
+3. Ensure `OAUTH2_APP_KEY` is set for API authorization
 
 **OTel collector connection refused?**  
 Verify your collector is running:

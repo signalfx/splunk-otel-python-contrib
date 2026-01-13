@@ -41,12 +41,12 @@ User Request
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `AI_DEFENSE_API_KEY` | ✅ Yes | - | Cisco AI Defense API key for security inspection |
-| `LLM_CLIENT_ID` | ✅ Yes | - | OAuth2 client ID for LLM endpoint |
-| `LLM_CLIENT_SECRET` | ✅ Yes | - | OAuth2 client secret for LLM endpoint |
-| `LLM_APP_KEY` | No | - | Optional app key passed in `user` field |
+| `OAUTH2_CLIENT_ID` | ✅ Yes | - | OAuth2 client ID for LLM endpoint |
+| `OAUTH2_CLIENT_SECRET` | ✅ Yes | - | OAuth2 client secret for LLM endpoint |
+| `OAUTH2_APP_KEY` | No | - | Optional OAuth2 app key passed in `user` field |
 | `LLM_MODEL` | No | `gpt-4o-mini` | LLM model name |
-| `LLM_TOKEN_URL` | No | `https://id.cisco.com/oauth2/default/v1/token` | OAuth2 token endpoint |
-| `LLM_BASE_URL` | No | `https://chat-ai.cisco.com/openai/deployments` | LLM API base URL |
+| `OAUTH2_TOKEN_URL` | No | `https://id.cisco.com/oauth2/default/v1/token` | OAuth2 token endpoint |
+| `OAUTH2_LLM_BASE_URL` | No | `https://chat-ai.cisco.com/openai/deployments` | LLM API base URL |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | `http://localhost:4317` | OTLP collector endpoint |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | No | `false` | Set to `true` to capture `gen_ai.input.messages` and `gen_ai.output.messages` |
 
@@ -55,8 +55,8 @@ User Request
 ```bash
 # Required: AI Defense and OAuth2 credentials
 export AI_DEFENSE_API_KEY="your-ai-defense-key"
-export LLM_CLIENT_ID="your-client-id"
-export LLM_CLIENT_SECRET="your-client-secret"
+export OAUTH2_CLIENT_ID="your-client-id"
+export OAUTH2_CLIENT_SECRET="your-client-secret"
 
 # Optional: Enable message content capture in spans
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
