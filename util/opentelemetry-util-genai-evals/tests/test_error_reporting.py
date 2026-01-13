@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-import pytest
-
 from opentelemetry.util.genai.evals.errors import ErrorEvent, ErrorTracker
 from opentelemetry.util.genai.evals.manager import Manager
 from opentelemetry.util.genai.types import EvaluationResult, LLMInvocation
