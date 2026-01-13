@@ -40,6 +40,9 @@ from .env import (
     read_worker_count,
 )
 from .errors import ErrorTracker
+from .monitoring import (
+    get_instruments as get_monitoring_instruments,
+)
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
 
@@ -107,6 +110,8 @@ class Manager(CompletionCallback):
         worker_count: int | None = None,
     ) -> None:
         self._handler = handler
+        meter_provider = getattr(handler, "_meter_provider", None)
+        self._monitoring = get_monitoring_instruments(meter_provider)
         self._interval = interval if interval is not None else read_interval()
         self._aggregate_results = (
             aggregate_results
@@ -240,6 +245,10 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
+            try:
+                self._monitoring.queue_size.add(1)
+            except Exception:
+                pass
         except queue.Full:
             # Bounded queue is full - apply backpressure by dropping
             invocation.evaluation_error = "client_evaluation_queue_full"
@@ -274,6 +283,16 @@ class Manager(CompletionCallback):
                     "queue_depth": self._queue.qsize(),
                 },
             )
+            try:
+                self._monitoring.enqueue_errors.add(
+                    1,
+                    attributes={
+                        ErrorAttributes.ERROR_TYPE: "queue_full",
+                        "gen_ai.invocation.type": type(invocation).__name__,
+                    },
+                )
+            except Exception:
+                pass
         except Exception as exc:  # pragma: no cover - defensive
             invocation_id = getattr(invocation, "span_id", None) or getattr(
                 invocation, "trace_id", None
@@ -298,6 +317,16 @@ class Manager(CompletionCallback):
                 recovery_action="invocation_dropped",
                 operational_impact="Evaluation skipped for this invocation",
             )
+            try:
+                self._monitoring.enqueue_errors.add(
+                    1,
+                    attributes={
+                        ErrorAttributes.ERROR_TYPE: type(exc).__name__,
+                        "gen_ai.invocation.type": type(invocation).__name__,
+                    },
+                )
+            except Exception:
+                pass
 
     def wait_for_all(self, timeout: float | None = None) -> None:
         if not self.has_evaluators:
@@ -454,6 +483,10 @@ class Manager(CompletionCallback):
                 invocation = self._queue.get(timeout=self._interval)
             except queue.Empty:
                 continue
+            try:
+                self._monitoring.queue_size.add(-1)
+            except Exception:
+                pass
             try:
                 # Apply rate limiting on processing side
                 allowed, reason = self._admission.allow()
@@ -1078,6 +1111,17 @@ class Manager(CompletionCallback):
                         },
                     )
                     continue
+                try:
+                    bind = getattr(evaluator, "bind_handler", None)
+                    if callable(bind):
+                        bind(self._handler)
+                except Exception:  # pragma: no cover - defensive
+                    _LOGGER.debug(
+                        "Evaluator '%s' failed to bind handler for type '%s'",
+                        plan.name,
+                        type_name,
+                        exc_info=True,
+                    )
                 evaluators_by_type.setdefault(type_name, []).append(evaluator)
         return evaluators_by_type
 
