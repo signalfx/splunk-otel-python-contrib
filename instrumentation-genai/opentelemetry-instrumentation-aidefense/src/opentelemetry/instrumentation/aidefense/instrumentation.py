@@ -599,7 +599,9 @@ def _wrap_http_inspect_response(wrapped, instance, args, kwargs):
     url = kwargs.get("url") or (args[1] if len(args) > 1 else "")
     invocation = create_ai_defense_invocation(
         server_address=get_server_address(instance),
-        input_messages=[create_input_message("assistant", f"HTTP {status_code} from {url}")],
+        input_messages=[
+            create_input_message("assistant", f"HTTP {status_code} from {url}")
+        ],
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -645,7 +647,9 @@ def _wrap_http_inspect_response_from_library(wrapped, instance, args, kwargs):
     url = getattr(http_response, "url", "") if http_response else ""
     invocation = create_ai_defense_invocation(
         server_address=get_server_address(instance),
-        input_messages=[create_input_message("assistant", f"HTTP {status_code} from {url}")],
+        input_messages=[
+            create_input_message("assistant", f"HTTP {status_code} from {url}")
+        ],
     )
     return execute_with_telemetry(
         handler=_handler,

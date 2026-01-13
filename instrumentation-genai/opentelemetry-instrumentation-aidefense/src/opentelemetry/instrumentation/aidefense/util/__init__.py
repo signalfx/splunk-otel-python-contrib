@@ -43,4 +43,3 @@ __all__ = [
     "MAX_SHORT_CONTENT_LENGTH",
     "MAX_MESSAGES_IN_CONVERSATION",
 ]
-

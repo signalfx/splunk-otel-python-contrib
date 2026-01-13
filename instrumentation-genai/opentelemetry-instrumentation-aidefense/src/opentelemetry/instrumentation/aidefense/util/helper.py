@@ -209,4 +209,3 @@ def get_server_address(instance: Any) -> str:
     except Exception:
         pass
     return ""
-
