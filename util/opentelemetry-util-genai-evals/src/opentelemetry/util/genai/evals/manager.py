@@ -5,7 +5,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Protocol, Sequence
 
 from ..callbacks import CompletionCallback
 
@@ -36,6 +36,7 @@ from .env import (
     read_interval,
     read_raw_evaluators,
 )
+from .errors import ErrorTracker
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
 
@@ -93,6 +94,7 @@ class Manager(CompletionCallback):
             if aggregate_results is not None
             else read_aggregation_flag()
         )
+        self._error_tracker = ErrorTracker()
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
         self._queue: queue.Queue[GenAI] = queue.Queue()
@@ -149,9 +151,29 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.debug(
-                "Failed to enqueue invocation for evaluation", exc_info=True
+        except Exception as exc:  # pragma: no cover - defensive
+            invocation_id = getattr(invocation, "trace_id", None) or getattr(
+                invocation, "span_id", None
+            )
+            _LOGGER.warning(
+                "Failed to enqueue invocation for evaluation",
+                extra={
+                    "error_type": "queue_error",
+                    "component": "manager",
+                    "invocation_type": type(invocation).__name__,
+                    "invocation_id": invocation_id,
+                    "exception_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            self._error_tracker.record_error(
+                error_type="queue_error",
+                component="manager",
+                message="Failed to enqueue invocation",
+                invocation_id=invocation_id,
+                exception=exc,
+                recovery_action="invocation_dropped",
+                operational_impact="Evaluation skipped for this invocation",
             )
 
     def wait_for_all(self, timeout: float | None = None) -> None:
@@ -185,6 +207,14 @@ class Manager(CompletionCallback):
     def has_evaluators(self) -> bool:
         return any(self._evaluators.values())
 
+    def get_error_summary(self) -> dict[str, Any]:
+        """Get summary of tracked errors for diagnostics.
+        
+        Returns:
+            Dictionary with error counts and statistics
+        """
+        return self._error_tracker.get_error_summary()
+
     # Internal helpers ---------------------------------------------------
     def _worker_loop(self) -> None:
         while not self._shutdown.is_set():
@@ -194,8 +224,30 @@ class Manager(CompletionCallback):
                 continue
             try:
                 self._process_invocation(invocation)
-            except Exception:  # pragma: no cover - defensive
-                _LOGGER.exception("Evaluator processing failed")
+            except Exception as exc:  # pragma: no cover - defensive
+                invocation_id = getattr(invocation, "trace_id", None) or getattr(
+                    invocation, "span_id", None
+                )
+                _LOGGER.error(
+                    "Evaluator processing failed",
+                    extra={
+                        "error_type": "processing_error",
+                        "component": "worker",
+                        "invocation_type": type(invocation).__name__,
+                        "invocation_id": invocation_id,
+                        "exception_type": type(exc).__name__,
+                    },
+                    exc_info=True,
+                )
+                self._error_tracker.record_error(
+                    error_type="processing_error",
+                    component="worker",
+                    message="Failed to process invocation",
+                    invocation_id=invocation_id,
+                    exception=exc,
+                    recovery_action="invocation_skipped",
+                    operational_impact="No evaluation results for this invocation",
+                )
             finally:
                 self._queue.task_done()
 
@@ -218,11 +270,37 @@ class Manager(CompletionCallback):
         if not evaluators:
             return ()
         buckets: list[Sequence[EvaluationResult]] = []
+        invocation_id = getattr(invocation, "trace_id", None) or getattr(
+            invocation, "span_id", None
+        )
         for descriptor in evaluators:
+            evaluator_name = getattr(descriptor, "__class__", type(descriptor)).__name__
             try:
                 results = descriptor.evaluate(invocation)
             except Exception as exc:  # pragma: no cover - defensive
-                _LOGGER.debug("Evaluator %s failed: %s", descriptor, exc)
+                _LOGGER.warning(
+                    "Evaluator failed",
+                    extra={
+                        "error_type": "evaluator_error",
+                        "component": "evaluator",
+                        "evaluator_name": evaluator_name,
+                        "invocation_type": type_name,
+                        "invocation_id": invocation_id,
+                        "exception_type": type(exc).__name__,
+                    },
+                    exc_info=True,
+                )
+                self._error_tracker.record_error(
+                    error_type="evaluator_error",
+                    component="evaluator",
+                    message=f"Evaluator {evaluator_name} failed",
+                    evaluator_name=evaluator_name,
+                    invocation_id=invocation_id,
+                    exception=exc,
+                    recovery_action="skip_evaluator",
+                    operational_impact="Partial evaluation results",
+                    details={"invocation_type": type_name},
+                )
                 continue
             if results:
                 buckets.append(list(results))
@@ -246,17 +324,70 @@ class Manager(CompletionCallback):
         flattened: list[EvaluationResult] = []
         for bucket in buckets:
             flattened.extend(bucket)
+        
+        invocation_id = getattr(invocation, "trace_id", None) or getattr(
+            invocation, "span_id", None
+        )
+        
         if aggregate:
             if flattened:
                 attrs = getattr(invocation, "attributes", None)
                 if isinstance(attrs, dict):
                     attrs.setdefault("gen_ai.evaluation.aggregated", True)
-                self._handler.evaluation_results(invocation, flattened)
+                try:
+                    self._handler.evaluation_results(invocation, flattened)
+                except Exception as exc:
+                    _LOGGER.error(
+                        "Handler evaluation_results callback failed",
+                        extra={
+                            "error_type": "handler_error",
+                            "component": "manager",
+                            "invocation_id": invocation_id,
+                            "result_count": len(flattened),
+                            "exception_type": type(exc).__name__,
+                        },
+                        exc_info=True,
+                    )
+                    self._error_tracker.record_error(
+                        error_type="handler_error",
+                        component="manager",
+                        message="Failed to publish aggregated evaluation results",
+                        invocation_id=invocation_id,
+                        exception=exc,
+                        recovery_action="results_dropped",
+                        operational_impact="Evaluation results lost",
+                        severity="error",
+                        details={"result_count": len(flattened), "aggregated": True},
+                    )
             return flattened
         # Non-aggregated path: emit each bucket individually (legacy behavior)
         for bucket in buckets:
             if bucket:
-                self._handler.evaluation_results(invocation, list(bucket))
+                try:
+                    self._handler.evaluation_results(invocation, list(bucket))
+                except Exception as exc:
+                    _LOGGER.error(
+                        "Handler evaluation_results callback failed",
+                        extra={
+                            "error_type": "handler_error",
+                            "component": "manager",
+                            "invocation_id": invocation_id,
+                            "result_count": len(bucket),
+                            "exception_type": type(exc).__name__,
+                        },
+                        exc_info=True,
+                    )
+                    self._error_tracker.record_error(
+                        error_type="handler_error",
+                        component="manager",
+                        message="Failed to publish evaluation results bucket",
+                        invocation_id=invocation_id,
+                        exception=exc,
+                        recovery_action="bucket_dropped",
+                        operational_impact="Partial evaluation results lost",
+                        severity="error",
+                        details={"result_count": len(bucket), "aggregated": False},
+                    )
         return flattened
 
     def _should_skip(self, invocation: GenAI) -> bool:
@@ -265,22 +396,59 @@ class Manager(CompletionCallback):
             if isinstance(invocation, LLMInvocation):
                 if is_tool_only_llm(invocation):
                     _LOGGER.debug(
-                        "Skipping evaluation for tool-only LLM output"
+                        "Skipping evaluation for tool-only LLM output",
+                        extra={
+                            "skip_reason": "tool_only_llm",
+                            "invocation_type": type(invocation).__name__,
+                        },
                     )
                     return True
             elif isinstance(invocation, AgentCreation):
-                _LOGGER.debug("Skipping evaluation for agent creation")
+                _LOGGER.debug(
+                    "Skipping evaluation for agent creation",
+                    extra={
+                        "skip_reason": "agent_creation",
+                        "invocation_type": type(invocation).__name__,
+                    },
+                )
                 return True
             elif isinstance(invocation, AgentInvocation):
                 operation = getattr(invocation, "operation", "invoke_agent")
                 if operation != "invoke_agent":
                     _LOGGER.debug(
-                        "Skipping evaluation for non-invoke agent operation: %s",
-                        operation,
+                        "Skipping evaluation for non-invoke agent operation",
+                        extra={
+                            "skip_reason": "non_invoke_operation",
+                            "operation": operation,
+                            "invocation_type": type(invocation).__name__,
+                        },
                     )
                     return True
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.debug("Skip policy evaluation failed", exc_info=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            invocation_id = getattr(invocation, "trace_id", None) or getattr(
+                invocation, "span_id", None
+            )
+            _LOGGER.warning(
+                "Skip policy evaluation failed",
+                extra={
+                    "error_type": "skip_policy_error",
+                    "component": "manager",
+                    "invocation_type": type(invocation).__name__,
+                    "invocation_id": invocation_id,
+                    "exception_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            self._error_tracker.record_error(
+                error_type="skip_policy_error",
+                component="manager",
+                message="Skip policy evaluation failed",
+                invocation_id=invocation_id,
+                exception=exc,
+                recovery_action="assume_not_skipped",
+                operational_impact="Invocation may be evaluated incorrectly",
+                severity="warning",
+            )
         return False
 
     def _flag_invocation(self, invocation: GenAI) -> None:
@@ -318,15 +486,56 @@ class Manager(CompletionCallback):
         try:
             requested = _parse_evaluator_config(raw)
         except ValueError as exc:
-            _LOGGER.warning(
-                "Failed to parse evaluator configuration '%s': %s", raw, exc
+            available = list_evaluators()
+            _LOGGER.error(
+                "Failed to parse evaluator configuration",
+                extra={
+                    "error_type": "config_parse_error",
+                    "component": "manager",
+                    "config_value": raw[:200] if len(raw) <= 200 else raw[:200] + "...",
+                    "exception_type": type(exc).__name__,
+                    "available_evaluators": available,
+                },
+                exc_info=True,
+            )
+            self._error_tracker.record_error(
+                error_type="config_parse_error",
+                component="manager",
+                message=f"Failed to parse evaluator configuration: {exc}",
+                exception=exc,
+                recovery_action="evaluations_disabled",
+                operational_impact="All evaluations disabled",
+                severity="error",
+                details={
+                    "config_snippet": raw[:200] if len(raw) <= 200 else raw[:200] + "...",
+                    "available_evaluators": available,
+                },
             )
             return []
-        available = {name.lower() for name in list_evaluators()}
+        available = list_evaluators()
+        available_lower = {name.lower() for name in available}
         plans: list[EvaluatorPlan] = []
         for spec in requested:
-            if spec.name.lower() not in available:
-                _LOGGER.warning("Evaluator '%s' is not registered", spec.name)
+            if spec.name.lower() not in available_lower:
+                _LOGGER.error(
+                    "Unknown evaluator requested",
+                    extra={
+                        "error_type": "unknown_evaluator",
+                        "component": "manager",
+                        "evaluator_name": spec.name,
+                        "available_evaluators": sorted(available),
+                    },
+                )
+                self._error_tracker.record_error(
+                    error_type="unknown_evaluator",
+                    component="manager",
+                    message=f"Evaluator '{spec.name}' is not registered",
+                    evaluator_name=spec.name,
+                    recovery_action="evaluator_skipped",
+                    operational_impact="This evaluator will not run",
+                    severity="error",
+                    details={"available_evaluators": sorted(available)},
+                )
                 continue
             try:
                 defaults = get_default_metrics(spec.name)
@@ -361,10 +570,28 @@ class Manager(CompletionCallback):
         for plan in plans:
             for type_name, metrics in plan.per_type.items():
                 if type_name not in _GENAI_TYPE_LOOKUP:
-                    _LOGGER.warning(
-                        "Unsupported GenAI invocation type '%s' for evaluator '%s'",
-                        type_name,
-                        plan.name,
+                    _LOGGER.error(
+                        "Unsupported GenAI invocation type",
+                        extra={
+                            "error_type": "unsupported_type",
+                            "component": "manager",
+                            "evaluator_name": plan.name,
+                            "requested_type": type_name,
+                            "supported_types": list(_GENAI_TYPE_LOOKUP.keys()),
+                        },
+                    )
+                    self._error_tracker.record_error(
+                        error_type="unsupported_type",
+                        component="manager",
+                        message=f"Unsupported invocation type '{type_name}' for evaluator '{plan.name}'",
+                        evaluator_name=plan.name,
+                        recovery_action="type_skipped",
+                        operational_impact="Evaluator won't run for this invocation type",
+                        severity="error",
+                        details={
+                            "requested_type": type_name,
+                            "supported_types": list(_GENAI_TYPE_LOOKUP.keys()),
+                        },
                     )
                     continue
                 metric_names = [metric.name for metric in metrics]
@@ -381,11 +608,31 @@ class Manager(CompletionCallback):
                         options=options,
                     )
                 except Exception as exc:  # pragma: no cover - defensive
-                    _LOGGER.warning(
-                        "Evaluator '%s' failed to initialise for type '%s': %s",
-                        plan.name,
-                        type_name,
-                        exc,
+                    _LOGGER.error(
+                        "Evaluator instantiation failed",
+                        extra={
+                            "error_type": "instantiation_error",
+                            "component": "manager",
+                            "evaluator_name": plan.name,
+                            "invocation_type": type_name,
+                            "metrics": metric_names,
+                            "exception_type": type(exc).__name__,
+                        },
+                        exc_info=True,
+                    )
+                    self._error_tracker.record_error(
+                        error_type="instantiation_error",
+                        component="manager",
+                        message=f"Failed to instantiate evaluator '{plan.name}' for type '{type_name}'",
+                        evaluator_name=plan.name,
+                        exception=exc,
+                        recovery_action="evaluator_disabled",
+                        operational_impact="This evaluator won't run for this invocation type",
+                        severity="error",
+                        details={
+                            "invocation_type": type_name,
+                            "metrics": metric_names,
+                        },
                     )
                     continue
                 evaluators_by_type.setdefault(type_name, []).append(evaluator)
