@@ -49,7 +49,7 @@ from opentelemetry.util.genai.types import (
     Text,
 )
 
-from opentelemetry.instrumentation.aidefense.instruments import (
+from opentelemetry.instrumentation.aidefense.util.helper import (
     add_event_id_to_current_span,
     create_ai_defense_invocation,
     create_input_message,
@@ -66,13 +66,7 @@ _instruments = ("cisco-aidefense-sdk >= 2.0.0",)
 # AI Defense Gateway URL patterns
 # These patterns identify requests going through AI Defense Gateway
 AI_DEFENSE_GATEWAY_PATTERNS = [
-    # Primary AI Defense Gateway endpoints
     r"gateway\.aidefense\.security\.cisco\.com",
-    r"\.aidefense\.cisco\.com",
-    # Regional variants
-    r"us\.gateway\.aidefense",
-    r"eu\.gateway\.aidefense",
-    r"apjc\.gateway\.aidefense",
 ]
 
 # Compiled regex patterns for efficient matching

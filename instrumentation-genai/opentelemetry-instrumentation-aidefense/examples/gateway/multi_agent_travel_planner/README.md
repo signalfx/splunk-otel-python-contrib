@@ -62,34 +62,40 @@ POST /travel/plan
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `AI_DEFENSE_GATEWAY_URL` | ✅ Yes | AI Defense Gateway endpoint (e.g., `https://us.gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1`) |
-| `LLM_API_KEY` | ✅ Yes* | API key for the LLM provider (passed through gateway) |
-| `LLM_CLIENT_ID` | No* | OAuth2 client ID (alternative to LLM_API_KEY) |
+| `AI_DEFENSE_GATEWAY_URL` | ✅ Yes | AI Defense Gateway endpoint (e.g., `https://gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1`) |
+| `LLM_API_KEY` or `OPENAI_API_KEY` | ✅ Yes* | API key for the LLM provider (passed through gateway) |
+| `LLM_CLIENT_ID` | No* | OAuth2 client ID (alternative to API key) |
 | `LLM_CLIENT_SECRET` | No* | OAuth2 client secret |
+| `LLM_TOKEN_URL` | No* | OAuth2 token endpoint (default: `https://id.cisco.com/oauth2/default/v1/token`) |
 | `LLM_APP_KEY` | No | Optional app key for tracking |
 | `LLM_MODEL` | No | Model name (default: `gpt-4o-mini`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | OTLP collector endpoint (default: `http://localhost:4317`) |
 | `OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS` | No | Custom gateway URL patterns (comma-separated) |
 
-*Either `LLM_API_KEY` or (`LLM_CLIENT_ID` + `LLM_CLIENT_SECRET`) is required.
+*Either `LLM_API_KEY`/`OPENAI_API_KEY` or OAuth2 credentials (`LLM_CLIENT_ID` + `LLM_CLIENT_SECRET`) is required.
 
 ### Running the Example
 
 ```bash
 # Required: AI Defense Gateway URL
-export AI_DEFENSE_GATEWAY_URL="https://us.gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1"
+export AI_DEFENSE_GATEWAY_URL="https://gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1"
 
-# Required: LLM credentials (option 1: static API key)
+# Required: LLM credentials (option 1: OpenAI API key)
+export OPENAI_API_KEY="sk-..."
+# OR
 export LLM_API_KEY="your-llm-api-key"
 
 # OR Required: LLM credentials (option 2: OAuth2)
 export LLM_CLIENT_ID="your-client-id"
 export LLM_CLIENT_SECRET="your-client-secret"
-export LLM_TOKEN_URL="https://id.cisco.com/oauth2/default/v1/token"
+export LLM_TOKEN_URL="https://your-identity-provider/oauth2/token"
 
 # Optional: Model and app key
 export LLM_MODEL="gpt-4o-mini"
 export LLM_APP_KEY="your-app-key"
+
+# Optional: Custom gateway URL patterns (for non-standard gateway deployments)
+export OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS="gateway.preview.aidefense.example.com"
 
 # Run
 python main.py
@@ -100,7 +106,7 @@ python main.py
 ```
 🌍 Multi-Agent Travel Planner with AI Defense Gateway Mode
 
-🛡️  AI Defense Gateway: https://us.gateway.aidefense.security.cisco.com/...
+🛡️  AI Defense Gateway: https://gateway.aidefense.security.cisco.com/...
    Model: gpt-4o-mini
    Mode: Gateway (X-Cisco-AI-Defense-Event-Id in response headers)
 

@@ -129,7 +129,7 @@ AIDefenseInstrumentor().instrument()
 
 # Configure OpenAI to use AI Defense Gateway
 client = OpenAI(
-    base_url="https://us.gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1",
+    base_url="https://gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1",
     api_key="your-llm-api-key",
 )
 
@@ -309,9 +309,10 @@ def activity_specialist_node(state, security: SecurityGuard):
 
 | Variable | Description |
 |----------|-------------|
+| `AI_DEFENSE_GATEWAY_URL` | AI Defense Gateway endpoint URL (e.g., `https://gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1`) |
+| `OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS` | Custom AI Defense Gateway URL patterns for auto-detection (comma-separated) |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Set to `true` to capture full message content in spans |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint (e.g., `http://localhost:4317`) |
-| `OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS` | Custom AI Defense Gateway URL patterns (comma-separated) |
 
 ## Auto-Instrumentation
 
@@ -334,11 +335,13 @@ The instrumentation follows the DRY (Don't Repeat Yourself) principle:
 src/opentelemetry/instrumentation/aidefense/
 ├── __init__.py           # Package exports
 ├── instrumentation.py    # Main instrumentor and wrappers
-├── instruments.py        # Reusable helpers (DRY)
+├── util/
+│   ├── __init__.py       # Util package exports
+│   └── helper.py         # Reusable helpers (DRY)
 └── version.py            # Package version
 ```
 
-**`instruments.py`** provides common utilities to reduce code repetition:
+**`util/helper.py`** provides common utilities to reduce code repetition:
 - `create_ai_defense_invocation()` - Creates standardized LLMInvocation for AI Defense
 - `create_input_message()` - Creates InputMessage with automatic content truncation
 - `execute_with_telemetry()` - Handles common wrapper pattern (start, execute, stop/fail)
