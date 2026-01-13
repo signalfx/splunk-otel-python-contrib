@@ -366,10 +366,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         payload = serialized or {}
         invocation_params = extra.get("invocation_params", {})
-        # Priority: invocation_params.model_name > metadata.model_name.
-        # Removed fallback to payload name/id to avoid misreporting implementation class as model.
-        model_source = invocation_params.get("model_name") or (
-            metadata.get("model_name") if metadata else None
+        # Priority: invocation_params.model_name > invocation_params.model > metadata.model_name
+        # Note: Some providers use "model" (e.g., ChatSnowflake) while others use "model_name" (e.g., ChatOpenAI)
+        model_source = (
+            invocation_params.get("model_name")
+            or invocation_params.get("model")  # ChatSnowflake and similar providers use "model"
+            or (metadata.get("model_name") if metadata else None)
+            or (metadata.get("ls_model_name") if metadata else None)  # LangSmith params
         )
         request_model = _safe_str(model_source or "unknown_model")
         input_messages: list[InputMessage] = []

@@ -410,3 +410,67 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
+
+
+# =============================================================================
+# PR #2: Model Name Extraction Tests
+# =============================================================================
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_model_name_extraction_from_model_field(handler_with_stub):
+    """Test model name extracted from 'model' field (non-OpenAI providers like ChatSnowflake)."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatSnowflake"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+        # ChatSnowflake uses 'model' not 'model_name'
+        invocation_params={"model": "claude-3-5-sonnet"},
+        metadata={},
+    )
+
+    assert stub.started_llms, "LLM invocation not recorded"
+    inv = stub.started_llms[-1]
+    assert inv.request_model == "claude-3-5-sonnet"
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_model_name_extraction_priority(handler_with_stub):
+    """Test model_name takes priority over model when both present."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatOpenAI"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+        invocation_params={
+            "model_name": "gpt-4",
+            "model": "gpt-3.5-turbo",  # Should be ignored
+        },
+        metadata={},
+    )
+
+    inv = stub.started_llms[-1]
+    assert inv.request_model == "gpt-4"  # model_name takes priority
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_model_name_fallback_to_unknown(handler_with_stub):
+    """Test fallback to unknown_model when no model info present."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "CustomChat"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+        invocation_params={},  # No model info
+        metadata={},
+    )
+
+    inv = stub.started_llms[-1]
+    assert inv.request_model == "unknown_model"
