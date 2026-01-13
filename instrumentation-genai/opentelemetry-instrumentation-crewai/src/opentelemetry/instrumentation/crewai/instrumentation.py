@@ -4,6 +4,7 @@ OpenTelemetry CrewAI Instrumentation
 Wrapper-based instrumentation for CrewAI using splunk-otel-util-genai.
 """
 
+import logging
 from typing import Collection, Optional
 
 from wrapt import wrap_function_wrapper
@@ -22,6 +23,8 @@ _instruments = ("crewai >= 0.70.0",)
 
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
+
+_logger = logging.getLogger(__name__)
 
 
 class CrewAIInstrumentor(BaseInstrumentor):
@@ -59,22 +62,38 @@ class CrewAIInstrumentor(BaseInstrumentor):
             tracer_provider=tracer_provider, meter_provider=meter_provider
         )
 
+        def _safe_wrap(module: str, name: str, wrapper):
+            try:
+                wrap_function_wrapper(module, name, wrapper)
+            except (ImportError, ModuleNotFoundError):
+                _logger.debug(
+                    "CrewAI not importable while instrumenting (%s.%s); proceeding without wrapping.",
+                    module,
+                    name,
+                    exc_info=True,
+                )
+            except Exception:
+                _logger.warning(
+                    "Failed to instrument CrewAI (%s.%s); proceeding without wrapping.",
+                    module,
+                    name,
+                    exc_info=True,
+                )
+
         # Crew.kickoff -> Workflow
-        wrap_function_wrapper("crewai.crew", "Crew.kickoff", _wrap_crew_kickoff)
+        _safe_wrap("crewai.crew", "Crew.kickoff", _wrap_crew_kickoff)
 
         # Agent.execute_task -> AgentInvocation
-        wrap_function_wrapper(
-            "crewai.agent", "Agent.execute_task", _wrap_agent_execute_task
-        )
+        _safe_wrap("crewai.agent", "Agent.execute_task", _wrap_agent_execute_task)
 
         # Task.execute_sync -> Step
-        wrap_function_wrapper("crewai.task", "Task.execute_sync", _wrap_task_execute)
+        _safe_wrap("crewai.task", "Task.execute_sync", _wrap_task_execute)
 
         # BaseTool.run -> ToolCall
-        wrap_function_wrapper("crewai.tools.base_tool", "BaseTool.run", _wrap_tool_run)
+        _safe_wrap("crewai.tools.base_tool", "BaseTool.run", _wrap_tool_run)
 
         # CrewStructuredTool.invoke -> ToolCall (for @tool decorated functions)
-        wrap_function_wrapper(
+        _safe_wrap(
             "crewai.tools.structured_tool",
             "CrewStructuredTool.invoke",
             _wrap_structured_tool_invoke,
@@ -82,11 +101,29 @@ class CrewAIInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs):
         """Remove instrumentation from CrewAI components."""
-        unwrap("crewai.crew.Crew", "kickoff")
-        unwrap("crewai.agent.Agent", "execute_task")
-        unwrap("crewai.task.Task", "execute_sync")
-        unwrap("crewai.tools.base_tool.BaseTool", "run")
-        unwrap("crewai.tools.structured_tool.CrewStructuredTool", "invoke")
+        def _safe_unwrap(module: str, name: str):
+            try:
+                unwrap(module, name)
+            except (ImportError, ModuleNotFoundError):
+                _logger.debug(
+                    "CrewAI not importable while uninstrumenting (%s.%s); continuing cleanup.",
+                    module,
+                    name,
+                    exc_info=True,
+                )
+            except Exception:
+                _logger.warning(
+                    "Failed to uninstrument CrewAI (%s.%s); continuing cleanup.",
+                    module,
+                    name,
+                    exc_info=True,
+                )
+
+        _safe_unwrap("crewai.crew.Crew", "kickoff")
+        _safe_unwrap("crewai.agent.Agent", "execute_task")
+        _safe_unwrap("crewai.task.Task", "execute_sync")
+        _safe_unwrap("crewai.tools.base_tool.BaseTool", "run")
+        _safe_unwrap("crewai.tools.structured_tool.CrewStructuredTool", "invoke")
 
 
 def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
