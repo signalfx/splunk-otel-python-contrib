@@ -46,6 +46,92 @@ def _serialize(obj: Any) -> Optional[str]:
             return None
 
 
+def _extract_token_usage_from_generations(
+    generations: Optional[List[List[Any]]],
+) -> tuple[Optional[int], Optional[int]]:
+    """Extract input/output token counts from LangChain generations.
+
+    Handles streaming mode where tokens are in message.usage_metadata.
+
+    Args:
+        generations: List of generation lists from LLMResult.
+
+    Returns:
+        Tuple of (input_tokens, output_tokens), either may be None.
+    """
+    if not generations:
+        return None, None
+
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+    for generation_list in generations:
+        for generation in generation_list:
+            if not hasattr(generation, "message"):
+                continue
+            message = generation.message
+            if not hasattr(message, "usage_metadata"):
+                continue
+            usage_meta = getattr(message, "usage_metadata", None)
+            if not isinstance(usage_meta, dict) or not usage_meta:
+                continue
+
+            # Try standard keys first, then fall back to OpenAI-style keys
+            in_val = usage_meta.get("input_tokens") or usage_meta.get("prompt_tokens")
+            out_val = usage_meta.get("output_tokens") or usage_meta.get("completion_tokens")
+
+            if isinstance(in_val, int) and in_val > 0:
+                input_tokens = in_val
+            if isinstance(out_val, int) and out_val > 0:
+                output_tokens = out_val
+
+            # Stop early if we found both values
+            if input_tokens is not None and output_tokens is not None:
+                return input_tokens, output_tokens
+
+        # Stop outer loop early if we found values
+        if input_tokens is not None or output_tokens is not None:
+            break
+
+    return input_tokens, output_tokens
+
+
+def _extract_token_usage_from_llm_output(
+    llm_output: Optional[dict[str, Any]],
+    existing_input: Optional[int] = None,
+    existing_output: Optional[int] = None,
+) -> tuple[Optional[int], Optional[int]]:
+    """Extract token usage from llm_output (non-streaming format).
+
+    Args:
+        llm_output: The llm_output dict from LLMResult.
+        existing_input: Already extracted input tokens (won't override if set).
+        existing_output: Already extracted output tokens (won't override if set).
+
+    Returns:
+        Tuple of (input_tokens, output_tokens).
+    """
+    if not llm_output:
+        return existing_input, existing_output
+
+    input_tokens = existing_input
+    output_tokens = existing_output
+
+    usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
+
+    if input_tokens is None:
+        prompt_val = usage.get("prompt_tokens") or usage.get("input_tokens")
+        if isinstance(prompt_val, int):
+            input_tokens = prompt_val
+
+    if output_tokens is None:
+        completion_val = usage.get("completion_tokens") or usage.get("output_tokens")
+        if isinstance(completion_val, int):
+            output_tokens = completion_val
+
+    return input_tokens, output_tokens
+
+
 def _resolve_agent_name(
     tags: Optional[list[str]], metadata: Optional[dict[str, Any]]
 ) -> Optional[str]:
@@ -512,10 +598,19 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         finish_reason=finish_reason or "stop",
                     )
                 ]
-        llm_output = getattr(response, "llm_output", {}) or {}
-        usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
-        inv.input_tokens = usage.get("prompt_tokens")
-        inv.output_tokens = usage.get("completion_tokens")
+        # Extract token usage from multiple sources (streaming vs non-streaming)
+        # Priority: message.usage_metadata (streaming) > llm_output (non-streaming)
+        input_tokens, output_tokens = _extract_token_usage_from_generations(generations)
+
+        # Fallback to llm_output for non-streaming responses
+        if input_tokens is None or output_tokens is None:
+            llm_output = getattr(response, "llm_output", {}) or {}
+            input_tokens, output_tokens = _extract_token_usage_from_llm_output(
+                llm_output, input_tokens, output_tokens
+            )
+
+        inv.input_tokens = input_tokens
+        inv.output_tokens = output_tokens
 
         # Extract response model from response metadata if available
         if not inv.response_model_name and generations:

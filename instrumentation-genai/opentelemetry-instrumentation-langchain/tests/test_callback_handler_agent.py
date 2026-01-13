@@ -410,3 +410,119 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
+
+
+# =============================================================================
+# PR #3: Token Usage Streaming Mode Tests
+# =============================================================================
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_token_usage_extraction_streaming_mode(handler_with_stub):
+    """Test token usage extracted from message.usage_metadata (streaming mode)."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatOpenAI"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+        invocation_params={"model_name": "gpt-4"},
+    )
+
+    # Simulate streaming response with usage_metadata
+    ai_message = AIMessage(content="Response text")
+    ai_message.usage_metadata = {
+        "input_tokens": 150,
+        "output_tokens": 50,
+    }
+
+    response = LLMResult(
+        generations=[[ChatGeneration(message=ai_message)]],
+        llm_output={},  # Empty - streaming mode doesn't populate this
+    )
+
+    handler.on_llm_end(response, run_id=run_id)
+
+    inv = stub.stopped_llms[-1]
+    assert inv.input_tokens == 150
+    assert inv.output_tokens == 50
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_token_usage_extraction_non_streaming_mode(handler_with_stub):
+    """Test token usage extracted from llm_output.token_usage (non-streaming)."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatOpenAI"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+        invocation_params={"model_name": "gpt-4"},
+    )
+
+    # Simulate non-streaming response with llm_output.token_usage
+    ai_message = AIMessage(content="Response text")
+
+    response = LLMResult(
+        generations=[[ChatGeneration(message=ai_message)]],
+        llm_output={
+            "token_usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 30,
+            }
+        },
+    )
+
+    handler.on_llm_end(response, run_id=run_id)
+
+    inv = stub.stopped_llms[-1]
+    assert inv.input_tokens == 100
+    assert inv.output_tokens == 30
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_token_usage_streaming_priority(handler_with_stub):
+    """Test usage_metadata takes priority over llm_output when both present."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatOpenAI"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+        invocation_params={"model_name": "gpt-4"},
+    )
+
+    # Both sources present - usage_metadata should take priority
+    ai_message = AIMessage(content="Response text")
+    ai_message.usage_metadata = {
+        "input_tokens": 200,  # Should use this
+        "output_tokens": 60,
+    }
+
+    response = LLMResult(
+        generations=[[ChatGeneration(message=ai_message)]],
+        llm_output={
+            "token_usage": {
+                "prompt_tokens": 100,  # Should be ignored
+                "completion_tokens": 30,
+            }
+        },
+    )
+
+    handler.on_llm_end(response, run_id=run_id)
+
+    inv = stub.stopped_llms[-1]
+    assert inv.input_tokens == 200  # usage_metadata takes priority
+    assert inv.output_tokens == 60
