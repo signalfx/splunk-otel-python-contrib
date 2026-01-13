@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
-from langchain_openai import AzureOpenAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from data_loader import DataLoader
@@ -26,13 +26,17 @@ class RunbookSearch:
         self.persist_dir = persist_dir
         self.data_loader = DataLoader(data_dir)
 
-        # Azure OpenAI Embeddings configuration
-        self.embeddings = AzureOpenAIEmbeddings(
-            azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
-            openai_api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
-            openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-            azure_deployment=os.environ.get("AZURE_EMBEDDING_DEPLOYMENT"),
-        )
+        # Prefer standard OpenAI embeddings if OPENAI_API_KEY is set,
+        # otherwise fall back to Azure OpenAI embeddings configuration.
+        if os.environ.get("OPENAI_API_KEY"):
+            self.embeddings = OpenAIEmbeddings()
+        else:
+            self.embeddings = AzureOpenAIEmbeddings(
+                azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
+                openai_api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+                openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+                azure_deployment=os.environ.get("AZURE_EMBEDDING_DEPLOYMENT"),
+            )
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,

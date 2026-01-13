@@ -36,6 +36,9 @@ from .env import (
     read_interval,
     read_raw_evaluators,
 )
+from .monitoring import (
+    get_instruments as get_monitoring_instruments,
+)
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
 
@@ -87,6 +90,8 @@ class Manager(CompletionCallback):
         aggregate_results: bool | None = None,
     ) -> None:
         self._handler = handler
+        meter_provider = getattr(handler, "_meter_provider", None)
+        self._monitoring = get_monitoring_instruments(meter_provider)
         self._interval = interval if interval is not None else read_interval()
         self._aggregate_results = (
             aggregate_results
@@ -149,8 +154,22 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.debug(
+            try:
+                self._monitoring.queue_size.add(1)
+            except Exception:
+                pass
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                self._monitoring.enqueue_errors.add(
+                    1,
+                    attributes={
+                        ErrorAttributes.ERROR_TYPE: type(exc).__name__,
+                        "gen_ai.invocation.type": type(invocation).__name__,
+                    },
+                )
+            except Exception:
+                pass
+            _LOGGER.warning(
                 "Failed to enqueue invocation for evaluation", exc_info=True
             )
 
@@ -192,6 +211,10 @@ class Manager(CompletionCallback):
                 invocation = self._queue.get(timeout=self._interval)
             except queue.Empty:
                 continue
+            try:
+                self._monitoring.queue_size.add(-1)
+            except Exception:
+                pass
             try:
                 self._process_invocation(invocation)
             except Exception:  # pragma: no cover - defensive
@@ -388,6 +411,17 @@ class Manager(CompletionCallback):
                         exc,
                     )
                     continue
+                try:
+                    bind = getattr(evaluator, "bind_handler", None)
+                    if callable(bind):
+                        bind(self._handler)
+                except Exception:  # pragma: no cover - defensive
+                    _LOGGER.debug(
+                        "Evaluator '%s' failed to bind handler for type '%s'",
+                        plan.name,
+                        type_name,
+                        exc_info=True,
+                    )
                 evaluators_by_type.setdefault(type_name, []).append(evaluator)
         return evaluators_by_type
 

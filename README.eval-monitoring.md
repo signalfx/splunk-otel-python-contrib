@@ -21,6 +21,9 @@ Non-goals:
 
 The following metrics are emitted by evaluator instrumentation (not the main GenAI client instrumentation).
 
+Emission gating:
+- These monitoring metrics are emitted only when `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` (default disabled).
+
 ### 2.1 Metric: `gen_ai.evaluation.client.operation.duration`
 
 Tracks duration of **LLM-as-a-judge** client operations.
@@ -156,3 +159,91 @@ Open question to validate in review:
 - For evaluator frameworks (e.g., Deepeval) that encapsulate LLM calls: what token usage fields are reliably available, and what is the “correct” operation boundary to time?
 - Should evaluator spans be enabled only for troubleshooting (opt-in), or supported as a first-class feature?
 
+---
+
+## 8. Current Implementation (executed)
+
+The plan above is implemented (minus the optional evaluator spans experiment).
+
+### 8.1 Code Changes (summary)
+
+- Added evaluator monitoring instruments + helper APIs in `util/opentelemetry-util-genai-evals/src/opentelemetry/util/genai/evals/monitoring.py`.
+  - Metrics created:
+    - `gen_ai.evaluation.client.operation.duration` (Histogram, `s`)
+    - `gen_ai.evaluation.client.token.usage` (Histogram, `{token}`)
+    - `gen_ai.evaluation.client.queue.size` (UpDownCounter, `1`) used as a live gauge via `+1/-1` bookkeeping
+    - `gen_ai.evaluation.client.enqueue.errors` (Counter, `1`)
+  - Helper functions:
+    - `time_client_operation(...)` (duration timing helper)
+    - `record_client_token_usage(...)` (token usage emission; only when values are known)
+  - Emission gating: metrics are only emitted when `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true`.
+
+- Wired queue/backpressure monitoring into the evaluation manager in `util/opentelemetry-util-genai-evals/src/opentelemetry/util/genai/evals/manager.py`.
+  - On enqueue success: increments `gen_ai.evaluation.client.queue.size` by `+1`.
+  - On dequeue (worker gets an item): decrements `gen_ai.evaluation.client.queue.size` by `-1`.
+  - On enqueue failure: increments `gen_ai.evaluation.client.enqueue.errors` and emits a warning log with exception info.
+
+- Enabled evaluators to use the handler’s meter provider via a lightweight binding hook:
+  - `Evaluator.bind_handler(handler)` in `util/opentelemetry-util-genai-evals/src/opentelemetry/util/genai/evals/base.py`.
+  - Manager calls `bind_handler()` when instantiating evaluators (best-effort).
+
+- Instrumented Deepeval evaluator execution to emit evaluator-side client telemetry in `util/opentelemetry-util-genai-evals-deepeval/src/opentelemetry/util/evaluator/deepeval.py`.
+  - Records `gen_ai.evaluation.client.operation.duration` around the Deepeval “judge” call.
+  - Attempts best-effort token usage extraction from Deepeval results (only emits when integer token counts are available; otherwise no token metric is recorded).
+
+### 8.2 Notes / Design Decisions
+
+- `gen_ai.evaluation.client.queue.size` is implemented as an UpDownCounter updated on enqueue/dequeue. This behaves like a gauge in backends that support non-monotonic sums; it avoids relying on `queue.qsize()` approximation.
+- Token usage is intentionally best-effort and conservative: emission only occurs when values are clearly present as non-negative integers.
+- Evaluator spans remain unimplemented (still optional/experimental).
+
+## 9. PR Documentation Template (tests + telemetry proof)
+
+Use this section verbatim in the pull request description.
+
+### 9.1 Summary
+
+Adds evaluator-side monitoring metrics for the async evaluation pipeline and instruments the Deepeval evaluator to emit evaluation-client telemetry (duration + best-effort token usage), providing visibility into evaluator performance, backpressure, and enqueue failures.
+
+### 9.2 Metrics / Telemetry Added
+
+- `gen_ai.evaluation.client.operation.duration` (Histogram, seconds): duration of LLM-as-a-judge calls.
+- `gen_ai.evaluation.client.token.usage` (Histogram, `{token}`): input/output token usage for LLM-as-a-judge calls (only when known).
+- `gen_ai.evaluation.client.queue.size` (UpDownCounter, `1`): current evaluation queue size.
+- `gen_ai.evaluation.client.enqueue.errors` (Counter, `1`): enqueue failures.
+- Logs: warning on enqueue failure (`Manager.offer()`), including exception info.
+- Emission gating: evaluator monitoring metrics are emitted only when `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true`.
+
+### 9.3 Tests Added
+
+- `util/opentelemetry-util-genai-evals/tests/test_monitoring_metrics.py`
+  - Verifies queue size returns to `0` after processing.
+  - Verifies enqueue error counter increments on forced enqueue failure.
+- `util/opentelemetry-util-genai-evals-deepeval/tests/test_deepeval_evaluator.py`
+  - Verifies Deepeval evaluator emits `gen_ai.evaluation.client.operation.duration` (in-memory metrics).
+
+### 9.4 Proof: Tests Run
+
+Executed locally:
+
+```bash
+pytest -q util/opentelemetry-util-genai-evals/tests/test_monitoring_metrics.py
+```
+
+Result:
+- `2 passed`
+
+```bash
+pytest -q util/opentelemetry-util-genai-evals-deepeval/tests/test_deepeval_evaluator.py::test_deepeval_emits_evaluation_client_duration_metric
+```
+
+Result:
+- `1 passed`
+
+### 9.5 Proof: Telemetry Confirmed
+
+Telemetry was validated via unit tests using the OpenTelemetry SDK’s `InMemoryMetricReader`:
+
+- `gen_ai.evaluation.client.queue.size` confirmed by asserting the recorded value returns to `0` after enqueue + worker dequeue processing.
+- `gen_ai.evaluation.client.enqueue.errors` confirmed by forcing an enqueue exception and asserting the counter increments to `1`.
+- `gen_ai.evaluation.client.operation.duration` confirmed by executing the Deepeval evaluator and asserting the metric exists in collected in-memory metrics.
