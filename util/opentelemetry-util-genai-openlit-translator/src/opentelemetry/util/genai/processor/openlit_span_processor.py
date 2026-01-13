@@ -622,7 +622,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                             self._span_buffer
                         )
 
-                        invocations_to_close = []
                         for buffered_span in spans_to_process:
                             # Skip spans that should not be processed
                             buffered_span_id = getattr(
@@ -635,22 +634,12 @@ class OpenlitSpanProcessor(SpanProcessor):
                             ):
                                 continue
 
-                            result_invocation = self._process_span_translation(
-                                buffered_span
+                            # Non-LLM spans (workflows, tasks, tools) don't need synthetic spans
+                            # They're already mutated and will be exported as-is
+                            _logger.debug(
+                                "[OPENLIT_PROCESSOR] Buffered span processed (mutation only): %s",
+                                buffered_span.name,
                             )
-                            if result_invocation:
-                                invocations_to_close.append(result_invocation)
-
-                        handler = (
-                            self.telemetry_handler or get_telemetry_handler()
-                        )
-                        for invocation in reversed(invocations_to_close):
-                            try:
-                                handler.finish(invocation)
-                            except Exception as stop_err:
-                                _logger.warning(
-                                    "Failed to stop invocation: %s", stop_err
-                                )
 
                         self._span_buffer.clear()
                         self._original_to_translated_invocation.clear()
@@ -794,14 +783,36 @@ class OpenlitSpanProcessor(SpanProcessor):
         """
         _logger = logging.getLogger(__name__)
 
-        original_input_data = mutated_attrs.get("gen_ai.input.messages")
-        original_output_data = mutated_attrs.get("gen_ai.output.messages")
+        # Extract message data from various sources
+        # 1. Already transformed: gen_ai.input.messages/output.messages
+        # 2. OpenLit SDK format: openlit.entity.input/output
+        # 3. OpenAI instrumentation: gen_ai.prompt/gen_ai.completion (older format)
+        # 4. LLM attributes: llm.prompts/llm.completions
+        original_input_data = (
+            mutated_attrs.get("gen_ai.input.messages")
+            or original_attrs.get("openlit.entity.input")
+            or original_attrs.get("gen_ai.prompt")
+            or original_attrs.get("llm.prompts")
+            or original_attrs.get("gen_ai.content.prompt")
+        )
+        original_output_data = (
+            mutated_attrs.get("gen_ai.output.messages")
+            or original_attrs.get("openlit.entity.output")
+            or original_attrs.get("gen_ai.completion")
+            or original_attrs.get("llm.completions")
+            or original_attrs.get("gen_ai.content.completion")
+        )
 
         if not original_input_data and not original_output_data:
+            _logger.debug(
+                "[OPENLIT_PROCESSOR] No message data found in span attrs for reconstruction, "
+                "available keys: %s",
+                list(original_attrs.keys())[:15],
+            )
             return None  # Nothing to reconstruct
 
         try:
-            # Reconstruct LangChain messages from openlit JSON
+            # First, try to reconstruct LangChain messages from OpenLit JSON format
             lc_input, lc_output = reconstruct_messages_from_openlit(
                 original_input_data, original_output_data
             )
@@ -814,6 +825,112 @@ class OpenlitSpanProcessor(SpanProcessor):
             output_messages = self._convert_langchain_to_genai_messages(
                 lc_output, "output"
             )
+
+            # FALLBACK: If LangChain reconstruction failed but we have plain string data,
+            # create simple message objects directly. This handles OpenAI instrumentation
+            # spans that have plain text in gen_ai.input.messages / gen_ai.output.messages
+            if not input_messages and original_input_data:
+                if isinstance(original_input_data, str):
+                    # Check if it's a JSON array (already formatted)
+                    try:
+                        parsed = json.loads(original_input_data)
+                        if isinstance(parsed, list) and parsed:
+                            # Already a JSON array - convert to InputMessage objects
+                            input_messages = []
+                            for msg in parsed:
+                                if isinstance(msg, dict):
+                                    role = msg.get("role", "user")
+                                    parts = msg.get("parts", [])
+                                    if parts and isinstance(parts, list):
+                                        content = (
+                                            parts[0].get("content", "")
+                                            if isinstance(parts[0], dict)
+                                            else str(parts[0])
+                                        )
+                                    else:
+                                        content = msg.get("content", str(msg))
+                                    input_messages.append(
+                                        InputMessage(
+                                            role=role,
+                                            parts=[
+                                                Text(
+                                                    content=content,
+                                                    type="text",
+                                                )
+                                            ],
+                                        )
+                                    )
+                    except json.JSONDecodeError:
+                        # Plain text string - create single InputMessage
+                        input_messages = [
+                            InputMessage(
+                                role="user",
+                                parts=[
+                                    Text(
+                                        content=original_input_data,
+                                        type="text",
+                                    )
+                                ],
+                            )
+                        ]
+                        _logger.debug(
+                            "[OPENLIT_PROCESSOR] Created InputMessage from plain string: %s...",
+                            original_input_data[:50],
+                        )
+
+            if not output_messages and original_output_data:
+                if isinstance(original_output_data, str):
+                    # Check if it's a JSON array (already formatted)
+                    try:
+                        parsed = json.loads(original_output_data)
+                        if isinstance(parsed, list) and parsed:
+                            # Already a JSON array - convert to OutputMessage objects
+                            output_messages = []
+                            for msg in parsed:
+                                if isinstance(msg, dict):
+                                    role = msg.get("role", "assistant")
+                                    parts = msg.get("parts", [])
+                                    if parts and isinstance(parts, list):
+                                        content = (
+                                            parts[0].get("content", "")
+                                            if isinstance(parts[0], dict)
+                                            else str(parts[0])
+                                        )
+                                    else:
+                                        content = msg.get("content", str(msg))
+                                    finish_reason = msg.get(
+                                        "finish_reason", "stop"
+                                    )
+                                    output_messages.append(
+                                        OutputMessage(
+                                            role=role,
+                                            parts=[
+                                                Text(
+                                                    content=content,
+                                                    type="text",
+                                                )
+                                            ],
+                                            finish_reason=finish_reason,
+                                        )
+                                    )
+                    except json.JSONDecodeError:
+                        # Plain text string - create single OutputMessage
+                        output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[
+                                    Text(
+                                        content=original_output_data,
+                                        type="text",
+                                    )
+                                ],
+                                finish_reason="stop",
+                            )
+                        ]
+                        _logger.debug(
+                            "[OPENLIT_PROCESSOR] Created OutputMessage from plain string: %s...",
+                            original_output_data[:50],
+                        )
 
             # Serialize to JSON and store as gen_ai.* attributes (for span export)
             if input_messages:
@@ -1236,12 +1353,27 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         # BEFORE transforming attributes, extract original message data
         # for message reconstruction (needed for evaluations)
-        original_input_data = base_attrs.get(
-            "gen_ai.input.messages"
-        ) or base_attrs.get("gen_ai.input.message")
-        original_output_data = base_attrs.get(
-            "gen_ai.output.messages"
-        ) or base_attrs.get("gen_ai.output.message")
+        # Try multiple attribute names from different instrumentation sources:
+        # 1. gen_ai.* (OTel GenAI format)
+        # 2. openlit.entity.* (OpenLit SDK)
+        # 3. llm.* (older OpenAI instrumentation)
+        # 4. gen_ai.content.* (another format variant)
+        original_input_data = (
+            base_attrs.get("gen_ai.input.messages")
+            or base_attrs.get("gen_ai.input.message")
+            or base_attrs.get("openlit.entity.input")
+            or base_attrs.get("gen_ai.prompt")
+            or base_attrs.get("llm.prompts")
+            or base_attrs.get("gen_ai.content.prompt")
+        )
+        original_output_data = (
+            base_attrs.get("gen_ai.output.messages")
+            or base_attrs.get("gen_ai.output.message")
+            or base_attrs.get("openlit.entity.output")
+            or base_attrs.get("gen_ai.completion")
+            or base_attrs.get("llm.completions")
+            or base_attrs.get("gen_ai.content.completion")
+        )
 
         # Only apply attribute transformations if span was NOT already mutated
         # This prevents double-transformation which would fail to find already-renamed keys

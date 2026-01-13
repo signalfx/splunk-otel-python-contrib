@@ -555,30 +555,75 @@ class TraceloopSpanProcessor(SpanProcessor):
                     "[TL_PROCESSOR] LLM span detected: %s, processing for evaluations",
                     span.name,
                 )
-                # Process LLM spans IMMEDIATELY - create synthetic span and trigger evaluations
-                invocation = self._process_span_translation(span)
+                # Build invocation from mutated span data (no synthetic span creation)
+                # The mutation already happened in step 1, so we just build the invocation
+                # and call handler.finish() directly to trigger evaluations
+                invocation = self._build_invocation(
+                    span,
+                    attribute_transformations=self.attribute_transformations,
+                    name_transformations=self.name_transformations,
+                    traceloop_attributes=self.traceloop_attributes,
+                )
                 if invocation:
-                    # DEBUG: Verify messages are present before calling stop_llm
+                    # Attach the original (mutated) span to the invocation
+                    # This is normally done by handler.start(), but we're skipping that
+                    # to avoid creating a synthetic span
+                    invocation.span = span  # type: ignore[attr-defined]
+
+                    # Extract trace context from the original span
+                    span_context = getattr(span, "context", None)
+                    trace_id = getattr(span_context, "trace_id", None)
+                    span_id_val = getattr(span_context, "span_id", None)
+
+                    # Set trace_id on invocation (needed for sampling)
+                    invocation.trace_id = trace_id
+                    invocation.span_id = span_id_val
+
+                    # Set timing info (use span's timing if available)
+                    if hasattr(span, "_start_time") and span._start_time:  # type: ignore[attr-defined]
+                        invocation.start_time = (
+                            span._start_time / 1e9
+                        )  # Convert ns to seconds  # type: ignore[attr-defined]
+
+                    # DEBUG: Verify messages are present before calling finish
                     input_count = (
                         len(invocation.input_messages)
-                        if invocation.input_messages
+                        if hasattr(invocation, "input_messages")
+                        and invocation.input_messages
                         else 0
                     )
                     output_count = (
                         len(invocation.output_messages)
-                        if invocation.output_messages
+                        if hasattr(invocation, "output_messages")
+                        and invocation.output_messages
                         else 0
                     )
                     _logger.debug(
-                        "[TL_PROCESSOR] Calling stop_llm with messages: input=%d, output=%d, span=%s",
+                        "[TL_PROCESSOR] Calling finish with messages: input=%d, output=%d, span=%s",
                         input_count,
                         output_count,
                         span.name,
                     )
                     if input_count == 0 and output_count == 0:
                         _logger.warning(
-                            "[TL_PROCESSOR] WARNING: No messages on invocation before stop_llm! span=%s",
+                            "[TL_PROCESSOR] WARNING: No messages on invocation before finish! span=%s",
                             span.name,
+                        )
+
+                    # Close the invocation to trigger evaluations
+                    # This will call _emitter.on_end() and _notify_completion() for callbacks
+                    handler = self.telemetry_handler or get_telemetry_handler()
+                    try:
+                        handler.finish(invocation)
+                        _logger.debug(
+                            "[TL_PROCESSOR] LLM invocation completed: %s, sampled=%s",
+                            span.name,
+                            getattr(invocation, "sample_for_evaluation", None),
+                        )
+                    except Exception as stop_err:
+                        _logger.warning(
+                            "[TL_PROCESSOR] Failed to finish LLM invocation: %s",
+                            stop_err,
                         )
                 else:
                     _logger.info(
@@ -586,20 +631,6 @@ class TraceloopSpanProcessor(SpanProcessor):
                         span.name,
                     )
                     return  # Exit early, don't try to process further
-
-                # Close the invocation immediately to trigger evaluations
-                handler = self.telemetry_handler or get_telemetry_handler()
-                try:
-                    handler.finish(invocation)
-                    _logger.debug(
-                        "[TL_PROCESSOR] LLM invocation completed: %s",
-                        span.name,
-                    )
-                except Exception as stop_err:
-                    _logger.warning(
-                        "[TL_PROCESSOR] Failed to stop LLM invocation: %s",
-                        stop_err,
-                    )
             else:
                 # Non-LLM spans (tasks, workflows, tools) - buffer for optional batch processing
                 _logger.debug(
@@ -621,7 +652,6 @@ class TraceloopSpanProcessor(SpanProcessor):
                             self._span_buffer
                         )
 
-                        invocations_to_close = []
                         for buffered_span in spans_to_process:
                             # Skip spans that should not be processed
                             buffered_span_id = getattr(
@@ -634,22 +664,13 @@ class TraceloopSpanProcessor(SpanProcessor):
                             ):
                                 continue
 
-                            result_invocation = self._process_span_translation(
-                                buffered_span
+                            # Non-LLM spans (workflows, tasks, tools) don't need synthetic spans
+                            # They're already mutated and will be exported as-is
+                            # We only log that they were processed
+                            _logger.debug(
+                                "[TL_PROCESSOR] Buffered span processed (mutation only): %s",
+                                buffered_span.name,
                             )
-                            if result_invocation:
-                                invocations_to_close.append(result_invocation)
-
-                        handler = (
-                            self.telemetry_handler or get_telemetry_handler()
-                        )
-                        for invocation in reversed(invocations_to_close):
-                            try:
-                                handler.finish(invocation)
-                            except Exception as stop_err:
-                                _logger.warning(
-                                    "Failed to stop invocation: %s", stop_err
-                                )
 
                         self._span_buffer.clear()
                         self._original_to_translated_invocation.clear()
@@ -791,7 +812,9 @@ class TraceloopSpanProcessor(SpanProcessor):
         """
         _logger = logging.getLogger(__name__)
 
-        # Extract Traceloop serialized data
+        # Extract message data from various sources
+        # 1. Traceloop SDK format: traceloop.entity.input/output
+        # 2. Already transformed: gen_ai.input.messages/output.messages
         original_input_data = original_attrs.get(
             "traceloop.entity.input"
         ) or mutated_attrs.get("gen_ai.input.messages")
@@ -800,10 +823,15 @@ class TraceloopSpanProcessor(SpanProcessor):
         ) or mutated_attrs.get("gen_ai.output.messages")
 
         if not original_input_data and not original_output_data:
+            _logger.debug(
+                "[TL_PROCESSOR] No message data found in span attrs for reconstruction, "
+                "available keys: %s",
+                list(original_attrs.keys())[:15],
+            )
             return None  # Nothing to reconstruct
 
         try:
-            # Reconstruct LangChain messages from Traceloop JSON
+            # First, try to reconstruct LangChain messages from Traceloop JSON format
             lc_input, lc_output = reconstruct_messages_from_traceloop(
                 original_input_data, original_output_data
             )
@@ -816,6 +844,109 @@ class TraceloopSpanProcessor(SpanProcessor):
             output_messages = self._convert_langchain_to_genai_messages(
                 lc_output, "output"
             )
+
+            if not input_messages and original_input_data:
+                if isinstance(original_input_data, str):
+                    # Check if it's a JSON array (already formatted)
+                    try:
+                        parsed = json.loads(original_input_data)
+                        if isinstance(parsed, list) and parsed:
+                            # Already a JSON array - convert to InputMessage objects
+                            input_messages = []
+                            for msg in parsed:
+                                if isinstance(msg, dict):
+                                    role = msg.get("role", "user")
+                                    parts = msg.get("parts", [])
+                                    if parts and isinstance(parts, list):
+                                        content = (
+                                            parts[0].get("content", "")
+                                            if isinstance(parts[0], dict)
+                                            else str(parts[0])
+                                        )
+                                    else:
+                                        content = msg.get("content", str(msg))
+                                    input_messages.append(
+                                        InputMessage(
+                                            role=role,
+                                            parts=[
+                                                Text(
+                                                    content=content,
+                                                    type="text",
+                                                )
+                                            ],
+                                        )
+                                    )
+                    except json.JSONDecodeError:
+                        # Plain text string - create single InputMessage
+                        input_messages = [
+                            InputMessage(
+                                role="user",
+                                parts=[
+                                    Text(
+                                        content=original_input_data,
+                                        type="text",
+                                    )
+                                ],
+                            )
+                        ]
+                        _logger.debug(
+                            "[TL_PROCESSOR] Created InputMessage from plain string: %s...",
+                            original_input_data[:50],
+                        )
+
+            if not output_messages and original_output_data:
+                if isinstance(original_output_data, str):
+                    # Check if it's a JSON array (already formatted)
+                    try:
+                        parsed = json.loads(original_output_data)
+                        if isinstance(parsed, list) and parsed:
+                            # Already a JSON array - convert to OutputMessage objects
+                            output_messages = []
+                            for msg in parsed:
+                                if isinstance(msg, dict):
+                                    role = msg.get("role", "assistant")
+                                    parts = msg.get("parts", [])
+                                    if parts and isinstance(parts, list):
+                                        content = (
+                                            parts[0].get("content", "")
+                                            if isinstance(parts[0], dict)
+                                            else str(parts[0])
+                                        )
+                                    else:
+                                        content = msg.get("content", str(msg))
+                                    finish_reason = msg.get(
+                                        "finish_reason", "stop"
+                                    )
+                                    output_messages.append(
+                                        OutputMessage(
+                                            role=role,
+                                            parts=[
+                                                Text(
+                                                    content=content,
+                                                    type="text",
+                                                )
+                                            ],
+                                            finish_reason=finish_reason,
+                                        )
+                                    )
+                    except json.JSONDecodeError:
+                        # Plain text string - create single OutputMessage
+                        output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[
+                                    Text(
+                                        content=original_output_data,
+                                        type="text",
+                                    )
+                                ],
+                                finish_reason="stop",
+                            )
+                        ]
+                        _logger.debug(
+                            "[TL_PROCESSOR] Created OutputMessage from plain string: %s...",
+                            original_output_data[:50],
+                        )
 
             # Serialize to JSON and store as gen_ai.* attributes (for span export)
             if input_messages:
@@ -1269,17 +1400,26 @@ class TraceloopSpanProcessor(SpanProcessor):
 
         # BEFORE transforming attributes, extract original message data
         # for message reconstruction (needed for evaluations)
-        # Try both old format (traceloop.entity.*) and new format (gen_ai.*)
-        # Support both singular and plural attribute names
+        # Try multiple attribute names from different instrumentation sources:
+        # 1. gen_ai.* (OTel GenAI format)
+        # 2. traceloop.entity.* (Traceloop SDK)
+        # 3. llm.* (older OpenAI instrumentation)
+        # 4. gen_ai.content.* (another format variant)
         original_input_data = (
             base_attrs.get("gen_ai.input.messages")
             or base_attrs.get("gen_ai.input.message")
             or base_attrs.get("traceloop.entity.input")
+            or base_attrs.get("gen_ai.prompt")
+            or base_attrs.get("llm.prompts")
+            or base_attrs.get("gen_ai.content.prompt")
         )
         original_output_data = (
             base_attrs.get("gen_ai.output.messages")
             or base_attrs.get("gen_ai.output.message")
             or base_attrs.get("traceloop.entity.output")
+            or base_attrs.get("gen_ai.completion")
+            or base_attrs.get("llm.completions")
+            or base_attrs.get("gen_ai.content.completion")
         )
 
         # Apply attribute transformations
@@ -1432,11 +1572,24 @@ class TraceloopSpanProcessor(SpanProcessor):
                         existing_span.name,
                     )
             else:
-                _logger.error(
+                _logger.debug(
                     "[TL_PROCESSOR] ERROR: No message data available! span_id=%s, span=%s, attrs_keys=%s",
                     span_id,
                     existing_span.name,
                     list(base_attrs.keys())[:20],
+                )
+                # Log specific attribute values for debugging
+                _logger.debug(
+                    "[TL_PROCESSOR] Attribute values: gen_ai.input.messages=%s, traceloop.entity.input=%s, llm.prompts=%s",
+                    base_attrs.get("gen_ai.input.messages", "MISSING")[:100]
+                    if base_attrs.get("gen_ai.input.messages")
+                    else "MISSING",
+                    base_attrs.get("traceloop.entity.input", "MISSING")[:100]
+                    if base_attrs.get("traceloop.entity.input")
+                    else "MISSING",
+                    base_attrs.get("llm.prompts", "MISSING")[:100]
+                    if base_attrs.get("llm.prompts")
+                    else "MISSING",
                 )
 
         # Create invocation with reconstructed messages
