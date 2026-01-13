@@ -24,6 +24,7 @@ from .span_processor import (
     GenAIProvider,
     GenAISemanticProcessor,
     GenAIToolType,
+    stop_workflow,
 )
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "GenAIToolType",
     "GenAIOutputType",
     "GenAIEvaluationAttributes",
+    "stop_workflow",
 ]
 
 logger = logging.getLogger(__name__)
