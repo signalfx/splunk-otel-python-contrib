@@ -172,6 +172,21 @@ class TelemetryHandler:
             "bias",
         }
 
+        # Bucket boundaries for evaluation metrics (0-1 score range)
+        # Appropriate for DeepEval and other evaluation frameworks that return scores in [0, 1]
+        _GEN_AI_EVALUATION_SCORE_BUCKETS = [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1.0,
+        ]
+
         if use_single_metric:
             # Single evaluation histogram for all evaluation types:
             # gen_ai.evaluation.score (with gen_ai.evaluation.name attribute)
@@ -188,6 +203,7 @@ class TelemetryHandler:
                             name="gen_ai.evaluation.score",
                             unit="1",
                             description="GenAI evaluation score (0-1 where applicable), distinguished by gen_ai.evaluation.name attribute",
+                            explicit_bucket_boundaries_advisory=_GEN_AI_EVALUATION_SCORE_BUCKETS,
                         )
                     except Exception:  # pragma: no cover - defensive
                         return None
@@ -210,6 +226,7 @@ class TelemetryHandler:
                         name=full_name,
                         unit="1",
                         description=f"GenAI evaluation metric '{name}' (0-1 score where applicable)",
+                        explicit_bucket_boundaries_advisory=_GEN_AI_EVALUATION_SCORE_BUCKETS,
                     )
                     self._evaluation_histograms[full_name] = hist
                 except Exception:  # pragma: no cover - defensive
