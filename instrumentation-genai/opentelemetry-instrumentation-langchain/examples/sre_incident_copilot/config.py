@@ -7,18 +7,24 @@ from typing import Optional
 
 @dataclass
 class Config:
-    """Application configuration."""
+    """Application configuration.
+    
+    Two separate credential sets are supported:
+    1. OpenAI: OPENAI_API_KEY (+ optional OPENAI_BASE_URL) for both chat and embeddings
+    2. Circuit + Azure: Circuit OAuth for chat, Azure for embeddings
+    """
 
     # OpenAI / LLM
-    openai_api_key: str
+    openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     openai_base_url: Optional[str] = None
 
-    # OAuth2 for Cisco (optional)
-    oauth_token_url: Optional[str] = None
-    oauth_client_id: Optional[str] = None
-    oauth_client_secret: Optional[str] = None
-    oauth_app_key: Optional[str] = None
+    # Circuit/Cisco OAuth2 (for chat when paired with Azure embeddings)
+    circuit_base_url: Optional[str] = None
+    circuit_token_url: Optional[str] = None
+    circuit_client_id: Optional[str] = None
+    circuit_client_secret: Optional[str] = None
+    circuit_app_key: Optional[str] = None
 
     # OpenTelemetry
     otel_service_name: str = "sre-incident-copilot"
@@ -45,13 +51,14 @@ class Config:
     def from_env(cls) -> "Config":
         """Load configuration from environment variables."""
         return cls(
-            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             openai_base_url=os.getenv("OPENAI_BASE_URL"),
-            oauth_token_url=os.getenv("OAUTH_TOKEN_URL"),
-            oauth_client_id=os.getenv("OAUTH_CLIENT_ID"),
-            oauth_client_secret=os.getenv("OAUTH_CLIENT_SECRET"),
-            oauth_app_key=os.getenv("OAUTH_APP_KEY"),
+            circuit_base_url=os.getenv("CIRCUIT_BASE_URL"),
+            circuit_token_url=os.getenv("CIRCUIT_TOKEN_URL"),
+            circuit_client_id=os.getenv("CIRCUIT_CLIENT_ID"),
+            circuit_client_secret=os.getenv("CIRCUIT_CLIENT_SECRET"),
+            circuit_app_key=os.getenv("CIRCUIT_APP_KEY"),
             otel_service_name=os.getenv("OTEL_SERVICE_NAME", "sre-incident-copilot"),
             otel_exporter_otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
             otel_exporter_otlp_protocol=os.getenv(
