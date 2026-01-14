@@ -8,7 +8,7 @@ from typing import Optional
 @dataclass
 class Config:
     """Application configuration.
-    
+
     Two separate credential sets are supported:
     1. OpenAI: OPENAI_API_KEY (+ optional OPENAI_BASE_URL) for both chat and embeddings
     2. Circuit + Azure: Circuit OAuth for chat, Azure for embeddings

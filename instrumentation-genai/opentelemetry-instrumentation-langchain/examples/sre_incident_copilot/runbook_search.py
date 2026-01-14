@@ -57,7 +57,7 @@ class RunbookSearch:
                 "2. Azure: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, "
                 "AZURE_OPENAI_API_VERSION, AZURE_EMBEDDING_DEPLOYMENT"
             )
-        
+
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
