@@ -117,10 +117,6 @@ def _apply_evaluation_attributes(
     span: Span,
     invocation: GenAIType,
 ) -> None:
-    evaluation_error: bool = False
-    if invocation.evaluation_queue_error not in (None, ""):
-        evaluation_error = True
-
     # Check if span is recording before setting attribute
     # This handles ReadableSpan which has already ended, gracefully
     if (
@@ -129,21 +125,21 @@ def _apply_evaluation_attributes(
         and span.is_recording()
     ):
         span.set_attribute("gen_ai.evaluation.sampled", invocation.sample_for_evaluation)
-        if evaluation_error:
-            span.set_attribute(
+        span.set_attribute(
                 "gen_ai.evaluation.error",
-                str(invocation.evaluation_queue_error),
-            )
+                str(invocation.evaluation_error),
+        )
     elif span is not None and hasattr(span, "_attributes"):
         # Fallback for ReadableSpan: directly mutate _attributes
         try:
             span._attributes["gen_ai.evaluation.sampled"] = str(
                 invocation.sample_for_evaluation
             ).lower()
-            if evaluation_error:
-                span._attributes["gen_ai.evaluation.error"] = str(
-                    invocation.evaluation_queue_error
-                )
+            span._attributes[
+                "gen_ai.evaluation.error"] = str(
+                invocation.evaluation_error
+            )
+
         except Exception:
             pass
 

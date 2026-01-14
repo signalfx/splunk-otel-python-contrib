@@ -105,19 +105,24 @@ class Manager(CompletionCallback):
                 name="opentelemetry-genai-evaluator",
                 daemon=True,
             )
-            # self._worker.start()
+            self._worker.start()
 
     # CompletionCallback -------------------------------------------------
     def on_completion(self, invocation: GenAI) -> None:
         # Early exit if no evaluators configured
         if not self.has_evaluators:
             return
-        # Only evaluate LLMInvocation or AgentInvocation
+
+        # Only evaluate LLMInvocation or AgentInvocation or Workflow
         if (
             not isinstance(invocation, LLMInvocation)
             and not isinstance(invocation, AgentInvocation)
             and not isinstance(invocation, Workflow)
         ):
+            invocation.evaluation_error = "client_evaluation_skipped_as_invocation_type_not_supported"
+            _LOGGER.debug(
+                "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.", type(invocation).name
+            )
             return
 
         offer: bool = True
@@ -132,11 +137,19 @@ class Manager(CompletionCallback):
                         and first.parts[0] == "ToolCall"
                         and first.finish_reason == "tool_calls"
                     ):
+                        invocation.evaluation_error = "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
+                        _LOGGER.debug(
+                            "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.", type(invocation).name
+                        )
                         offer = False
 
             # Do not evaluate if error
             error = invocation.attributes.get(ErrorAttributes.ERROR_TYPE)
             if error:
+                invocation.evaluation_error = "client_evaluation_skipped_as_error_on_invocation"
+                _LOGGER.debug(
+                    "Skipping evaluation for invocation type: %s as error on span, error: %s.", type(invocation).name, error
+                )
                 offer = False
 
             if offer:
@@ -151,13 +164,13 @@ class Manager(CompletionCallback):
         try:
             self._queue.put_nowait(invocation)
         except queue.Full:
-            invocation.evaluation_queue_error = "client_evaluation_queue_full"
-            _LOGGER.warning(
-                "Evaluation queue is full, dropping invocation. Consider increasing queue size or evaluation throughput."
+            invocation.evaluation_error = "client_evaluation_queue_full"
+            _LOGGER.error(
+                "Evaluation queue is full, dropping invocation."
             )
         except Exception as exc :  # pragma: no cover - defensive
-            invocation.evaluation_queue_error = "client_evaluation_queue_error"
-            _LOGGER.debug(
+            invocation.evaluation_error = "client_evaluation_queue_error"
+            _LOGGER.error(
                 "Failed to enqueue invocation for evaluation: %s", exc, exc_info=True
             )
 

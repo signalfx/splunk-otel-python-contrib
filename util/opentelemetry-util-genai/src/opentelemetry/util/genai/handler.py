@@ -793,8 +793,10 @@ class TelemetryHandler:
             step.trace_id
         )
 
-        self._emitter.on_end(step)
+        # Send invocation for evaluation if applicable
         self._notify_completion(step)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(step)
         self._entity_registry.pop(str(step.run_id), None)
         if (
             hasattr(self, "_meter_provider")
