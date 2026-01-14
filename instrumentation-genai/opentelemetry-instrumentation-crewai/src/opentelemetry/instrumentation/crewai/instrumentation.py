@@ -317,12 +317,11 @@ def _wrap_tool_call(wrapped, instance, args, kwargs):
         # Create tool call
         tool_call = ToolCall(
             name=getattr(instance, "name", "unknown_tool"),
-            arguments=_stringify_arguments(args, kwargs),
-            id=None,
+            arguments=str(kwargs) if kwargs else "{}",
+            id=str(id(instance)),
             framework="crewai",
             system="crewai",
         )
-        tool_call.id = str(tool_call.run_id)
 
         # Start the tool call
         handler.start_tool_call(tool_call)
