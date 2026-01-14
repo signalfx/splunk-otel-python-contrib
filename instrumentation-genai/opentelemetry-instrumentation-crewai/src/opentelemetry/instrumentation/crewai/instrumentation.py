@@ -144,9 +144,11 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
             system="crewai",
         )
 
-        inputs = kwargs.get("inputs", {})
-        if inputs:
-            workflow.initial_input = str(inputs)[:500]
+    inputs = kwargs.get("inputs")
+    if inputs is None and args:
+        inputs = args[0]
+    if inputs is not None:
+        workflow.initial_input = str(inputs)[:500]
 
         # Start the workflow
         handler.start_workflow(workflow)
@@ -159,9 +161,8 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
 
         # Capture result information
         try:
-            if result:
-                if hasattr(result, "raw"):
-                    workflow.final_output = str(result.raw)[:1000]
+            if hasattr(result, "raw"):
+                workflow.final_output = str(result.raw)[:1000]
 
             # Stop the workflow successfully
             handler.stop_workflow(workflow)
@@ -197,8 +198,10 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
 
         # Capture task description as input context
         task = kwargs.get("task")
-        if task and hasattr(task, "description"):
-            agent_invocation.input_context = task.description[:500]
+        if task is None and args:
+            task = args[0]
+        if task is not None and hasattr(task, "description"):
+            agent_invocation.input_context = str(task.description)[:500]
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)
@@ -211,7 +214,7 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
 
         # Capture result and metrics
         try:
-            if result:
+            if result is not None:
                 agent_invocation.output_result = str(result)[:1000]
 
             # Extract token usage if available
@@ -277,7 +280,7 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
 
         # Capture result
         try:
-            if result:
+            if result is not None:
                 step.output_data = str(result)[:1000]
 
             # Stop the step successfully
@@ -296,23 +299,30 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         raise
 
 
-def _wrap_tool_run(wrapped, instance, args, kwargs):
-    """
-    Wrap BaseTool.run to create a ToolCall span.
+def _stringify_arguments(args, kwargs) -> str:
+    if kwargs:
+        return str(kwargs)
+    if args:
+        if len(args) == 1:
+            return str(args[0])
+        return str(args)
+    return "{}"
 
-    Maps to: ToolCall type from splunk-otel-util-genai
-    """
+
+def _wrap_tool_call(wrapped, instance, args, kwargs):
+    """Shared wrapper for tool calls."""
     try:
         handler = _handler
 
         # Create tool call
         tool_call = ToolCall(
             name=getattr(instance, "name", "unknown_tool"),
-            arguments=str(kwargs) if kwargs else "{}",
-            id=str(id(instance)),
+            arguments=_stringify_arguments(args, kwargs),
+            id=None,
             framework="crewai",
             system="crewai",
         )
+        tool_call.id = str(tool_call.run_id)
 
         # Start the tool call
         handler.start_tool_call(tool_call)
@@ -338,6 +348,15 @@ def _wrap_tool_run(wrapped, instance, args, kwargs):
         except Exception:
             pass
         raise
+
+
+def _wrap_tool_run(wrapped, instance, args, kwargs):
+    """
+    Wrap BaseTool.run to create a ToolCall span.
+
+    Maps to: ToolCall type from splunk-otel-util-genai
+    """
+    return _wrap_tool_call(wrapped, instance, args, kwargs)
 
 
 def _wrap_structured_tool_invoke(wrapped, instance, args, kwargs):
@@ -347,39 +366,4 @@ def _wrap_structured_tool_invoke(wrapped, instance, args, kwargs):
     This handles tools created with the @tool decorator.
     Maps to: ToolCall type from splunk-otel-util-genai
     """
-    try:
-        handler = _handler
-
-        # Create tool call
-        tool_call = ToolCall(
-            name=getattr(instance, "name", "unknown_tool"),
-            arguments=str(kwargs) if kwargs else "{}",
-            id=str(id(instance)),
-            framework="crewai",
-            system="crewai",
-        )
-
-        # Start the tool call
-        handler.start_tool_call(tool_call)
-    except Exception:
-        # If instrumentation setup fails, just run the original function
-        return wrapped(*args, **kwargs)
-
-    try:
-        result = wrapped(*args, **kwargs)
-
-        # Stop the tool call successfully
-        try:
-            handler.stop_tool_call(tool_call)
-        except Exception:
-            # Ignore instrumentation errors on success path
-            pass
-
-        return result
-    except Exception as exc:
-        # Wrapped function failed - record error and end span
-        try:
-            handler.fail(tool_call, Error(message=str(exc), type=type(exc)))
-        except Exception:
-            pass
-        raise
+    return _wrap_tool_call(wrapped, instance, args, kwargs)

@@ -81,7 +81,7 @@ Provides workflow structure but no LLM call details.
 .. code-block:: python
 
     from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
-    from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+    from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
     
     CrewAIInstrumentor().instrument()
     OpenAIInstrumentor().instrument()
@@ -93,7 +93,7 @@ Adds LLM call spans with token usage, model names, and latency metrics.
 .. code-block:: python
 
     from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
-    from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+    from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
     from opentelemetry.instrumentation.chromadb import ChromaDBInstrumentor
     
     CrewAIInstrumentor().instrument()
@@ -169,7 +169,7 @@ Limitations
 - **Async Support**: Currently supports synchronous workflows only. Async support (``kickoff_async()``)
   is planned for a future release.
 - **LLM Calls**: Not instrumented here. Use provider-specific instrumentation
-  (e.g., ``opentelemetry-instrumentation-openai``).
+  (e.g., ``opentelemetry-instrumentation-openai-v2``).
 
 
 Contributing
@@ -195,4 +195,3 @@ License
 -------
 
 Apache-2.0
-

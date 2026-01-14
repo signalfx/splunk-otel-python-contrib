@@ -127,6 +127,24 @@ class TestCrewKickoffMapping:
         assert "topic" in workflow.initial_input
         assert "AI" in workflow.initial_input
 
+    def test_workflow_captures_inputs_from_args(self, stub_handler):
+        """Workflow should capture inputs passed positionally."""
+        crewai_module._handler = stub_handler
+
+        mock_crew = mock.MagicMock()
+        mock_crew.name = "Args Crew"
+
+        result = mock.MagicMock()
+        result.raw = "Done"
+        mock_wrapped = mock.MagicMock(return_value=result)
+
+        crewai_module._wrap_crew_kickoff(
+            mock_wrapped, mock_crew, ({"topic": "args"},), {}
+        )
+
+        workflow = stub_handler.started_workflows[0]
+        assert "topic" in workflow.initial_input
+
     def test_workflow_captures_output(self, stub_handler):
         """Workflow should capture result output."""
         crewai_module._handler = stub_handler
@@ -142,6 +160,22 @@ class TestCrewKickoffMapping:
 
         workflow = stub_handler.stopped_workflows[0]
         assert "artificial intelligence" in workflow.final_output
+
+    def test_workflow_captures_empty_output(self, stub_handler):
+        """Workflow should capture empty output without dropping it."""
+        crewai_module._handler = stub_handler
+
+        mock_crew = mock.MagicMock()
+        mock_crew.name = "Empty Output Crew"
+
+        result = mock.MagicMock()
+        result.raw = ""
+        mock_wrapped = mock.MagicMock(return_value=result)
+
+        crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
+
+        workflow = stub_handler.stopped_workflows[0]
+        assert workflow.final_output == ""
 
     def test_workflow_error_handling(self, stub_handler):
         """Workflow should capture errors on failure."""
@@ -264,6 +298,25 @@ class TestAgentExecuteTaskMapping:
         agent = stub_handler.started_agents[0]
         assert "Python best practices" in agent.input_context
 
+    def test_agent_captures_task_from_args(self, stub_handler):
+        """AgentInvocation should capture task passed positionally."""
+        crewai_module._handler = stub_handler
+
+        mock_agent = mock.MagicMock()
+        mock_agent.role = "Writer"
+
+        mock_task = mock.MagicMock()
+        mock_task.description = "Positional task"
+
+        mock_wrapped = mock.MagicMock(return_value="Done")
+
+        crewai_module._wrap_agent_execute_task(
+            mock_wrapped, mock_agent, (mock_task,), {}
+        )
+
+        agent = stub_handler.started_agents[0]
+        assert "Positional task" in agent.input_context
+
     def test_agent_captures_result(self, stub_handler):
         """AgentInvocation should capture execution result."""
         crewai_module._handler = stub_handler
@@ -282,6 +335,25 @@ class TestAgentExecuteTaskMapping:
 
         agent = stub_handler.stopped_agents[0]
         assert "20% growth" in agent.output_result
+
+    def test_agent_captures_empty_result(self, stub_handler):
+        """AgentInvocation should capture empty output without dropping it."""
+        crewai_module._handler = stub_handler
+
+        mock_agent = mock.MagicMock()
+        mock_agent.role = "Analyst"
+
+        mock_task = mock.MagicMock()
+        mock_task.description = "Analyze data"
+
+        mock_wrapped = mock.MagicMock(return_value="")
+
+        crewai_module._wrap_agent_execute_task(
+            mock_wrapped, mock_agent, (), {"task": mock_task}
+        )
+
+        agent = stub_handler.stopped_agents[0]
+        assert agent.output_result == ""
 
     def test_agent_error_handling(self, stub_handler):
         """AgentInvocation should capture errors on failure."""
@@ -414,6 +486,23 @@ class TestTaskExecuteMapping:
         step = stub_handler.stopped_steps[0]
         assert "Revenue: $1M" in step.output_data
 
+    def test_step_captures_empty_output(self, stub_handler):
+        """Step should capture empty output without dropping it."""
+        crewai_module._handler = stub_handler
+
+        mock_task = mock.MagicMock()
+        mock_task.description = "Calculate metrics"
+        mock_task.expected_output = "Metrics report"
+        mock_task.agent = mock.MagicMock()
+        mock_task.agent.role = "Analyst"
+
+        mock_wrapped = mock.MagicMock(return_value="")
+
+        crewai_module._wrap_task_execute(mock_wrapped, mock_task, (), {})
+
+        step = stub_handler.stopped_steps[0]
+        assert step.output_data == ""
+
     def test_step_error_handling(self, stub_handler):
         """Step should capture errors on failure."""
         crewai_module._handler = stub_handler
@@ -486,6 +575,20 @@ class TestBaseToolRunMapping:
         assert "path" in tool_call.arguments
         assert "/tmp/data.txt" in tool_call.arguments
 
+    def test_tool_call_captures_positional_arguments(self, stub_handler):
+        """ToolCall should capture positional arguments."""
+        crewai_module._handler = stub_handler
+
+        mock_tool = mock.MagicMock()
+        mock_tool.name = "positional_tool"
+
+        mock_wrapped = mock.MagicMock(return_value="Done")
+
+        crewai_module._wrap_tool_run(mock_wrapped, mock_tool, ("arg1",), {})
+
+        tool_call = stub_handler.started_tool_calls[0]
+        assert "arg1" in tool_call.arguments
+
     def test_tool_call_has_framework_and_system(self, stub_handler):
         """ToolCall should have framework and system set to 'crewai'."""
         crewai_module._handler = stub_handler
@@ -500,6 +603,23 @@ class TestBaseToolRunMapping:
         tool_call = stub_handler.started_tool_calls[0]
         assert tool_call.framework == "crewai"
         assert tool_call.system == "crewai"
+
+    def test_tool_call_has_unique_id_per_invocation(self, stub_handler):
+        """ToolCall should use a unique id for each invocation."""
+        crewai_module._handler = stub_handler
+
+        mock_tool = mock.MagicMock()
+        mock_tool.name = "unique_tool"
+
+        mock_wrapped = mock.MagicMock(return_value="Done")
+
+        crewai_module._wrap_tool_run(mock_wrapped, mock_tool, (), {})
+        crewai_module._wrap_tool_run(mock_wrapped, mock_tool, (), {})
+
+        assert len(stub_handler.started_tool_calls) == 2
+        first_id = stub_handler.started_tool_calls[0].id
+        second_id = stub_handler.started_tool_calls[1].id
+        assert first_id != second_id
 
     def test_tool_call_error_handling(self, stub_handler):
         """ToolCall should capture errors on failure."""
@@ -573,6 +693,22 @@ class TestStructuredToolInvokeMapping:
         tool_call = stub_handler.started_tool_calls[0]
         assert "table" in tool_call.arguments
         assert "users" in tool_call.arguments
+
+    def test_structured_tool_captures_positional_arguments(self, stub_handler):
+        """ToolCall from structured tool should capture positional arguments."""
+        crewai_module._handler = stub_handler
+
+        mock_tool = mock.MagicMock()
+        mock_tool.name = "structured_positional"
+
+        mock_wrapped = mock.MagicMock(return_value="Done")
+
+        crewai_module._wrap_structured_tool_invoke(
+            mock_wrapped, mock_tool, ("arg1",), {}
+        )
+
+        tool_call = stub_handler.started_tool_calls[0]
+        assert "arg1" in tool_call.arguments
 
     def test_structured_tool_error_handling(self, stub_handler):
         """ToolCall from structured tool should capture errors."""

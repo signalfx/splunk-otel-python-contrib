@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2025-11-25
+## [0.1.0] - 2026-01-14
 
 ### Added
 - Initial release of CrewAI instrumentation
@@ -17,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for `Agent.execute_task()` → `AgentInvocation` spans
 - Support for `BaseTool.run()` and `CrewStructuredTool.invoke()` → `ToolCall` spans
 - Integration with `splunk-otel-util-genai` for standardized GenAI telemetry
-- Proper trace context propagation using `contextvars`
 - Rich span attributes for all CrewAI components
 - Defensive instrumentation that doesn't break applications on errors
 
@@ -32,4 +31,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/signalfx/splunk-otel-python-contrib/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/signalfx/splunk-otel-python-contrib/releases/tag/v0.1.0
-
