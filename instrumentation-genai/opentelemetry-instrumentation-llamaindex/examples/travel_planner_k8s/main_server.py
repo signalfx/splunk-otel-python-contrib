@@ -473,7 +473,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
 
                     # Invoke the multi-agent workflow
                     try:
-                        result = asyncio.run(
+                        asyncio.run(
                             invoke_workflow(
                                 origin=origin,
                                 destination=destination,
@@ -494,7 +494,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
-                                result = loop.run_until_complete(
+                                loop.run_until_complete(
                                     invoke_workflow(
                                         origin=origin,
                                         destination=destination,
