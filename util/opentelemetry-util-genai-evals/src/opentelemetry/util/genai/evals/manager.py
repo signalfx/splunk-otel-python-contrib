@@ -151,15 +151,14 @@ class Manager(CompletionCallback):
         try:
             self._queue.put_nowait(invocation)
         except queue.Full:
-            # TODO: add queue size metric
-            # if hasattr(invocation, "span") and invocation.span and hasattr(invocation.span, "attributes"):
-            #     invocation.span.set_attribute("gen_ai.evaluation.error_type", "client_evaluation_queue_full")
+            invocation.evaluation_queue_error = "client_evaluation_queue_full"
             _LOGGER.warning(
                 "Evaluation queue is full, dropping invocation. Consider increasing queue size or evaluation throughput."
             )
-        except Exception:  # pragma: no cover - defensive
+        except Exception as exc :  # pragma: no cover - defensive
+            invocation.evaluation_queue_error = "client_evaluation_queue_error"
             _LOGGER.debug(
-                "Failed to enqueue invocation for evaluation", exc_info=True
+                "Failed to enqueue invocation for evaluation: %s", exc, exc_info=True
             )
 
     def wait_for_all(self, timeout: float | None = None) -> None:
