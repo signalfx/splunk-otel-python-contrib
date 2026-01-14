@@ -1,22 +1,27 @@
-OpenTelemetry OpenAI Agents Manual Instrumentation Example
-==========================================================
+Multi-Agent Travel Planner Example
+==================================
 
-This example demonstrates how to manually configure the OpenTelemetry SDK
-alongside the OpenAI Agents instrumentation, with support for OAuth2
+This example demonstrates a multi-agent travel planning workflow using the
+OpenAI Agents SDK with OpenTelemetry instrumentation and support for OAuth2
 authentication to custom LLM endpoints.
 
 Features
 --------
 
-- Manual OpenTelemetry SDK configuration (traces, metrics, logs)
+- Multi-agent architecture with specialized agents (Flight, Hotel, Activity, Coordinator)
+- Manual OpenTelemetry SDK configuration (traces, metrics, logs, events)
 - OAuth2 token management for custom LLM endpoints
 - Backward compatible with standard OpenAI API
 - Kubernetes CronJob deployment ready
 - Docker containerization support
 
-Running `main.py <main.py>`_ produces spans for the end-to-end agent run,
-including tool invocations and model generations. Spans are exported through
-OTLP/gRPC to the endpoint configured in the environment.
+Agents
+------
+
+- **Flight Specialist**: Searches for flight options
+- **Hotel Specialist**: Recommends accommodations
+- **Activity Specialist**: Curates local activities and experiences
+- **Travel Coordinator**: Orchestrates and synthesizes the final itinerary
 
 Setup
 -----
@@ -46,23 +51,22 @@ Setup
        python3 -m venv .venv
        source .venv/bin/activate
        pip install -r requirements.txt
-       pip install ../../  # Install local instrumentation package
+       pip install -e ../../  # Install local instrumentation package
 
 Run
 ---
 
-Execute the sample with ``dotenv`` so the environment variables from ``.env``
-are applied:
+Execute the travel planner with manual instrumentation:
 
 ::
 
-    dotenv run -- python main.py
+    python main.py --manual-instrumentation
 
-Or run directly if environment variables are already set:
+Or run with zero-code instrumentation:
 
 ::
 
-    python main.py
+    opentelemetry-instrument python main.py
 
 Expected Output
 ---------------
@@ -70,10 +74,30 @@ Expected Output
 ::
 
     [AUTH] Using OAuth2 authentication
-    
-    [SUCCESS] Agent execution completed
-    Agent response:
-    Based on the weather forecast for Barcelona...
+    ✓ Manual OpenTelemetry instrumentation configured
+    🌍 Multi-Agent Travel Planner
+    ============================================================
+
+    Origin: Seattle
+    Destination: Paris
+    Dates: 2024-02-15 to 2024-02-22
+
+    ✈️  Flight Specialist - Searching for flights...
+    Result: Top choice: SkyLine non-stop service Seattle->Paris...
+
+    🏨 Hotel Specialist - Searching for hotels...
+    Result: Grand Meridian near the historic centre...
+
+    🎭 Activity Specialist - Curating activities...
+    Result: Signature experiences in Paris...
+
+    📝 Coordinator - Creating final itinerary...
+
+    ============================================================
+    ✅ Travel Itinerary Complete!
+    ============================================================
+
+    [Final itinerary output...]
 
     ================================================================================
     TELEMETRY OUTPUT BELOW
@@ -82,6 +106,7 @@ Expected Output
     [FLUSH] Starting telemetry flush
     [FLUSH] Flushing traces (timeout=30s)
     [FLUSH] Flushing metrics (timeout=30s)
+    [FLUSH] Flushing logs (timeout=30s)
     [FLUSH] Telemetry flush complete
 
 Docker
@@ -92,8 +117,8 @@ Build and run with Docker:
 ::
 
     # From repository root
-    docker build -f instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/examples/manual/Dockerfile -t openai-agents-manual .
-    docker run --env-file .env openai-agents-manual
+    docker build -f instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/examples/travel-planner/Dockerfile -t openai-agents-travel-planner .
+    docker run --env-file .env openai-agents-travel-planner
 
 Kubernetes
 ----------
@@ -117,8 +142,8 @@ Project Structure
 
 ::
 
-    manual/
-    ├── main.py              # Main example with OAuth2 support
+    travel-planner/
+    ├── main.py              # Multi-agent travel planner with OAuth2 support
     ├── util/
     │   ├── __init__.py
     │   └── oauth2_token_manager.py  # OAuth2 token management
