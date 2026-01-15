@@ -125,7 +125,7 @@ class TestThreadSafety:
 
             mock_wrapped = mock.MagicMock(return_value=f"Tool-{tool_id} result")
 
-            crewai_module._wrap_tool_run(
+            crewai_module._wrap_tool_call(
                 mock_wrapped, mock_tool, (), {"param": f"value-{tool_id}"}
             )
 
@@ -184,7 +184,7 @@ class TestThreadSafety:
             mock_tool = mock.MagicMock()
             mock_tool.name = f"Tool-{tool_id}"
             mock_wrapped = mock.MagicMock(return_value="Tool result")
-            crewai_module._wrap_tool_run(mock_wrapped, mock_tool, (), {})
+            crewai_module._wrap_tool_call(mock_wrapped, mock_tool, (), {})
             return ("tool", tool_id)
 
         # Execute mixed operations concurrently
@@ -299,7 +299,7 @@ class TestThreadSafety:
             mock_tool = mock.MagicMock()
             mock_tool.name = "Concurrent Tool"
             mock_wrapped = mock.MagicMock(return_value="Tool result")
-            crewai_module._wrap_tool_run(mock_wrapped, mock_tool, (), {})
+            crewai_module._wrap_tool_call(mock_wrapped, mock_tool, (), {})
             return "tool"
 
         # Execute all operations at the same time using barrier

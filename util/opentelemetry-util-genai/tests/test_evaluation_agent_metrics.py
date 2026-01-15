@@ -15,7 +15,7 @@ class _RecordingHistogram:
     def record(self, value: float, attributes=None, context=None):  # type: ignore[override]
         attrs: Dict[str, Any] = {}
         if isinstance(attributes, dict):
-            from typing import cast
+            from typing import cast  # noqa: PLC0415
 
             attrs.update(cast(Dict[str, Any], attributes))
         self.records.append((value, attrs, context))
@@ -37,8 +37,10 @@ def test_agent_evaluation_metric_includes_agent_identity():
     assert value == 0.9
     # core evaluation attrs
     assert attrs["gen_ai.evaluation.name"] == "bias"
-    # agent identity propagated
+    # agent identity propagated (agent.id removed from evaluation metrics)
     assert attrs["gen_ai.agent.name"] == "router"
-    assert attrs["gen_ai.agent.id"] == agent.agent_id
+    assert (
+        "gen_ai.agent.id" not in attrs
+    )  # Should not be present in evaluation metrics
     # pass boolean derived from label
     assert attrs.get("gen_ai.evaluation.passed") is True

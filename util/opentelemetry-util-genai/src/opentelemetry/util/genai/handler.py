@@ -109,6 +109,7 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
+    OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,9 +159,10 @@ class TelemetryHandler:
         evaluation_sample_rate = settings.evaluation_sample_rate
         self._sampler = TraceIdRatioBased(evaluation_sample_rate)
 
-        # Fixed canonical evaluation histograms (no longer dynamic):
-        # gen_ai.evaluation.(relevance|hallucination|sentiment|toxicity|bias)
-        self._evaluation_histograms: dict[str, Any] = {}
+        # Check if single metric mode is enabled
+        use_single_metric = is_truthy_env(
+            os.getenv(OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC)
+        )
 
         _CANONICAL_METRICS = {
             "relevance",
@@ -170,24 +172,49 @@ class TelemetryHandler:
             "bias",
         }
 
-        def _get_eval_histogram(canonical_name: str):
-            name = canonical_name.strip().lower()
-            if name not in _CANONICAL_METRICS:
-                return None  # ignore unknown metrics (no emission)
-            full_name = f"gen_ai.evaluation.{name}"
-            hist = self._evaluation_histograms.get(full_name)
-            if hist is not None:
+        if use_single_metric:
+            # Single evaluation histogram for all evaluation types:
+            # gen_ai.evaluation.score (with gen_ai.evaluation.name attribute)
+            self._evaluation_histogram: Any = None
+
+            def _get_eval_histogram(canonical_name: str):
+                name = canonical_name.strip().lower()
+                if name not in _CANONICAL_METRICS:
+                    return None  # ignore unknown metrics (no emission)
+                # Return the same histogram for all metrics
+                if self._evaluation_histogram is None:
+                    try:
+                        self._evaluation_histogram = meter.create_histogram(
+                            name="gen_ai.evaluation.score",
+                            unit="1",
+                            description="GenAI evaluation score (0-1 where applicable), distinguished by gen_ai.evaluation.name attribute",
+                        )
+                    except Exception:  # pragma: no cover - defensive
+                        return None
+                return self._evaluation_histogram
+        else:
+            # Multiple evaluation histograms (legacy behavior):
+            # gen_ai.evaluation.(relevance|hallucination|sentiment|toxicity|bias)
+            self._evaluation_histograms: dict[str, Any] = {}
+
+            def _get_eval_histogram(canonical_name: str):
+                name = canonical_name.strip().lower()
+                if name not in _CANONICAL_METRICS:
+                    return None  # ignore unknown metrics (no emission)
+                full_name = f"gen_ai.evaluation.{name}"
+                hist = self._evaluation_histograms.get(full_name)
+                if hist is not None:
+                    return hist
+                try:
+                    hist = meter.create_histogram(
+                        name=full_name,
+                        unit="1",
+                        description=f"GenAI evaluation metric '{name}' (0-1 score where applicable)",
+                    )
+                    self._evaluation_histograms[full_name] = hist
+                except Exception:  # pragma: no cover - defensive
+                    return None
                 return hist
-            try:
-                hist = meter.create_histogram(
-                    name=full_name,
-                    unit="1",
-                    description=f"GenAI evaluation metric '{name}' (0-1 score where applicable)",
-                )
-                self._evaluation_histograms[full_name] = hist
-            except Exception:  # pragma: no cover - defensive
-                return None
-            return hist
 
         self._get_eval_histogram = _get_eval_histogram  # type: ignore[attr-defined]
 
