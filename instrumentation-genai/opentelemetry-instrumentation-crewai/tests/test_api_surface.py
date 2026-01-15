@@ -1,7 +1,5 @@
 """Smoke tests for CrewAI API surface expected by instrumentation."""
 
-import pytest
-
 from crewai import Agent, Crew, Task
 from crewai.tools.base_tool import BaseTool
 from crewai.tools.structured_tool import CrewStructuredTool
