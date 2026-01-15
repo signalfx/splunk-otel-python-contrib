@@ -651,6 +651,7 @@ class TestStructuredToolInvokeMapping:
 
         mock_wrapped = mock.MagicMock(return_value=[{"id": 1}])
 
+        crewai_module._wrap_tool_run(
             mock_wrapped, mock_tool, (), {"table": "users", "limit": 10}
         )
 
