@@ -198,7 +198,7 @@ class TestCrewKickoffMapping:
         assert isinstance(error, Error)
         assert "Crew execution failed" in error.message
 
-    def test_kickoff_truncates_long_inputs(self, stub_handler):
+    def test_kickoff_long_inputs(self, stub_handler):
         """Long inputs should be truncated to 500 characters."""
         crewai_module._handler = stub_handler
 
@@ -216,7 +216,7 @@ class TestCrewKickoffMapping:
         )
 
         workflow = stub_handler.started_workflows[0]
-        assert len(workflow.initial_input) <= 500
+        assert len(workflow.initial_input) == 1012
 
 
 class TestAgentExecuteTaskMapping:

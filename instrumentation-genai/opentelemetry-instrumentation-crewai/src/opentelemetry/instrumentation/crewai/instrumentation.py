@@ -148,7 +148,7 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         if inputs is None and args:
             inputs = args[0]
         if inputs is not None:
-            workflow.initial_input = str(inputs)[:500]
+            workflow.initial_input = str(inputs)
 
         # Start the workflow
         handler.start_workflow(workflow)
@@ -163,7 +163,7 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         try:
             if result:
                 if hasattr(result, "raw"):
-                    workflow.final_output = str(result.raw)[:1000]
+                    workflow.final_output = str(result.raw)
 
             # Stop the workflow successfully
             handler.stop_workflow(workflow)
@@ -202,7 +202,7 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         if task is None and args:
             task = args[0]
         if task is not None and hasattr(task, "description"):
-            agent_invocation.input_context = str(task.description)[:500]
+            agent_invocation.input_context = str(task.description)
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)
@@ -216,7 +216,7 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         # Capture result and metrics
         try:
             if result is not None:
-                agent_invocation.output_result = str(result)[:1000]
+                agent_invocation.output_result = str(result)
 
             # Extract token usage if available
             if hasattr(instance, "_token_process"):
@@ -263,10 +263,10 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
 
         # Set step fields from task
         if hasattr(instance, "description"):
-            step.description = instance.description[:500]
-            step.input_data = instance.description[:500]
+            step.description = instance.description
+            step.input_data = instance.description
         if hasattr(instance, "expected_output"):
-            step.objective = instance.expected_output[:500]
+            step.objective = instance.expected_output
         if hasattr(instance, "agent") and hasattr(instance.agent, "role"):
             step.assigned_agent = instance.agent.role
 
@@ -282,7 +282,7 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         # Capture result
         try:
             if result is not None:
-                step.output_data = str(result)[:1000]
+                step.output_data = str(result)
 
             # Stop the step successfully
             handler.stop_step(step)
