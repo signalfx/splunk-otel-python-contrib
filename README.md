@@ -291,7 +291,17 @@ inv.output_messages = [OutputMessage(role="assistant", parts=[Text("Hi!")], fini
 handler.stop_llm(inv)
 ```
 
-## 16. Linting and Formatting
+Additionally, for `aidefense`
+
+```bash
+pip install -e instrumentation-genai/opentelemetry-instrumentation-aidefense
+
+export AI_DEFENSE_API_KEY="your-ai-defense-key"
+
+python instrumentation-genai/opentelemetry-instrumentation-aidefense/examples/multi_agent_travel_planner/main.py
+```
+
+## 15. Linting and Formatting
 
 This project uses [pre-commit](https://pre-commit.com/) hooks to automatically check and fix linting and formatting issues before committing.
 
