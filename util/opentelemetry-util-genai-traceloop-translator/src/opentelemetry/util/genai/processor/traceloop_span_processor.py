@@ -47,7 +47,14 @@ from .message_reconstructor import reconstruct_messages_from_traceloop
 _ENV_RULES = "OTEL_GENAI_SPAN_TRANSFORM_RULES"
 
 # LLM span detection constants
-_LLM_OPERATIONS = ["chat", "completion", "embedding", "embed"]
+_LLM_OPERATIONS = [
+    "chat",
+    "completion",
+    "embedding",
+    "embed",
+    "invoke_agent",
+    "create_agent",
+]
 _EXCLUDE_SPAN_PATTERNS = [
     "__start__",
     "__end__",
@@ -732,14 +739,15 @@ class TraceloopSpanProcessor(SpanProcessor):
         """
         Detect if this is an actual LLM API call span that should trigger evaluations.
 
-        Simplified logic: Check if gen_ai.operation.name contains "chat" or other LLM operations.
+        Simplified logic: Check if gen_ai.operation.name contains "chat" or other LLM operations
+        (including "invoke_agent" and "create_agent").
         This is the most reliable way to identify actual LLM API calls vs orchestration spans.
 
-        This avoids creating synthetic spans and running evaluations on workflow/task/agent
+        This avoids creating synthetic spans and running evaluations on workflow/task
         orchestration spans, significantly reducing span explosion.
 
-        Returns True ONLY for actual LLM API call spans (gen_ai.operation.name = "chat", "completion", "embedding").
-        Returns False for workflow orchestration, utility tasks, agent coordination, routing, etc.
+        Returns True ONLY for actual LLM/Agent call spans.
+        Returns False for workflow orchestration, utility tasks, routing, etc.
         """
         _logger = logging.getLogger(__name__)
 
@@ -876,6 +884,55 @@ class TraceloopSpanProcessor(SpanProcessor):
                                             ],
                                         )
                                     )
+                    except json.JSONDecodeError:
+                        pass
+
+                if not input_messages:
+                    # Traceloop stores raw input string in kwargs
+                    try:
+                        parsed = json.loads(original_input_data)
+                        if isinstance(parsed, dict) and "kwargs" in parsed:
+                            content = parsed["kwargs"]
+                            # Convert dict/kwargs to string representation for Agent input
+                            if isinstance(content, (dict, list)):
+                                content_str = json.dumps(content)
+                            else:
+                                content_str = str(content)
+
+                            input_messages = [
+                                InputMessage(
+                                    role="user",
+                                    parts=[
+                                        Text(
+                                            content=content_str,
+                                            type="text",
+                                        )
+                                    ],
+                                )
+                            ]
+                        elif isinstance(parsed, dict) and "args" in parsed:
+                            # Handle args list (positional arguments)
+                            args = parsed["args"]
+                            if args and isinstance(args, list):
+                                content_parts = []
+                                for arg in args:
+                                    if isinstance(arg, (dict, list)):
+                                        content_parts.append(json.dumps(arg))
+                                    else:
+                                        content_parts.append(str(arg))
+                                content_str = " ".join(content_parts)
+
+                                input_messages = [
+                                    InputMessage(
+                                        role="user",
+                                        parts=[
+                                            Text(
+                                                content=content_str,
+                                                type="text",
+                                            )
+                                        ],
+                                    )
+                                ]
                     except json.JSONDecodeError:
                         # Plain text string - create single InputMessage
                         input_messages = [
@@ -1126,34 +1183,44 @@ class TraceloopSpanProcessor(SpanProcessor):
                                 span.name,
                                 operation_name,
                             )
-                        # elif span_kind_lower == "task":
-                        #     # Tasks with agent-like names should be treated as agent invocations
-                        #     # Check if the task is associated with an agent
-                        #     agent_name = mutated.get("gen_ai.agent.name") or original.get("gen_ai.agent.name")
-                        #     if agent_name and not any(
-                        #         exclude in str(agent_name).lower()
-                        #         for exclude in ["should_continue", "__start__", "__end__", "model", "tools"]
-                        #     ):
-                        #         operation_name = "invoke_agent"
-                        #         mutated["gen_ai.operation.name"] = operation_name
-                        #         _logger.debug(
-                        #             "[TL_PROCESSOR] Set operation name for task span with agent: %s (agent=%s) → %s",
-                        #             span.name,
-                        #             agent_name,
-                        #             operation_name,
-                        #         )
+                    # Check for explicit agent attributes if span_kind missed it
+                    elif (
+                        mutated.get("gen_ai.agent.name")
+                        or mutated.get("gen_ai.agent.id")
+                        or original.get("gen_ai.agent.name")
+                        or original.get("gen_ai.agent.id")
+                    ):
+                        # Ensure we don't overwrite if it's already identified as something specific like chat
+                        if (
+                            not operation_name
+                            or operation_name == "completion"
+                            or operation_name == "unknown"
+                        ):
+                            operation_name = "invoke_agent"
+                            mutated["gen_ai.operation.name"] = operation_name
+                            _logger.debug(
+                                "[TL_PROCESSOR] Set operation name for inferred agent span: %s → %s",
+                                span.name,
+                                operation_name,
+                            )
+                        else:
+                            print(
+                                f"DEBUG: Not setting invoke_agent because operation_name is already {operation_name}"
+                            )
 
                     is_llm_operation = any(
                         op in str(operation_name).lower()
                         for op in ["chat", "completion", "embedding", "embed"]
                     )
 
+                    # Treat Traceloop "agent" spans as invoke_agent operations
                     is_agent_operation = any(
                         op in str(operation_name).lower()
                         for op in ["invoke_agent", "create_agent"]
                     ) or any(
                         op in str(span_kind).lower()
-                        for op in ["agent", "workflow"]
+                        # Removed workflow from here, handled separatedly
+                        for op in ["agent"]
                     )
 
                     is_task_operation = any(
@@ -1172,6 +1239,27 @@ class TraceloopSpanProcessor(SpanProcessor):
                         self._reconstruct_and_set_messages(
                             original, mutated, span.name, span_id
                         )
+
+                        # Populate input_context and output_result for agent operations from reconstructed messages
+                        if is_agent_operation:
+                            cached_msgs = self._message_cache.get(span_id)
+                            if cached_msgs:
+                                input_messages, output_messages = cached_msgs
+                                if input_messages:
+                                    mutated["input_context"] = " ".join(
+                                        part.content
+                                        for msg in input_messages
+                                        for part in msg.parts
+                                        if hasattr(part, "content")
+                                    )
+                                if output_messages:
+                                    mutated["output_result"] = " ".join(
+                                        part.content
+                                        for msg in output_messages
+                                        for part in msg.parts
+                                        if hasattr(part, "content")
+                                    )
+
                         _logger.debug(
                             "[TL_PROCESSOR] Messages reconstructed for LLM span: operation=%s, span=%s, span_id=%s",
                             operation_name,
@@ -1694,6 +1782,15 @@ class TraceloopSpanProcessor(SpanProcessor):
                     or base_attrs.get("prompt")
                     or base_attrs.get("query")
                 )
+                # Fallback: use original untransformed data (e.g. traceloop.entity.input)
+                # This is critical when attributes were stripped and message reconstruction failed (no langchain)
+                if not invocation.input_context and original_input_data:
+                    if isinstance(original_input_data, (dict, list)):
+                        invocation.input_context = json.dumps(
+                            original_input_data
+                        )
+                    else:
+                        invocation.input_context = str(original_input_data)
 
             # Extract output from messages or attributes
             if output_messages:
@@ -1712,6 +1809,14 @@ class TraceloopSpanProcessor(SpanProcessor):
                     or base_attrs.get("response")
                     or base_attrs.get("answer")
                 )
+                # Fallback: use original untransformed data (e.g. traceloop.entity.output)
+                if not invocation.output_result and original_output_data:
+                    if isinstance(original_output_data, (dict, list)):
+                        invocation.output_result = json.dumps(
+                            original_output_data
+                        )
+                    else:
+                        invocation.output_result = str(original_output_data)
 
             # Skip if no input/output available for evaluation
             if not invocation.input_context and not invocation.output_result:

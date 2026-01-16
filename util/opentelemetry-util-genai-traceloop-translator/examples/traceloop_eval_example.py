@@ -103,8 +103,9 @@ def generate_signature(joke: str):
 def joke_workflow():
     eng_joke = create_joke()
     # pirate_joke = translate_joke_to_pirate(eng_joke)
-    print(translate_joke_to_pirate(eng_joke))
-    signature = generate_signature(eng_joke)
+    # Use keyword arguments to ensure Traceloop captures the input correctly
+    print(translate_joke_to_pirate(joke=eng_joke))
+    signature = generate_signature(joke=eng_joke)
     print(eng_joke + "\n\n" + signature)
 
 
