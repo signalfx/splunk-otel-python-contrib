@@ -78,6 +78,12 @@ class _WeaviateConnectionWrapper:
         if connection_url:
             connection_host, connection_port = parse_url_to_host_port(connection_url)
 
+        if not connection_url and "connection_params" in kwargs:
+            connection_params = kwargs["connection_params"]
+            if hasattr(connection_params, "http"):
+                connection_host = connection_params.http.host
+                connection_port = connection_params.http.port
+
         # Call the wrapped method to create the client
         return_value = wrapped(*args, **kwargs)
 
@@ -119,7 +125,10 @@ class _WeaviateOperationWrapper:
     """A wrapper that intercepts Weaviate client operations to create database spans with Weaviate attributes."""
 
     def __init__(
-        self, tracer: Tracer, duration_histogram: Histogram, wrap_properties: Optional[Dict[str, str]] = None
+        self,
+        tracer: Tracer,
+        duration_histogram: Histogram,
+        wrap_properties: Optional[Dict[str, str]] = None,
     ) -> None:
         self.tracer = tracer
         self.duration_histogram = duration_histogram
@@ -142,7 +151,7 @@ class _WeaviateOperationWrapper:
             getattr(wrapped, "__name__", "unknown"),
         )
         name = f"{SPAN_NAME_PREFIX}.{name}"
-        
+
         # Extract metadata before starting span (needed for both span attributes and metrics)
         module_name = self.wrap_properties.get("module", "")
         function_name = self.wrap_properties.get("function", "")
@@ -151,7 +160,7 @@ class _WeaviateOperationWrapper:
         collection_name = extract_collection_name(
             wrapped, instance, args, kwargs, module_name, function_name
         )
-        
+
         with self.tracer.start_as_current_span(name, kind=SpanKind.CLIENT) as span:
             span.set_attribute(DbAttributes.DB_SYSTEM_NAME, "weaviate")
 
@@ -171,7 +180,7 @@ class _WeaviateOperationWrapper:
                 return_value = wrapped(*args, **kwargs)
             finally:
                 duration_ms = (time.perf_counter() - start_time) * 1000
-                
+
                 # Build metric attributes
                 metric_attributes: Dict[str, AttributeValue] = {
                     "db.system": "weaviate",
@@ -184,17 +193,15 @@ class _WeaviateOperationWrapper:
                     metric_attributes["server.address"] = connection_host
                 if connection_port is not None:
                     metric_attributes["server.port"] = connection_port
-                
+
                 # Record the duration metric with span context to link metric to trace
                 try:
                     context = trace.set_span_in_context(span)
                 except (TypeError, ValueError, AttributeError):
                     context = None
-                
+
                 self.duration_histogram.record(
-                    duration_ms, 
-                    attributes=metric_attributes,
-                    context=context
+                    duration_ms, attributes=metric_attributes, context=context
                 )
 
             # Extract documents from similarity search operations
@@ -267,11 +274,11 @@ class _WeaviateOperationWrapper:
                             doc["score"] = metadata.score
 
                     documents.append(doc)
-            elif "data" in response:
+            elif hasattr(response, "data"):
                 # Handle GraphQL responses
-                for response_key in response["data"].keys():
-                    for collection in response["data"][response_key]:
-                        for obj in response["data"][response_key][collection]:
+                for response_key in response.data.keys():
+                    for collection in response.data[response_key]:
+                        for obj in response.data[response_key][collection]:
                             doc: dict[str, Any] = {}
                             doc["content"] = dict(obj)
                             del doc["content"]["_additional"]

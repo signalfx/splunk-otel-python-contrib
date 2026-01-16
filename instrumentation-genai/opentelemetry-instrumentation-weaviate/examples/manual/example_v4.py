@@ -70,11 +70,7 @@ console_exporter = ConsoleSpanExporter()
 console_processor = BatchSpanProcessor(console_exporter)
 tracer_provider.add_span_processor(console_processor)
 
-# Set up the meter provider for metrics
-meter_provider = MeterProvider(resource=resource)
-metrics.set_meter_provider(meter_provider)
-
-# Add OTLP metric exporter
+# Set up metric exporters and readers
 otlp_metric_exporter = OTLPMetricExporter(
     endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317"),
     headers=(),
@@ -83,15 +79,19 @@ otlp_metric_reader = PeriodicExportingMetricReader(
     otlp_metric_exporter,
     export_interval_millis=5000,  # Export every 5 seconds
 )
-meter_provider.add_metric_reader(otlp_metric_reader)
 
-# Add console metric exporter to see metrics in terminal
 console_metric_exporter = ConsoleMetricExporter()
 console_metric_reader = PeriodicExportingMetricReader(
     console_metric_exporter,
     export_interval_millis=5000,
 )
-meter_provider.add_metric_reader(console_metric_reader)
+
+# Create meter provider with metric readers
+meter_provider = MeterProvider(
+    resource=resource,
+    metric_readers=[otlp_metric_reader, console_metric_reader],
+)
+metrics.set_meter_provider(meter_provider)
 
 # Now instrument Weaviate with both trace and metric providers
 WeaviateInstrumentor().instrument(

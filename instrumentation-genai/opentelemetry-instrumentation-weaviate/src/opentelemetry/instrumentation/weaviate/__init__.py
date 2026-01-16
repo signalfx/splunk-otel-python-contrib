@@ -52,7 +52,7 @@ from opentelemetry.instrumentation.weaviate.version import __version__
 # Potentially not needed.
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import Tracer, get_tracer
-from opentelemetry.metrics import Meter, get_meter
+from opentelemetry.metrics import get_meter
 
 from .mapping import MAPPING_V3, MAPPING_V4
 from .wrapper import (
@@ -94,7 +94,7 @@ class WeaviateInstrumentor(BaseInstrumentor):
             meter_provider,
             schema_url=Schemas.V1_28_0.value,
         )
-        
+
         # Create the duration histogram once to be shared across all wrappers
         duration_histogram = meter.create_histogram(
             name="db.client.operation.duration",
@@ -118,12 +118,13 @@ class WeaviateInstrumentor(BaseInstrumentor):
         if weaviate_version == WEAVIATE_V4:
             from .mapping import CONNECTION_WRAPPING
 
+            connection_wrapper = _WeaviateConnectionWrapper(tracer)
             for conn_wrap in CONNECTION_WRAPPING:
                 try:
                     wrap_function_wrapper(
                         module=conn_wrap["module"],
                         name=conn_wrap["name"],
-                        wrapper=_WeaviateConnectionWrapper(tracer),
+                        wrapper=connection_wrapper,
                     )
                 except (ImportError, AttributeError):
                     # Connection function might not exist in this version
@@ -135,7 +136,9 @@ class WeaviateInstrumentor(BaseInstrumentor):
             wrap_function_wrapper(
                 module=to_wrap["module"],
                 name=name,
-                wrapper=_WeaviateOperationWrapper(tracer, duration_histogram, wrap_properties=to_wrap),
+                wrapper=_WeaviateOperationWrapper(
+                    tracer, duration_histogram, wrap_properties=to_wrap
+                ),
             )
 
     def _uninstrument(self, **kwargs: Any) -> None:
