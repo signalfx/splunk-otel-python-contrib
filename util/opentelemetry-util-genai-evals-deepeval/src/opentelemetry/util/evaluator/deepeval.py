@@ -25,10 +25,6 @@ from typing import Any, Iterable, Mapping, Sequence
 import openai
 
 from opentelemetry.util.genai.evals.base import Evaluator
-from opentelemetry.util.genai.evals.monitoring import (
-    record_client_token_usage,
-    time_client_operation,
-)
 from opentelemetry.util.genai.evals.registry import (
     EvaluatorRegistration,
     register_evaluator,
@@ -141,49 +137,6 @@ def _safe_float(value: Any) -> float | None:
         except ValueError:
             return None
     return None
-
-
-def _extract_token_usage_from_evaluation(
-    evaluation: Any,
-) -> tuple[int | None, int | None]:
-    """Best-effort token usage extraction for LLM-as-a-judge calls.
-
-    Deepeval may surface structured token usage under per-metric fields (often
-    named ``evaluation_cost``). We only emit token usage when values are
-    clearly provided as non-negative integers (we do not guess).
-    """
-
-    total_input: int | None = None
-    total_output: int | None = None
-
-    def _as_int(value: Any) -> int | None:
-        if isinstance(value, bool):  # bool is an int subclass
-            return None
-        if isinstance(value, int):
-            return value if value >= 0 else None
-        return None
-
-    def _read_mapping(obj: Any) -> tuple[int | None, int | None]:
-        if not isinstance(obj, MappingABC):
-            return None, None
-        input_val = obj.get("input_tokens") or obj.get("prompt_tokens")
-        output_val = obj.get("output_tokens") or obj.get("completion_tokens")
-        return _as_int(input_val), _as_int(output_val)
-
-    try:
-        test_results = getattr(evaluation, "test_results", []) or []
-    except Exception:
-        return None, None
-    for test in test_results:
-        metrics_data = getattr(test, "metrics_data", []) or []
-        for metric in metrics_data:
-            cost = getattr(metric, "evaluation_cost", None)
-            in_tok, out_tok = _read_mapping(cost)
-            if in_tok is not None:
-                total_input = (total_input or 0) + in_tok
-            if out_tok is not None:
-                total_output = (total_output or 0) + out_tok
-    return total_input, total_output
 
 
 def _build_metric_context(metric: Any, test: Any) -> _MetricContext:
@@ -627,9 +580,8 @@ class DeepevalEvaluator(Evaluator):
 
         # Instantiate metrics
         try:
-            evaluation_model = self._default_model()
             metrics, skipped_results = _instantiate_metrics(
-                metric_specs, test_case, evaluation_model
+                metric_specs, test_case, self._default_model()
             )
         except Exception as exc:  # pragma: no cover - defensive
             return _EvalPreparation(
@@ -681,59 +633,10 @@ class DeepevalEvaluator(Evaluator):
         if prep_result.early_return is not None:
             return prep_result.early_return
 
-        # Set up monitoring for LLM-as-a-judge calls
-        provider_name = os.getenv("DEEPEVAL_LLM_PROVIDER") or "openai"
-        request_model = self._get_request_model()
-        extra_attrs = {
-            "gen_ai.evaluation.evaluator.name": "deepeval",
-            "gen_ai.invocation.type": invocation_type,
-        }
-
-        def finish_op(_error_type=None):
-            return None
-
-        try:
-            _, finish_op = time_client_operation(
-                meter_provider=getattr(self, "_otel_meter_provider", None),
-                operation_name="chat",
-                provider_name=provider_name,
-                request_model=request_model,
-                extra_attributes=extra_attrs,
-            )
-        except Exception:  # pragma: no cover - defensive
-
-            def finish_op(_error_type=None):
-                return None
-
-        error_type: str | None = None
         try:
             evaluation = _run_deepeval(
                 prep_result.test_case, prep_result.metrics
             )
-            # Record token usage for monitoring
-            input_tokens, output_tokens = _extract_token_usage_from_evaluation(
-                evaluation
-            )
-            if input_tokens is not None:
-                record_client_token_usage(
-                    input_tokens,
-                    meter_provider=getattr(self, "_otel_meter_provider", None),
-                    token_type="input",
-                    operation_name="chat",
-                    provider_name=provider_name,
-                    request_model=request_model,
-                    extra_attributes=extra_attrs,
-                )
-            if output_tokens is not None:
-                record_client_token_usage(
-                    output_tokens,
-                    meter_provider=getattr(self, "_otel_meter_provider", None),
-                    token_type="output",
-                    operation_name="chat",
-                    provider_name=provider_name,
-                    request_model=request_model,
-                    extra_attributes=extra_attrs,
-                )
             genai_debug_log(
                 "evaluator.deepeval.complete",
                 invocation,
@@ -742,7 +645,6 @@ class DeepevalEvaluator(Evaluator):
         except (
             Exception
         ) as exc:  # pragma: no cover - dependency/runtime failure
-            error_type = type(exc).__name__
             genai_debug_log(
                 "evaluator.deepeval.error.execution",
                 invocation,
@@ -752,11 +654,6 @@ class DeepevalEvaluator(Evaluator):
                 *prep_result.skipped_results,
                 *self._error_results(str(exc), type(exc)),
             ]
-        finally:
-            try:
-                finish_op(error_type)
-            except Exception:
-                pass
         return [
             *prep_result.skipped_results,
             *self._convert_results(evaluation),
@@ -809,22 +706,6 @@ class DeepevalEvaluator(Evaluator):
         return None
 
     # removed; see deepeval_runner.run_evaluation
-
-    def _get_request_model(self) -> str | None:
-        """Get the request model name for monitoring attributes."""
-        evaluation_model = self._default_model()
-        if isinstance(evaluation_model, str):
-            return evaluation_model
-        for var in (
-            "DEEPEVAL_LLM_MODEL",
-            "DEEPEVAL_EVALUATION_MODEL",
-            "DEEPEVAL_MODEL",
-            "OPENAI_MODEL",
-        ):
-            value = os.getenv(var)
-            if value:
-                return value
-        return None
 
     def _convert_results(self, evaluation: Any) -> Sequence[EvaluationResult]:
         results: list[EvaluationResult] = []
