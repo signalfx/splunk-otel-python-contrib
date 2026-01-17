@@ -813,11 +813,32 @@ class DeepevalEvaluator(Evaluator):
         return "gpt-4o-mini"
 
 
+def _get_evaluator_mode() -> str:
+    """Get the evaluator mode from environment variable.
+
+    Returns 'batched' for DeepevalBatchedEvaluator or 'deepeval' for
+    the standard DeepevalEvaluator.
+    """
+    mode = os.getenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "deepeval"
+    )
+    return mode.lower().strip()
+
+
 def _factory(
     metrics: Iterable[str] | None = None,
     invocation_type: str | None = None,
     options: Mapping[str, Mapping[str, str]] | None = None,
 ) -> DeepevalEvaluator:
+    mode = _get_evaluator_mode()
+    if mode == "batched":
+        from .deepeval_batched import DeepevalBatchedEvaluator
+
+        return DeepevalBatchedEvaluator(
+            metrics,
+            invocation_type=invocation_type,
+            options=options,
+        )
     return DeepevalEvaluator(
         metrics,
         invocation_type=invocation_type,
