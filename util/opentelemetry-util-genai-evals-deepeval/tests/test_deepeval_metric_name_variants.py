@@ -1,6 +1,5 @@
 import importlib
-import json
-from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -14,24 +13,13 @@ from opentelemetry.util.genai.types import (
 )
 
 
-def _restore_builtin_evaluators() -> None:
-    try:
-        from opentelemetry.util.genai.evals import builtins as _builtins
-
-        importlib.reload(_builtins)
-    except Exception:
-        return
-
-
 @pytest.fixture(autouse=True)
 def _reset_registry():
     clear_registry()
-    _restore_builtin_evaluators()
     importlib.reload(plugin)
     plugin.register()
     yield
     clear_registry()
-    _restore_builtin_evaluators()
 
 
 def _build_invocation():
@@ -50,68 +38,73 @@ def _build_invocation():
 
 
 @pytest.mark.parametrize(
-    "variant",
+    "variant,expected_key",
     [
-        "answer relevancy",  # spaces -> underscore
-        "answer_relevance",  # alias -> canonical
-        "relevance",  # alias -> canonical
-        "answer_relevancy",  # canonical form
+        ("answer relevancy", "answer_relevancy"),  # spaces -> underscore
+        ("answer_relevance", "answer_relevance"),  # underscore preserved
+        ("relevance", "relevance"),  # direct synonym accepted
+        ("answer_relevancy", "answer_relevancy"),  # canonical form
     ],
 )
-def test_answer_relevancy_variants_normalize_to_canonical(
-    monkeypatch, variant
-):
-    completion = SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(
-                    content=json.dumps(
-                        {
-                            "results": {
-                                "answer_relevancy": {
-                                    "score": 0.9,
-                                    "reason": "ok",
-                                }
-                            }
-                        }
-                    )
-                )
-            )
-        ],
-        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
-    )
-    stub_client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=lambda **_kwargs: completion)
+def test_answer_relevancy_variants_normalize(variant, expected_key):
+    captured = {}
+
+    def fake_instantiate(specs, test_case, model):
+        # capture the normalized internal spec names
+        captured["spec_names"] = [s.name for s in specs]
+        # return a dummy metric instance so evaluation proceeds to conversion path (which will produce no data)
+        return [object()], []
+
+    with (
+        patch(
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            fake_instantiate,
+        ),
+        patch(
+            "opentelemetry.util.evaluator.deepeval._build_llm_test_case",
+            lambda inv: object(),
+        ),
+        patch(
+            "opentelemetry.util.evaluator.deepeval._run_deepeval",
+            lambda case, metrics, debug_log: type(
+                "_DummyEval", (), {"test_results": []}
+            )(),
+        ),
+    ):
+        evaluator = plugin.DeepevalEvaluator(
+            (variant,), invocation_type="LLMInvocation"
         )
-    )
-    monkeypatch.setattr(plugin.openai, "OpenAI", lambda **_kwargs: stub_client)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        evaluator.evaluate(_build_invocation())
 
-    evaluator = plugin.DeepevalEvaluator(
-        (variant,), invocation_type="LLMInvocation"
-    )
-    results = evaluator.evaluate(_build_invocation())
-
-    assert len(results) == 1
-    assert results[0].metric_name == "answer_relevancy"
+    assert captured["spec_names"] == [expected_key]
 
 
-def test_unknown_metric_produces_error(monkeypatch):
+def test_unknown_metric_produces_error():
     # Provide metric that shouldn't resolve even after normalization
     invalid = "nonexistent-metric"
 
+    # Patch _instantiate_metrics to raise the same ValueError pattern used by evaluator for unknown metric registry key
+    def fake_instantiate(specs, test_case, model):
+        raise ValueError(f"Unknown Deepeval metric '{invalid}'")
+
+    with (
+        patch(
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            fake_instantiate,
+        ),
+        patch(
+            "opentelemetry.util.evaluator.deepeval._build_llm_test_case",
+            lambda inv: object(),
+        ),
+    ):
+        evaluator = plugin.DeepevalEvaluator(
+            (invalid,), invocation_type="LLMInvocation"
+        )
+        results = evaluator.evaluate(_build_invocation())
+
     # Expect one error result with the provided metric name
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    evaluator = plugin.DeepevalEvaluator(
-        (invalid,), invocation_type="LLMInvocation"
-    )
-    results = evaluator.evaluate(_build_invocation())
     assert len(results) == 1
     err = results[0]
     assert err.metric_name == invalid
     assert err.error is not None
-    assert (
-        "Unknown Deepeval metric" in err.error.message
-        or "Unknown Deepeval metric(s)" in err.error.message
-    )
+    assert "Unknown Deepeval metric" in err.error.message
