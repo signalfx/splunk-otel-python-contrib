@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Integration test for the LLM-as-a-judge evaluator with real OpenAI API.
+"""Integration test for the LLM-as-a-judge batched evaluator with real OpenAI API.
 
 This test requires OPENAI_API_KEY to be set. It is skipped if the key is not available.
 Run with: pytest -v -s tests/test_real_openai_integration.py
+
+This test uses DeepevalBatchedEvaluator which does NOT require the deepeval package.
 """
 
 import os
@@ -11,7 +13,9 @@ import pytest
 
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-from opentelemetry.util.evaluator.deepeval import DeepevalEvaluator
+from opentelemetry.util.evaluator.deepeval_batched import (
+    DeepevalBatchedEvaluator,
+)
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING,
 )
@@ -83,7 +87,7 @@ def test_real_openai_evaluation(monkeypatch):
     )
 
     # Create evaluator and run evaluation
-    evaluator = DeepevalEvaluator(
+    evaluator = DeepevalBatchedEvaluator(
         metrics=["bias", "toxicity", "answer_relevancy"],
         invocation_type="LLMInvocation",
     )
