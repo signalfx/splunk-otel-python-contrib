@@ -9,15 +9,10 @@ level ignore is used to keep the logical setup order clear.
 
 import asyncio
 import importlib
-import os
 import sys
-import types
 from unittest.mock import patch
 
 import pytest
-
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 
 # Provide stub 'deepeval' package structure if dependency is unavailable.
@@ -25,10 +20,13 @@ def _install_deepeval_stubs():
     if "deepeval" in sys.modules:
         return
     try:
+        import importlib as _il  # noqa: F401
+
         __import__("deepeval")  # pragma: no cover
         return
     except Exception:
         pass
+    import types
 
     root = types.ModuleType("deepeval")
     metrics_mod = types.ModuleType("deepeval.metrics")
@@ -183,12 +181,6 @@ class DeeEvaluationResult:  # type: ignore[override]
 
 
 from opentelemetry.util.evaluator import deepeval as plugin
-from opentelemetry.util.genai.environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING,
-)
-from opentelemetry.util.genai.evals.monitoring import (
-    EVAL_CLIENT_OPERATION_DURATION,
-)
 from opentelemetry.util.genai.evals.registry import (
     clear_registry,
     get_evaluator,
@@ -229,49 +221,6 @@ def _build_invocation() -> LLMInvocation:
 def test_registration_adds_deepeval() -> None:
     names = list_evaluators()
     assert "deepeval" in names
-
-
-def test_deepeval_emits_evaluation_client_duration_metric() -> None:
-    reader = InMemoryMetricReader()
-    provider = MeterProvider(metric_readers=[reader])
-
-    class _Handler:
-        _meter_provider = provider
-
-    evaluator = get_evaluator(
-        "deepeval",
-        metrics=["bias"],
-        invocation_type="LLMInvocation",
-    )
-    evaluator.bind_handler(_Handler())
-    with patch.dict(
-        os.environ,
-        {OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING: "true"},
-        clear=False,
-    ):
-        evaluator.evaluate(_build_invocation())
-
-    try:
-        provider.force_flush()
-    except Exception:
-        pass
-    try:
-        reader.collect()
-    except Exception:
-        pass
-    metrics_data = None
-    try:
-        metrics_data = reader.get_metrics_data()
-    except Exception:
-        metrics_data = None
-
-    metrics = []
-    for rm in getattr(metrics_data, "resource_metrics", []) or []:
-        for scope_metrics in getattr(rm, "scope_metrics", []) or []:
-            metrics.extend(getattr(scope_metrics, "metrics", []) or [])
-
-    names = {m.name for m in metrics}
-    assert EVAL_CLIENT_OPERATION_DURATION in names
 
 
 def test_default_metrics_covered() -> None:

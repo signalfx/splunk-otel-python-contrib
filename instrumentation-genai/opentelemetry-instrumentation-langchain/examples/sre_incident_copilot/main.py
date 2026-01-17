@@ -457,7 +457,9 @@ def main():
 
         # Wait for instrumentation-side evaluations to complete if requested
         if args.wait_after_completion > 0:
-            print(f"\n⏳ Waiting {args.wait_after_completion} seconds for evaluations to complete...")
+            print(
+                f"\n⏳ Waiting {args.wait_after_completion} seconds for evaluations to complete..."
+            )
             time.sleep(args.wait_after_completion)
             print("   Evaluations should be complete.")
 
