@@ -34,7 +34,9 @@ class RunbookSearch:
             self.embeddings = AzureOpenAIEmbeddings(
                 azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
                 openai_api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
-                openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+                openai_api_version=os.environ.get(
+                    "AZURE_OPENAI_API_VERSION", "2024-02-01"
+                ),
                 azure_deployment=os.environ.get("AZURE_EMBEDDING_DEPLOYMENT"),
             )
         self.text_splitter = RecursiveCharacterTextSplitter(
