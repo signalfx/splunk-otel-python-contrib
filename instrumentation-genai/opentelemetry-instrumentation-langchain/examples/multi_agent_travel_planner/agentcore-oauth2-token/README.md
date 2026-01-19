@@ -4,7 +4,7 @@ This example demonstrates deploying a LangChain multi-agent travel planner to **
 
 This version uses **OAuth2 token authentication** for both:
 - **LLM calls** - via `OAuth2TokenManager` utility
-- **DeepEval evaluations** - via `splunk-otel-genai-evals-deepeval>=0.1.7` with LiteLLM
+- **DeepEval evaluations** - via `splunk-otel-genai-evals-deepeval>=0.1.8` with LiteLLM
 
 > **Use Case:** Organizations that use OAuth2-protected LLM endpoints (e.g., Cisco Chat AI, Azure AD, custom GAIT APIs) instead of direct OpenAI API keys.
 
@@ -89,7 +89,7 @@ These variables configure the `OAuth2TokenManager` for LLM calls:
 
 > **Backward Compatibility:** The `OAuth2TokenManager` also reads legacy `CISCO_*` environment variables for backward compatibility.
 
-### DeepEval Custom LLM Authentication (v0.1.7+)
+### DeepEval Custom LLM Authentication (v0.1.8+)
 
 These variables configure DeepEval to use a custom LLM endpoint for evaluations. Supports both **static API keys** and **OAuth2 tokens**.
 
@@ -106,6 +106,7 @@ These variables configure DeepEval to use a custom LLM endpoint for evaluations.
 | `DEEPEVAL_LLM_AUTH_METHOD` | `basic` (default) or `post` | No |
 | `DEEPEVAL_LLM_SCOPE` | OAuth2 scope | Optional |
 | `DEEPEVAL_LLM_AUTH_HEADER` | Auth header name (default: `api-key`) | No |
+| `DEEPEVAL_LLM_EXTRA_HEADERS` | Custom HTTP headers as JSON (v0.1.8+) | No |
 
 **Authentication Priority:**
 1. If `DEEPEVAL_LLM_TOKEN_URL` is set → Uses OAuth2 to obtain token
@@ -271,9 +272,9 @@ aws logs tail /aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT \
 
 ---
 
-## DeepEval OAuth2 Support (v0.1.7+)
+## DeepEval OAuth2 Support (v0.1.8+)
 
-The `splunk-otel-genai-evals-deepeval>=0.1.7` package includes built-in support for OAuth2-authenticated LLM providers via LiteLLM.
+The `splunk-otel-genai-evals-deepeval>=0.1.8` package includes built-in support for OAuth2-authenticated LLM providers via LiteLLM.
 
 ### How It Works
 
@@ -312,6 +313,20 @@ export DEEPEVAL_LLM_TOKEN_URL=https://login.microsoftonline.com/<tenant>/oauth2/
 export DEEPEVAL_LLM_SCOPE=api://<resource>/.default
 export DEEPEVAL_LLM_AUTH_METHOD=post
 ```
+
+### Example: Custom Headers for API Gateways (v0.1.8+)
+
+Some API gateways require custom headers (e.g., `system-code` for Azure OpenAI proxies):
+
+```bash
+export DEEPEVAL_LLM_BASE_URL=https://your-azure-proxy.example.com/v1
+export DEEPEVAL_LLM_MODEL=gpt-4o-mini
+export DEEPEVAL_LLM_API_KEY=<your-api-key>
+# Add custom headers as JSON
+export DEEPEVAL_LLM_EXTRA_HEADERS='{"system-code": "APP-123", "x-custom-header": "value"}'
+```
+
+> **Note:** LiteLLM does not natively support `extra_headers` via environment variables. This feature is provided by `splunk-otel-genai-evals-deepeval>=0.1.8` to enable custom headers for API gateways.
 
 ---
 
@@ -362,7 +377,7 @@ agentcore-oauth2-token/
 |------|---------|
 | `util/oauth2_token_manager.py` | Generic OAuth2 client credentials flow for LLM authentication |
 | `main.py` | LangChain multi-agent workflow with OTel instrumentation |
-| `requirements.txt` | Includes `splunk-otel-genai-evals-deepeval>=0.1.7` and `litellm` |
+| `requirements.txt` | Includes `splunk-otel-genai-evals-deepeval>=0.1.8` and `litellm` |
 
 ---
 

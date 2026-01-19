@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re as _re
 from typing import Any, Dict, Optional, Sequence
 
 from opentelemetry._logs import Logger, get_logger
@@ -21,6 +22,8 @@ from ..attributes import (
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_ID,
+    SERVER_ADDRESS,
+    SERVER_PORT,
 )
 from ..interfaces import EmitterMeta
 from ..span_context import (
@@ -76,8 +79,6 @@ def _canonicalize_metric_name(raw_name: str) -> Optional[str]:
     if lowered == "faithfulness":
         return "hallucination"
     # Normalize punctuation/whitespace to underscores for pattern matching
-    import re as _re  # local import to avoid global cost
-
     normalized = _re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
     if normalized in {"answer_relevancy", "answer_relevance", "relevance"}:
         return "relevance"
@@ -249,57 +250,104 @@ class EvaluationMetricsEmitter(_EvaluationEmitterBase):
                     getattr(res, "score", None),
                     type(histogram).__name__,
                 )
+            # Detect if we're in single metric mode by checking histogram name
+            histogram_name = getattr(histogram, "name", None)
+            is_single_metric_mode = histogram_name == "gen_ai.evaluation.score"
+
             attrs: Dict[str, Any] = {
-                GEN_AI_OPERATION_NAME: "evaluation",
                 GEN_AI_EVALUATION_NAME: canonical,
             }
+            # Only set gen_ai.operation.name for legacy multiple metric mode
+            if not is_single_metric_mode:
+                attrs[GEN_AI_OPERATION_NAME] = "evaluation"
+
             # If the source invocation carried agent identity, propagate
             agent_name = getattr(invocation, "agent_name", None)
-            agent_id = getattr(invocation, "agent_id", None)
-            # Fallbacks: if instrumentation didn't populate agent_name/id fields explicitly but
-            # the invocation is an AgentInvocation, derive them from core fields to preserve identity.
+            # Fallbacks: if instrumentation didn't populate agent_name field explicitly but
+            # the invocation is an AgentInvocation, derive it from core fields to preserve identity.
             try:
-                from opentelemetry.util.genai.types import (
+                from opentelemetry.util.genai.types import (  # noqa: PLC0415
                     AgentInvocation as _AI,  # local import to avoid cycle
                 )
 
                 if agent_name is None and isinstance(invocation, _AI):  # type: ignore[attr-defined]
                     agent_name = getattr(invocation, "name", None)
-                if agent_id is None and isinstance(invocation, _AI):  # type: ignore[attr-defined]
-                    agent_id = str(getattr(invocation, "run_id", "")) or None
             except Exception:  # pragma: no cover - defensive
                 pass
-            workflow_id = getattr(invocation, "workflow_id", None)
-            if agent_name:
-                attrs["gen_ai.agent.name"] = agent_name
-            if agent_id:
-                attrs["gen_ai.agent.id"] = agent_id
-            if workflow_id:
-                attrs["gen_ai.workflow.id"] = workflow_id
-            req_model = _get_request_model(invocation)
-            if req_model:
-                attrs[GEN_AI_REQUEST_MODEL] = req_model
-            provider = getattr(invocation, "provider", None)
-            if provider:
-                attrs[GEN_AI_PROVIDER_NAME] = provider
-            if res.label is not None:
-                attrs[GEN_AI_EVALUATION_SCORE_LABEL] = res.label
-            # Propagate evaluator-derived pass boolean if present
-            passed = None
-            try:
-                if isinstance(getattr(res, "attributes", None), dict):
-                    passed = res.attributes.get("gen_ai.evaluation.passed")
-            except Exception:  # pragma: no cover - defensive
+
+            # Set attributes based on mode
+            if is_single_metric_mode:
+                # Single metric mode: only include specified attributes
+                if agent_name:
+                    attrs["gen_ai.agent.name"] = agent_name
+                req_model = _get_request_model(invocation)
+                if req_model:
+                    attrs[GEN_AI_REQUEST_MODEL] = req_model
+                provider = getattr(invocation, "provider", None)
+                if provider:
+                    attrs[GEN_AI_PROVIDER_NAME] = provider
+                # Add server.address and server.port when available
+                server_address = getattr(invocation, "server_address", None)
+                if server_address:
+                    attrs[SERVER_ADDRESS] = server_address
+                server_port = getattr(invocation, "server_port", None)
+                if server_port is not None:
+                    attrs[SERVER_PORT] = server_port
+                if res.label is not None:
+                    attrs[GEN_AI_EVALUATION_SCORE_LABEL] = res.label
+                # Propagate evaluator-derived pass boolean if present
                 passed = None
-            if passed is None and res.label is not None:
-                label_text = str(res.label).strip().lower()
-                if label_text in {"pass", "passed"}:
-                    passed = True
-                elif label_text in {"fail", "failed"}:
-                    passed = False
-            if isinstance(passed, bool):
-                attrs["gen_ai.evaluation.passed"] = passed
-            attrs["gen_ai.evaluation.score.units"] = "score"
+                try:
+                    if isinstance(getattr(res, "attributes", None), dict):
+                        passed = res.attributes.get("gen_ai.evaluation.passed")
+                except Exception:  # pragma: no cover - defensive
+                    passed = None
+                if passed is None and res.label is not None:
+                    label_text = str(res.label).strip().lower()
+                    if label_text in {"pass", "passed"}:
+                        passed = True
+                    elif label_text in {"fail", "failed"}:
+                        passed = False
+                if isinstance(passed, bool):
+                    attrs["gen_ai.evaluation.passed"] = passed
+            else:
+                # Legacy multiple metric mode: include all attributes
+                if agent_name:
+                    attrs["gen_ai.agent.name"] = agent_name
+                workflow_id = getattr(invocation, "workflow_id", None)
+                if workflow_id:
+                    attrs["gen_ai.workflow.id"] = workflow_id
+                req_model = _get_request_model(invocation)
+                if req_model:
+                    attrs[GEN_AI_REQUEST_MODEL] = req_model
+                provider = getattr(invocation, "provider", None)
+                if provider:
+                    attrs[GEN_AI_PROVIDER_NAME] = provider
+                # Add server.address and server.port when available
+                server_address = getattr(invocation, "server_address", None)
+                if server_address:
+                    attrs[SERVER_ADDRESS] = server_address
+                server_port = getattr(invocation, "server_port", None)
+                if server_port is not None:
+                    attrs[SERVER_PORT] = server_port
+                if res.label is not None:
+                    attrs[GEN_AI_EVALUATION_SCORE_LABEL] = res.label
+                # Propagate evaluator-derived pass boolean if present
+                passed = None
+                try:
+                    if isinstance(getattr(res, "attributes", None), dict):
+                        passed = res.attributes.get("gen_ai.evaluation.passed")
+                except Exception:  # pragma: no cover - defensive
+                    passed = None
+                if passed is None and res.label is not None:
+                    label_text = str(res.label).strip().lower()
+                    if label_text in {"pass", "passed"}:
+                        passed = True
+                    elif label_text in {"fail", "failed"}:
+                        passed = False
+                if isinstance(passed, bool):
+                    attrs["gen_ai.evaluation.passed"] = passed
+                attrs["gen_ai.evaluation.score.units"] = "score"
             if res.error is not None:
                 if getattr(res.error, "message", None):
                     attrs[ErrorAttributes.ERROR_MESSAGE] = res.error.message
@@ -376,7 +424,7 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
             agent_name = getattr(invocation, "agent_name", None)
             agent_id = getattr(invocation, "agent_id", None)
             try:
-                from opentelemetry.util.genai.types import (
+                from opentelemetry.util.genai.types import (  # noqa: PLC0415
                     AgentInvocation as _AI,  # local import to avoid cycle
                 )
 
