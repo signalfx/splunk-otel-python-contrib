@@ -66,9 +66,9 @@ def run_simulation(
 
     for scenario_id in scenario_ids:
         for iteration in range(iterations):
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"Scenario: {scenario_id}, Iteration: {iteration + 1}/{iterations}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
             # Apply drift if enabled
             if drift_mode:
@@ -86,7 +86,7 @@ def run_simulation(
                 final_state = run_scenario(scenario_id, config)
 
                 # Generate run ID
-                run_id = f"{scenario_id}-iter{iteration+1}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+                run_id = f"{scenario_id}-iter{iteration + 1}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
 
                 # Save artifacts
                 save_artifacts(final_state, config, run_id)
