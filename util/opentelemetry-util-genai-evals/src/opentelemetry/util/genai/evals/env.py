@@ -6,9 +6,12 @@ import os
 from typing import Mapping
 
 from opentelemetry.util.genai.environment_variables import (
+    OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT,
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL,
+    OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE,
     OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION,
+    OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
 )
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -50,8 +53,76 @@ def read_aggregation_flag(
     return raw.strip().lower() in _TRUTHY
 
 
+def read_queue_size(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: int = 0,
+) -> int:
+    """Read the evaluation queue size from environment.
+
+    Args:
+        env: Optional environment mapping (defaults to os.environ)
+        default: Default value when not set (0 = unbounded)
+
+    Returns:
+        Queue size as integer. 0 means unbounded queue.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE, env)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        size = int(raw.strip())
+        return max(0, size)  # Ensure non-negative
+    except ValueError:
+        return default
+
+
+def read_concurrent_flag(
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Read the concurrent evaluation mode flag from environment.
+
+    Args:
+        env: Optional environment mapping (defaults to os.environ)
+
+    Returns:
+        True if concurrent mode is enabled, False otherwise.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT, env)
+    if raw is None:
+        return False
+    return raw.strip().lower() in _TRUTHY
+
+
+def read_worker_count(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: int = 4,
+) -> int:
+    """Read the number of evaluation worker threads from environment.
+
+    Args:
+        env: Optional environment mapping (defaults to os.environ)
+        default: Default number of workers (4)
+
+    Returns:
+        Number of workers as integer. Minimum 1, maximum 16.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS, env)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        count = int(raw.strip())
+        return max(1, min(16, count))  # Clamp between 1 and 16
+    except ValueError:
+        return default
+
+
 __all__ = [
     "read_raw_evaluators",
     "read_interval",
     "read_aggregation_flag",
+    "read_queue_size",
+    "read_concurrent_flag",
+    "read_worker_count",
 ]

@@ -7,6 +7,7 @@ level ignore is used to keep the logical setup order clear.
 
 # ruff: noqa: E402
 
+import asyncio
 import importlib
 import sys
 from unittest.mock import patch
@@ -447,3 +448,138 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
     results = evaluator.evaluate(invocation)
     assert captured["retrieval_context"] == ["doc1", "doc2"]
     assert results[0].metric_name == "faithfulness"
+
+
+# =============================================================================
+# Async Evaluation Tests
+# =============================================================================
+
+
+def test_deepeval_evaluator_has_async_methods() -> None:
+    """DeepevalEvaluator has async evaluation methods."""
+    evaluator = plugin.DeepevalEvaluator(
+        ("bias",), invocation_type="LLMInvocation"
+    )
+    assert hasattr(evaluator, "evaluate_async")
+    assert hasattr(evaluator, "_evaluate_llm_async")
+    assert hasattr(evaluator, "_evaluate_agent_async")
+    assert hasattr(evaluator, "_evaluate_generic_async")
+    assert asyncio.iscoroutinefunction(evaluator.evaluate_async)
+
+
+def test_async_evaluate_converts_results(monkeypatch):
+    """Async evaluation converts DeepEval results correctly."""
+    invocation = _build_invocation()
+    evaluator = plugin.DeepevalEvaluator(
+        ("bias",),
+        invocation_type="LLMInvocation",
+    )
+
+    fake_result = DeeEvaluationResult(
+        test_results=[
+            TestResult(
+                name="case",
+                success=True,
+                metrics_data=[
+                    MetricData(
+                        name="bias",
+                        threshold=0.7,
+                        success=True,
+                        score=0.8,
+                        reason="looks good async",
+                        evaluation_model="gpt-4o-mini",
+                        evaluation_cost=0.01,
+                    )
+                ],
+                conversational=False,
+            )
+        ],
+        confident_link=None,
+    )
+
+    monkeypatch.setattr(
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+        lambda specs, test_case, model: ([object()], []),
+    )
+
+    # Mock the async runner
+    async def mock_async_runner(case, metrics, debug_log):
+        return fake_result
+
+    monkeypatch.setattr(
+        "opentelemetry.util.evaluator.deepeval._run_deepeval_async",
+        mock_async_runner,
+    )
+
+    async def run_test():
+        results = await evaluator.evaluate_async(invocation)
+        return results
+
+    results = asyncio.run(run_test())
+    assert len(results) == 1
+    result = results[0]
+    assert result.metric_name == "bias"
+    assert result.score == 0.8
+    assert result.label == "Not Biased"
+    assert result.explanation == "looks good async"
+
+
+def test_async_evaluate_handles_missing_output(monkeypatch):
+    """Async evaluation handles missing input/output gracefully."""
+    invocation = LLMInvocation(request_model="abc")
+    evaluator = plugin.DeepevalEvaluator(
+        ("bias",), invocation_type="LLMInvocation"
+    )
+
+    async def run_test():
+        results = await evaluator.evaluate_async(invocation)
+        return results
+
+    results = asyncio.run(run_test())
+    assert len(results) == 1
+    assert results[0].error is not None
+
+
+def test_async_evaluate_handles_instantiation_error(monkeypatch):
+    """Async evaluation handles metric instantiation errors."""
+    invocation = _build_invocation()
+    evaluator = plugin.DeepevalEvaluator(
+        ("bias",), invocation_type="LLMInvocation"
+    )
+
+    def boom(specs, test_case, model):
+        raise RuntimeError("async boom")
+
+    monkeypatch.setattr(
+        "opentelemetry.util.evaluator.deepeval._instantiate_metrics", boom
+    )
+
+    async def run_test():
+        results = await evaluator.evaluate_async(invocation)
+        return results
+
+    results = asyncio.run(run_test())
+    assert len(results) == 1
+    assert results[0].error is not None
+    assert "async boom" in results[0].error.message
+
+
+def test_sync_and_async_produce_same_error_format(monkeypatch):
+    """Sync and async evaluation produce same error format for missing output."""
+    invocation = LLMInvocation(request_model="no-output")
+    evaluator = plugin.DeepevalEvaluator(
+        ("bias",), invocation_type="LLMInvocation"
+    )
+
+    sync_results = evaluator.evaluate(invocation)
+
+    async def run_test():
+        return await evaluator.evaluate_async(invocation)
+
+    async_results = asyncio.run(run_test())
+
+    # Both should have error for missing output
+    assert sync_results[0].error is not None
+    assert async_results[0].error is not None
+    # Same metric name
+    assert sync_results[0].metric_name == async_results[0].metric_name

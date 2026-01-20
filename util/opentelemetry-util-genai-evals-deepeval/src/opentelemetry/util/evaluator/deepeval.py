@@ -49,6 +49,7 @@ from .deepeval_metrics import (
 )
 from .deepeval_model import create_eval_model as _create_eval_model
 from .deepeval_runner import run_evaluation as _run_deepeval
+from .deepeval_runner import run_evaluation_async as _run_deepeval_async
 
 try:  # Optional debug logging import
     from opentelemetry.util.genai.debug import genai_debug_log
@@ -351,6 +352,164 @@ class DeepevalEvaluator(Evaluator):
                 pass
             return []
         return self._evaluate_generic(invocation, "AgentInvocation")
+
+    # ---- Async Evaluation (for concurrent mode) --------------------------
+    async def evaluate_async(self, item: GenAI) -> list[EvaluationResult]:
+        """Asynchronously evaluate a GenAI entity using DeepEval.
+
+        Uses DeepEval's native async mode for better throughput when
+        concurrent evaluation mode is enabled.
+        """
+        if isinstance(item, LLMInvocation):
+            return list(await self._evaluate_llm_async(item))
+        if isinstance(item, AgentInvocation):
+            return list(await self._evaluate_agent_async(item))
+        return []
+
+    async def _evaluate_llm_async(
+        self, invocation: LLMInvocation
+    ) -> Sequence[EvaluationResult]:
+        """Async evaluation for LLM invocations."""
+        return await self._evaluate_generic_async(invocation, "LLMInvocation")
+
+    async def _evaluate_agent_async(
+        self, invocation: AgentInvocation
+    ) -> Sequence[EvaluationResult]:
+        """Async evaluation for agent invocations."""
+        operation = getattr(invocation, "operation", None)
+        if operation != "invoke_agent":
+            try:
+                genai_debug_log(
+                    "evaluator.deepeval.skip.non_invoke_agent",
+                    invocation,
+                    operation=invocation.operation,
+                )
+            except Exception:  # pragma: no cover
+                pass
+            return []
+        return await self._evaluate_generic_async(invocation, "AgentInvocation")
+
+    async def _evaluate_generic_async(
+        self, invocation: GenAI, invocation_type: str
+    ) -> Sequence[EvaluationResult]:
+        """Async version of _evaluate_generic using DeepEval's async mode."""
+        try:
+            genai_debug_log(
+                "evaluator.deepeval.async.start",
+                invocation
+                if isinstance(invocation, (LLMInvocation, AgentInvocation))
+                else None,
+                invocation_type=invocation_type,
+            )
+        except Exception:  # pragma: no cover
+            pass
+
+        metric_specs = self._build_metric_specs()
+        if not metric_specs:
+            genai_debug_log(
+                "evaluator.deepeval.async.skip.no_metrics",
+                invocation
+                if isinstance(invocation, (LLMInvocation, AgentInvocation))
+                else None,
+                invocation_type=invocation_type,
+            )
+            return []
+
+        test_case = self._build_test_case(invocation, invocation_type)
+        if test_case is None:
+            genai_debug_log(
+                "evaluator.deepeval.async.error.missing_io",
+                invocation
+                if isinstance(invocation, (LLMInvocation, AgentInvocation))
+                else None,
+                invocation_type=invocation_type,
+            )
+            return self._error_results(
+                "Deepeval requires both input and output text to evaluate",
+                ValueError,
+            )
+
+        # API key handling (same as sync version)
+        self._ensure_api_key(invocation)
+
+        try:
+            metrics, skipped_results = _instantiate_metrics(
+                metric_specs, test_case, self._default_model()
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            return self._error_results(str(exc), type(exc))
+
+        if not metrics:
+            genai_debug_log(
+                "evaluator.deepeval.async.skip.no_valid_metrics",
+                invocation
+                if isinstance(invocation, (LLMInvocation, AgentInvocation))
+                else None,
+                invocation_type=invocation_type,
+            )
+            return skipped_results or self._error_results(
+                "No Deepeval metrics available", RuntimeError
+            )
+
+        try:
+            # Use async runner for concurrent evaluation
+            evaluation = await _run_deepeval_async(test_case, metrics, genai_debug_log)
+            genai_debug_log(
+                "evaluator.deepeval.async.complete",
+                invocation
+                if isinstance(invocation, (LLMInvocation, AgentInvocation))
+                else None,
+                invocation_type=invocation_type,
+            )
+        except Exception as exc:  # pragma: no cover - dependency/runtime failure
+            genai_debug_log(
+                "evaluator.deepeval.async.error.execution",
+                invocation
+                if isinstance(invocation, (LLMInvocation, AgentInvocation))
+                else None,
+                invocation_type=invocation_type,
+            )
+            return [
+                *skipped_results,
+                *self._error_results(str(exc), type(exc)),
+            ]
+
+        return [*skipped_results, *self._convert_results(evaluation)]
+
+    def _ensure_api_key(self, invocation: GenAI) -> None:
+        """Ensure OpenAI API key is configured for DeepEval."""
+        try:
+            raw_attrs = getattr(invocation, "attributes", None)
+            attrs: dict[str, Any] = {}
+            if isinstance(raw_attrs, MappingABC):
+                for k, v in raw_attrs.items():
+                    try:
+                        attrs[str(k)] = v
+                    except Exception:  # pragma: no cover
+                        continue
+            candidate_val = attrs.get("openai_api_key") or attrs.get("api_key")
+            candidate: str | None = (
+                str(candidate_val)
+                if isinstance(candidate_val, (str, bytes))
+                else None
+            )
+            env_key = os.getenv("OPENAI_API_KEY") or os.getenv(
+                "GENAI_OPENAI_API_KEY"
+            )
+            api_key = candidate or env_key
+            if api_key:
+                try:
+                    if not getattr(openai, "api_key", None):
+                        try:
+                            setattr(openai, "api_key", api_key)
+                        except Exception:  # pragma: no cover
+                            pass
+                    if not os.getenv("OPENAI_API_KEY"):
+                        os.environ["OPENAI_API_KEY"] = api_key
+                except Exception:
+                    pass
+        except Exception:  # pragma: no cover - defensive
+            pass
 
     def _evaluate_generic(
         self, invocation: GenAI, invocation_type: str

@@ -111,6 +111,44 @@ OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL = (
 Polling interval (seconds) for the evaluation worker loop. Defaults to ``5.0`` seconds.
 """
 
+OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE
+
+Maximum size of the evaluation queue. When set to a positive integer, the queue
+becomes bounded and will apply backpressure when full (new items are dropped with
+a warning). When unset or set to ``0``, the queue is unbounded (default behavior).
+Recommended values: ``100`` to ``1000`` depending on memory constraints and evaluation
+throughput requirements.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT
+
+Enable concurrent evaluation processing. When set to a truthy value (``true``,
+``1``, ``yes``, ``on``), evaluations are processed concurrently using multiple
+worker threads and async LLM calls. When unset or falsey, evaluations are
+processed sequentially (legacy behavior). Concurrent mode significantly improves
+throughput for LLM-as-a-judge evaluations.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS
+
+Number of concurrent worker threads for evaluation processing. Only effective
+when ``OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT`` is enabled. Defaults to ``4``.
+Recommended values: ``2`` to ``8`` depending on LLM API rate limits and system
+resources.
+"""
+
 OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS = (
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS"
 )
@@ -199,6 +237,9 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS",
     # generator selection
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_SPAN",

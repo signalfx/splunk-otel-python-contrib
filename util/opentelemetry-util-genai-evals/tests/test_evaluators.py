@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import os
 import unittest
@@ -18,6 +19,7 @@ from opentelemetry.util.genai.evals.registry import (
 )
 from opentelemetry.util.genai.handler import get_telemetry_handler
 from opentelemetry.util.genai.types import (
+    AgentInvocation,
     EvaluationResult,
     InputMessage,
     LLMInvocation,
@@ -313,6 +315,148 @@ class TestHandlerIntegration(unittest.TestCase):
             if manager is not None:
                 manager.shutdown()
             self.assertIsNone(manager)
+
+
+# =============================================================================
+# Async Evaluator Tests
+# =============================================================================
+
+
+class _AsyncStaticEvaluator(Evaluator):
+    """Static evaluator with native async support for testing."""
+
+    def __init__(
+        self,
+        metrics=None,
+        *,
+        invocation_type: str | None = None,
+        options=None,
+    ) -> None:
+        super().__init__(
+            metrics, invocation_type=invocation_type, options=options
+        )
+
+    def default_metrics(self):
+        return ("async_metric",)
+
+    def evaluate_llm(
+        self, invocation: LLMInvocation
+    ) -> list[EvaluationResult]:
+        return [
+            EvaluationResult(
+                metric_name="async_metric",
+                score=1.0,
+                label="sync",
+                explanation="sync evaluation",
+            )
+        ]
+
+    async def evaluate_llm_async(
+        self, invocation: LLMInvocation
+    ) -> list[EvaluationResult]:
+        # Simulate async work
+        await asyncio.sleep(0.01)
+        return [
+            EvaluationResult(
+                metric_name="async_metric",
+                score=1.0,
+                label="async",
+                explanation="async evaluation",
+            )
+        ]
+
+
+class TestAsyncEvaluator(unittest.TestCase):
+    """Tests for async evaluation support in base Evaluator."""
+
+    def _build_invocation(self) -> LLMInvocation:
+        invocation = LLMInvocation(request_model="async-test")
+        invocation.input_messages.append(
+            InputMessage(role="user", parts=[Text(content="hello")])
+        )
+        invocation.output_messages.append(
+            OutputMessage(
+                role="assistant",
+                parts=[Text(content="hi")],
+                finish_reason="stop",
+            )
+        )
+        return invocation
+
+    def _build_agent_invocation(self) -> AgentInvocation:
+        invocation = AgentInvocation(name="test-agent")
+        invocation.operation = "invoke_agent"
+        return invocation
+
+    def test_base_evaluator_has_async_methods(self) -> None:
+        """Base Evaluator class has async evaluation methods."""
+        evaluator = _StaticEvaluator()
+        self.assertTrue(hasattr(evaluator, "evaluate_async"))
+        self.assertTrue(hasattr(evaluator, "evaluate_llm_async"))
+        self.assertTrue(hasattr(evaluator, "evaluate_agent_async"))
+        self.assertTrue(asyncio.iscoroutinefunction(evaluator.evaluate_async))
+
+    def test_evaluate_async_delegates_to_sync_by_default(self) -> None:
+        """Default evaluate_async runs sync evaluate in thread pool."""
+        evaluator = _StaticEvaluator()
+        invocation = self._build_invocation()
+
+        async def run_test():
+            results = await evaluator.evaluate_async(invocation)
+            return results
+
+        results = asyncio.run(run_test())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].metric_name, "static_metric")
+
+    def test_async_evaluator_uses_native_async(self) -> None:
+        """Evaluator with native async uses async methods."""
+        evaluator = _AsyncStaticEvaluator()
+        invocation = self._build_invocation()
+
+        async def run_test():
+            results = await evaluator.evaluate_async(invocation)
+            return results
+
+        results = asyncio.run(run_test())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].label, "async")
+        self.assertEqual(results[0].explanation, "async evaluation")
+
+    def test_sync_and_async_produce_same_metric(self) -> None:
+        """Sync and async evaluation produce same metric name."""
+        evaluator = _AsyncStaticEvaluator()
+        invocation = self._build_invocation()
+
+        sync_results = evaluator.evaluate(invocation)
+        async_results = asyncio.run(evaluator.evaluate_async(invocation))
+
+        self.assertEqual(sync_results[0].metric_name, async_results[0].metric_name)
+
+    def test_evaluate_async_handles_agent_invocation(self) -> None:
+        """Async evaluation works for agent invocations."""
+        evaluator = _StaticEvaluator()
+        invocation = self._build_agent_invocation()
+
+        async def run_test():
+            # StaticEvaluator only implements evaluate_llm, so agent returns empty
+            results = await evaluator.evaluate_async(invocation)
+            return results
+
+        results = asyncio.run(run_test())
+        self.assertEqual(results, [])
+
+    def test_evaluate_async_returns_empty_for_unsupported_type(self) -> None:
+        """Async evaluation returns empty for unsupported invocation types."""
+        evaluator = _StaticEvaluator()
+
+        async def run_test():
+            # Pass an arbitrary object
+            results = await evaluator.evaluate_async(object())  # type: ignore
+            return results
+
+        results = asyncio.run(run_test())
+        self.assertEqual(results, [])
 
 
 if __name__ == "__main__":  # pragma: no cover
