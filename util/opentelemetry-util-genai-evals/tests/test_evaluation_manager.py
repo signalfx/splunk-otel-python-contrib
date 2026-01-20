@@ -110,7 +110,10 @@ def test_on_completion_skips_unsupported_invocation_types(monkeypatch):
 
     manager.on_completion(invocation)
 
-    assert invocation.evaluation_error == "client_evaluation_skipped_as_invocation_type_not_supported"
+    assert (
+        invocation.evaluation_error
+        == "client_evaluation_skipped_as_invocation_type_not_supported"
+    )
     assert len(handler.calls) == 0
 
 
@@ -126,12 +129,17 @@ def test_on_completion_skips_tool_llm_invocations(monkeypatch):
     invocation.sample_for_evaluation = True
 
     # Create tool call message
-    output_message = OutputMessage(role="", parts=["ToolCall"], finish_reason="tool_calls")
+    output_message = OutputMessage(
+        role="", parts=["ToolCall"], finish_reason="tool_calls"
+    )
     invocation.output_messages = [output_message]
 
     manager.on_completion(invocation)
 
-    assert invocation.evaluation_error == "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
+    assert (
+        invocation.evaluation_error
+        == "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
+    )
     assert len(handler.calls) == 0
 
 
@@ -149,7 +157,10 @@ def test_on_completion_skips_invocation_with_error(monkeypatch):
 
     manager.on_completion(invocation)
 
-    assert invocation.evaluation_error == "client_evaluation_skipped_as_error_on_invocation"
+    assert (
+        invocation.evaluation_error
+        == "client_evaluation_skipped_as_error_on_invocation"
+    )
     assert len(handler.calls) == 0
 
 

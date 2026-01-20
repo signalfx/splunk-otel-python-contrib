@@ -1,4 +1,4 @@
-from __future__ import annotations # noqa: I001
+from __future__ import annotations  # noqa: I001
 
 import logging
 import queue
@@ -7,7 +7,9 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from opentelemetry.semconv.attributes import error_attributes as ErrorAttributes
+from opentelemetry.semconv.attributes import (
+    error_attributes as ErrorAttributes,
+)
 
 from ..callbacks import CompletionCallback
 from ..environment_variables import OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
@@ -91,7 +93,9 @@ class Manager(CompletionCallback):
         )
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
-        self._queue: queue.Queue[GenAI] = queue.Queue(maxsize=read_evaluation_queue_size())
+        self._queue: queue.Queue[GenAI] = queue.Queue(
+            maxsize=read_evaluation_queue_size()
+        )
         self._shutdown = threading.Event()
         self._worker: threading.Thread | None = None
         if self.has_evaluators:
@@ -114,9 +118,12 @@ class Manager(CompletionCallback):
             and not isinstance(invocation, AgentInvocation)
             and not isinstance(invocation, Workflow)
         ):
-            invocation.evaluation_error = "client_evaluation_skipped_as_invocation_type_not_supported"
+            invocation.evaluation_error = (
+                "client_evaluation_skipped_as_invocation_type_not_supported"
+            )
             _LOGGER.debug(
-                "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.", type(invocation).name
+                "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.",
+                type(invocation).name,
             )
             return
 
@@ -134,16 +141,21 @@ class Manager(CompletionCallback):
                     ):
                         invocation.evaluation_error = "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
                         _LOGGER.debug(
-                            "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.", type(invocation).name
+                            "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.",
+                            type(invocation).name,
                         )
                         offer = False
 
             # Do not evaluate if error
             error = invocation.attributes.get(ErrorAttributes.ERROR_TYPE)
             if error:
-                invocation.evaluation_error = "client_evaluation_skipped_as_error_on_invocation"
+                invocation.evaluation_error = (
+                    "client_evaluation_skipped_as_error_on_invocation"
+                )
                 _LOGGER.debug(
-                    "Skipping evaluation for invocation type: %s as error on span, error: %s.", type(invocation).name, error
+                    "Skipping evaluation for invocation type: %s as error on span, error: %s.",
+                    type(invocation).name,
+                    error,
                 )
                 offer = False
 
@@ -160,13 +172,13 @@ class Manager(CompletionCallback):
             self._queue.put_nowait(invocation)
         except queue.Full:
             invocation.evaluation_error = "client_evaluation_queue_full"
-            _LOGGER.error(
-                "Evaluation queue is full, dropping invocation."
-            )
-        except Exception as exc :  # pragma: no cover - defensive
+            _LOGGER.error("Evaluation queue is full, dropping invocation.")
+        except Exception as exc:  # pragma: no cover - defensive
             invocation.evaluation_error = "client_evaluation_queue_error"
             _LOGGER.error(
-                "Failed to enqueue invocation for evaluation: %s", exc, exc_info=True
+                "Failed to enqueue invocation for evaluation: %s",
+                exc,
+                exc_info=True,
             )
 
     def wait_for_all(self, timeout: float | None = None) -> None:

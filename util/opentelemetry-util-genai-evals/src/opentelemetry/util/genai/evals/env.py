@@ -50,13 +50,21 @@ def read_aggregation_flag(
         return None
     return raw.strip().lower() in _TRUTHY
 
+
 def read_evaluation_queue_size() -> int:
-    evaluation_queue_size = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE)
+    evaluation_queue_size = _get_env(
+        OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE
+    )
     default_queue_size = 100
     try:
-        queue_size = int(
-            evaluation_queue_size) if evaluation_queue_size and evaluation_queue_size.strip() else default_queue_size
-        evaluation_queue_size = queue_size if queue_size > 0 else default_queue_size
+        queue_size = (
+            int(evaluation_queue_size)
+            if evaluation_queue_size and evaluation_queue_size.strip()
+            else default_queue_size
+        )
+        evaluation_queue_size = (
+            queue_size if queue_size > 0 else default_queue_size
+        )
     except (ValueError, TypeError):
         evaluation_queue_size = default_queue_size
 
@@ -67,5 +75,5 @@ __all__ = [
     "read_raw_evaluators",
     "read_interval",
     "read_aggregation_flag",
-    "read_evaluation_queue_size"
+    "read_evaluation_queue_size",
 ]
