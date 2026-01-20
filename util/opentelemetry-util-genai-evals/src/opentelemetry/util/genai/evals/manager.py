@@ -114,11 +114,16 @@ class Manager(CompletionCallback):
         self._evaluators = self._instantiate_evaluators(self._plans)
 
         # Queue configuration: 0 = unbounded, >0 = bounded with backpressure
-        self._queue_size = queue_size if queue_size is not None else read_queue_size()
+        self._queue_size = (
+            queue_size if queue_size is not None else read_queue_size()
+        )
         if self._queue_size > 0:
-            self._queue: queue.Queue[GenAI] = queue.Queue(maxsize=self._queue_size)
+            self._queue: queue.Queue[GenAI] = queue.Queue(
+                maxsize=self._queue_size
+            )
             _LOGGER.debug(
-                "Evaluation queue configured with bounded size: %d", self._queue_size
+                "Evaluation queue configured with bounded size: %d",
+                self._queue_size,
             )
         else:
             self._queue = queue.Queue()
@@ -126,7 +131,9 @@ class Manager(CompletionCallback):
 
         # Concurrent mode configuration
         self._concurrent_mode = (
-            concurrent_mode if concurrent_mode is not None else read_concurrent_flag()
+            concurrent_mode
+            if concurrent_mode is not None
+            else read_concurrent_flag()
         )
         self._worker_count = (
             worker_count if worker_count is not None else read_worker_count()
@@ -153,7 +160,9 @@ class Manager(CompletionCallback):
                     worker.start()
             else:
                 # Sequential mode (legacy): single worker
-                _LOGGER.debug("Starting sequential evaluation mode (single worker)")
+                _LOGGER.debug(
+                    "Starting sequential evaluation mode (single worker)"
+                )
                 worker = threading.Thread(
                     target=self._worker_loop,
                     name="opentelemetry-genai-evaluator",
@@ -335,7 +344,9 @@ class Manager(CompletionCallback):
                     return await evaluator.evaluate_async(invocation)
                 else:
                     # Run sync evaluate in thread pool to not block
-                    return await asyncio.to_thread(evaluator.evaluate, invocation)
+                    return await asyncio.to_thread(
+                        evaluator.evaluate, invocation
+                    )
             except Exception as exc:  # pragma: no cover - defensive
                 _LOGGER.debug("Evaluator %s failed: %s", evaluator, exc)
                 return None

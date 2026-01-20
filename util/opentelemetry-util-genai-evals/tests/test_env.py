@@ -45,21 +45,33 @@ class TestReadConcurrentFlag:
         """Default is False when env var not set."""
         assert read_concurrent_flag() is False
 
-    @pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "on"])
-    def test_returns_true_for_truthy_values(self, clean_env, monkeypatch, value):
+    @pytest.mark.parametrize(
+        "value", ["true", "True", "TRUE", "1", "yes", "on"]
+    )
+    def test_returns_true_for_truthy_values(
+        self, clean_env, monkeypatch, value
+    ):
         """Returns True for various truthy values."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value)
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value
+        )
         assert read_concurrent_flag() is True
 
     @pytest.mark.parametrize("value", ["false", "False", "0", "no", "off", ""])
-    def test_returns_false_for_falsy_values(self, clean_env, monkeypatch, value):
+    def test_returns_false_for_falsy_values(
+        self, clean_env, monkeypatch, value
+    ):
         """Returns False for various falsy/empty values."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value)
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value
+        )
         assert read_concurrent_flag() is False
 
     def test_whitespace_handling(self, clean_env, monkeypatch):
         """Handles whitespace in value."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "  true  ")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "  true  "
+        )
         assert read_concurrent_flag() is True
 
     def test_custom_env_mapping(self, clean_env):
@@ -136,17 +148,23 @@ class TestReadQueueSize:
 
     def test_reads_from_env(self, clean_env, monkeypatch):
         """Reads value from environment variable."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "500")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "500"
+        )
         assert read_queue_size() == 500
 
     def test_ensures_non_negative(self, clean_env, monkeypatch):
         """Ensures value is non-negative (clamps to 0)."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "-10")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "-10"
+        )
         assert read_queue_size() == 0
 
     def test_invalid_value_returns_default(self, clean_env, monkeypatch):
         """Returns default for invalid (non-integer) values."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "invalid")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "invalid"
+        )
         assert read_queue_size() == 0
 
     def test_empty_string_returns_default(self, clean_env, monkeypatch):
@@ -178,7 +196,9 @@ class TestReadInterval:
 
     def test_invalid_value_returns_default(self, clean_env, monkeypatch):
         """Returns default for invalid (non-float) values."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL", "not-a-float")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL", "not-a-float"
+        )
         assert read_interval() == 5.0
 
 
@@ -195,7 +215,9 @@ class TestReadAggregationFlag:
         assert read_aggregation_flag() is None
 
     @pytest.mark.parametrize("value", ["true", "True", "1", "yes", "on"])
-    def test_returns_true_for_truthy_values(self, clean_env, monkeypatch, value):
+    def test_returns_true_for_truthy_values(
+        self, clean_env, monkeypatch, value
+    ):
         """Returns True for various truthy values."""
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION", value
@@ -203,7 +225,9 @@ class TestReadAggregationFlag:
         assert read_aggregation_flag() is True
 
     @pytest.mark.parametrize("value", ["false", "0", "no", "off"])
-    def test_returns_false_for_falsy_values(self, clean_env, monkeypatch, value):
+    def test_returns_false_for_falsy_values(
+        self, clean_env, monkeypatch, value
+    ):
         """Returns False for various falsy values."""
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION", value
@@ -225,12 +249,15 @@ class TestReadRawEvaluators:
 
     def test_reads_from_env(self, clean_env, monkeypatch):
         """Reads value from environment variable."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "deepeval")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "deepeval"
+        )
         assert read_raw_evaluators() == "deepeval"
 
     def test_complex_config(self, clean_env, monkeypatch):
         """Reads complex config string."""
         config = "deepeval(LLMInvocation(bias,toxicity))"
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", config)
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", config
+        )
         assert read_raw_evaluators() == config
-

@@ -79,13 +79,17 @@ class TestIsAsyncModeEnabled:
     @pytest.mark.parametrize("value", ["true", "True", "1", "yes", "on"])
     def test_returns_true_for_truthy_values(self, monkeypatch, value):
         """Returns True for various truthy values."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value)
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value
+        )
         assert _is_async_mode_enabled() is True
 
     @pytest.mark.parametrize("value", ["false", "0", "no", "off", ""])
     def test_returns_false_for_falsy_values(self, monkeypatch, value):
         """Returns False for various falsy values."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value)
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value
+        )
         assert _is_async_mode_enabled() is False
 
 
@@ -124,7 +128,9 @@ class TestRunEvaluation:
         """Uses AsyncConfig(run_async=False) by default."""
         captured_config = {}
 
-        def capture_evaluate(test_cases, metrics, async_config=None, display_config=None):
+        def capture_evaluate(
+            test_cases, metrics, async_config=None, display_config=None
+        ):
             captured_config["async_config"] = async_config
 
             class _Result:
@@ -148,7 +154,9 @@ class TestRunEvaluation:
         """Uses AsyncConfig(run_async=True) when env var enabled."""
         captured_config = {}
 
-        def capture_evaluate(test_cases, metrics, async_config=None, display_config=None):
+        def capture_evaluate(
+            test_cases, metrics, async_config=None, display_config=None
+        ):
             captured_config["async_config"] = async_config
 
             class _Result:
@@ -160,7 +168,9 @@ class TestRunEvaluation:
             "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
             capture_evaluate,
         )
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true"
+        )
 
         run_evaluation(MagicMock(), [MagicMock()])
 
@@ -170,7 +180,9 @@ class TestRunEvaluation:
         """use_async parameter overrides environment variable."""
         captured_config = {}
 
-        def capture_evaluate(test_cases, metrics, async_config=None, display_config=None):
+        def capture_evaluate(
+            test_cases, metrics, async_config=None, display_config=None
+        ):
             captured_config["async_config"] = async_config
 
             class _Result:
@@ -182,7 +194,9 @@ class TestRunEvaluation:
             "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
             capture_evaluate,
         )
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "false")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "false"
+        )
 
         # Override with use_async=True
         run_evaluation(MagicMock(), [MagicMock()], use_async=True)
@@ -220,7 +234,9 @@ class TestRunEvaluationAsync:
         """Calls deepeval.evaluate with AsyncConfig(run_async=True)."""
         captured_config = {}
 
-        def capture_evaluate(test_cases, metrics, async_config=None, display_config=None):
+        def capture_evaluate(
+            test_cases, metrics, async_config=None, display_config=None
+        ):
             captured_config["async_config"] = async_config
 
             class _Result:
@@ -278,7 +294,9 @@ class TestRunEvaluationAsync:
         """Can run multiple evaluations concurrently."""
         call_count = {"count": 0}
 
-        def counting_evaluate(test_cases, metrics, async_config=None, display_config=None):
+        def counting_evaluate(
+            test_cases, metrics, async_config=None, display_config=None
+        ):
             call_count["count"] += 1
 
             class _Result:
@@ -302,4 +320,3 @@ class TestRunEvaluationAsync:
 
         assert len(results) == 3
         assert call_count["count"] == 3
-

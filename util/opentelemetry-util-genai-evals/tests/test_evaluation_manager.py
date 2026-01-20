@@ -83,7 +83,9 @@ def _make_concurrent_manager(
     """Helper to create Manager with concurrent mode settings."""
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
     if concurrent:
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true"
+        )
     else:
         monkeypatch.delenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", raising=False

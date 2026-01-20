@@ -387,7 +387,9 @@ class DeepevalEvaluator(Evaluator):
             except Exception:  # pragma: no cover
                 pass
             return []
-        return await self._evaluate_generic_async(invocation, "AgentInvocation")
+        return await self._evaluate_generic_async(
+            invocation, "AgentInvocation"
+        )
 
     async def _evaluate_generic_async(
         self, invocation: GenAI, invocation_type: str
@@ -453,7 +455,9 @@ class DeepevalEvaluator(Evaluator):
 
         try:
             # Use async runner for concurrent evaluation
-            evaluation = await _run_deepeval_async(test_case, metrics, genai_debug_log)
+            evaluation = await _run_deepeval_async(
+                test_case, metrics, genai_debug_log
+            )
             genai_debug_log(
                 "evaluator.deepeval.async.complete",
                 invocation
@@ -461,7 +465,9 @@ class DeepevalEvaluator(Evaluator):
                 else None,
                 invocation_type=invocation_type,
             )
-        except Exception as exc:  # pragma: no cover - dependency/runtime failure
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - dependency/runtime failure
             genai_debug_log(
                 "evaluator.deepeval.async.error.execution",
                 invocation

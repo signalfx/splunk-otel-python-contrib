@@ -41,7 +41,9 @@ def run_evaluation(
         Evaluation result from DeepEval.
     """
     # Determine whether to use async based on parameter or env var
-    async_enabled = use_async if use_async is not None else _is_async_mode_enabled()
+    async_enabled = (
+        use_async if use_async is not None else _is_async_mode_enabled()
+    )
 
     display_config = DisplayConfig(show_indicator=False, print_results=False)
     async_config = AsyncConfig(run_async=async_enabled)
@@ -87,10 +89,14 @@ async def run_evaluation_async(
     use_deepeval_async = _is_async_mode_enabled()
 
     def _run_sync() -> Any:
-        display_config = DisplayConfig(show_indicator=False, print_results=False)
+        display_config = DisplayConfig(
+            show_indicator=False, print_results=False
+        )
         # When concurrent mode enabled, use DeepEval's internal async for metric parallelism
         # When disabled, run metrics sequentially within each invocation
-        async_config = AsyncConfig(run_async=use_deepeval_async, max_concurrent=10)
+        async_config = AsyncConfig(
+            run_async=use_deepeval_async, max_concurrent=10
+        )
 
         stdout_buffer = io.StringIO()
         stderr_buffer = io.StringIO()

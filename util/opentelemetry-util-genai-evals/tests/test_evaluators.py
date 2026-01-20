@@ -431,7 +431,9 @@ class TestAsyncEvaluator(unittest.TestCase):
         sync_results = evaluator.evaluate(invocation)
         async_results = asyncio.run(evaluator.evaluate_async(invocation))
 
-        self.assertEqual(sync_results[0].metric_name, async_results[0].metric_name)
+        self.assertEqual(
+            sync_results[0].metric_name, async_results[0].metric_name
+        )
 
     def test_evaluate_async_handles_agent_invocation(self) -> None:
         """Async evaluation works for agent invocations."""
