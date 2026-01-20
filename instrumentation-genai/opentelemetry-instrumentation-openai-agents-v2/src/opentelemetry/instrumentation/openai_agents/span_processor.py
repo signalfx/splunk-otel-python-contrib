@@ -97,9 +97,6 @@ except ModuleNotFoundError:  # pragma: no cover - test stubs
         tracing_module, "TranscriptionSpanData", Any
     )  # type: ignore[assignment]
 
-_GLOBAL_PROCESSOR_REF: list = []  # Holds reference to active processor
-
-
 # GenAI semantic convention helpers
 
 
@@ -531,10 +528,6 @@ class GenAISemanticProcessor(TracingProcessor):
         self._workflow_last_output: Optional[str] = None
         self._trace_agent_count: dict[str, int] = {}
         self._trace_depth: int = 0
-
-        # Global registration
-        _GLOBAL_PROCESSOR_REF.clear()
-        _GLOBAL_PROCESSOR_REF.append(self)
 
     def _get_server_attributes(self) -> dict[str, Any]:
         """Get server attributes from configured values."""
@@ -1819,9 +1812,6 @@ class GenAISemanticProcessor(TracingProcessor):
 
         self._invocations.clear()
         self._trace_depth = 0
-
-        if _GLOBAL_PROCESSOR_REF and _GLOBAL_PROCESSOR_REF[0] is self:
-            _GLOBAL_PROCESSOR_REF.clear()
 
     def force_flush(self) -> None:
         """Force flush (no-op for this processor)."""
