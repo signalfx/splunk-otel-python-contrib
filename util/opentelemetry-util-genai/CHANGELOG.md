@@ -2,6 +2,8 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.7 - TBD
+
 - Added `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` environment variable to support evaluation queue size.
   Added queue size check and error attribute on span while eval for a span is dropped. 
 
