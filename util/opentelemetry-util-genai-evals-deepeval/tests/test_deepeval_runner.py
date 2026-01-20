@@ -231,7 +231,7 @@ class TestRunEvaluationAsync:
         assert asyncio.iscoroutinefunction(run_evaluation_async)
 
     def test_calls_deepeval_with_async_config(self, monkeypatch):
-        """Calls deepeval.evaluate with AsyncConfig(run_async=True)."""
+        """Calls deepeval.evaluate with AsyncConfig(run_async=True) when concurrent mode enabled."""
         captured_config = {}
 
         def capture_evaluate(
@@ -248,6 +248,8 @@ class TestRunEvaluationAsync:
             "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
             capture_evaluate,
         )
+        # Enable concurrent mode to activate DeepEval's async mode
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true")
 
         async def run_test():
             return await run_evaluation_async(MagicMock(), [MagicMock()])
@@ -255,6 +257,34 @@ class TestRunEvaluationAsync:
         asyncio.run(run_test())
 
         assert captured_config["async_config"].run_async is True
+
+    def test_async_disabled_when_concurrent_mode_off(self, monkeypatch):
+        """AsyncConfig.run_async is False when concurrent mode is disabled."""
+        captured_config = {}
+
+        def capture_evaluate(
+            test_cases, metrics, async_config=None, display_config=None
+        ):
+            captured_config["async_config"] = async_config
+
+            class _Result:
+                test_results = []
+
+            return _Result()
+
+        monkeypatch.setattr(
+            "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
+            capture_evaluate,
+        )
+        # Explicitly disable concurrent mode
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "false")
+
+        async def run_test():
+            return await run_evaluation_async(MagicMock(), [MagicMock()])
+
+        asyncio.run(run_test())
+
+        assert captured_config["async_config"].run_async is False
 
     def test_returns_evaluation_result(self, monkeypatch):
         """Returns the evaluation result from deepeval."""
