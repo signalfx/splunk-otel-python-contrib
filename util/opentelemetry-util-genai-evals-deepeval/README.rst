@@ -71,7 +71,13 @@ Custom LLM Provider Configuration
 
 Use these environment variables to configure a custom LLM endpoint (e.g., Azure OpenAI,
 private deployments, or LLM gateways). These settings are **optional** and only apply
-when ``DEEPEVAL_LLM_BASE_URL`` is set:
+when ``DEEPEVAL_LLM_BASE_URL`` is set.
+
+**Required Dependency:** Custom LLM provider support requires the ``litellm`` package:
+
+.. code-block:: bash
+
+    pip install litellm
 
 **Basic Configuration:**
 

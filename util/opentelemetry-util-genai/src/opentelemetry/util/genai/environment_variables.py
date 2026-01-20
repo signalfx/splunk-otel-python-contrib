@@ -175,6 +175,18 @@ positioning). Categories: ``SPAN``, ``METRICS``, ``CONTENT_EVENTS``, ``EVALUATIO
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE = (
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE"
 )
+OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC
+
+When set to a truthy value (``true``, ``1``, ``yes``, ``on``), evaluation metrics
+are emitted to a single histogram ``gen_ai.evaluation.score`` with the evaluation
+type distinguished by the ``gen_ai.evaluation.name`` attribute. When unset or falsey,
+evaluation metrics are emitted to separate histograms per evaluation type:
+``gen_ai.evaluation.bias``, ``gen_ai.evaluation.toxicity``, etc.
+"""
 OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
 
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE = (
@@ -198,6 +210,7 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC",
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
