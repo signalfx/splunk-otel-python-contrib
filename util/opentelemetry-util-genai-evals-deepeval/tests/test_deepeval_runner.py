@@ -28,8 +28,9 @@ def _install_deepeval_stubs():
     eval_cfg_mod = types.ModuleType("deepeval.evaluate.configs")
 
     class AsyncConfig:
-        def __init__(self, run_async=False):
+        def __init__(self, run_async=False, max_concurrent=None):
             self.run_async = run_async
+            self.max_concurrent = max_concurrent
 
     class DisplayConfig:
         def __init__(self, show_indicator=False, print_results=False):
@@ -249,7 +250,9 @@ class TestRunEvaluationAsync:
             capture_evaluate,
         )
         # Enable concurrent mode to activate DeepEval's async mode
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true"
+        )
 
         async def run_test():
             return await run_evaluation_async(MagicMock(), [MagicMock()])
@@ -277,7 +280,9 @@ class TestRunEvaluationAsync:
             capture_evaluate,
         )
         # Explicitly disable concurrent mode
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "false")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "false"
+        )
 
         async def run_test():
             return await run_evaluation_async(MagicMock(), [MagicMock()])
