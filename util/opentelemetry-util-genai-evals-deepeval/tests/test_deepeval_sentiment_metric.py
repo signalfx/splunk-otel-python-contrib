@@ -279,6 +279,6 @@ def test_sentiment_label_thresholds(monkeypatch):
         assert len(results) == 1
         res = results[0]
         assert res.score == pytest.approx(score, rel=1e-6)
-        assert res.label == expected_label, (
+        assert res.label == expected_label, (  # fmt: skip
             f"Score {score} should be labeled '{expected_label}'"
         )
