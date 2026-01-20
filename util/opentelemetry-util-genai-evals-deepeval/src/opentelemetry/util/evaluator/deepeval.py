@@ -257,26 +257,33 @@ def _apply_sentiment_postprocessing(
     if ctx.score is None:
         return ctx.score, label
     try:
-        compound = max(-1.0, min(1.0, float(ctx.score)))
+        # GEval outputs 0-1 scale: 0=negative, 0.5=neutral, 1=positive
+        score = max(0.0, min(1.0, float(ctx.score)))
     except Exception:
         return ctx.score, label
-    mapped = (compound + 1.0) / 2.0
+
+    # Convert 0-1 score to -1 to 1 compound for backwards-compatible attributes
+    compound = (score * 2.0) - 1.0
     ctx.attributes.setdefault(
         "deepeval.sentiment.compound", round(compound, 6)
     )
 
     if label is None:
-        if compound >= 0.25:
+        # Label thresholds based on 0-1 scale, matching GEval step guidance
+        # Thresholds: 0.0-0.35 = Negative, 0.35-0.65 = Neutral, 0.65-1.0 = Positive
+        if score >= 0.65:
             label = "Positive"
-        elif compound <= -0.25:
+        elif score <= 0.35:
             label = "Negative"
-        else:
+        else:  # 0.35 < score < 0.65
             label = "Neutral"
 
     try:
-        neg_strength = 1 - mapped
-        pos_strength = mapped
-        neu_strength = 1 - abs(compound)
+        # Compute distribution attributes from the 0-1 score
+        pos_strength = score
+        neg_strength = 1.0 - score
+        # Neutrality peaks at 0.5 (center of scale)
+        neu_strength = 1.0 - abs(compound)
         total = neg_strength + neu_strength + pos_strength
         if total > 0:
             neg_strength /= total
@@ -292,7 +299,7 @@ def _apply_sentiment_postprocessing(
         )
     except Exception:
         pass
-    return mapped, label
+    return score, label
 
 
 _METRIC_REGISTRY: Mapping[str, str] = _DEEPEVAL_METRIC_REGISTRY

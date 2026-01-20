@@ -85,13 +85,27 @@ def build_hallucination_metric(
     options: Mapping[str, Any], default_model: str | None
 ) -> Any:
     criteria = (
-        "Assess if the output hallucinates by introducing facts, details, or claims not directly supported "
-        "or implied by the input. Score 1 for fully grounded outputs (no fabrications) and 0 for severe hallucination."
+        "Detect hallucinations: factual claims in the output that contradict the input or introduce "
+        "specific details (names, dates, numbers, quotes, statistics) that cannot be reasonably inferred "
+        "from the input. Distinguish between valid logical inference (acceptable) and fabrication (hallucination). "
+        "Score 1.0 for outputs fully grounded in the input, 0.0 for outputs with clear fabrications or contradictions. "
+        "Be conservative: only flag as hallucination if there is clear evidence of fabrication or contradiction, "
+        "not reasonable inference or interpretation."
     )
     steps = [
-        "Review the input to extract all key facts and scope.",
-        "Scan the output for any unsubstantiated additions, contradictions, or extrapolations beyond the input.",
-        "Rate factual alignment: 1 = no hallucination, 0 = high hallucination risk.",
+        "Extract all explicit facts, claims, and details from the input. Note what information is provided and the scope.",
+        "Identify each factual claim in the output. For each claim, categorize it as: (a) explicitly stated in input, "
+        "(b) reasonable logical inference from input (e.g., 'it's sunny' → 'good weather'), or (c) introduces new "
+        "specifics not derivable from input (e.g., specific names, dates, numbers, quotes not mentioned).",
+        "Distinguish inference from fabrication: Inference = claim logically follows from input using common knowledge. "
+        "Fabrication = introduces new factual specifics (names, dates, statistics, quotes) that cannot be derived. "
+        "For domain-specific claims, consider if they're reasonable extensions of the input rather than arbitrary additions.",
+        "Check for direct contradictions: does the output state something that contradicts information in the input?",
+        "Self-verify: For each flagged item, ask 'Could a reasonable person infer this from the input?' If yes, it's inference, "
+        "not fabrication. Only mark as hallucination if confident there is clear fabrication (new specifics) or contradiction. "
+        "When uncertain between inference and fabrication, always favor inference (assign higher score) to minimize false positives.",
+        "Assign score: 1.0 = no hallucinations (all claims grounded or reasonably inferred), 0.8-0.9 = minor unwarranted "
+        "specifics or edge cases, 0.5-0.7 = some fabrications present, 0.0-0.4 = significant fabrications or contradictions.",
     ]
     if hasattr(LLMTestCaseParams, "INPUT_OUTPUT"):
         params = getattr(LLMTestCaseParams, "INPUT_OUTPUT")
@@ -118,11 +132,17 @@ def build_hallucination_metric(
 def build_sentiment_metric(
     options: Mapping[str, Any], default_model: str | None
 ) -> Any:
-    criteria = "Determine the overall sentiment polarity of the output text: -1 very negative, 0 neutral, +1 very positive."
+    criteria = (
+        "Rate the overall sentiment of the output text on a scale from 0 to 1. "
+        "0 = strongly negative, 0.5 = neutral, 1 = strongly positive. "
+        "Use intermediate values to capture intensity and mixed sentiments."
+    )
     steps = [
-        "Read the text and note words/phrases indicating sentiment.",
-        "Judge if overall tone is negative, neutral, or positive.",
-        "Assign a numeric polarity in [-1,1] capturing intensity.",
+        "Identify emotion-carrying words, phrases, and overall tone in the text.",
+        "Consider context: sarcasm, irony, or mixed sentiment should be judged by net effect on overall tone.",
+        "Assess intensity: is the sentiment strongly expressed (near 0 or 1) or mild (near 0.5)?",
+        "Assign score: 0.0-0.35 = negative sentiment, 0.35-0.65 = neutral sentiment, 0.65-1.0 = positive sentiment. "
+        "Use decimal values within these ranges to capture intensity (e.g., 0.2 = moderately negative, 0.8 = strongly positive).",
     ]
     if hasattr(LLMTestCaseParams, "ACTUAL_OUTPUT"):
         params = [LLMTestCaseParams.ACTUAL_OUTPUT]
