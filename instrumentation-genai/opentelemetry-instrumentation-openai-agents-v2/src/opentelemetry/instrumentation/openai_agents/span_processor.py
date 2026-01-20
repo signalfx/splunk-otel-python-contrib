@@ -24,18 +24,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
+
+from opentelemetry.trace import Status, StatusCode
 from urllib.parse import urlparse
 
-from opentelemetry.metrics import Histogram, get_meter
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
 )
 from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
-)
-from opentelemetry.trace import (
-    Status,
-    StatusCode,
 )
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
@@ -58,17 +55,15 @@ from opentelemetry.util.types import AttributeValue
 
 @dataclass
 class _InvocationState:
-    """State container for tracking invocations and their parent-child relationships."""
+    """Tracks invocation state and parent-child relationships."""
 
     invocation: Union[AgentInvocation, LLMInvocation, ToolCall]
     children: List[str] = field(default_factory=list)
-    # Store content that accumulates during span lifetime
+    # Accumulated content during span lifetime
     input_messages: List[Any] = field(default_factory=list)
     output_messages: List[Any] = field(default_factory=list)
     system_instructions: List[Any] = field(default_factory=list)
     request_model: Optional[str] = None
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
 
 
 try:
@@ -100,37 +95,6 @@ except ModuleNotFoundError:  # pragma: no cover - test stubs
     )  # type: ignore[assignment]
 
 _GLOBAL_PROCESSOR_REF: list = []  # Holds reference to active processor
-
-
-def stop_workflow(final_output: Optional[str] = None) -> None:
-    """Stop the current workflow span.
-
-    For multi-agent scenarios, call this explicitly after all agents complete
-    to finalize the workflow with proper output. While shutdown() will also
-    stop any active workflow, it is intended for cleanup during application
-    termination and should not be relied upon for normal workflow completion.
-
-    For single-agent scenarios, this can be called explicitly for immediate
-    finalization, or the workflow will be stopped when shutdown() is invoked.
-
-    Args:
-        final_output: Optional final output to set on the workflow.
-
-    Example:
-        from opentelemetry.instrumentation.openai_agents.span_processor import stop_workflow
-
-        # Run multiple agents - workflow persists across traces
-        Runner.run_sync(flight_agent, "Find flights")
-        Runner.run_sync(hotel_agent, "Find hotels")
-        result = Runner.run_sync(coordinator, "Create itinerary")
-
-        # Stop the workflow to finalize it
-        stop_workflow(final_output=result.final_output)
-    """
-    if _GLOBAL_PROCESSOR_REF:
-        processor = _GLOBAL_PROCESSOR_REF[0]
-        if hasattr(processor, "stop_workflow"):
-            processor.stop_workflow(final_output)
 
 
 # GenAI semantic convention helpers
@@ -429,12 +393,21 @@ def safe_json_dumps(obj: Any) -> str:
         return str(obj)
 
 
+def _serialize_tool_value(value: Any) -> Optional[str]:
+    """Serialize tool input/output value to string."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return safe_json_dumps(value)
+    return str(value)
+
+
 def _as_utc_nano(dt: datetime) -> int:
     """Convert datetime to UTC nanoseconds timestamp."""
     return int(dt.astimezone(timezone.utc).timestamp() * 1_000_000_000)
 
 
-def _get_span_status(span: Span[Any]) -> Status:
+def _get_span_status(span: Any) -> Status:
     """Get OpenTelemetry span status from agent span."""
     if error := getattr(span, "error", None):
         return Status(
@@ -492,7 +465,6 @@ class GenAISemanticProcessor(TracingProcessor):
         agent_description: Optional[str] = None,
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
-        metrics_enabled: bool = True,
         agent_name_default: Optional[str] = None,
         agent_id_default: Optional[str] = None,
         agent_description_default: Optional[str] = None,
@@ -500,7 +472,7 @@ class GenAISemanticProcessor(TracingProcessor):
         server_address_default: Optional[str] = None,
         server_port_default: Optional[int] = None,
     ):
-        """Initialize processor with metrics support.
+        """Initialize processor.
 
         Args:
             handler: TelemetryHandler for creating spans via utils
@@ -521,7 +493,7 @@ class GenAISemanticProcessor(TracingProcessor):
         effective_base_url = base_url or base_url_default
         self.base_url = effective_base_url
 
-        # Agent information - prefer explicit overrides; otherwise defer to span data
+        # Agent info
         self.agent_name = agent_name
         self.agent_id = agent_id
         self.agent_description = agent_description
@@ -529,14 +501,14 @@ class GenAISemanticProcessor(TracingProcessor):
         self._agent_id_default = agent_id_default
         self._agent_description_default = agent_description_default
 
-        # Server information - use init parameters, then base_url inference
+        # Server info
         self.server_address = server_address or server_address_default
         resolved_port = (
             server_port if server_port is not None else server_port_default
         )
         self.server_port = resolved_port
 
-        # If server info not provided, try to extract from base_url
+        # Infer from base_url if missing
         if (
             not self.server_address or not self.server_port
         ) and effective_base_url:
@@ -550,39 +522,26 @@ class GenAISemanticProcessor(TracingProcessor):
                     ServerAttributes.SERVER_PORT
                 )
 
-        # Content capture configuration
+        # Content capture
         self._capture_messages = (
             content_mode.capture_in_span or content_mode.capture_in_event
         )
         self._capture_system_instructions = True
         self._capture_tool_definitions = True
 
-        # Span tracking
+        # Tracking
         self._span_parents: dict[str, Optional[str]] = {}
-
-        # Unified invocation tracking: span_id -> _InvocationState
         self._invocations: Dict[str, _InvocationState] = {}
-
-        # util/genai integration
         self._handler = handler
         self._workflow: Workflow | None = None
-        # Track workflow input/output from agent spans
         self._workflow_first_input: Optional[str] = None
         self._workflow_last_output: Optional[str] = None
-        # Track agent spans per trace
         self._trace_agent_count: dict[str, int] = {}
+        self._trace_depth: int = 0
 
-        # Register this processor globally for multi-agent workflow support
+        # Global registration
         _GLOBAL_PROCESSOR_REF.clear()
         _GLOBAL_PROCESSOR_REF.append(self)
-
-        # Metrics configuration
-        self._metrics_enabled = metrics_enabled
-        self._meter = None
-        self._duration_histogram: Optional[Histogram] = None
-        self._token_usage_histogram: Optional[Histogram] = None
-        if self._metrics_enabled:
-            self._init_metrics()
 
     def _get_server_attributes(self) -> dict[str, Any]:
         """Get server attributes from configured values."""
@@ -593,108 +552,10 @@ class GenAISemanticProcessor(TracingProcessor):
             attrs[ServerAttributes.SERVER_PORT] = self.server_port
         return attrs
 
-    def _init_metrics(self):
-        """Initialize metric instruments."""
-        self._meter = get_meter(
-            "opentelemetry.instrumentation.openai_agents", "0.1.0"
-        )
-
-        # Operation duration histogram
-        self._duration_histogram = self._meter.create_histogram(
-            name="gen_ai.client.operation.duration",
-            description="GenAI operation duration",
-            unit="s",
-        )
-
-        # Token usage histogram
-        self._token_usage_histogram = self._meter.create_histogram(
-            name="gen_ai.client.token.usage",
-            description="Number of input and output tokens used",
-            unit="{token}",
-        )
-
-    def _record_metrics(
-        self, span: Span[Any], attributes: dict[str, AttributeValue]
-    ) -> None:
-        """Record metrics for the span."""
-        if not self._metrics_enabled or (
-            self._duration_histogram is None
-            and self._token_usage_histogram is None
-        ):
-            return
-
-        try:
-            # Calculate duration
-            duration = None
-            if hasattr(span, "started_at") and hasattr(span, "ended_at"):
-                try:
-                    start = datetime.fromisoformat(span.started_at)
-                    end = datetime.fromisoformat(span.ended_at)
-                    duration = (end - start).total_seconds()
-                except Exception:
-                    pass
-
-            # Build metric attributes
-            metric_attrs = {
-                GEN_AI_PROVIDER_NAME: attributes.get(GEN_AI_PROVIDER_NAME),
-                GEN_AI_OPERATION_NAME: attributes.get(GEN_AI_OPERATION_NAME),
-                GEN_AI_REQUEST_MODEL: (
-                    attributes.get(GEN_AI_REQUEST_MODEL)
-                    or attributes.get(GEN_AI_RESPONSE_MODEL)
-                ),
-                ServerAttributes.SERVER_ADDRESS: attributes.get(
-                    ServerAttributes.SERVER_ADDRESS
-                ),
-                ServerAttributes.SERVER_PORT: attributes.get(
-                    ServerAttributes.SERVER_PORT
-                ),
-            }
-
-            # Add error type if present
-            if error := getattr(span, "error", None):
-                error_type = error.get("type") or error.get("name")
-                if error_type:
-                    metric_attrs["error.type"] = error_type
-
-            # Remove None values
-            metric_attrs = {
-                k: v for k, v in metric_attrs.items() if v is not None
-            }
-
-            # Record duration
-            if duration is not None and self._duration_histogram is not None:
-                self._duration_histogram.record(duration, metric_attrs)
-
-            # Record token usage
-            if self._token_usage_histogram:
-                input_tokens = attributes.get(GEN_AI_USAGE_INPUT_TOKENS)
-                if isinstance(input_tokens, (int, float)):
-                    token_attrs = dict(metric_attrs)
-                    token_attrs[GEN_AI_TOKEN_TYPE] = "input"
-                    self._token_usage_histogram.record(
-                        input_tokens, token_attrs
-                    )
-
-                output_tokens = attributes.get(GEN_AI_USAGE_OUTPUT_TOKENS)
-                if isinstance(output_tokens, (int, float)):
-                    token_attrs = dict(metric_attrs)
-                    token_attrs[GEN_AI_TOKEN_TYPE] = "output"
-                    self._token_usage_histogram.record(
-                        output_tokens, token_attrs
-                    )
-
-        except Exception as e:
-            logger.debug("Failed to record metrics: %s", e)
-
     def _collect_system_instructions(
         self, messages: Sequence[Any] | None
     ) -> list[dict[str, str]]:
-        """Return system/ai role instructions as typed text objects.
-
-        Enforces format: [{"type": "text", "content": "..."}].
-        Handles message content that may be a string, list of parts,
-        or a dict with text/content fields.
-        """
+        """Extract system/ai instructions as [{"type": "text", "content": "..."}]."""
         if not messages:
             return []
         out: list[dict[str, str]] = []
@@ -708,13 +569,7 @@ class GenAISemanticProcessor(TracingProcessor):
         return out
 
     def _normalize_to_text_parts(self, content: Any) -> list[dict[str, str]]:
-        """Normalize arbitrary content into typed text parts.
-
-        - String -> [{type: text, content: <string>}]
-        - List/Tuple -> map each item to a text part (string/dict supported)
-        - Dict -> use 'text' or 'content' field when available; else str(dict)
-        - Other -> str(value)
-        """
+        """Convert content to [{"type": "text", "content": ...}] format."""
         parts: list[dict[str, str]] = []
         if content is None:
             return parts
@@ -741,23 +596,17 @@ class GenAISemanticProcessor(TracingProcessor):
             else:
                 parts.append({"type": "text", "content": str(content)})
             return parts
-        # Fallback for other types
         parts.append({"type": "text", "content": str(content)})
         return parts
 
     def _redacted_text_parts(self) -> list[dict[str, str]]:
-        """Return a single redacted text part for system instructions."""
+        """Return redacted text part."""
         return [{"type": "text", "content": "readacted"}]
 
     def _normalize_messages_to_role_parts(
         self, messages: Sequence[Any] | None
     ) -> list[dict[str, Any]]:
-        """Normalize input messages to enforced role+parts schema.
-
-        Each message becomes: {"role": <role>, "parts": [ {"type": ..., ...} ]}
-        Redaction: when include_sensitive_data is False, replace text content,
-        tool_call arguments, and tool_call_response result with "readacted".
-        """
+        """Normalize messages to {"role": ..., "parts": [...]} format."""
         if not messages:
             return []
         normalized: list[dict[str, Any]] = []
@@ -1128,14 +977,6 @@ class GenAISemanticProcessor(TracingProcessor):
                     payload.output_messages = normalized_out
 
         elif _is_instance_of(span_data, FunctionSpanData) and capture_tools:
-
-            def _serialize_tool_value(value: Any) -> Optional[str]:
-                if value is None:
-                    return None
-                if isinstance(value, (dict, list)):
-                    return safe_json_dumps(value)
-                return str(value)
-
             payload.tool_arguments = _serialize_tool_value(
                 getattr(span_data, "input", None)
             )
@@ -1167,13 +1008,6 @@ class GenAISemanticProcessor(TracingProcessor):
     ) -> Optional[_InvocationState]:
         """Get invocation state by span_id."""
         return self._invocations.get(span_id)
-
-    def _get_invocation(
-        self, span_id: str
-    ) -> Optional[Union[AgentInvocation, LLMInvocation, ToolCall]]:
-        """Get invocation by span_id."""
-        state = self._invocations.get(span_id)
-        return state.invocation if state else None
 
     def _delete_invocation_state(
         self, span_id: str
@@ -1388,24 +1222,14 @@ class GenAISemanticProcessor(TracingProcessor):
         return json.dumps([output_msg])
 
     def on_trace_start(self, trace: Trace) -> None:
-        """Create or reuse workflow span when trace starts.
-
-        Workflow persists across multiple traces until stop_workflow() is called
-        or shutdown() is invoked. This supports multi-agent scenarios with
-        sequential Runner.run() calls.
-        """
+        """Create workflow span when outermost trace starts."""
         try:
-            # Initialize tracking for this trace
             self._trace_agent_count[trace.trace_id] = 0
+            self._trace_depth += 1
 
-            # Only create workflow if one doesn't exist
-            # Workflow persists across traces for multi-agent support
             if self._workflow is None:
-                # Reset workflow input/output tracking for new workflow
                 self._workflow_first_input = None
                 self._workflow_last_output = None
-
-                # Extract workflow attributes from trace metadata
                 metadata = getattr(trace, "metadata", None) or {}
                 workflow_name = getattr(trace, "name", None) or "OpenAIAgents"
 
@@ -1417,7 +1241,7 @@ class GenAISemanticProcessor(TracingProcessor):
                     attributes={},
                 )
                 self._handler.start_workflow(self._workflow)
-        except Exception as e:  # defensive – don't break existing spans
+        except Exception as e:
             logger.debug(
                 "Failed to create workflow for trace %s: %s",
                 getattr(trace, "trace_id", "<unknown>"),
@@ -1426,67 +1250,30 @@ class GenAISemanticProcessor(TracingProcessor):
             )
 
     def on_trace_end(self, trace: Trace) -> None:
-        """Handle trace end - update workflow I/O but don't stop it.
-
-        OpenAI Agents SDK creates separate traces for each agent invocation
-        in multi-agent scenarios. Workflow must persist across these traces
-        to group all agents under a single workflow span.
-
-        Workflow is stopped via:
-        - Explicit stop_workflow() call
-        - shutdown() method
-        """
-        # Clean up trace-level tracking
+        """Stop workflow when outermost trace ends."""
         self._trace_agent_count.pop(trace.trace_id, None)
 
-        # Update workflow input/output but DON'T stop it
-        # Workflow persists across multiple traces for multi-agent scenarios
-        if self._workflow is not None:
-            # Set initial input from first agent's input (if not already set)
+        if self._trace_depth > 0:
+            self._trace_depth -= 1
+
+        if self._workflow is not None and self._trace_depth == 0:
             if self._workflow_first_input and not self._workflow.initial_input:
                 self._workflow.initial_input = self._format_input_message(
                     self._workflow_first_input
                 )
-            # Update final output to latest agent's output
             if self._workflow_last_output:
                 self._workflow.final_output = self._format_output_message(
                     self._workflow_last_output
-                )
-
-        # Clean up invocations for this trace (but keep workflow)
-        self._cleanup_spans_for_trace(trace.trace_id)
-
-    def stop_workflow(self, final_output: Optional[str] = None) -> None:
-        """Stop the current workflow.
-
-        For multi-agent scenarios, call this explicitly after all agents complete.
-        For single-agent scenarios, this is called automatically on shutdown().
-
-        Args:
-            final_output: Optional final output to set on the workflow.
-        """
-        if self._workflow is not None:
-            # Set final output
-            if final_output:
-                self._workflow.final_output = self._format_output_message(
-                    final_output
-                )
-            elif self._workflow_last_output:
-                self._workflow.final_output = self._format_output_message(
-                    self._workflow_last_output
-                )
-            # Set initial input
-            if self._workflow_first_input and not self._workflow.initial_input:
-                self._workflow.initial_input = self._format_input_message(
-                    self._workflow_first_input
                 )
             self._handler.stop_workflow(self._workflow)
             self._workflow = None
             self._workflow_first_input = None
             self._workflow_last_output = None
 
+        self._cleanup_spans_for_trace(trace.trace_id)
+
     def on_span_start(self, span: Span[Any]) -> None:
-        """Start invocations for spans using unified tracking."""
+        """Start invocation tracking for a span."""
         if not span.started_at:
             return
 
@@ -1494,7 +1281,6 @@ class GenAISemanticProcessor(TracingProcessor):
         parent_key = str(span.parent_id) if span.parent_id else None
         self._span_parents[span.span_id] = span.parent_id
 
-        # Get operation details for span naming
         operation_name = self._get_operation_name(span.span_data)
         model = getattr(span.span_data, "model", None)
         if model is None:
@@ -1583,6 +1369,9 @@ class GenAISemanticProcessor(TracingProcessor):
                 if agent_name:
                     agent_entity.agent_name = agent_name
 
+                # Use span_id from the framework as agent_id
+                agent_entity.agent_id = str(span.span_id)
+
                 agent_entity.framework = "openai_agents"
 
                 self._handler.start_agent(agent_entity)
@@ -1669,7 +1458,7 @@ class GenAISemanticProcessor(TracingProcessor):
                     input_messages=input_messages if input_messages else [],
                 )
 
-                # Set parent relationship
+                # Set parent relationship - in agentic frameworks there's always a parent agent
                 if parent_agent is not None:
                     llm_entity.parent_run_id = parent_agent.run_id
                     if hasattr(parent_agent, "span") and parent_agent.span:
@@ -1679,19 +1468,13 @@ class GenAISemanticProcessor(TracingProcessor):
                         and parent_agent.agent_name
                     ):
                         llm_entity.agent_name = parent_agent.agent_name
-                    # Use agent_id if set, otherwise use run_id (the actual UUID)
+                    # Use span_id from the framework as agent_id
                     llm_entity.agent_id = (
                         parent_agent.agent_id
                         if hasattr(parent_agent, "agent_id")
                         and parent_agent.agent_id
-                        else str(parent_agent.run_id)
-                        if parent_agent.run_id
                         else None
                     )
-                elif self._workflow is not None:
-                    llm_entity.parent_run_id = self._workflow.run_id
-                    if hasattr(self._workflow, "span") and self._workflow.span:
-                        llm_entity.parent_span = self._workflow.span
 
                 llm_entity.framework = "openai_agents"
 
@@ -1731,7 +1514,7 @@ class GenAISemanticProcessor(TracingProcessor):
                     else None
                 )
 
-                # Get actual agent_id - prefer agent_id, fallback to run_id (UUID)
+                # Get agent_id from parent agent (uses span_id from framework)
                 actual_agent_id: Optional[str] = None
                 if parent_agent is not None:
                     if (
@@ -1739,13 +1522,11 @@ class GenAISemanticProcessor(TracingProcessor):
                         and parent_agent.agent_name
                     ):
                         tool_attrs[GEN_AI_AGENT_NAME] = parent_agent.agent_name
-                    # Use agent_id if set, otherwise use run_id (the actual UUID)
+                    # Use agent_id (span_id from framework)
                     actual_agent_id = (
                         parent_agent.agent_id
                         if hasattr(parent_agent, "agent_id")
                         and parent_agent.agent_id
-                        else str(parent_agent.run_id)
-                        if parent_agent.run_id
                         else None
                     )
                     if actual_agent_id:
@@ -1760,17 +1541,13 @@ class GenAISemanticProcessor(TracingProcessor):
                     attributes=tool_attrs,
                 )
 
-                # Set parent relationship
+                # Set parent relationship - in agentic frameworks there's always a parent agent
                 if parent_agent is not None:
                     tool_entity.parent_run_id = parent_agent.run_id
                     tool_entity.agent_name = parent_agent.agent_name
                     tool_entity.agent_id = actual_agent_id
                     if hasattr(parent_agent, "span") and parent_agent.span:
                         tool_entity.parent_span = parent_agent.span
-                elif self._workflow is not None:
-                    tool_entity.parent_run_id = self._workflow.run_id
-                    if hasattr(self._workflow, "span") and self._workflow.span:
-                        tool_entity.parent_span = self._workflow.span
 
                 tool_entity.framework = "openai_agents"
                 self._handler.start_tool_call(tool_entity)
@@ -1798,7 +1575,8 @@ class GenAISemanticProcessor(TracingProcessor):
         key = str(span.span_id)
         state = self._get_invocation_state(key)
 
-        # Track workflow input/output from agent spans
+        # Track workflow input/output from agent spans and extract content for attributes
+        agent_content_for_metrics = None
         if state and isinstance(state.invocation, AgentInvocation):
             if state.input_messages:
                 input_data = safe_json_dumps(state.input_messages)
@@ -1808,10 +1586,6 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._workflow_last_output = safe_json_dumps(
                     state.output_messages
                 )
-
-        # Extract attributes for metrics
-        agent_content_for_metrics = None
-        if state and isinstance(state.invocation, AgentInvocation):
             agent_content_for_metrics = {
                 "input_messages": state.input_messages,
                 "output_messages": state.output_messages,
@@ -1820,7 +1594,7 @@ class GenAISemanticProcessor(TracingProcessor):
             }
 
         try:
-            attributes: dict[str, AttributeValue] = dict(
+            _ = dict(
                 self._extract_genai_attributes(
                     span, payload, agent_content_for_metrics
                 )
@@ -1831,7 +1605,6 @@ class GenAISemanticProcessor(TracingProcessor):
                 span.span_id,
                 e,
             )
-            attributes = {}
 
         # Stop invocation based on type
         if state is not None:
@@ -1983,23 +1756,22 @@ class GenAISemanticProcessor(TracingProcessor):
             # Remove from invocations
             self._delete_invocation_state(key)
 
-        # Record metrics
-        try:
-            self._record_metrics(span, attributes)
-        except Exception as e:
-            logger.debug(
-                "Failed to record metrics for span %s: %s",
-                span.span_id,
-                e,
-            )
-
-        # Cleanup
-        self._span_parents.pop(span.span_id, None)
-
     def shutdown(self) -> None:
         """Clean up resources on shutdown."""
-        # Stop any active workflow first
-        self.stop_workflow()
+        # Stop any active workflow first (if not already stopped by on_trace_end)
+        if self._workflow is not None:
+            if self._workflow_first_input and not self._workflow.initial_input:
+                self._workflow.initial_input = self._format_input_message(
+                    self._workflow_first_input
+                )
+            if self._workflow_last_output:
+                self._workflow.final_output = self._format_output_message(
+                    self._workflow_last_output
+                )
+            self._handler.stop_workflow(self._workflow)
+            self._workflow = None
+            self._workflow_first_input = None
+            self._workflow_last_output = None
 
         # Stop any remaining invocations using unified tracking
         for key, state in list(self._invocations.items()):
@@ -2016,6 +1788,7 @@ class GenAISemanticProcessor(TracingProcessor):
 
         self._invocations.clear()
         self._span_parents.clear()
+        self._trace_depth = 0
 
         if _GLOBAL_PROCESSOR_REF and _GLOBAL_PROCESSOR_REF[0] is self:
             _GLOBAL_PROCESSOR_REF.clear()
@@ -2697,5 +2470,4 @@ __all__ = [
     "normalize_provider",
     "normalize_output_type",
     "validate_tool_type",
-    "stop_workflow",
 ]

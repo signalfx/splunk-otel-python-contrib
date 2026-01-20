@@ -580,21 +580,20 @@ def test_workflow_and_agent_spans_created(processor_setup):
     processor.on_span_end(agent_span)
     processor.on_trace_end(trace)
 
-    # Workflow persists across traces for multi-agent scenarios
-    assert processor._workflow is not None
-
-    processor.stop_workflow()
+    # Workflow is stopped when trace ends (using with trace() pattern)
     assert processor._workflow is None
 
 
-def test_workflow_persists_across_multiple_traces(processor_setup):
-    """Test workflow persists across multiple traces (multi-agent scenarios).
+def test_workflow_lifecycle_with_trace(processor_setup):
+    """Test workflow lifecycle with trace() context manager pattern.
 
-    OpenAI Agents SDK creates separate traces for each agent invocation.
-    Workflow must persist to group all agents under a single workflow span.
+    When using `with trace()` from OpenAI Agents SDK, each trace creates
+    and stops its own workflow. For multi-agent scenarios, all agents
+    should be wrapped in a single `with trace()` block.
     """
     processor, _ = processor_setup
 
+    # First trace creates and stops its workflow
     trace1 = FakeTrace(name="trace1", trace_id="trace-1")
     processor.on_trace_start(trace1)
     workflow_1 = processor._workflow
@@ -611,15 +610,16 @@ def test_workflow_persists_across_multiple_traces(processor_setup):
     processor.on_span_end(agent1_span)
     processor.on_trace_end(trace1)
 
-    # Workflow PERSISTS after trace_end (multi-agent support)
-    assert processor._workflow is workflow_1
+    # Workflow is stopped when trace ends
+    assert processor._workflow is None
 
-    # Second trace reuses same workflow
+    # Second trace creates a new workflow
     trace2 = FakeTrace(name="trace2", trace_id="trace-2")
     processor.on_trace_start(trace2)
 
-    # Same workflow persists
-    assert processor._workflow is workflow_1
+    # New workflow created
+    workflow_2 = processor._workflow
+    assert workflow_2 is not None
 
     agent2_span = FakeSpan(
         trace_id=trace2.trace_id,
@@ -632,11 +632,7 @@ def test_workflow_persists_across_multiple_traces(processor_setup):
     processor.on_span_end(agent2_span)
     processor.on_trace_end(trace2)
 
-    # Still persists after second trace
-    assert processor._workflow is workflow_1
-
-    # Only stops when explicitly called
-    processor.stop_workflow()
+    # Workflow is stopped when trace ends
     assert processor._workflow is None
 
 

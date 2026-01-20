@@ -39,9 +39,10 @@ import random  # noqa: E402
 import time  # noqa: E402
 from datetime import datetime, timedelta  # noqa: E402
 
-from agents import Agent, Runner, function_tool  # noqa: E402
+from agents import Agent, Runner, function_tool, trace  # noqa: E402
 
-from opentelemetry import _events, _logs, metrics, trace  # noqa: E402
+from opentelemetry import _events, _logs, metrics  # noqa: E402
+from opentelemetry import trace as otel_trace  # noqa: E402
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # noqa: E402
     OTLPLogExporter,
 )
@@ -53,9 +54,6 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E40
 )
 from opentelemetry.instrumentation.openai_agents import (  # noqa: E402
     OpenAIAgentsInstrumentor,
-)
-from opentelemetry.instrumentation.openai_agents.span_processor import (  # noqa: E402
-    stop_workflow,
 )
 from opentelemetry.sdk._events import EventLoggerProvider  # noqa: E402
 from opentelemetry.sdk._logs import LoggerProvider  # noqa: E402
@@ -151,7 +149,7 @@ def configure_otel() -> None:
     # Traces
     trace_provider = TracerProvider(resource=resource)
     trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    trace.set_tracer_provider(trace_provider)
+    otel_trace.set_tracer_provider(trace_provider)
 
     # Metrics
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
@@ -258,8 +256,7 @@ def run_travel_planner() -> None:
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
     print(f"\nRequest: {initial_request}\n")
 
-    final_output = None
-    try:
+    with trace("Travel planner workflow"):
         # Step 1: Flight Specialist
         print("\n✈️  Flight Specialist - Searching for flights...")
         flight_result = Runner.run_sync(
@@ -312,12 +309,8 @@ Please organize this into a clear, well-formatted itinerary for a romantic week-
         print("=" * 60)
         print(f"\n{final_output}\n")
 
-    finally:
-        # Stop the workflow to finalize it with all agent steps
-        stop_workflow(final_output=final_output)
-
-        # Allow time for telemetry to flush
-        time.sleep(2)
+    # Allow time for telemetry to flush
+    time.sleep(2)
 
 
 # ---------------------------------------------------------------------------
