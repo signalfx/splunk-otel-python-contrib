@@ -461,9 +461,6 @@ class GenAISemanticProcessor(TracingProcessor):
         include_sensitive_data: bool = True,
         content_mode: ContentCaptureMode = ContentCaptureMode.SPAN_AND_EVENT,
         base_url: Optional[str] = None,
-        agent_name: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        agent_description: Optional[str] = None,
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
         agent_name_default: Optional[str] = None,
@@ -480,9 +477,6 @@ class GenAISemanticProcessor(TracingProcessor):
             system_name: Provider name (openai/azure.ai.inference/etc.)
             include_sensitive_data: Include model/tool IO when True
             base_url: API endpoint for server.address/port
-            agent_name: Name of the agent (can be overridden by env var)
-            agent_id: ID of the agent (can be overridden by env var)
-            agent_description: Description of the agent (can be overridden by env var)
             server_address: Server address (can be overridden by env var or base_url)
             server_port: Server port (can be overridden by env var or base_url)
         """
@@ -494,10 +488,7 @@ class GenAISemanticProcessor(TracingProcessor):
         effective_base_url = base_url or base_url_default
         self.base_url = effective_base_url
 
-        # Agent info
-        self.agent_name = agent_name
-        self.agent_id = agent_id
-        self.agent_description = agent_description
+        # Agent defaults
         self._agent_name_default = agent_name_default
         self._agent_id_default = agent_id_default
         self._agent_description_default = agent_description_default
@@ -778,6 +769,82 @@ class GenAISemanticProcessor(TracingProcessor):
 
         return normalized
 
+    def _format_output_item(self, item: Any) -> Optional[dict[str, Any]]:
+        """Format a single output item into a proper part structure.
+
+        Handles ResponseFunctionToolCall, ResponseReasoningItem, and other output types.
+        """
+        if not self.include_sensitive_data:
+            return {"type": "text", "content": "redacted"}
+
+        # Check for type attribute to identify special response items
+        item_type = getattr(item, "type", None)
+
+        # Handle function_call (ResponseFunctionToolCall)
+        if item_type == "function_call":
+            tool_name = getattr(item, "name", "unknown_tool")
+            arguments = getattr(item, "arguments", "{}")
+            call_id = getattr(item, "call_id", "")
+            return {
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "tool_call_id": call_id,
+                "arguments": arguments,
+            }
+
+        # Handle reasoning (ResponseReasoningItem) - skip or summarize
+        if item_type == "reasoning":
+            # Reasoning items typically don't have user-visible content
+            # Return None to skip, or include a marker if needed
+            return None
+
+        # Handle text content
+        txt = getattr(item, "content", None)
+        if isinstance(txt, str) and txt:
+            return {"type": "text", "content": txt}
+
+        # Handle message type (ResponseOutputMessage)
+        if item_type == "message":
+            msg_content = getattr(item, "content", None)
+            if isinstance(msg_content, list):
+                # Extract text from content parts
+                texts = []
+                for part in msg_content:
+                    part_type = getattr(part, "type", None)
+                    if part_type == "output_text":
+                        text = getattr(part, "text", "")
+                        if text:
+                            texts.append(text)
+                if texts:
+                    return {"type": "text", "content": "\n".join(texts)}
+            elif isinstance(msg_content, str) and msg_content:
+                return {"type": "text", "content": msg_content}
+
+        # Fallback: try to extract meaningful data or skip
+        # Don't stringify complex objects - return None to skip
+        if hasattr(item, "model_dump"):
+            # Pydantic model - dump to dict for cleaner output
+            try:
+                data = item.model_dump(exclude_none=True)
+                if "content" in data and data["content"]:
+                    return {"type": "text", "content": str(data["content"])}
+                # For tool calls without proper type detection
+                if "arguments" in data and "name" in data:
+                    return {
+                        "type": "tool_call",
+                        "tool_name": data.get("name", "unknown"),
+                        "tool_call_id": data.get("call_id", ""),
+                        "arguments": data.get("arguments", "{}"),
+                    }
+            except Exception:
+                pass
+
+        # Last resort: stringify if it's a simple type
+        if isinstance(item, str):
+            return {"type": "text", "content": item}
+
+        return None
+
     def _normalize_output_messages_to_role_parts(
         self, span_data: Any
     ) -> list[dict[str, Any]]:
@@ -810,31 +877,9 @@ class GenAISemanticProcessor(TracingProcessor):
                 output = getattr(response, "output", None)
                 if isinstance(output, Sequence):
                     for item in output:
-                        # ResponseOutputMessage may have a string representation
-                        txt = getattr(item, "content", None)
-                        if isinstance(txt, str) and txt:
-                            parts.append(
-                                {
-                                    "type": "text",
-                                    "content": (
-                                        "readacted"
-                                        if not self.include_sensitive_data
-                                        else txt
-                                    ),
-                                }
-                            )
-                        else:
-                            # Fallback: stringified
-                            parts.append(
-                                {
-                                    "type": "text",
-                                    "content": (
-                                        "readacted"
-                                        if not self.include_sensitive_data
-                                        else str(item)
-                                    ),
-                                }
-                            )
+                        part = self._format_output_item(item)
+                        if part:
+                            parts.append(part)
                         # Capture finish_reason from parts when present
                         fr = getattr(item, "finish_reason", None)
                         if isinstance(fr, str) and not finish_reason:
@@ -846,69 +891,48 @@ class GenAISemanticProcessor(TracingProcessor):
             if isinstance(output, Sequence):
                 for item in output:
                     if isinstance(item, dict):
+                        # Handle dict items (text, tool_call, etc.)
                         if item.get("type") == "text":
                             txt = item.get("content") or item.get("text")
                             if isinstance(txt, str) and txt:
-                                parts.append(
-                                    {
-                                        "type": "text",
-                                        "content": (
-                                            "readacted"
-                                            if not self.include_sensitive_data
-                                            else txt
-                                        ),
-                                    }
-                                )
-                        elif "content" in item and isinstance(
-                            item["content"], str
-                        ):
-                            parts.append(
-                                {
+                                parts.append({
                                     "type": "text",
                                     "content": (
-                                        "readacted"
+                                        "redacted"
                                         if not self.include_sensitive_data
-                                        else item["content"]
+                                        else txt
                                     ),
-                                }
-                            )
-                        else:
-                            parts.append(
-                                {
-                                    "type": "text",
-                                    "content": (
-                                        "readacted"
-                                        if not self.include_sensitive_data
-                                        else str(item)
-                                    ),
-                                }
-                            )
+                                })
+                        elif item.get("type") == "function_call":
+                            # Tool call in dict format
+                            parts.append({
+                                "type": "tool_call",
+                                "tool_name": item.get("name", "unknown"),
+                                "tool_call_id": item.get("call_id", ""),
+                                "arguments": item.get("arguments", "{}"),
+                            })
+                        elif "content" in item and isinstance(item["content"], str):
+                            parts.append({
+                                "type": "text",
+                                "content": (
+                                    "redacted"
+                                    if not self.include_sensitive_data
+                                    else item["content"]
+                                ),
+                            })
                         if not finish_reason and isinstance(
                             item.get("finish_reason"), str
                         ):
                             finish_reason = item.get("finish_reason")
-                    elif isinstance(item, str):
-                        parts.append(
-                            {
-                                "type": "text",
-                                "content": (
-                                    "readacted"
-                                    if not self.include_sensitive_data
-                                    else item
-                                ),
-                            }
-                        )
                     else:
-                        parts.append(
-                            {
-                                "type": "text",
-                                "content": (
-                                    "readacted"
-                                    if not self.include_sensitive_data
-                                    else str(item)
-                                ),
-                            }
-                        )
+                        # Use helper for non-dict items (Pydantic models, etc.)
+                        part = self._format_output_item(item)
+                        if part:
+                            parts.append(part)
+                        # Extract finish_reason if present
+                        fr = getattr(item, "finish_reason", None)
+                        if isinstance(fr, str) and not finish_reason:
+                            finish_reason = fr
 
         # Build assistant message
         msg: dict[str, Any] = {"role": "assistant", "parts": parts}
@@ -1314,9 +1338,9 @@ class GenAISemanticProcessor(TracingProcessor):
             if parent_agent_state and not parent_agent_state.request_model:
                 parent_agent_state.request_model = model
 
-        # Use configured agent name or get from span data
-        agent_name = self.agent_name
-        if not agent_name and _is_instance_of(span.span_data, AgentSpanData):
+        # Get agent name from span data or use default
+        agent_name = None
+        if _is_instance_of(span.span_data, AgentSpanData):
             agent_name = getattr(span.span_data, "name", None)
         if not agent_name:
             agent_name = self._agent_name_default
@@ -1336,18 +1360,6 @@ class GenAISemanticProcessor(TracingProcessor):
             GEN_AI_OPERATION_NAME: operation_name,
         }
 
-        # Add configured agent and server attributes
-        agent_name_override = self.agent_name or self._agent_name_default
-        agent_id_override = self.agent_id or self._agent_id_default
-        agent_desc_override = (
-            self.agent_description or self._agent_description_default
-        )
-        if agent_name_override:
-            attributes[GEN_AI_AGENT_NAME] = agent_name_override
-        if agent_id_override:
-            attributes[GEN_AI_AGENT_ID] = agent_id_override
-        if agent_desc_override:
-            attributes[GEN_AI_AGENT_DESCRIPTION] = agent_desc_override
         attributes.update(self._get_server_attributes())
 
         # Handle AgentSpanData - create AgentInvocation
@@ -1853,19 +1865,6 @@ class GenAISemanticProcessor(TracingProcessor):
         yield GEN_AI_PROVIDER_NAME, self.system_name
         yield GEN_AI_SYSTEM_KEY, self.system_name
 
-        # Add configured agent attributes (always include when set)
-        agent_name_override = self.agent_name or self._agent_name_default
-        agent_id_override = self.agent_id or self._agent_id_default
-        agent_desc_override = (
-            self.agent_description or self._agent_description_default
-        )
-        if agent_name_override:
-            yield GEN_AI_AGENT_NAME, agent_name_override
-        if agent_id_override:
-            yield GEN_AI_AGENT_ID, agent_id_override
-        if agent_desc_override:
-            yield GEN_AI_AGENT_DESCRIPTION, agent_desc_override
-
         # Server attributes
         for key, value in self._get_server_attributes().items():
             yield key, value
@@ -2119,25 +2118,16 @@ class GenAISemanticProcessor(TracingProcessor):
         """Extract attributes from agent span."""
         yield GEN_AI_OPERATION_NAME, self._get_operation_name(span_data)
 
-        name = (
-            self.agent_name
-            or getattr(span_data, "name", None)
-            or self._agent_name_default
-        )
+        name = getattr(span_data, "name", None) or self._agent_name_default
         if name:
             yield GEN_AI_AGENT_NAME, name
 
-        agent_id = (
-            self.agent_id
-            or getattr(span_data, "agent_id", None)
-            or self._agent_id_default
-        )
+        agent_id = getattr(span_data, "agent_id", None) or self._agent_id_default
         if agent_id:
             yield GEN_AI_AGENT_ID, agent_id
 
         description = (
-            self.agent_description
-            or getattr(span_data, "description", None)
+            getattr(span_data, "description", None)
             or self._agent_description_default
         )
         if description:

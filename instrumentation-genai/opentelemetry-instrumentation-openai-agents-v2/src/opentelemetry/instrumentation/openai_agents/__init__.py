@@ -131,9 +131,6 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             )
         content_mode = _resolve_content_mode(content_override)
 
-        agent_name = kwargs.get("agent_name")
-        agent_id = kwargs.get("agent_id")
-        agent_description = kwargs.get("agent_description")
         base_url = kwargs.get("base_url")
         server_address = kwargs.get("server_address")
         server_port = kwargs.get("server_port")
@@ -152,9 +149,6 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             include_sensitive_data=content_mode
             != ContentCaptureMode.NO_CONTENT,
             content_mode=content_mode,
-            agent_name=agent_name,
-            agent_id=agent_id,
-            agent_description=agent_description,
             base_url=base_url,
             server_address=server_address,
             server_port=server_port,
