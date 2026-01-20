@@ -15,7 +15,13 @@ import pytest
 
 
 def _install_deepeval_stubs():
-    """Install minimal deepeval stubs if not available."""
+    """Install deepeval stubs if not available.
+
+    This stub must include all submodules that the package imports:
+    - deepeval.metrics (for metric classes)
+    - deepeval.test_case (for LLMTestCase)
+    - deepeval.evaluate.configs (for AsyncConfig, DisplayConfig)
+    """
     if "deepeval" in sys.modules:
         return
     try:
@@ -25,8 +31,66 @@ def _install_deepeval_stubs():
         pass
 
     root = types.ModuleType("deepeval")
+    metrics_mod = types.ModuleType("deepeval.metrics")
+    test_case_mod = types.ModuleType("deepeval.test_case")
     eval_cfg_mod = types.ModuleType("deepeval.evaluate.configs")
 
+    # Stub metric classes
+    class BiasMetric:
+        _required_params = []
+
+        def __init__(self, **kwargs):
+            self.name = "bias"
+            self.score = 0.5
+            self.success = True
+            self.threshold = kwargs.get("threshold", 0.5)
+            self.reason = "stub"
+
+    class ToxicityMetric(BiasMetric):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.name = "toxicity"
+
+    class AnswerRelevancyMetric(BiasMetric):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.name = "answer_relevancy"
+
+    class FaithfulnessMetric(BiasMetric):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.name = "faithfulness"
+
+    class GEval:
+        def __init__(self, **kwargs):
+            self.name = kwargs.get("name", "geval")
+            self.score = 0.0
+            self.threshold = 0.0
+            self.success = True
+            self.reason = None
+
+    metrics_mod.BiasMetric = BiasMetric
+    metrics_mod.ToxicityMetric = ToxicityMetric
+    metrics_mod.AnswerRelevancyMetric = AnswerRelevancyMetric
+    metrics_mod.FaithfulnessMetric = FaithfulnessMetric
+    metrics_mod.GEval = GEval
+
+    # Stub test case classes
+    class LLMTestCaseParams:
+        INPUT_OUTPUT = "io"
+        INPUT = "input"
+        ACTUAL_OUTPUT = "actual_output"
+
+    class LLMTestCase:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+            self.retrieval_context = kwargs.get("retrieval_context")
+
+    test_case_mod.LLMTestCaseParams = LLMTestCaseParams
+    test_case_mod.LLMTestCase = LLMTestCase
+
+    # Stub config classes
     class AsyncConfig:
         def __init__(self, run_async=False, max_concurrent=None):
             self.run_async = run_async
@@ -40,6 +104,7 @@ def _install_deepeval_stubs():
     eval_cfg_mod.AsyncConfig = AsyncConfig
     eval_cfg_mod.DisplayConfig = DisplayConfig
 
+    # Stub evaluate function
     class _EvalResult:
         test_results = []
 
@@ -48,7 +113,10 @@ def _install_deepeval_stubs():
 
     root.evaluate = evaluate
 
+    # Register all modules
     sys.modules["deepeval"] = root
+    sys.modules["deepeval.metrics"] = metrics_mod
+    sys.modules["deepeval.test_case"] = test_case_mod
     sys.modules["deepeval.evaluate"] = root
     sys.modules["deepeval.evaluate.configs"] = eval_cfg_mod
 

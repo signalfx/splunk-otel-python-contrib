@@ -96,8 +96,9 @@ def _install_deepeval_stubs():
     test_case_mod.LLMTestCase = LLMTestCase
 
     class AsyncConfig:
-        def __init__(self, run_async=False):
+        def __init__(self, run_async=False, max_concurrent=None):
             self.run_async = run_async
+            self.max_concurrent = max_concurrent
 
     class DisplayConfig:
         def __init__(self, show_indicator=False, print_results=False):
