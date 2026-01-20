@@ -57,7 +57,9 @@ from opentelemetry.util.types import AttributeValue
 class _InvocationState:
     """Tracks invocation state and parent-child relationships."""
 
-    invocation: Optional[Union[AgentInvocation, LLMInvocation, ToolCall]] = None
+    invocation: Optional[Union[AgentInvocation, LLMInvocation, ToolCall]] = (
+        None
+    )
     parent_span_id: Optional[str] = None
     children: List[str] = field(default_factory=list)
     # Accumulated content during span lifetime
@@ -895,31 +897,39 @@ class GenAISemanticProcessor(TracingProcessor):
                         if item.get("type") == "text":
                             txt = item.get("content") or item.get("text")
                             if isinstance(txt, str) and txt:
-                                parts.append({
+                                parts.append(
+                                    {
+                                        "type": "text",
+                                        "content": (
+                                            "redacted"
+                                            if not self.include_sensitive_data
+                                            else txt
+                                        ),
+                                    }
+                                )
+                        elif item.get("type") == "function_call":
+                            # Tool call in dict format
+                            parts.append(
+                                {
+                                    "type": "tool_call",
+                                    "tool_name": item.get("name", "unknown"),
+                                    "tool_call_id": item.get("call_id", ""),
+                                    "arguments": item.get("arguments", "{}"),
+                                }
+                            )
+                        elif "content" in item and isinstance(
+                            item["content"], str
+                        ):
+                            parts.append(
+                                {
                                     "type": "text",
                                     "content": (
                                         "redacted"
                                         if not self.include_sensitive_data
-                                        else txt
+                                        else item["content"]
                                     ),
-                                })
-                        elif item.get("type") == "function_call":
-                            # Tool call in dict format
-                            parts.append({
-                                "type": "tool_call",
-                                "tool_name": item.get("name", "unknown"),
-                                "tool_call_id": item.get("call_id", ""),
-                                "arguments": item.get("arguments", "{}"),
-                            })
-                        elif "content" in item and isinstance(item["content"], str):
-                            parts.append({
-                                "type": "text",
-                                "content": (
-                                    "redacted"
-                                    if not self.include_sensitive_data
-                                    else item["content"]
-                                ),
-                            })
+                                }
+                            )
                         if not finish_reason and isinstance(
                             item.get("finish_reason"), str
                         ):
@@ -1014,10 +1024,14 @@ class GenAISemanticProcessor(TracingProcessor):
         self,
         span_id: str,
         parent_span_id: Optional[str],
-        invocation: Optional[Union[AgentInvocation, LLMInvocation, ToolCall]] = None,
+        invocation: Optional[
+            Union[AgentInvocation, LLMInvocation, ToolCall]
+        ] = None,
     ) -> _InvocationState:
         """Add state to tracking dict with parent-child relationship."""
-        state = _InvocationState(invocation=invocation, parent_span_id=parent_span_id)
+        state = _InvocationState(
+            invocation=invocation, parent_span_id=parent_span_id
+        )
         self._invocations[span_id] = state
 
         # Establish parent-child relationship
@@ -2122,7 +2136,9 @@ class GenAISemanticProcessor(TracingProcessor):
         if name:
             yield GEN_AI_AGENT_NAME, name
 
-        agent_id = getattr(span_data, "agent_id", None) or self._agent_id_default
+        agent_id = (
+            getattr(span_data, "agent_id", None) or self._agent_id_default
+        )
         if agent_id:
             yield GEN_AI_AGENT_ID, agent_id
 
