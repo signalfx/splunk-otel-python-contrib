@@ -202,6 +202,102 @@ async def run_evaluation_async(test_case, metrics, debug_log=None):
     return await asyncio.to_thread(_run_sync)
 ```
 
+### 5. DeepEval AsyncConfig Integration
+
+We leverage DeepEval's built-in `AsyncConfig` to enable parallel metric evaluation within each invocation. This is documented in [DeepEval's Async Configs documentation](https://deepeval.com/docs/evaluation-flags-and-configs#async-configs).
+
+#### How It Works
+
+When `OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true`, we enable DeepEval's internal async mode:
+
+```python
+from deepeval.evaluate import AsyncConfig
+
+async_config = AsyncConfig(
+    run_async=True,       # Enable concurrent evaluation of test cases AND metrics
+    max_concurrent=10,    # Maximum parallel metrics at any point in time
+    throttle_value=0      # No throttling (can be increased for rate-limited APIs)
+)
+```
+
+#### AsyncConfig Parameters
+
+| Parameter | Our Value | Description |
+|-----------|-----------|-------------|
+| `run_async` | `True` (when concurrent mode enabled) | Enables concurrent evaluation of test cases **AND** metrics |
+| `max_concurrent` | `10` | Maximum number of metrics that can run in parallel |
+| `throttle_value` | `0` | Seconds to wait between metric evaluations (for rate limiting) |
+
+#### Two Levels of Parallelism
+
+Our architecture provides **two levels of concurrent processing**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     LEVEL 1: Worker Thread Parallelism                       │
+│                     (Our Implementation - Manager)                           │
+│                                                                              │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│   │  Worker 1   │    │  Worker 2   │    │  Worker 3   │    │  Worker 4   │  │
+│   │ Invocation A│    │ Invocation B│    │ Invocation C│    │ Invocation D│  │
+│   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘    └──────┬──────┘  │
+│          │                  │                  │                  │         │
+│          ▼                  ▼                  ▼                  ▼         │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                LEVEL 2: Metric Parallelism                          │   │
+│   │                (DeepEval AsyncConfig)                               │   │
+│   │                                                                     │   │
+│   │   Within each invocation, metrics run concurrently:                 │   │
+│   │                                                                     │   │
+│   │   ┌─────────┐  ┌───────────┐  ┌──────────────────┐  ┌────────────┐  │   │
+│   │   │  Bias   │  │ Toxicity  │  │ Answer Relevancy │  │Faithfulness│  │   │
+│   │   │ (LLM)   │  │  (LLM)    │  │     (LLM)        │  │   (LLM)    │  │   │
+│   │   └─────────┘  └───────────┘  └──────────────────┘  └────────────┘  │   │
+│   │        │            │                │                    │         │   │
+│   │        └────────────┴────────────────┴────────────────────┘         │   │
+│   │                            │                                        │   │
+│   │                    All run in parallel                              │   │
+│   │                   (up to max_concurrent=10)                         │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Level 1 (Our Implementation):**
+- Multiple worker threads process different invocations simultaneously
+- Controlled by `OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS`
+
+**Level 2 (DeepEval's AsyncConfig):**
+- Within each invocation, multiple metrics (Bias, Toxicity, etc.) run in parallel
+- Controlled by `AsyncConfig(run_async=True, max_concurrent=10)`
+
+#### Why Two Levels?
+
+| Level | What it Parallelizes | Benefit |
+|-------|---------------------|---------|
+| **Level 1** (Workers) | Different LLM invocations | Multiple conversations evaluated simultaneously |
+| **Level 2** (AsyncConfig) | Metrics within one invocation | Bias, Toxicity, Relevancy run in parallel |
+
+This combination provides **multiplicative performance gains**:
+- 4 workers × 4 parallel metrics = up to **16 concurrent LLM-as-a-Judge calls**
+
+#### Configuration for Rate-Limited APIs
+
+If your LLM API has rate limits, you can adjust both levels:
+
+```bash
+# Reduce worker threads
+export OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS=2
+
+# Note: max_concurrent is hardcoded to 10 in our implementation
+# For further rate limiting, reduce workers or consider throttle_value
+```
+
+#### Reference
+
+For more details on DeepEval's async configuration options, see:
+- [DeepEval Async Configs Documentation](https://deepeval.com/docs/evaluation-flags-and-configs#async-configs)
+
 ## Data Flow
 
 ### Sequential Mode (Default)
