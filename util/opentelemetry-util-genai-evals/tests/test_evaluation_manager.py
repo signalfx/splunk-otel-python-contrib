@@ -3,7 +3,7 @@ from __future__ import annotations
 from opentelemetry.util.genai.evals.manager import Manager
 from opentelemetry.util.genai.types import EvaluationResult, LLMInvocation
 from opentelemetry.util.genai.types import EmbeddingInvocation
-from opentelemetry.util.genai.types import Message, MessagePart
+from opentelemetry.util.genai.types import OutputMessage, MessagePart
 
 
 class _StubHandler:
@@ -123,9 +123,8 @@ def test_on_completion_skips_tool_llm_invocations(monkeypatch):
     invocation.sample_for_evaluation = True
 
     # Create tool call message
-    tool_part = MessagePart(type="ToolCall")
-    message = Message(parts=[tool_part], finish_reason="tool_calls")
-    invocation.output_messages = [message]
+    output_message = OutputMessage(role="", parts=["ToolCall"], finish_reason="tool_calls")
+    invocation.output_messages = [output_message]
 
     manager.on_completion(invocation)
 
