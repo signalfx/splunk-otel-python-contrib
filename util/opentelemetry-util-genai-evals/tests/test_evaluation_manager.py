@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from opentelemetry.util.genai.evals.manager import Manager
-from opentelemetry.util.genai.types import EvaluationResult, LLMInvocation
-from opentelemetry.util.genai.types import EmbeddingInvocation
-from opentelemetry.util.genai.types import OutputMessage, MessagePart
+from opentelemetry.util.genai.types import (
+    EmbeddingInvocation,
+    EvaluationResult,
+    LLMInvocation,
+    OutputMessage,
+)
 
 
 class _StubHandler:

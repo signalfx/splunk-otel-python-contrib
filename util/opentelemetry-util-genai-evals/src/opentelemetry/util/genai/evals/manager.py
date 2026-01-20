@@ -7,18 +7,10 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
+from opentelemetry.semconv.attributes import error_attributes as ErrorAttributes
+
 from ..callbacks import CompletionCallback
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from ..handler import TelemetryHandler
-
-from opentelemetry.semconv.attributes import (
-    error_attributes as ErrorAttributes,
-)
-
-from ..environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
-)
+from ..environment_variables import OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
 from ..types import (
     AgentCreation,
     AgentInvocation,
@@ -33,12 +25,15 @@ from ..types import (
 from .base import Evaluator
 from .env import (
     read_aggregation_flag,
+    read_evaluation_queue_size,
     read_interval,
     read_raw_evaluators,
-    read_evaluation_queue_size,
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..handler import TelemetryHandler
 
 _LOGGER = logging.getLogger(__name__)
 
