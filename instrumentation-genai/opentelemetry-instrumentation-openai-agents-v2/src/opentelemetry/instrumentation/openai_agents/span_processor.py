@@ -57,7 +57,8 @@ from opentelemetry.util.types import AttributeValue
 class _InvocationState:
     """Tracks invocation state and parent-child relationships."""
 
-    invocation: Union[AgentInvocation, LLMInvocation, ToolCall]
+    invocation: Optional[Union[AgentInvocation, LLMInvocation, ToolCall]] = None
+    parent_span_id: Optional[str] = None
     children: List[str] = field(default_factory=list)
     # Accumulated content during span lifetime
     input_messages: List[Any] = field(default_factory=list)
@@ -530,7 +531,6 @@ class GenAISemanticProcessor(TracingProcessor):
         self._capture_tool_definitions = True
 
         # Tracking
-        self._span_parents: dict[str, Optional[str]] = {}
         self._invocations: Dict[str, _InvocationState] = {}
         self._handler = handler
         self._workflow: Workflow | None = None
@@ -990,10 +990,10 @@ class GenAISemanticProcessor(TracingProcessor):
         self,
         span_id: str,
         parent_span_id: Optional[str],
-        invocation: Union[AgentInvocation, LLMInvocation, ToolCall],
+        invocation: Optional[Union[AgentInvocation, LLMInvocation, ToolCall]] = None,
     ) -> _InvocationState:
-        """Add an invocation to the unified tracking dict with parent-child relationship."""
-        state = _InvocationState(invocation=invocation)
+        """Add state to tracking dict with parent-child relationship."""
+        state = _InvocationState(invocation=invocation, parent_span_id=parent_span_id)
         self._invocations[span_id] = state
 
         # Establish parent-child relationship
@@ -1002,6 +1002,16 @@ class GenAISemanticProcessor(TracingProcessor):
             parent_state.children.append(span_id)
 
         return state
+
+    def _set_invocation(
+        self,
+        span_id: str,
+        invocation: Union[AgentInvocation, LLMInvocation, ToolCall],
+    ) -> None:
+        """Set invocation on existing state entry."""
+        state = self._invocations.get(span_id)
+        if state:
+            state.invocation = invocation
 
     def _get_invocation_state(
         self, span_id: str
@@ -1025,11 +1035,13 @@ class GenAISemanticProcessor(TracingProcessor):
             if current in visited:
                 break
             visited.add(current)
-            # Check if this span has an AgentInvocation
             state = self._invocations.get(current)
-            if state and isinstance(state.invocation, AgentInvocation):
-                return current
-            current = self._span_parents.get(current)
+            if state:
+                if isinstance(state.invocation, AgentInvocation):
+                    return current
+                current = state.parent_span_id
+            else:
+                break
         return None
 
     def _find_parent_agent_state(
@@ -1279,7 +1291,9 @@ class GenAISemanticProcessor(TracingProcessor):
 
         key = str(span.span_id)
         parent_key = str(span.parent_id) if span.parent_id else None
-        self._span_parents[span.span_id] = span.parent_id
+
+        # Create state entry for all spans to enable parent chain traversal
+        self._add_invocation_state(key, parent_key)
 
         operation_name = self._get_operation_name(span.span_data)
         model = getattr(span.span_data, "model", None)
@@ -1375,8 +1389,7 @@ class GenAISemanticProcessor(TracingProcessor):
                 agent_entity.framework = "openai_agents"
 
                 self._handler.start_agent(agent_entity)
-                # Add to unified invocation tracking
-                self._add_invocation_state(key, parent_key, agent_entity)
+                self._set_invocation(key, agent_entity)
             except Exception as e:
                 logger.debug(
                     "Failed to create AgentInvocation for span %s: %s",
@@ -1480,11 +1493,7 @@ class GenAISemanticProcessor(TracingProcessor):
 
                 # Start LLM span immediately for correct duration
                 self._handler.start_llm(llm_entity)
-                # Add to unified invocation tracking
-                parent_agent_key = self._find_agent_parent_span_id(
-                    span.parent_id
-                )
-                self._add_invocation_state(key, parent_agent_key, llm_entity)
+                self._set_invocation(key, llm_entity)
             except Exception as e:
                 logger.debug(
                     "Failed to create LLMInvocation for span %s: %s",
@@ -1551,11 +1560,7 @@ class GenAISemanticProcessor(TracingProcessor):
 
                 tool_entity.framework = "openai_agents"
                 self._handler.start_tool_call(tool_entity)
-                # Add to unified invocation tracking
-                parent_agent_key = self._find_agent_parent_span_id(
-                    span.parent_id
-                )
-                self._add_invocation_state(key, parent_agent_key, tool_entity)
+                self._set_invocation(key, tool_entity)
             except Exception as e:
                 logger.debug(
                     "Failed to create ToolCall for span %s: %s",
@@ -1787,7 +1792,6 @@ class GenAISemanticProcessor(TracingProcessor):
                 pass
 
         self._invocations.clear()
-        self._span_parents.clear()
         self._trace_depth = 0
 
         if _GLOBAL_PROCESSOR_REF and _GLOBAL_PROCESSOR_REF[0] is self:
