@@ -1371,16 +1371,6 @@ class GenAISemanticProcessor(TracingProcessor):
 
         # Handle AgentSpanData - create AgentInvocation
         if _is_instance_of(span.span_data, AgentSpanData):
-            # Ensure workflow exists (lazy creation if on_trace_start wasn't called)
-            if self._workflow is None:
-                self._workflow_first_input = None
-                self._workflow_last_output = None
-                self._workflow = Workflow(
-                    name="Agent workflow",
-                    attributes={},
-                )
-                self._handler.start_workflow(self._workflow)
-
             # Track agent count for this trace
             trace_id = span.trace_id
             self._trace_agent_count[trace_id] = (
