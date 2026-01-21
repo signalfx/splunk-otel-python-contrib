@@ -123,7 +123,7 @@ class Manager(CompletionCallback):
             )
             _LOGGER.debug(
                 "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.",
-                type(invocation).name,
+                type(invocation).__name__,
             )
             return
 
@@ -142,7 +142,7 @@ class Manager(CompletionCallback):
                         invocation.evaluation_error = "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
                         _LOGGER.debug(
                             "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.",
-                            type(invocation).name,
+                            type(invocation).__name__,
                         )
                         offer = False
 
@@ -154,7 +154,7 @@ class Manager(CompletionCallback):
                 )
                 _LOGGER.debug(
                     "Skipping evaluation for invocation type: %s as error on span, error: %s.",
-                    type(invocation).name,
+                    type(invocation).__name__,
                     error,
                 )
                 offer = False

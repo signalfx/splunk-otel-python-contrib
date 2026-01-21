@@ -74,12 +74,11 @@ def test_manager_emits_per_bucket_when_aggregation_disabled(monkeypatch):
 
 def test_manager_drops_invocation_when_queue_full(monkeypatch):
     """Test that invocations are dropped when queue is full."""
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "2")
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE", "2")
 
     handler = _StubHandler()
     manager = Manager(handler)
-    manager._evaluators = {"LLMInvocation": []}
+    manager._evaluators = {"LLMInvocation": ["deepeval"]}
 
     # Fill the queue to capacity
     invocation1 = LLMInvocation(request_model="model1")
@@ -99,11 +98,10 @@ def test_manager_drops_invocation_when_queue_full(monkeypatch):
 
 def test_on_completion_skips_unsupported_invocation_types(monkeypatch):
     """Test that unsupported invocation types are skipped with proper error."""
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
-    manager._evaluators = {"LLMInvocation": []}
+    manager._evaluators = {"LLMInvocation": ["deepeval"]}
 
     invocation = EmbeddingInvocation()
     invocation.sample_for_evaluation = True
@@ -119,11 +117,10 @@ def test_on_completion_skips_unsupported_invocation_types(monkeypatch):
 
 def test_on_completion_skips_tool_llm_invocations(monkeypatch):
     """Test that tool-only LLM invocations are skipped with proper error."""
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
-    manager._evaluators = {"LLMInvocation": []}
+    manager._evaluators = {"LLMInvocation": ["deepeval"]}
 
     invocation = LLMInvocation(request_model="model")
     invocation.sample_for_evaluation = True
@@ -145,11 +142,10 @@ def test_on_completion_skips_tool_llm_invocations(monkeypatch):
 
 def test_on_completion_skips_invocation_with_error(monkeypatch):
     """Test that invocations with errors are skipped with proper error flag."""
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
-    manager._evaluators = {"LLMInvocation": []}
+    manager._evaluators = {"LLMInvocation": ["deepeval"]}
 
     invocation = LLMInvocation(request_model="model")
     invocation.sample_for_evaluation = True
@@ -163,14 +159,12 @@ def test_on_completion_skips_invocation_with_error(monkeypatch):
     )
     assert len(handler.calls) == 0
 
-
 def test_on_completion_processes_valid_invocation(monkeypatch):
     """Test that valid invocations are processed without error."""
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
-    manager._evaluators = {"LLMInvocation": []}
+    manager._evaluators = {"LLMInvocation": ["deepeval"]}
 
     invocation = LLMInvocation(request_model="model")
     invocation.sample_for_evaluation = True
