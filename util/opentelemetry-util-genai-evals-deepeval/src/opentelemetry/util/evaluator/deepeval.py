@@ -245,6 +245,36 @@ def _derive_passed(label: str | None, success: Any) -> bool | None:
     return None
 
 
+def _apply_hallucination_postprocessing(
+    ctx: _MetricContext, label: str | None
+) -> tuple[float | None, str | None]:
+    """Invert hallucination GEval score to match industry standard (lower=better).
+
+    GEval uses higher=better (1.0=no hallucination) for threshold logic, but we need
+    lower=better (0.0=no hallucination) to match deepeval's HallucinationMetric convention.
+    This function inverts: GEval score 1.0 → final score 0.0, GEval score 0.0 → final score 1.0.
+    """
+    if ctx.name not in {
+        "hallucination",
+        "hallucination [geval]",
+        "hallucination [geval] [GEval]",
+    }:
+        return ctx.score, label
+    if ctx.score is None:
+        return ctx.score, label
+    try:
+        # GEval outputs 0-1 scale where 1.0=no hallucination, 0.0=hallucination
+        # Invert to industry standard: 0.0=no hallucination, 1.0=hallucination
+        geval_score = max(0.0, min(1.0, float(ctx.score)))
+        inverted_score = 1.0 - geval_score
+        ctx.attributes.setdefault(
+            "deepeval.hallucination.geval_score", round(geval_score, 6)
+        )
+    except Exception:
+        return ctx.score, label
+    return inverted_score, label
+
+
 def _apply_sentiment_postprocessing(
     ctx: _MetricContext, label: str | None
 ) -> tuple[float | None, str | None]:
@@ -552,6 +582,10 @@ class DeepevalEvaluator(Evaluator):
             for metric in metrics_data:
                 ctx = _build_metric_context(metric, test)
                 label = _determine_label(ctx)
+                # Apply hallucination post-processing first (inverts score)
+                score, label = _apply_hallucination_postprocessing(ctx, label)
+                ctx.score = score
+                # Then apply sentiment post-processing
                 score, label = _apply_sentiment_postprocessing(ctx, label)
                 ctx.score = score
                 passed = _derive_passed(label, ctx.success)

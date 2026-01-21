@@ -88,7 +88,8 @@ def build_hallucination_metric(
         "Detect hallucinations: factual claims in the output that contradict the input or introduce "
         "specific details (names, dates, numbers, quotes, statistics) that cannot be reasonably inferred "
         "from the input. Distinguish between valid logical inference (acceptable) and fabrication (hallucination). "
-        "Score 1.0 for outputs fully grounded in the input, 0.0 for outputs with clear fabrications or contradictions. "
+        "Score 1.0 for outputs fully grounded in the input (no hallucinations), 0.0 for outputs with clear fabrications "
+        "or contradictions (maximum hallucination). Higher scores indicate less hallucination (better quality). "
         "Be conservative: only flag as hallucination if there is clear evidence of fabrication or contradiction, "
         "not reasonable inference or interpretation."
     )
@@ -105,7 +106,8 @@ def build_hallucination_metric(
         "not fabrication. Only mark as hallucination if confident there is clear fabrication (new specifics) or contradiction. "
         "When uncertain between inference and fabrication, always favor inference (assign higher score) to minimize false positives.",
         "Assign score: 1.0 = no hallucinations (all claims grounded or reasonably inferred), 0.8-0.9 = minor unwarranted "
-        "specifics or edge cases, 0.5-0.7 = some fabrications present, 0.0-0.4 = significant fabrications or contradictions.",
+        "specifics or edge cases, 0.5-0.7 = some fabrications present, 0.0-0.4 = significant fabrications or contradictions. "
+        "Higher scores indicate less hallucination (better quality).",
     ]
     if hasattr(LLMTestCaseParams, "INPUT_OUTPUT"):
         params = getattr(LLMTestCaseParams, "INPUT_OUTPUT")
