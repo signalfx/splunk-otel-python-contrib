@@ -159,6 +159,7 @@ def test_on_completion_skips_invocation_with_error(monkeypatch):
     )
     assert len(handler.calls) == 0
 
+
 def test_on_completion_processes_valid_invocation(monkeypatch):
     """Test that valid invocations are processed without error."""
 
