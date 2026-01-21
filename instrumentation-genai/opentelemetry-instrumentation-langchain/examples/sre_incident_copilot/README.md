@@ -78,17 +78,139 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ### Configuration
 
-Create a `.env` file:
+The application supports two separate credential configurations for LLM and embeddings:
+
+#### Option 1: OpenAI (both chat and embeddings)
+
+Set the following environment variables:
 
 ```bash
-OPENAI_API_KEY=your-api-key
-OPENAI_MODEL=gpt-4o-mini
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-OTEL_SERVICE_NAME=sre-incident-copilot
-SCENARIO_ID=scenario-001
+export OPENAI_API_KEY=sk-your-openai-api-key
+export OPENAI_MODEL=gpt-4o-mini  # Optional, defaults to gpt-4o-mini
 ```
 
+#### Option 2: Circuit + Azure (Circuit for chat, Azure for embeddings)
+
+Set the following environment variables:
+
+```bash
+# Circuit/Cisco credentials (all 5 required)
+export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
+export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
+export CIRCUIT_CLIENT_ID=your-client-id
+export CIRCUIT_CLIENT_SECRET=your-client-secret
+export CIRCUIT_APP_KEY=your-app-key
+
+# Azure OpenAI credentials (all 4 required)
+export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+export AZURE_OPENAI_API_KEY=your-azure-api-key
+export AZURE_OPENAI_API_VERSION=2024-02-01
+export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
+```
+
+**Note:** Circuit requires **all 5** variables to be set. Azure requires **all 4** variables to be set. If any are missing, the application will fall back to OpenAI credentials.
+
+#### Additional Configuration
+
+```bash
+# OpenTelemetry (optional)
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_SERVICE_NAME=sre-incident-copilot
+
+# Application settings
+export SCENARIO_ID=scenario-001
+export DATA_DIR=data
+export ARTIFACTS_DIR=artifacts
+```
+
+You can also create a `.env` file with these variables for convenience.
+
+## Running the Application
+
+### Prerequisites Checklist
+
+Before running the application, ensure:
+
+1. ✅ Virtual environment is activated
+2. ✅ Dependencies are installed (`pip install -r requirements.txt`)
+3. ✅ Credentials are configured (either OpenAI OR Circuit+Azure)
+
+### Step-by-Step Guide
+
+**1. Activate the virtual environment:**
+
+```bash
+cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+**2. Set up credentials:**
+
+Choose **one** of the following options:
+
+**Option A - OpenAI:**
+```bash
+export OPENAI_API_KEY=sk-your-openai-api-key
+```
+
+**Option B - Circuit + Azure:**
+```bash
+# All Circuit variables required
+export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
+export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
+export CIRCUIT_CLIENT_ID=your-client-id
+export CIRCUIT_CLIENT_SECRET=your-client-secret
+export CIRCUIT_APP_KEY=your-app-key
+
+# All Azure variables required
+export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+export AZURE_OPENAI_API_KEY=your-azure-api-key
+export AZURE_OPENAI_API_VERSION=2024-02-01
+export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
+```
+
+**3. Run a scenario:**
+
+```bash
+python main.py --scenario scenario-001
+```
+
+### Troubleshooting
+
+**Error: "No valid credentials configured"**
+- Ensure you've exported all required environment variables
+- For Circuit: all 5 variables must be set
+- For Azure: all 4 variables must be set
+- For OpenAI: `OPENAI_API_KEY` must be set
+
+**Error: "404 Not Found"**
+- Check that `CIRCUIT_BASE_URL` does NOT include `/chat/completions` suffix
+- Correct: `https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini`
+- Incorrect: `https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini/chat/completions`
+
 ## Usage
+
+### Quick Start Examples
+
+**Run with OpenAI:**
+```bash
+export OPENAI_API_KEY=sk-your-key
+python main.py --scenario scenario-001
+```
+
+**Run with Circuit + Azure:**
+```bash
+export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
+export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
+export CIRCUIT_CLIENT_ID=your-id
+export CIRCUIT_CLIENT_SECRET=your-secret
+export CIRCUIT_APP_KEY=your-key
+export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+export AZURE_OPENAI_API_KEY=your-azure-key
+export AZURE_OPENAI_API_VERSION=2024-02-01
+export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
+python main.py --scenario scenario-001
+```
 
 ### Run a Single Scenario
 
@@ -184,13 +306,14 @@ kubectl apply -f k8s-cronjob.yaml
 
 | Variable                      | Purpose                        | Default                |
 | ----------------------------- | ------------------------------ | ---------------------- |
-| `OPENAI_API_KEY`              | OpenAI API key                 | Required               |
+| `OPENAI_API_KEY`              | OpenAI API key                 | Optional*              |
 | `OPENAI_MODEL`                | Model to use                   | `gpt-4o-mini`          |
-| `OPENAI_BASE_URL`             | Custom LLM endpoint            | Optional               |
-| `OAUTH_TOKEN_URL`             | OAuth2 token endpoint          | Optional               |
-| `OAUTH_CLIENT_ID`             | OAuth2 client ID               | Optional               |
-| `OAUTH_CLIENT_SECRET`         | OAuth2 client secret           | Optional               |
-| `OAUTH_APP_KEY`               | OAuth2 app key                 | Optional               |
+| `OPENAI_BASE_URL`             | OpenAI custom endpoint         | Optional               |
+| `CIRCUIT_BASE_URL`            | Circuit/Cisco endpoint         | Optional               |
+| `CIRCUIT_TOKEN_URL`           | Circuit OAuth2 token endpoint  | Optional*              |
+| `CIRCUIT_CLIENT_ID`           | Circuit OAuth2 client ID       | Optional*              |
+| `CIRCUIT_CLIENT_SECRET`       | Circuit OAuth2 client secret   | Optional*              |
+| `CIRCUIT_APP_KEY`             | Circuit OAuth2 app key         | Optional               |
 | `AZURE_OPENAI_ENDPOINT`       | Azure OpenAI endpoint          | Optional               |
 | `AZURE_OPENAI_API_KEY`        | Azure OpenAI API key           | Optional               |
 | `AZURE_OPENAI_API_VERSION`    | Azure OpenAI API version       | `2024-02-01`           |

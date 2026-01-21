@@ -117,9 +117,9 @@ def _apply_gen_ai_semconv_attributes(
             pass
 
 
-def _apply_sampled_for_evaluation(
+def _apply_evaluation_attributes(
     span: Span,
-    is_sampled: bool,
+    invocation: GenAIType,
 ) -> None:
     # Check if span is recording before setting attribute
     # This handles ReadableSpan which has already ended, gracefully
@@ -128,13 +128,23 @@ def _apply_sampled_for_evaluation(
         and hasattr(span, "is_recording")
         and span.is_recording()
     ):
-        span.set_attribute("gen_ai.evaluation.sampled", is_sampled)
+        span.set_attribute(
+            "gen_ai.evaluation.sampled", invocation.sample_for_evaluation
+        )
+        span.set_attribute(
+            "gen_ai.evaluation.error",
+            str(invocation.evaluation_error),
+        )
     elif span is not None and hasattr(span, "_attributes"):
         # Fallback for ReadableSpan: directly mutate _attributes
         try:
             span._attributes["gen_ai.evaluation.sampled"] = str(
-                is_sampled
+                invocation.sample_for_evaluation
             ).lower()
+            span._attributes["gen_ai.evaluation.error"] = str(
+                invocation.evaluation_error
+            )
+
         except Exception:
             pass
 
@@ -355,9 +365,7 @@ class SpanEmitter(EmitterMeta):
             self._apply_start_attrs(invocation)
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
-        _apply_sampled_for_evaluation(
-            invocation.span, invocation.sample_for_evaluation
-        )  # type: ignore[override]
+        _apply_evaluation_attributes(invocation.span, invocation)  # type: ignore[override]
         if isinstance(invocation, Workflow):
             self._finish_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
