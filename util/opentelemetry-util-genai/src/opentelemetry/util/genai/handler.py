@@ -371,8 +371,10 @@ class TelemetryHandler:
             invocation.trace_id
         )
 
-        self._emitter.on_end(invocation)
+        # Send invocation for evaluation if applicable
         self._notify_completion(invocation)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(invocation)
         self._entity_registry.pop(str(invocation.run_id), None)
         try:
             span_context = invocation.span_context
@@ -470,8 +472,10 @@ class TelemetryHandler:
             invocation.trace_id
         )
 
-        self._emitter.on_end(invocation)
+        # Send invocation for evaluation if applicable
         self._notify_completion(invocation)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(invocation)
         self._entity_registry.pop(str(invocation.run_id), None)
         # Force flush metrics if a custom provider with force_flush is present
         if (
@@ -529,8 +533,10 @@ class TelemetryHandler:
             invocation.trace_id
         )
 
-        self._emitter.on_end(invocation)
+        # Send invocation for evaluation if applicable
         self._notify_completion(invocation)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(invocation)
         self._entity_registry.pop(str(invocation.run_id), None)
         return invocation
 
@@ -679,8 +685,10 @@ class TelemetryHandler:
             workflow.trace_id
         )
 
-        self._emitter.on_end(workflow)
+        # Send invocation for evaluation if applicable
         self._notify_completion(workflow)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(workflow)
         self._entity_registry.pop(str(workflow.run_id), None)
         if (
             hasattr(self, "_meter_provider")
@@ -741,8 +749,10 @@ class TelemetryHandler:
             agent.trace_id
         )
 
-        self._emitter.on_end(agent)
+        # Send invocation for evaluation if applicable
         self._notify_completion(agent)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(agent)
         self._entity_registry.pop(str(agent.run_id), None)
         if (
             hasattr(self, "_meter_provider")
@@ -810,8 +820,10 @@ class TelemetryHandler:
             step.trace_id
         )
 
-        self._emitter.on_end(step)
+        # Send invocation for evaluation if applicable
         self._notify_completion(step)
+        # Send invocation for emitting telemetry
+        self._emitter.on_end(step)
         self._entity_registry.pop(str(step.run_id), None)
         if (
             hasattr(self, "_meter_provider")

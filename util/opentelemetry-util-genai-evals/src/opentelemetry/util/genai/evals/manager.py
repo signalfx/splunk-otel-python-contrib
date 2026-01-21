@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import logging
 import queue
@@ -7,18 +7,12 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from ..callbacks import CompletionCallback
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from ..handler import TelemetryHandler
-
 from opentelemetry.semconv.attributes import (
     error_attributes as ErrorAttributes,
 )
 
-from ..environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
-)
+from ..callbacks import CompletionCallback
+from ..environment_variables import OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
 from ..types import (
     AgentCreation,
     AgentInvocation,
@@ -33,11 +27,15 @@ from ..types import (
 from .base import Evaluator
 from .env import (
     read_aggregation_flag,
+    read_evaluation_queue_size,
     read_interval,
     read_raw_evaluators,
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..handler import TelemetryHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +93,9 @@ class Manager(CompletionCallback):
         )
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
-        self._queue: queue.Queue[GenAI] = queue.Queue()
+        self._queue: queue.Queue[GenAI] = queue.Queue(
+            maxsize=read_evaluation_queue_size()
+        )
         self._shutdown = threading.Event()
         self._worker: threading.Thread | None = None
         if self.has_evaluators:
@@ -111,12 +111,20 @@ class Manager(CompletionCallback):
         # Early exit if no evaluators configured
         if not self.has_evaluators:
             return
-        # Only evaluate LLMInvocation or AgentInvocation
+
+        # Only evaluate LLMInvocation or AgentInvocation or Workflow
         if (
             not isinstance(invocation, LLMInvocation)
             and not isinstance(invocation, AgentInvocation)
             and not isinstance(invocation, Workflow)
         ):
+            invocation.evaluation_error = (
+                "client_evaluation_skipped_as_invocation_type_not_supported"
+            )
+            _LOGGER.debug(
+                "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.",
+                type(invocation).__name__,
+            )
             return
 
         offer: bool = True
@@ -131,11 +139,24 @@ class Manager(CompletionCallback):
                         and first.parts[0] == "ToolCall"
                         and first.finish_reason == "tool_calls"
                     ):
+                        invocation.evaluation_error = "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
+                        _LOGGER.debug(
+                            "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.",
+                            type(invocation).__name__,
+                        )
                         offer = False
 
             # Do not evaluate if error
             error = invocation.attributes.get(ErrorAttributes.ERROR_TYPE)
             if error:
+                invocation.evaluation_error = (
+                    "client_evaluation_skipped_as_error_on_invocation"
+                )
+                _LOGGER.debug(
+                    "Skipping evaluation for invocation type: %s as error on span, error: %s.",
+                    type(invocation).__name__,
+                    error,
+                )
                 offer = False
 
             if offer:
@@ -149,9 +170,15 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.debug(
-                "Failed to enqueue invocation for evaluation", exc_info=True
+        except queue.Full:
+            invocation.evaluation_error = "client_evaluation_queue_full"
+            _LOGGER.error("Evaluation queue is full, dropping invocation.")
+        except Exception as exc:  # pragma: no cover - defensive
+            invocation.evaluation_error = "client_evaluation_queue_error"
+            _LOGGER.error(
+                "Failed to enqueue invocation for evaluation: %s",
+                exc,
+                exc_info=True,
             )
 
     def wait_for_all(self, timeout: float | None = None) -> None:
