@@ -1,4 +1,4 @@
 weaviate-client>=4.0.0
 python-dotenv>=1.0.0
-opentelemetry-distro
-opentelemetry-exporter-otlp
+opentelemetry-distro~=0.59b0
+opentelemetry-exporter-otlp~=1.38.0

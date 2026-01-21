@@ -3,6 +3,13 @@
 import pytest
 from unittest.mock import Mock
 
+from opentelemetry.semconv.attributes import (
+    db_attributes as DbAttributes,
+)
+from opentelemetry.semconv.attributes import (
+    server_attributes as ServerAttributes,
+)
+
 try:
     import weaviate
 
@@ -76,8 +83,8 @@ class TestWeaviateMetrics:
             data_point = duration_metric.data.data_points[0]
             attributes = dict(data_point.attributes)
 
-            assert attributes.get("db.system") == "weaviate"
-            assert attributes.get("db.operation.name") == "insert"
+            assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
+            assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "insert"
 
     def test_histogram_created(
         self, instrumentor, tracer_provider, meter_provider, metric_reader

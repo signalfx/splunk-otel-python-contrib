@@ -1,9 +1,53 @@
 """Tests for utility functions."""
 
+import os
+from unittest.mock import patch
+
 from opentelemetry.instrumentation.weaviate.utils import (
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     extract_collection_name,
+    is_content_enabled,
     parse_url_to_host_port,
 )
+
+
+class TestIsContentEnabled:
+    """Test content capture environment variable check."""
+
+    def test_content_enabled_true(self):
+        """Test content capture is enabled when env var is 'true'."""
+        with patch.dict(os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"}):
+            assert is_content_enabled() is True
+
+    def test_content_enabled_true_uppercase(self):
+        """Test content capture is enabled when env var is 'TRUE'."""
+        with patch.dict(os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "TRUE"}):
+            assert is_content_enabled() is True
+
+    def test_content_enabled_true_mixed_case(self):
+        """Test content capture is enabled when env var is 'TrUe'."""
+        with patch.dict(os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "TrUe"}):
+            assert is_content_enabled() is True
+
+    def test_content_disabled_false(self):
+        """Test content capture is disabled when env var is 'false'."""
+        with patch.dict(os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false"}):
+            assert is_content_enabled() is False
+
+    def test_content_disabled_empty(self):
+        """Test content capture is disabled when env var is empty."""
+        with patch.dict(os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ""}):
+            assert is_content_enabled() is False
+
+    def test_content_disabled_not_set(self):
+        """Test content capture is disabled when env var is not set."""
+        with patch.dict(os.environ, {}, clear=True):
+            assert is_content_enabled() is False
+
+    def test_content_disabled_invalid_value(self):
+        """Test content capture is disabled when env var has invalid value."""
+        with patch.dict(os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "yes"}):
+            assert is_content_enabled() is False
 
 
 class TestParseUrlToHostPort:

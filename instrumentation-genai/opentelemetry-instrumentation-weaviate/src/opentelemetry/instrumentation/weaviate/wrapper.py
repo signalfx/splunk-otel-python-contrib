@@ -129,10 +129,12 @@ class _WeaviateOperationWrapper:
         tracer: Tracer,
         duration_histogram: Histogram,
         wrap_properties: Optional[Dict[str, str]] = None,
+        capture_content: bool = False,
     ) -> None:
         self.tracer = tracer
         self.duration_histogram = duration_histogram
         self.wrap_properties = wrap_properties or {}
+        self.capture_content = capture_content
 
     def __call__(self, wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
         """Wraps the original Weaviate operation to create a tracing span."""
@@ -167,7 +169,7 @@ class _WeaviateOperationWrapper:
             if function_name:
                 span.set_attribute(DbAttributes.DB_OPERATION_NAME, function_name)
             if collection_name:
-                span.set_attribute("db.weaviate.collection.name", collection_name)
+                span.set_attribute(DbAttributes.DB_COLLECTION_NAME, collection_name)
 
             if connection_host is not None:
                 span.set_attribute(ServerAttributes.SERVER_ADDRESS, connection_host)
@@ -183,16 +185,16 @@ class _WeaviateOperationWrapper:
 
                 # Build metric attributes
                 metric_attributes: Dict[str, AttributeValue] = {
-                    "db.system": "weaviate",
+                    DbAttributes.DB_SYSTEM_NAME: "weaviate",
                 }
                 if function_name:
-                    metric_attributes["db.operation.name"] = function_name
+                    metric_attributes[DbAttributes.DB_OPERATION_NAME] = function_name
                 if collection_name:
-                    metric_attributes["db.collection.name"] = collection_name
+                    metric_attributes[DbAttributes.DB_COLLECTION_NAME] = collection_name
                 if connection_host is not None:
-                    metric_attributes["server.address"] = connection_host
+                    metric_attributes[ServerAttributes.SERVER_ADDRESS] = connection_host
                 if connection_port is not None:
-                    metric_attributes["server.port"] = connection_port
+                    metric_attributes[ServerAttributes.SERVER_PORT] = connection_port
 
                 # Record the duration metric with span context to link metric to trace
                 try:
@@ -209,30 +211,31 @@ class _WeaviateOperationWrapper:
                 documents = self._extract_documents_from_response(return_value)
                 if documents:
                     span.set_attribute("db.weaviate.documents.count", len(documents))
-                    # emit the documents as events
-                    for doc in documents:
-                        # emit the document content as an event
-                        query = ""
-                        if "query" in kwargs:
-                            query = json.dumps(kwargs["query"])
-                        attributes = {
-                            "db.weaviate.document.content": json.dumps(doc["content"]),
-                        }
+                    # emit the documents as events only if content capture is enabled
+                    if self.capture_content:
+                        for doc in documents:
+                            # emit the document content as an event
+                            query = ""
+                            if "query" in kwargs:
+                                query = json.dumps(kwargs["query"])
+                            attributes = {
+                                "db.weaviate.document.content": json.dumps(doc["content"]),
+                            }
 
-                        # Only add non-None values to attributes
-                        if doc.get("distance") is not None:
-                            attributes["db.weaviate.document.distance"] = doc[
-                                "distance"
-                            ]
-                        if doc.get("certainty") is not None:
-                            attributes["db.weaviate.document.certainty"] = doc[
-                                "certainty"
-                            ]
-                        if doc.get("score") is not None:
-                            attributes["db.weaviate.document.score"] = doc["score"]
-                        if query:
-                            attributes["db.weaviate.document.query"] = query
-                        span.add_event("weaviate.document", attributes=attributes)
+                            # Only add non-None values to attributes
+                            if doc.get("distance") is not None:
+                                attributes["db.weaviate.document.distance"] = doc[
+                                    "distance"
+                                ]
+                            if doc.get("certainty") is not None:
+                                attributes["db.weaviate.document.certainty"] = doc[
+                                    "certainty"
+                                ]
+                            if doc.get("score") is not None:
+                                attributes["db.weaviate.document.score"] = doc["score"]
+                            if query:
+                                attributes["db.weaviate.document.query"] = query
+                            span.add_event("weaviate.document", attributes=attributes)
 
         return return_value
 

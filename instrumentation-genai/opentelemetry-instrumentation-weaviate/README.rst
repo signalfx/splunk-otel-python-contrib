@@ -37,6 +37,30 @@ When using the instrumentor, all Weaviate clients will automatically be instrume
     result = collection.query.fetch_objects(limit=10)
 
 
+Configuration
+-------------
+
+Content Capture
+***************
+
+By default, document content from similarity search operations is **not** captured in span events.
+To enable content capture, set the following environment variable:
+
+.. code-block:: bash
+
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+
+When enabled, similarity search operations will emit ``weaviate.document`` events containing:
+
+* ``db.weaviate.document.content`` - The document content/properties
+* ``db.weaviate.document.distance`` - Distance metric (if available)
+* ``db.weaviate.document.certainty`` - Certainty score (if available)
+* ``db.weaviate.document.score`` - Relevance score (if available)
+* ``db.weaviate.document.query`` - The search query (if available)
+
+The document count is always captured in the ``db.weaviate.documents.count`` span attribute regardless of this setting.
+
+
 Examples
 --------
 

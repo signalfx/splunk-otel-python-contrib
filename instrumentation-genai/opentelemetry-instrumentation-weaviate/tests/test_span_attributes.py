@@ -1,5 +1,8 @@
 """Tests for span attributes and semantic conventions."""
 
+import os
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 try:
@@ -18,6 +21,7 @@ from opentelemetry.instrumentation.weaviate.mapping import (
     MAPPING_V4,
     SPAN_NAME_PREFIX,
 )
+from opentelemetry.instrumentation.weaviate.wrapper import _WeaviateOperationWrapper
 from opentelemetry.semconv.attributes import (
     db_attributes as DbAttributes,
     server_attributes as ServerAttributes,
@@ -198,21 +202,157 @@ class TestOperationSpanAttributes:
         pass
 
     def test_collection_name_attribute(self):
-        """Test that collection/class name should be captured in db.weaviate.collection.name."""
+        """Test that collection/class name should be captured in db.collection.name."""
         # For operations on collections/classes, should include:
-        # db.weaviate.collection.name = collection/class name
+        # db.collection.name = collection/class name (standard semantic convention)
         pass
 
-    def test_similarity_search_attributes(self):
-        """Test that similarity search operations should capture additional attributes."""
-        # Should capture:
-        # - db.weaviate.documents.count (span attribute)
-        # - db.weaviate.document.content (event attribute)
-        # - db.weaviate.document.distance (event attribute, if present)
-        # - db.weaviate.document.certainty (event attribute, if present)
-        # - db.weaviate.document.score (event attribute, if present)
-        # - db.weaviate.document.query (event attribute, if present)
-        pass
+    def test_similarity_search_attributes_content_disabled(self, tracer_provider, span_exporter):
+        """Test that similarity search captures count but not content when capture_content=False."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+        
+        mock_histogram = MagicMock()
+        
+        # Create wrapper with capture_content=False (default)
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={"module": "query", "function": "fetch_objects", "span_name": "query.fetch_objects"},
+            capture_content=False,
+        )
+        
+        # Mock a similarity search response
+        def mock_query_func(*args, **kwargs):
+            mock_response = MagicMock()
+            mock_obj = MagicMock()
+            mock_obj.properties = {"text": "test content", "title": "test"}
+            mock_obj.metadata = MagicMock()
+            mock_obj.metadata.distance = 0.5
+            mock_obj.metadata.certainty = 0.8
+            mock_obj.metadata.score = 0.9
+            mock_response.objects = [mock_obj]
+            return mock_response
+        
+        # Execute
+        wrapper(mock_query_func, None, (), {"query": {"test": "query"}})
+        
+        # Verify
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+        
+        span = spans[0]
+        attributes = dict(span.attributes or {})
+        
+        # Should capture document count
+        assert attributes.get("db.weaviate.documents.count") == 1
+        
+        # Should NOT emit document events when content capture is disabled
+        assert len(span.events) == 0
+
+    def test_similarity_search_attributes_content_enabled(self, tracer_provider, span_exporter):
+        """Test that similarity search captures count and content when capture_content=True."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+        
+        mock_histogram = MagicMock()
+        
+        # Create wrapper with capture_content=True
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={"module": "query", "function": "fetch_objects", "span_name": "query.fetch_objects"},
+            capture_content=True,
+        )
+        
+        # Mock a similarity search response
+        def mock_query_func(*args, **kwargs):
+            mock_response = MagicMock()
+            mock_obj = MagicMock()
+            mock_obj.properties = {"text": "test content", "title": "test"}
+            mock_obj.metadata = MagicMock()
+            mock_obj.metadata.distance = 0.5
+            mock_obj.metadata.certainty = 0.8
+            mock_obj.metadata.score = 0.9
+            mock_response.objects = [mock_obj]
+            return mock_response
+        
+        # Execute
+        wrapper(mock_query_func, None, (), {"query": {"test": "query"}})
+        
+        # Verify
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+        
+        span = spans[0]
+        attributes = dict(span.attributes or {})
+        
+        # Should capture document count
+        assert attributes.get("db.weaviate.documents.count") == 1
+        
+        # Should emit document events with all attributes
+        assert len(span.events) == 1
+        
+        event = span.events[0]
+        assert event.name == "weaviate.document"
+        
+        event_attrs = dict(event.attributes or {})
+        assert "db.weaviate.document.content" in event_attrs
+        assert "db.weaviate.document.distance" in event_attrs
+        assert event_attrs["db.weaviate.document.distance"] == 0.5
+        assert "db.weaviate.document.certainty" in event_attrs
+        assert event_attrs["db.weaviate.document.certainty"] == 0.8
+        assert "db.weaviate.document.score" in event_attrs
+        assert event_attrs["db.weaviate.document.score"] == 0.9
+        assert "db.weaviate.document.query" in event_attrs
+
+    def test_similarity_search_multiple_documents(self, tracer_provider, span_exporter):
+        """Test that multiple documents generate multiple events when content capture is enabled."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+        
+        mock_histogram = MagicMock()
+        
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={"module": "query", "function": "fetch_objects", "span_name": "query.fetch_objects"},
+            capture_content=True,
+        )
+        
+        # Mock multiple documents
+        def mock_query_func(*args, **kwargs):
+            mock_response = MagicMock()
+            mock_objs = []
+            for i in range(3):
+                mock_obj = MagicMock()
+                mock_obj.properties = {"text": f"content {i}"}
+                mock_obj.metadata = MagicMock()
+                mock_obj.metadata.distance = 0.1 * i
+                mock_obj.metadata.certainty = None
+                mock_obj.metadata.score = None
+                mock_objs.append(mock_obj)
+            mock_response.objects = mock_objs
+            return mock_response
+        
+        # Execute
+        wrapper(mock_query_func, None, (), {})
+        
+        # Verify
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+        
+        span = spans[0]
+        attributes = dict(span.attributes or {})
+        
+        # Should capture count of 3
+        assert attributes.get("db.weaviate.documents.count") == 3
+        
+        # Should emit 3 events
+        assert len(span.events) == 3
+        
+        for event in span.events:
+            assert event.name == "weaviate.document"
 
 
 @pytest.mark.integration
@@ -306,7 +446,7 @@ class TestV4IntegrationAttributes:
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "insert"
-        assert attributes.get("db.weaviate.collection.name") == "TestInsert"
+        assert attributes.get(DbAttributes.DB_COLLECTION_NAME) == "TestInsert"
         assert ServerAttributes.SERVER_ADDRESS in attributes
         assert ServerAttributes.SERVER_PORT in attributes
 
@@ -354,7 +494,7 @@ class TestV4IntegrationAttributes:
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "fetch_objects"
-        assert attributes.get("db.weaviate.collection.name") == "TestQuery"
+        assert attributes.get(DbAttributes.DB_COLLECTION_NAME) == "TestQuery"
         assert ServerAttributes.SERVER_ADDRESS in attributes
         assert ServerAttributes.SERVER_PORT in attributes
 
@@ -505,7 +645,7 @@ class TestV3IntegrationAttributes:
         # Verify required attributes
         assert attributes.get(DbAttributes.DB_SYSTEM_NAME) == "weaviate"
         assert attributes.get(DbAttributes.DB_OPERATION_NAME) == "create"
-        assert attributes.get("db.weaviate.collection.name") == "TestData"
+        assert attributes.get(DbAttributes.DB_COLLECTION_NAME) == "TestData"
         assert ServerAttributes.SERVER_ADDRESS in attributes
         assert ServerAttributes.SERVER_PORT in attributes
 

@@ -55,6 +55,7 @@ from opentelemetry.trace import Tracer, get_tracer
 from opentelemetry.metrics import get_meter
 
 from .mapping import MAPPING_V3, MAPPING_V4
+from .utils import is_content_enabled
 from .wrapper import (
     _WeaviateConnectionWrapper,
     _WeaviateOperationWrapper,
@@ -131,13 +132,14 @@ class WeaviateInstrumentor(BaseInstrumentor):
                     pass
 
         wrappings = MAPPING_V3 if weaviate_version == WEAVIATE_V3 else MAPPING_V4
+        capture_content = is_content_enabled()
         for to_wrap in wrappings:
             name = ".".join([to_wrap["name"], to_wrap["function"]])
             wrap_function_wrapper(
                 module=to_wrap["module"],
                 name=name,
                 wrapper=_WeaviateOperationWrapper(
-                    tracer, duration_histogram, wrap_properties=to_wrap
+                    tracer, duration_histogram, wrap_properties=to_wrap, capture_content=capture_content
                 ),
             )
 
