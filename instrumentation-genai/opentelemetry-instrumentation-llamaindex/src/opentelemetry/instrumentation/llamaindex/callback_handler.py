@@ -392,13 +392,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if payload:
             response = payload.get("response")
             if response:
-                # Extract response text
-                response_text = ""
-                if isinstance(response, dict):
-                    response_text = response.get("response", "")
-                elif hasattr(response, "response"):
-                    response_text = getattr(response, "response", "")
-                entity.final_output = _safe_str(response_text)
+                entity.final_output = _safe_str(_get_attr(response, "response", ""))
         self._handler.stop_workflow(entity)
         self._invocation_manager.delete_invocation_state(event_id)
 
@@ -526,8 +520,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Handle synthesis start - no span needed, LLM invocation inside will be tracked."""
-        # Synthesize events don't create their own span
-        # The LLM invocation that happens during synthesis is already tracked
         pass
 
     def _handle_synthesize_end(
@@ -551,12 +543,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 if payload:
                     response = payload.get("response")
                     if response:
-                        response_text = ""
-                        if isinstance(response, dict):
-                            response_text = response.get("response", "")
-                        elif hasattr(response, "response"):
-                            response_text = getattr(response, "response", "")
-                        workflow.final_output = _safe_str(response_text)
+                        workflow.final_output = _safe_str(
+                            _get_attr(response, "response", "")
+                        )
                 self._handler.stop_workflow(workflow)
                 self._invocation_manager.delete_invocation_state(workflow_id)
                 # Remove from tracking after successful close

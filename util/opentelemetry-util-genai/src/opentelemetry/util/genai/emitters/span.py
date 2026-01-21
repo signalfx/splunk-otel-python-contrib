@@ -230,7 +230,6 @@ class SpanEmitter(EmitterMeta):
         provider = getattr(invocation, "provider", None)
         if provider:
             span.set_attribute(GEN_AI_PROVIDER_NAME, provider)
-        # framework (named field) - applies to all invocation types
         framework = getattr(invocation, "framework", None)
         if framework:
             span.set_attribute("gen_ai.framework", framework)
