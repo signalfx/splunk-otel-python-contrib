@@ -225,6 +225,10 @@ class AIDefenseInstrumentor(BaseInstrumentor):
 
     def _instrument_sdk_mode(self):
         """Instrument AI Defense SDK methods (SDK Mode)."""
+        if self._sdk_mode_applied:
+            _logger.debug("SDK Mode already instrumented, skipping")
+            return
+
         try:
             # ChatInspectionClient methods
             wrap_function_wrapper(
