@@ -22,7 +22,6 @@ from opentelemetry.instrumentation.aidefense.instrumentation import (
     _extract_event_id_from_headers,
     _is_aidefense_gateway_url,
     _get_gateway_patterns,
-    _gateway_patterns_compiled,
 )
 
 
@@ -208,9 +207,7 @@ class TestIsAIDefenseGatewayUrl:
 
     def test_custom_pattern_literal_no_special_chars(self, monkeypatch):
         """Patterns without any regex chars are auto-escaped."""
-        monkeypatch.setenv(
-            "OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS", "mygateway"
-        )
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_AIDEFENSE_GATEWAY_URLS", "mygateway")
 
         # Should match literally
         url = "https://mygateway.example.com/api"
@@ -356,7 +353,9 @@ class TestGatewayModeWrappers:
         mock_response = MagicMock()
         mock_response.headers = {AI_DEFENSE_EVENT_ID_HEADER: "gateway-event-123"}
         mock_response.request = MagicMock()
-        mock_response.request.url = "https://gateway.aidefense.security.cisco.com/v1/chat"
+        mock_response.request.url = (
+            "https://gateway.aidefense.security.cisco.com/v1/chat"
+        )
 
         wrapped = MagicMock(return_value=mock_response)
 
@@ -427,7 +426,9 @@ class TestGatewayModeWrappers:
         mock_response = MagicMock()
         mock_response.headers = {AI_DEFENSE_EVENT_ID_HEADER: "async-event-456"}
         mock_response.request = MagicMock()
-        mock_response.request.url = "https://gateway.aidefense.security.cisco.com/v1/chat"
+        mock_response.request.url = (
+            "https://gateway.aidefense.security.cisco.com/v1/chat"
+        )
 
         async def async_wrapped(*args, **kwargs):
             return mock_response
@@ -538,7 +539,9 @@ class TestTryAddGatewayEventId:
 
         response = MagicMock()
         response.request = MagicMock()
-        response.request.url = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+        response.request.url = property(
+            lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
 
         # Should not raise
         _try_add_gateway_event_id_from_httpx_response(response, "test")
@@ -648,4 +651,3 @@ class TestAIDefenseInstrumentorGatewayMode:
             assert len(wrapped_methods) == 2
             assert ("httpx", "Client.send") in wrapped_methods
             assert ("httpx", "AsyncClient.send") in wrapped_methods
-
