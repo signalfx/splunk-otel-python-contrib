@@ -12,6 +12,7 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE,
     OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION,
     OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE,
 )
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -118,6 +119,31 @@ def read_worker_count(
         return default
 
 
+def read_evaluation_queue_size() -> int:
+    """Read the evaluation queue size from OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE.
+
+    Returns:
+        Queue size as integer. Defaults to 100 if not set or invalid.
+    """
+    evaluation_queue_size = _get_env(
+        OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE
+    )
+    default_queue_size = 100
+    try:
+        queue_size = (
+            int(evaluation_queue_size)
+            if evaluation_queue_size and evaluation_queue_size.strip()
+            else default_queue_size
+        )
+        evaluation_queue_size = (
+            queue_size if queue_size > 0 else default_queue_size
+        )
+    except (ValueError, TypeError):
+        evaluation_queue_size = default_queue_size
+
+    return evaluation_queue_size
+
+
 __all__ = [
     "read_raw_evaluators",
     "read_interval",
@@ -125,4 +151,5 @@ __all__ = [
     "read_queue_size",
     "read_concurrent_flag",
     "read_worker_count",
+    "read_evaluation_queue_size",
 ]

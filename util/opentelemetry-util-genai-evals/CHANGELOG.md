@@ -28,6 +28,8 @@ All notable changes to this repository are documented in this file.
   - `read_worker_count()` - Read worker thread count
   - `read_queue_size()` - Read bounded queue size
 
+- Added `gen_ai.evaluation.error` attribute to indicate errors during evaluation submission for a span.
+
 ### Changed
 - `Manager._worker_count` forced to 1 in sequential mode for clarity
 - Worker threads now use asyncio event loops for concurrent task processing

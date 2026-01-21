@@ -10,6 +10,8 @@ All notable changes to this repository are documented in this file.
   - `OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS` - Configure number of worker threads (default: 4)
   - `OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE` - Set bounded queue size for backpressure (0 = unbounded)
 - These variables enable significant throughput improvements for LLM-as-a-Judge evaluations
+- Added `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` environment variable to support evaluation queue size.
+  Added queue size check and error attribute on span while eval for a span is dropped.
 
 ## Version 0.1.6 - 2026-01-13
 
