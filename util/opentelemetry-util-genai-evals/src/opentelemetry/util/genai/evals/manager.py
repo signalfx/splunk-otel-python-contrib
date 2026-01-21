@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import logging
 import queue
@@ -7,19 +7,14 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from ..callbacks import CompletionCallback
 from .admission_controller import EvaluationAdmissionController
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from ..handler import TelemetryHandler
 
 from opentelemetry.semconv.attributes import (
     error_attributes as ErrorAttributes,
 )
 
-from ..environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
-)
+from ..callbacks import CompletionCallback
+from ..environment_variables import OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
 from ..types import (
     AgentCreation,
     AgentInvocation,
@@ -40,6 +35,9 @@ from .env import (
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..handler import TelemetryHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,6 +114,7 @@ class Manager(CompletionCallback):
         # Early exit if no evaluators configured
         if not self.has_evaluators:
             return
+
         # Only evaluate LLMInvocation or AgentInvocation or Workflow
         if (
             not isinstance(invocation, LLMInvocation)
@@ -127,7 +126,7 @@ class Manager(CompletionCallback):
             )
             _LOGGER.debug(
                 "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.",
-                type(invocation).name,
+                type(invocation).__name__,
             )
             return
 
@@ -146,7 +145,7 @@ class Manager(CompletionCallback):
                         invocation.evaluation_error = "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
                         _LOGGER.debug(
                             "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.",
-                            type(invocation).name,
+                            type(invocation).__name__,
                         )
                         offer = False
 
@@ -158,7 +157,7 @@ class Manager(CompletionCallback):
                 )
                 _LOGGER.debug(
                     "Skipping evaluation for invocation type: %s as error on span, error: %s.",
-                    type(invocation).name,
+                    type(invocation).__name__,
                     error,
                 )
                 offer = False
@@ -171,14 +170,6 @@ class Manager(CompletionCallback):
         """Enqueue an invocation for asynchronous evaluation."""
 
         if not self.has_evaluators:
-            return
-        allowed, reason = self._admission.allow(invocation)
-        if not allowed:
-            invocation.evaluation_error = reason
-            _LOGGER.debug(
-                "Evaluation admission denied (%s), dropping invocation.",
-                reason,
-            )
             return
         try:
             self._queue.put_nowait(invocation)
@@ -214,7 +205,14 @@ class Manager(CompletionCallback):
 
     def evaluate_now(self, invocation: GenAI) -> list[EvaluationResult]:
         """Synchronously evaluate an invocation."""
-
+        allowed, reason = self._admission.allow(invocation)
+        if not allowed:
+            invocation.evaluation_error = reason
+            _LOGGER.debug(
+                "Evaluation rate limited (%s), dropping invocation.",
+                reason,
+            )
+            return []
         buckets = self._evaluate_invocation(invocation)
         flattened = self._publish_results(invocation, buckets)
         self._flag_invocation(invocation)
@@ -232,7 +230,19 @@ class Manager(CompletionCallback):
             except queue.Empty:
                 continue
             try:
-                self._process_invocation(invocation)
+                # Apply rate limiting on processing side to:
+                # 1. Allow queue to buffer burst traffic
+                # 2. Protect actual evaluation execution (CPU, external APIs)
+                # 3. Support both sync and async evaluators
+                allowed, reason = self._admission.allow(invocation)
+                if not allowed:
+                    invocation.evaluation_error = reason
+                    _LOGGER.debug(
+                        "Evaluation rate limited (%s), dropping invocation.",
+                        reason,
+                    )
+                else:
+                    self._process_invocation(invocation)
             except Exception:  # pragma: no cover - defensive
                 _LOGGER.exception("Evaluator processing failed")
             finally:

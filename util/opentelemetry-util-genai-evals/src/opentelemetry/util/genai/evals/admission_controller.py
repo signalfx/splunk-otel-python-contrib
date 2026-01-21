@@ -1,5 +1,6 @@
 # admission_controller.py
 
+import asyncio
 import threading
 import time
 from typing import Optional, Tuple
@@ -70,9 +71,27 @@ class EvaluationAdmissionController:
           (True, None) if allowed
           (False, error_code) if dropped
         """
-        _ = invocation  # reserved for future use
+        _ = invocation
+
         if self._limiter is None:
             return True, None
+
         if self._limiter.allow():
             return True, None
-        return False, "rate_limited"
+
+        return False, "client_evaluation_rate_limited"
+
+    async def allow_async(self, invocation) -> Tuple[bool, Optional[str]]:
+        """Check if invocation should be allowed (async version).
+
+        Returns:
+          (True, None) if allowed
+          (False, error_code) if dropped
+        """
+        _ = invocation
+        if self._limiter is None:
+            return True, None
+        allowed = await asyncio.to_thread(self._limiter.allow)
+        if allowed:
+            return True, None
+        return False, "client_evaluation_rate_limited"

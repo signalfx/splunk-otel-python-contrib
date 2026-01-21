@@ -24,12 +24,12 @@ from tools import (
 
 
 def _get_oauth_token(config: Config) -> str:
-    """Get OAuth2 token for Cisco endpoint using Basic Auth."""
-    if not config.oauth_token_url:
-        return config.openai_api_key
+    """Get OAuth2 token for Circuit/Cisco endpoint using Basic Auth."""
+    if not config.circuit_token_url:
+        raise ValueError("Circuit token URL not configured")
 
     # Create Basic Auth header
-    credentials = f"{config.oauth_client_id}:{config.oauth_client_secret}"
+    credentials = f"{config.circuit_client_id}:{config.circuit_client_secret}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
 
     headers = {
@@ -39,7 +39,7 @@ def _get_oauth_token(config: Config) -> str:
 
     data = {"grant_type": "client_credentials"}
 
-    response = requests.post(config.oauth_token_url, headers=headers, data=data)
+    response = requests.post(config.circuit_token_url, headers=headers, data=data)
     response.raise_for_status()
     return response.json()["access_token"]
 
@@ -61,23 +61,43 @@ def _create_llm(agent_name: str, temperature: float, config: Config) -> ChatOpen
         },
     }
 
-    # Add custom base URL if configured
-    if config.openai_base_url:
-        llm_kwargs["base_url"] = config.openai_base_url
+    # Check which credentials are fully configured
+    has_circuit = (
+        config.circuit_base_url
+        and config.circuit_token_url
+        and config.circuit_client_id
+        and config.circuit_client_secret
+        and config.circuit_app_key
+    )
+    has_openai = config.openai_api_key is not None
 
-    # Handle OAuth2 authentication for Cisco
-    if config.oauth_token_url:
+    # Handle OAuth2 authentication for Circuit/Cisco
+    if has_circuit:
         token = _get_oauth_token(config)
-        # Cisco expects the token in 'api-key' header
+        # Circuit/Cisco expects the token in 'api-key' header
         llm_kwargs["api_key"] = token
         llm_kwargs["default_headers"] = {"api-key": token}
+        # Use Circuit base URL if configured
+        if config.circuit_base_url:
+            llm_kwargs["base_url"] = config.circuit_base_url
         # App key goes in the 'user' field of each request
-        if config.oauth_app_key:
+        if config.circuit_app_key:
             llm_kwargs["model_kwargs"] = {
-                "user": f'{{"appkey":"{config.oauth_app_key}"}}'
+                "user": f'{{"appkey":"{config.circuit_app_key}"}}'
             }
-    else:
+    elif has_openai:
+        # Use OpenAI credentials
         llm_kwargs["api_key"] = config.openai_api_key
+        # Add OpenAI base URL if configured
+        if config.openai_base_url:
+            llm_kwargs["base_url"] = config.openai_base_url
+    else:
+        raise ValueError(
+            "No valid credentials configured. Either provide:\n"
+            "1. OpenAI: OPENAI_API_KEY\n"
+            "2. Circuit: CIRCUIT_BASE_URL, CIRCUIT_TOKEN_URL, CIRCUIT_CLIENT_ID, "
+            "CIRCUIT_CLIENT_SECRET, CIRCUIT_APP_KEY"
+        )
 
     return ChatOpenAI(**llm_kwargs)
 
