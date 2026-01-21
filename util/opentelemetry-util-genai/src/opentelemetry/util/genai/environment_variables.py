@@ -149,6 +149,17 @@ Recommended values: ``2`` to ``8`` depending on LLM API rate limits and system
 resources.
 """
 
+DEEPEVAL_MAX_CONCURRENT = "DEEPEVAL_MAX_CONCURRENT"
+"""
+.. envvar:: DEEPEVAL_MAX_CONCURRENT
+
+Maximum number of concurrent metric evaluations within a single test case.
+This controls DeepEval's internal parallelism when processing multiple metrics.
+Only effective when ``OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT`` is enabled.
+Defaults to ``10``. Higher values may improve throughput but increase LLM API
+rate limit pressure.
+"""
+
 OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS = (
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS"
 )
@@ -243,6 +254,7 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS",
+    "DEEPEVAL_MAX_CONCURRENT",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE",
     # generator selection

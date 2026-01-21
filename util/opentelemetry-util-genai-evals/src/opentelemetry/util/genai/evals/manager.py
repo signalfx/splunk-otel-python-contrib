@@ -29,7 +29,6 @@ from .base import Evaluator
 from .env import (
     read_aggregation_flag,
     read_concurrent_flag,
-    read_evaluation_queue_size,
     read_interval,
     read_queue_size,
     read_raw_evaluators,
@@ -111,24 +110,14 @@ class Manager(CompletionCallback):
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
 
-        # Queue configuration: 0 = unbounded, >0 = bounded with backpressure
+        # Queue configuration with bounded size for backpressure
         self._queue_size = (
             queue_size if queue_size is not None else read_queue_size()
         )
-        if self._queue_size > 0:
-            self._queue: queue.Queue[GenAI] = queue.Queue(
-                maxsize=self._queue_size
-            )
-            _LOGGER.debug(
-                "Evaluation queue configured with bounded size: %d",
-                self._queue_size,
-            )
-        else:
-            self._queue = queue.Queue(maxsize=read_evaluation_queue_size())
-            _LOGGER.debug(
-                "Evaluation queue configured with size: %d",
-                self._queue.maxsize,
-            )
+        self._queue: queue.Queue[GenAI] = queue.Queue(maxsize=self._queue_size)
+        _LOGGER.debug(
+            "Evaluation queue configured with size: %d", self._queue_size
+        )
 
         # Concurrent mode configuration
         self._concurrent_mode = (

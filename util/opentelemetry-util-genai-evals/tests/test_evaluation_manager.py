@@ -160,14 +160,13 @@ def test_manager_queue_size_configurable(monkeypatch):
     manager.shutdown()
 
 
-def test_manager_unbounded_queue_by_default(monkeypatch):
-    """Test that queue is unbounded by default (size=0)."""
-    manager, _ = _make_concurrent_manager(
-        monkeypatch, concurrent=False, queue_size=0
-    )
+def test_manager_default_queue_size(monkeypatch):
+    """Test that queue defaults to 100 when no explicit size is provided."""
+    manager, _ = _make_concurrent_manager(monkeypatch, concurrent=False)
 
-    assert manager._queue_size == 0
-    # When queue_size=0, it falls back to read_evaluation_queue_size() which defaults to 100
+    # Default queue size is 100 (from read_queue_size())
+    assert manager._queue_size == 100
+    assert manager._queue.maxsize == 100
     manager.shutdown()
 
 
@@ -198,7 +197,7 @@ def test_manager_shutdown_clears_workers(monkeypatch):
 
 def test_manager_drops_invocation_when_queue_full(monkeypatch):
     """Test that invocations are dropped when queue is full."""
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE", "2")
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "2")
 
     handler = _StubHandler()
     manager = Manager(handler)

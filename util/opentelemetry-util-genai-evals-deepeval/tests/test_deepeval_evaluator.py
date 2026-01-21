@@ -270,7 +270,7 @@ def test_evaluator_converts_results(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics, debug_log: fake_result,
+        lambda case, metrics: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
@@ -285,6 +285,12 @@ def test_evaluator_converts_results(monkeypatch):
 
 
 def test_metric_options_coercion(monkeypatch):
+    # Clear DEEPEVAL_LLM_* env vars to ensure _default_model() returns "gpt-4o-mini"
+    monkeypatch.delenv("DEEPEVAL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("DEEPEVAL_LLM_MODEL", raising=False)
+    monkeypatch.delenv("DEEPEVAL_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("DEEPEVAL_LLM_API_KEY", raising=False)
+
     invocation = _build_invocation()
     evaluator = plugin.DeepevalEvaluator(
         ("bias",),
@@ -324,7 +330,7 @@ def test_metric_options_coercion(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics, debug_log: fake_result,
+        lambda case, metrics: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
@@ -443,7 +449,7 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics, debug_log: fake_result,
+        lambda case, metrics: fake_result,
     )
 
     results = evaluator.evaluate(invocation)
@@ -504,7 +510,7 @@ def test_async_evaluate_converts_results(monkeypatch):
     )
 
     # Mock the async runner
-    async def mock_async_runner(case, metrics, debug_log):
+    async def mock_async_runner(case, metrics):
         return fake_result
 
     monkeypatch.setattr(

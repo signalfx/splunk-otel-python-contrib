@@ -6,6 +6,7 @@ import os
 from typing import Mapping
 
 from opentelemetry.util.genai.environment_variables import (
+    DEEPEVAL_MAX_CONCURRENT,
     OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT,
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL,
@@ -54,30 +55,6 @@ def read_aggregation_flag(
     return raw.strip().lower() in _TRUTHY
 
 
-def read_queue_size(
-    env: Mapping[str, str] | None = None,
-    *,
-    default: int = 0,
-) -> int:
-    """Read the evaluation queue size from environment.
-
-    Args:
-        env: Optional environment mapping (defaults to os.environ)
-        default: Default value when not set (0 = unbounded)
-
-    Returns:
-        Queue size as integer. 0 means unbounded queue.
-    """
-    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE, env)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        size = int(raw.strip())
-        return max(0, size)  # Ensure non-negative
-    except ValueError:
-        return default
-
-
 def read_concurrent_flag(
     env: Mapping[str, str] | None = None,
 ) -> bool:
@@ -119,29 +96,62 @@ def read_worker_count(
         return default
 
 
-def read_evaluation_queue_size() -> int:
-    """Read the evaluation queue size from OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE.
+def read_queue_size(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: int = 100,
+) -> int:
+    """Read the evaluation queue size from environment.
+
+    Checks OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE first, then falls back
+    to legacy OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE for backward
+    compatibility.
+
+    Args:
+        env: Optional environment mapping (defaults to os.environ)
+        default: Default value when not set (100)
 
     Returns:
-        Queue size as integer. Defaults to 100 if not set or invalid.
+        Queue size as integer. Must be positive.
     """
-    evaluation_queue_size = _get_env(
-        OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE
-    )
-    default_queue_size = 100
+    # Check new env var first
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE, env)
+    if raw is None or raw.strip() == "":
+        # Fall back to legacy env var
+        raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE, env)
+    if raw is None or raw.strip() == "":
+        return default
     try:
-        queue_size = (
-            int(evaluation_queue_size)
-            if evaluation_queue_size and evaluation_queue_size.strip()
-            else default_queue_size
-        )
-        evaluation_queue_size = (
-            queue_size if queue_size > 0 else default_queue_size
-        )
-    except (ValueError, TypeError):
-        evaluation_queue_size = default_queue_size
+        size = int(raw.strip())
+        return size if size > 0 else default
+    except ValueError:
+        return default
 
-    return evaluation_queue_size
+
+def read_max_concurrent(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: int = 10,
+) -> int:
+    """Read the max concurrent metrics per test case from DEEPEVAL_MAX_CONCURRENT.
+
+    This controls DeepEval's internal parallelism for metric evaluation.
+
+    Args:
+        env: Optional environment mapping (defaults to os.environ)
+        default: Default value (10)
+
+    Returns:
+        Max concurrent value. Minimum 1, maximum 50.
+    """
+    raw = _get_env(DEEPEVAL_MAX_CONCURRENT, env)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw.strip())
+        return max(1, min(50, value))  # Clamp between 1 and 50
+    except ValueError:
+        return default
 
 
 __all__ = [
@@ -151,5 +161,5 @@ __all__ = [
     "read_queue_size",
     "read_concurrent_flag",
     "read_worker_count",
-    "read_evaluation_queue_size",
+    "read_max_concurrent",
 ]

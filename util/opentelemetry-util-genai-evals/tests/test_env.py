@@ -138,13 +138,13 @@ class TestReadWorkerCount:
 class TestReadQueueSize:
     """Tests for read_queue_size function."""
 
-    def test_default_value_unbounded(self, clean_env):
-        """Returns default (0, unbounded) when env var not set."""
-        assert read_queue_size() == 0
+    def test_default_value(self, clean_env):
+        """Returns default (100) when env var not set."""
+        assert read_queue_size() == 100
 
     def test_custom_default(self, clean_env):
         """Accepts custom default value."""
-        assert read_queue_size(default=100) == 100
+        assert read_queue_size(default=50) == 50
 
     def test_reads_from_env(self, clean_env, monkeypatch):
         """Reads value from environment variable."""
@@ -153,24 +153,46 @@ class TestReadQueueSize:
         )
         assert read_queue_size() == 500
 
-    def test_ensures_non_negative(self, clean_env, monkeypatch):
-        """Ensures value is non-negative (clamps to 0)."""
+    def test_fallback_to_legacy_env_var(self, clean_env, monkeypatch):
+        """Falls back to legacy OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE."""
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE", "200"
+        )
+        assert read_queue_size() == 200
+
+    def test_new_env_var_takes_precedence(self, clean_env, monkeypatch):
+        """New env var takes precedence over legacy."""
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "300"
+        )
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE", "200"
+        )
+        assert read_queue_size() == 300
+
+    def test_non_positive_returns_default(self, clean_env, monkeypatch):
+        """Returns default for non-positive values."""
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "-10"
         )
-        assert read_queue_size() == 0
+        assert read_queue_size() == 100
+
+    def test_zero_returns_default(self, clean_env, monkeypatch):
+        """Returns default for zero value."""
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "0")
+        assert read_queue_size() == 100
 
     def test_invalid_value_returns_default(self, clean_env, monkeypatch):
         """Returns default for invalid (non-integer) values."""
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "invalid"
         )
-        assert read_queue_size() == 0
+        assert read_queue_size() == 100
 
     def test_empty_string_returns_default(self, clean_env, monkeypatch):
         """Returns default for empty string."""
         monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "")
-        assert read_queue_size() == 0
+        assert read_queue_size() == 100
 
 
 # =============================================================================

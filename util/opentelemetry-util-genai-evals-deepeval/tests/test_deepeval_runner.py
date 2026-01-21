@@ -125,25 +125,28 @@ _install_deepeval_stubs()
 
 
 from opentelemetry.util.evaluator.deepeval_runner import (
-    _is_async_mode_enabled,
     run_evaluation,
     run_evaluation_async,
 )
+from opentelemetry.util.genai.evals.env import (
+    read_concurrent_flag,
+    read_max_concurrent,
+)
 
 # =============================================================================
-# Tests for _is_async_mode_enabled
+# Tests for read_concurrent_flag (moved to env module)
 # =============================================================================
 
 
-class TestIsAsyncModeEnabled:
-    """Tests for _is_async_mode_enabled helper function."""
+class TestReadConcurrentFlag:
+    """Tests for read_concurrent_flag helper function."""
 
     def test_returns_false_when_not_set(self, monkeypatch):
         """Returns False when env var not set."""
         monkeypatch.delenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", raising=False
         )
-        assert _is_async_mode_enabled() is False
+        assert read_concurrent_flag() is False
 
     @pytest.mark.parametrize("value", ["true", "True", "1", "yes", "on"])
     def test_returns_true_for_truthy_values(self, monkeypatch, value):
@@ -151,7 +154,7 @@ class TestIsAsyncModeEnabled:
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value
         )
-        assert _is_async_mode_enabled() is True
+        assert read_concurrent_flag() is True
 
     @pytest.mark.parametrize("value", ["false", "0", "no", "off", ""])
     def test_returns_false_for_falsy_values(self, monkeypatch, value):
@@ -159,7 +162,41 @@ class TestIsAsyncModeEnabled:
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", value
         )
-        assert _is_async_mode_enabled() is False
+        assert read_concurrent_flag() is False
+
+
+# =============================================================================
+# Tests for read_max_concurrent
+# =============================================================================
+
+
+class TestReadMaxConcurrent:
+    """Tests for read_max_concurrent helper function."""
+
+    def test_returns_default_when_not_set(self, monkeypatch):
+        """Returns default (10) when env var not set."""
+        monkeypatch.delenv("DEEPEVAL_MAX_CONCURRENT", raising=False)
+        assert read_max_concurrent() == 10
+
+    def test_returns_custom_value(self, monkeypatch):
+        """Returns custom value when set."""
+        monkeypatch.setenv("DEEPEVAL_MAX_CONCURRENT", "20")
+        assert read_max_concurrent() == 20
+
+    def test_clamps_to_minimum(self, monkeypatch):
+        """Clamps to minimum of 1."""
+        monkeypatch.setenv("DEEPEVAL_MAX_CONCURRENT", "0")
+        assert read_max_concurrent() == 1
+
+    def test_clamps_to_maximum(self, monkeypatch):
+        """Clamps to maximum of 50."""
+        monkeypatch.setenv("DEEPEVAL_MAX_CONCURRENT", "100")
+        assert read_max_concurrent() == 50
+
+    def test_returns_default_for_invalid(self, monkeypatch):
+        """Returns default for invalid values."""
+        monkeypatch.setenv("DEEPEVAL_MAX_CONCURRENT", "invalid")
+        assert read_max_concurrent() == 10
 
 
 # =============================================================================
@@ -219,8 +256,12 @@ class TestRunEvaluation:
 
         assert captured_config["async_config"].run_async is False
 
-    def test_uses_async_mode_when_env_enabled(self, monkeypatch):
-        """Uses AsyncConfig(run_async=True) when env var enabled."""
+    def test_always_uses_sync_mode(self, monkeypatch):
+        """run_evaluation always uses AsyncConfig(run_async=False).
+
+        The sync function is for sequential evaluation path and should
+        never use DeepEval's internal async mode, regardless of env var.
+        """
         captured_config = {}
 
         def capture_evaluate(
@@ -237,54 +278,15 @@ class TestRunEvaluation:
             "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
             capture_evaluate,
         )
+        # Even with concurrent mode enabled, sync run_evaluation should use run_async=False
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "true"
         )
 
         run_evaluation(MagicMock(), [MagicMock()])
 
-        assert captured_config["async_config"].run_async is True
-
-    def test_use_async_parameter_overrides_env(self, monkeypatch):
-        """use_async parameter overrides environment variable."""
-        captured_config = {}
-
-        def capture_evaluate(
-            test_cases, metrics, async_config=None, display_config=None
-        ):
-            captured_config["async_config"] = async_config
-
-            class _Result:
-                test_results = []
-
-            return _Result()
-
-        monkeypatch.setattr(
-            "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
-            capture_evaluate,
-        )
-        monkeypatch.setenv(
-            "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT", "false"
-        )
-
-        # Override with use_async=True
-        run_evaluation(MagicMock(), [MagicMock()], use_async=True)
-
-        assert captured_config["async_config"].run_async is True
-
-    def test_debug_log_called_for_stdout(self, monkeypatch):
-        """Calls debug_log for captured stdout."""
-        monkeypatch.setattr(
-            "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
-            lambda *a, **kw: type("R", (), {"test_results": []})(),
-        )
-
-        debug_log = MagicMock()
-        # Run evaluation with debug_log - should not crash
-        run_evaluation(MagicMock(), [MagicMock()], debug_log=debug_log)
-
-        # debug_log may or may not be called depending on captured output
-        # Just verify it doesn't crash
+        # Sync path always uses sequential mode
+        assert captured_config["async_config"].run_async is False
 
 
 # =============================================================================
@@ -375,23 +377,6 @@ class TestRunEvaluationAsync:
 
         result = asyncio.run(run_test())
         assert result.test_results == [{"metric": "test"}]
-
-    def test_handles_debug_log(self, monkeypatch):
-        """Handles debug_log parameter without errors."""
-        monkeypatch.setattr(
-            "opentelemetry.util.evaluator.deepeval_runner.deepeval_evaluate",
-            lambda *a, **kw: type("R", (), {"test_results": []})(),
-        )
-
-        debug_log = MagicMock()
-
-        async def run_test():
-            return await run_evaluation_async(
-                MagicMock(), [MagicMock()], debug_log=debug_log
-            )
-
-        # Should not raise
-        asyncio.run(run_test())
 
     def test_can_run_multiple_concurrent_evaluations(self, monkeypatch):
         """Can run multiple evaluations concurrently."""

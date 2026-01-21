@@ -349,15 +349,7 @@ class DeepevalEvaluator(Evaluator):
     def _evaluate_agent(
         self, invocation: AgentInvocation
     ) -> Sequence[EvaluationResult]:
-        # only evaluate for operation=invoke
-        operation = getattr(invocation, "operation", None)
-        if operation != "invoke_agent":
-            genai_debug_log(
-                "evaluator.deepeval.skip.non_invoke_agent",
-                invocation,
-                operation=invocation.operation,
-            )
-            return []
+        # Note: invoke_agent filtering is handled by Manager._should_skip()
         return self._evaluate_generic(invocation, "AgentInvocation")
 
     # ---- Async Evaluation (for concurrent mode) --------------------------
@@ -383,14 +375,6 @@ class DeepevalEvaluator(Evaluator):
         self, invocation: AgentInvocation
     ) -> Sequence[EvaluationResult]:
         """Async evaluation for agent invocations."""
-        operation = getattr(invocation, "operation", None)
-        if operation != "invoke_agent":
-            genai_debug_log(
-                "evaluator.deepeval.skip.non_invoke_agent",
-                invocation,
-                operation=invocation.operation,
-            )
-            return []
         return await self._evaluate_generic_async(
             invocation, "AgentInvocation"
         )
@@ -399,11 +383,9 @@ class DeepevalEvaluator(Evaluator):
         self, invocation: GenAI, invocation_type: str
     ) -> Sequence[EvaluationResult]:
         """Async version of _evaluate_generic using DeepEval's async mode."""
-        log_invocation = self._log_invocation(invocation)
-
         genai_debug_log(
             "evaluator.deepeval.async.start",
-            log_invocation,
+            invocation,
             invocation_type=invocation_type,
         )
 
@@ -411,7 +393,6 @@ class DeepevalEvaluator(Evaluator):
         prep_result = self._prepare_evaluation(
             invocation,
             invocation_type,
-            log_invocation,
             log_prefix="evaluator.deepeval.async",
         )
         if prep_result.early_return is not None:
@@ -420,11 +401,11 @@ class DeepevalEvaluator(Evaluator):
         try:
             # Use async runner for concurrent evaluation
             evaluation = await _run_deepeval_async(
-                prep_result.test_case, prep_result.metrics, genai_debug_log
+                prep_result.test_case, prep_result.metrics
             )
             genai_debug_log(
                 "evaluator.deepeval.async.complete",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
         except (
@@ -432,7 +413,7 @@ class DeepevalEvaluator(Evaluator):
         ) as exc:  # pragma: no cover - dependency/runtime failure
             genai_debug_log(
                 "evaluator.deepeval.async.error.execution",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
             return [
@@ -485,18 +466,10 @@ class DeepevalEvaluator(Evaluator):
             if not os.getenv("OPENAI_API_KEY"):
                 os.environ["OPENAI_API_KEY"] = api_key
 
-    @staticmethod
-    def _log_invocation(invocation: GenAI) -> GenAI | None:
-        """Get invocation for logging, returning None for unsupported types."""
-        if isinstance(invocation, (LLMInvocation, AgentInvocation)):
-            return invocation
-        return None
-
     def _prepare_evaluation(
         self,
         invocation: GenAI,
         invocation_type: str,
-        log_invocation: GenAI | None,
         log_prefix: str,
     ) -> _EvalPreparation:
         """Prepare evaluation - shared logic for sync and async paths.
@@ -510,7 +483,7 @@ class DeepevalEvaluator(Evaluator):
         if not metric_specs:
             genai_debug_log(
                 f"{log_prefix}.skip.no_metrics",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
             return _EvalPreparation(
@@ -525,7 +498,7 @@ class DeepevalEvaluator(Evaluator):
         if test_case is None:
             genai_debug_log(
                 f"{log_prefix}.error.missing_io",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
             return _EvalPreparation(
@@ -557,7 +530,7 @@ class DeepevalEvaluator(Evaluator):
         if not metrics:
             genai_debug_log(
                 f"{log_prefix}.skip.no_valid_metrics",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
             return _EvalPreparation(
@@ -581,11 +554,9 @@ class DeepevalEvaluator(Evaluator):
         self, invocation: GenAI, invocation_type: str
     ) -> Sequence[EvaluationResult]:
         """Synchronous evaluation using DeepEval."""
-        log_invocation = self._log_invocation(invocation)
-
         genai_debug_log(
             "evaluator.deepeval.start",
-            log_invocation,
+            invocation,
             invocation_type=invocation_type,
         )
 
@@ -593,7 +564,6 @@ class DeepevalEvaluator(Evaluator):
         prep_result = self._prepare_evaluation(
             invocation,
             invocation_type,
-            log_invocation,
             log_prefix="evaluator.deepeval",
         )
         if prep_result.early_return is not None:
@@ -601,11 +571,11 @@ class DeepevalEvaluator(Evaluator):
 
         try:
             evaluation = _run_deepeval(
-                prep_result.test_case, prep_result.metrics, genai_debug_log
+                prep_result.test_case, prep_result.metrics
             )
             genai_debug_log(
                 "evaluator.deepeval.complete",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
         except (
@@ -613,7 +583,7 @@ class DeepevalEvaluator(Evaluator):
         ) as exc:  # pragma: no cover - dependency/runtime failure
             genai_debug_log(
                 "evaluator.deepeval.error.execution",
-                log_invocation,
+                invocation,
                 invocation_type=invocation_type,
             )
             return [
@@ -737,19 +707,6 @@ class DeepevalEvaluator(Evaluator):
             return int(text)
         except ValueError:
             return text
-
-    # message serialization moved to normalizer
-
-    @staticmethod
-    # context extraction moved to normalizer
-
-    @staticmethod
-    # retrieval context extraction moved to normalizer
-
-    @staticmethod
-    # flatten helper moved to normalizer
-
-    # per-metric param check handled in deepeval_metrics
 
     @staticmethod
     def _default_model() -> str | Any | None:
