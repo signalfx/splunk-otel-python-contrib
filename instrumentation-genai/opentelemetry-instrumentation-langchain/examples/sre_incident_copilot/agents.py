@@ -132,7 +132,7 @@ def triage_agent(state: Dict, config: Config) -> Dict:
 Alert ID: {alert_id}
 Scenario ID: {scenario_id}
 Service ID: {service_id}
-Alert Title: {incident_context.get('title', 'N/A')}
+Alert Title: {incident_context.get("title", "N/A")}
 
 IMPORTANT: You MUST call investigation_agent_mcp after creating the investigation checklist.
 Steps:
@@ -281,7 +281,7 @@ Service ID: {service_id}
 Scenario ID: {scenario_id}
 Alert Type: {alert_type}
 
-Investigation checklist: {json.dumps(triage_result.get('investigation_checklist', []))}
+Investigation checklist: {json.dumps(triage_result.get("investigation_checklist", []))}
 
 IMPORTANT: Query ALL relevant metrics based on the alert type. 
 The metrics_query tool description contains guidance on which metrics to query for different alert types.
@@ -678,7 +678,7 @@ Evidence Threshold: {evidence_threshold}
 Requires Approval: {requires_approval}{approval_note}
 
 Hypotheses: {len(hypotheses)}
-Action Plan: {json.dumps(action_plan.get('mitigation_plan', []))}
+Action Plan: {json.dumps(action_plan.get("mitigation_plan", []))}
 
 Output a JSON object with:
 - validation_passed: Boolean indicating if quality checks passed

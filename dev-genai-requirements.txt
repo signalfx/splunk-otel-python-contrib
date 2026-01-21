@@ -15,7 +15,7 @@ ruamel.yaml==0.17.21
 flaky>=3.8.1
 pre-commit==3.7.0; python_version >= '3.9'
 pre-commit==3.5.0; python_version < '3.9'
-ruff==0.6.9
+ruff==0.14.1
 
 # opentelemetry dependencies: 
 opentelemetry-exporter-otlp-proto-grpc
