@@ -131,7 +131,6 @@ class Manager(CompletionCallback):
 
         self._shutdown = threading.Event()
         self._workers: list[threading.Thread] = []
-        self._async_event_loop: asyncio.AbstractEventLoop | None = None
 
         if self.has_evaluators:
             if self._concurrent_mode:
