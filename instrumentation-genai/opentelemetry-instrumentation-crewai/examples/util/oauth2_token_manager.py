@@ -70,7 +70,7 @@ class OAuth2TokenManager:
 
         if not self.token_url:
             raise ValueError(
-                "OAuth2 token URL required. " "Set token_url or LLM_TOKEN_URL env var."
+                "OAuth2 token URL required. Set token_url or LLM_TOKEN_URL env var."
             )
 
         self._token: Optional[str] = None
@@ -150,3 +150,4 @@ class OAuth2TokenManager:
         if not base:
             raise ValueError("LLM_BASE_URL environment variable is required")
         return f"{base}/{model}"
+
