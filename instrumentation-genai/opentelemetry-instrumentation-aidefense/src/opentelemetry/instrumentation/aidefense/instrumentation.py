@@ -27,7 +27,7 @@ This instrumentation supports two modes:
    header from responses when LLM calls are proxied through AI Defense Gateway.
    - Automatically detects AI Defense Gateway URLs
    - Adds gen_ai.security.event_id to the current span (e.g., LangChain spans)
-   - Supported providers: OpenAI, Azure OpenAI, AWS Bedrock, Google Vertex, Cohere, Mistral
+   - Supported providers: OpenAI, Azure OpenAI, Anthropic, Cohere, Mistral (any httpx-based SDK)
 
 The critical `gen_ai.security.event_id` span attribute enables security event correlation
 in Splunk APM and other observability platforms.
@@ -74,7 +74,6 @@ _gateway_patterns_compiled: List[re.Pattern] = []
 
 # Header containing the security event ID from AI Defense Gateway
 AI_DEFENSE_EVENT_ID_HEADER = "X-Cisco-AI-Defense-Event-Id"
-AI_DEFENSE_EVENT_ID_HEADER_LOWER = "x-cisco-ai-defense-event-id"
 
 # Span attribute for security event ID
 GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
@@ -137,25 +136,29 @@ def _extract_event_id_from_headers(headers) -> Optional[str]:
     Extract X-Cisco-AI-Defense-Event-Id from HTTP response headers.
 
     Handles various header container types (dict, httpx.Headers, etc.)
+    with case-insensitive matching for HTTP header compliance.
     """
     if not headers:
         return None
 
+    header_lower = AI_DEFENSE_EVENT_ID_HEADER.lower()
+
     try:
-        # Try exact case first
+        # Try .get() method first (works with dict, httpx.Headers, etc.)
         if hasattr(headers, "get"):
+            # Try exact case first
             event_id = headers.get(AI_DEFENSE_EVENT_ID_HEADER)
             if event_id:
                 return event_id
-            # Try lowercase (headers are often case-insensitive)
-            event_id = headers.get(AI_DEFENSE_EVENT_ID_HEADER_LOWER)
+            # Try lowercase (HTTP headers are case-insensitive per RFC 7230)
+            event_id = headers.get(header_lower)
             if event_id:
                 return event_id
 
-        # For dict-like objects, try case-insensitive search
+        # Fallback: iterate and do case-insensitive comparison
         if hasattr(headers, "items"):
             for key, value in headers.items():
-                if key.lower() == AI_DEFENSE_EVENT_ID_HEADER_LOWER:
+                if key.lower() == header_lower:
                     return value
 
         return None
@@ -173,17 +176,16 @@ class AIDefenseInstrumentor(BaseInstrumentor):
     1. **SDK Mode**: Wraps cisco-aidefense-sdk methods to capture security
        inspection events as dedicated spans.
 
-    2. **Gateway Mode**: Wraps HTTP clients (httpx) to capture the
-       X-Cisco-AI-Defense-Event-Id header when LLM calls are proxied through
-       AI Defense Gateway. The event_id is added to the current span.
+    2. **Gateway Mode**: Wraps httpx to capture the X-Cisco-AI-Defense-Event-Id
+       header when LLM calls are proxied through AI Defense Gateway.
+       The event_id is added to the current span.
 
-    Supported LLM providers for Gateway Mode:
-    - OpenAI (api.openai.com)
-    - Azure OpenAI (*.openai.azure.com)
-    - AWS Bedrock (bedrock-runtime.*.amazonaws.com)
-    - Google Vertex AI (*aiplatform.googleapis.com)
-    - Cohere (api.cohere.com)
-    - Mistral (api.mistral.ai)
+    Gateway Mode supports any LLM SDK that uses httpx internally:
+    - OpenAI SDK
+    - Azure OpenAI (via OpenAI SDK)
+    - Anthropic SDK
+    - Cohere SDK
+    - Mistral SDK
 
     The primary attribute captured is `gen_ai.security.event_id`, which is
     essential for correlating security events in Splunk APM and GDI pipelines.
@@ -274,20 +276,11 @@ class AIDefenseInstrumentor(BaseInstrumentor):
 
     def _instrument_gateway_mode(self):
         """
-        Instrument HTTP clients for Gateway Mode.
+        Instrument httpx for Gateway Mode.
 
         Wraps httpx (used by OpenAI, Anthropic, Cohere, Mistral SDKs) to capture
         X-Cisco-AI-Defense-Event-Id header from responses when LLM calls are
         proxied through AI Defense Gateway.
-
-        This approach works for all LLM providers that use httpx:
-        - OpenAI SDK
-        - Azure OpenAI (via OpenAI SDK)
-        - Anthropic SDK
-        - Cohere SDK
-        - Mistral SDK
-        - Google Vertex AI SDK (uses google-auth-httplib2 but we also wrap httpx)
-        - AWS Bedrock (uses botocore/urllib3, wrapped separately)
         """
         # Wrap httpx (covers OpenAI, Anthropic, Cohere, Mistral, etc.)
         try:
@@ -304,24 +297,9 @@ class AIDefenseInstrumentor(BaseInstrumentor):
             self._gateway_mode_applied = True
             _logger.debug("AI Defense Gateway Mode instrumentation applied for httpx")
         except ImportError:
-            _logger.debug("httpx not installed, skipping httpx instrumentation")
+            _logger.debug("httpx not installed, skipping Gateway Mode instrumentation")
         except Exception as e:
-            _logger.debug("Failed to wrap httpx: %s", e)
-
-        # Wrap botocore for AWS Bedrock
-        try:
-            wrap_function_wrapper(
-                "botocore.httpsession",
-                "URLLib3Session.send",
-                _wrap_botocore_send_for_gateway,
-            )
-            _logger.debug(
-                "AI Defense Gateway Mode instrumentation applied for botocore (AWS)"
-            )
-        except ImportError:
-            _logger.debug("botocore not installed, skipping AWS instrumentation")
-        except Exception as e:
-            _logger.debug("Failed to wrap botocore: %s", e)
+            _logger.debug("Failed to apply Gateway Mode instrumentation: %s", e)
 
     def _uninstrument(self, **kwargs):
         """Remove instrumentation from AI Defense SDK and Gateway Mode."""
@@ -367,12 +345,6 @@ class AIDefenseInstrumentor(BaseInstrumentor):
                 unwrap("httpx.AsyncClient", "send")
             except Exception:
                 pass
-
-            try:
-                unwrap("botocore.httpsession.URLLib3Session", "send")
-            except Exception:
-                pass
-
             self._gateway_mode_applied = False
 
 
@@ -438,52 +410,6 @@ def _try_add_gateway_event_id_from_httpx_response(response, source: str) -> None
                 )
     except Exception as e:
         _logger.debug("Failed to extract AI Defense event_id from %s: %s", source, e)
-
-
-# ============================================================================
-# Gateway Mode Wrappers - botocore (AWS Bedrock)
-# ============================================================================
-
-
-def _wrap_botocore_send_for_gateway(wrapped, instance, args, kwargs):
-    """
-    Wrap botocore URLLib3Session.send to capture AI Defense Gateway event_id.
-
-    AWS Bedrock uses botocore which uses urllib3 for HTTP requests.
-    This wrapper intercepts responses and extracts the AI Defense event_id.
-    """
-    response = wrapped(*args, **kwargs)
-    _try_add_gateway_event_id_from_botocore_response(response, args)
-    return response
-
-
-def _try_add_gateway_event_id_from_botocore_response(response, args) -> None:
-    """
-    Try to extract and add AI Defense event_id from botocore response to current span.
-
-    Args:
-        response: botocore response object
-        args: Original function args (first arg is the AWSRequest)
-    """
-    try:
-        request = args[0] if args else None
-        url = request.url if request and hasattr(request, "url") else ""
-
-        if url and _is_aidefense_gateway_url(url):
-            headers = getattr(response, "headers", None)
-            event_id = _extract_event_id_from_headers(headers)
-            if event_id:
-                if add_event_id_to_current_span(event_id):
-                    _logger.debug(
-                        "SUCCESS: Added gen_ai.security.event_id=%s to span from botocore",
-                        event_id,
-                    )
-            else:
-                _logger.debug(
-                    "No event_id in botocore response (request may not have triggered security)"
-                )
-    except Exception as e:
-        _logger.debug("Failed to extract AI Defense event_id from botocore: %s", e)
 
 
 # ============================================================================
