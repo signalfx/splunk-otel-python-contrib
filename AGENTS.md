@@ -138,7 +138,6 @@ For detailed information, see these files in the repository:
 |----------|-------------|
 | [README.md](README.md) | Core concepts, emitter architecture, evaluation system |
 | [README.packages.architecture.md](README.packages.architecture.md) | Package architecture, interfaces, lifecycle diagrams |
-| [README.eval-monitoring.md](README.eval-monitoring.md) | Evaluation monitoring metrics plan |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines, PR process |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Detailed development setup for macOS |
 
@@ -204,7 +203,7 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 
 ## Notes for AI Agents
 
-- Always run `make lint` and `make ruff` before committing
+- Always run `make lint` before committing
 - Ask user to provide a file to export OPENAI_API_KEY or other credentials to run the demo app to validate
 - Check existing patterns in similar packages before implementing
 - Tests are required for all new features
@@ -213,5 +212,5 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 
 ## Common Pitfalls to Avoid
 
-- Do not try to mock libraries if import in the current env fail. If in doubts - clearly to communicate to user the problem
-- always refer to README.md and README.AR
+- Do not try to mock libraries if import in the current env fail. If in doubt - clearly communicate the problem to user
+- Always refer to README.md and README.packages.architecture.md
