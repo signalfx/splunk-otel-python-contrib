@@ -427,7 +427,9 @@ class DeepevalEvaluator(Evaluator):
                 log_invocation,
                 invocation_type=invocation_type,
             )
-        except Exception as exc:  # pragma: no cover - dependency/runtime failure
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - dependency/runtime failure
             genai_debug_log(
                 "evaluator.deepeval.async.error.execution",
                 log_invocation,
@@ -438,7 +440,10 @@ class DeepevalEvaluator(Evaluator):
                 *self._error_results(str(exc), type(exc)),
             ]
 
-        return [*prep_result.skipped_results, *self._convert_results(evaluation)]
+        return [
+            *prep_result.skipped_results,
+            *self._convert_results(evaluation),
+        ]
 
     @staticmethod
     def _ensure_api_key(invocation: GenAI) -> None:
@@ -464,7 +469,9 @@ class DeepevalEvaluator(Evaluator):
             if isinstance(candidate_val, (str, bytes))
             else None
         )
-        env_key = os.getenv("OPENAI_API_KEY") or os.getenv("GENAI_OPENAI_API_KEY")
+        env_key = os.getenv("OPENAI_API_KEY") or os.getenv(
+            "GENAI_OPENAI_API_KEY"
+        )
         api_key = candidate or env_key
 
         if api_key:
@@ -558,7 +565,9 @@ class DeepevalEvaluator(Evaluator):
                 metrics=[],
                 skipped_results=list(skipped_results),
                 early_return=skipped_results
-                or self._error_results("No Deepeval metrics available", RuntimeError),
+                or self._error_results(
+                    "No Deepeval metrics available", RuntimeError
+                ),
             )
 
         return _EvalPreparation(
@@ -582,7 +591,10 @@ class DeepevalEvaluator(Evaluator):
 
         # Prepare evaluation (shared logic with async)
         prep_result = self._prepare_evaluation(
-            invocation, invocation_type, log_invocation, log_prefix="evaluator.deepeval"
+            invocation,
+            invocation_type,
+            log_invocation,
+            log_prefix="evaluator.deepeval",
         )
         if prep_result.early_return is not None:
             return prep_result.early_return
@@ -596,7 +608,9 @@ class DeepevalEvaluator(Evaluator):
                 log_invocation,
                 invocation_type=invocation_type,
             )
-        except Exception as exc:  # pragma: no cover - dependency/runtime failure
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - dependency/runtime failure
             genai_debug_log(
                 "evaluator.deepeval.error.execution",
                 log_invocation,
@@ -606,7 +620,10 @@ class DeepevalEvaluator(Evaluator):
                 *prep_result.skipped_results,
                 *self._error_results(str(exc), type(exc)),
             ]
-        return [*prep_result.skipped_results, *self._convert_results(evaluation)]
+        return [
+            *prep_result.skipped_results,
+            *self._convert_results(evaluation),
+        ]
 
     # NOTE: unreachable code below; logging handled prior to return.
 

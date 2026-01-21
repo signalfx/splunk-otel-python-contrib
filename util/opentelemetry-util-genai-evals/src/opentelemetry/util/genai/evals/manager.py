@@ -251,7 +251,9 @@ class Manager(CompletionCallback):
                 "Evaluation queue full (size=%d). Dropping invocation. "
                 "Consider increasing OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE "
                 "or reducing evaluation load.",
-                self._queue_size if self._queue_size > 0 else self._queue.maxsize,
+                self._queue_size
+                if self._queue_size > 0
+                else self._queue.maxsize,
             )
         except Exception as exc:  # pragma: no cover - defensive
             invocation.evaluation_error = "client_evaluation_queue_error"
