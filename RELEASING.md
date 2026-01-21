@@ -10,14 +10,15 @@ genai-evals-deepeval, instrumentation-langchain, genai-translator-traceloop):
 
 ### Package Information
 
-| Package Name | Path | Tag Format                         |
-|-------------|------|------------------------------------|
-| splunk-otel-util-genai | `util/opentelemetry-util-genai` | `util-genai-v0.Y.Z`                |
-| splunk-otel-util-genai-evals | `util/opentelemetry-util-genai-evals` | `util-genai-evals-v0.Y.Z`          |
-| splunk-otel-genai-emitters-splunk | `util/opentelemetry-util-genai-emitters-splunk` | `genai-emitters-splunk-v0.Y.Z`     |
-| splunk-otel-genai-evals-deepeval | `util/opentelemetry-util-genai-evals-deepeval` | `genai-evals-deepeval-v0.Y.Z`      |
-| splunk-otel-instrumentation-langchain | `instrumentation-genai/opentelemetry-instrumentation-langchain` | `instrumentation-langchain-v0.Y.Z` |
+| Package Name | Path | Tag Format                          |
+|-------------|------|-------------------------------------|
+| splunk-otel-util-genai | `util/opentelemetry-util-genai` | `util-genai-v0.Y.Z`                 |
+| splunk-otel-util-genai-evals | `util/opentelemetry-util-genai-evals` | `util-genai-evals-v0.Y.Z`           |
+| splunk-otel-genai-emitters-splunk | `util/opentelemetry-util-genai-emitters-splunk` | `genai-emitters-splunk-v0.Y.Z`      |
+| splunk-otel-genai-evals-deepeval | `util/opentelemetry-util-genai-evals-deepeval` | `genai-evals-deepeval-v0.Y.Z`       |
+| splunk-otel-instrumentation-langchain | `instrumentation-genai/opentelemetry-instrumentation-langchain` | `instrumentation-langchain-v0.Y.Z`  |
 | splunk-otel-util-genai-translator-traceloop | `util/opentelemetry-util-genai-traceloop-translator` | `genai-translator-traceloop-v0.Y.Z` |
+| splunk-otel-instrumentation-aidefense | `instrumentation-genai/opentelemetry-instrumentation-aidefense` | `instrumentation-aidefense-v0.Y.Z`  |
 
 ### Release Steps
 

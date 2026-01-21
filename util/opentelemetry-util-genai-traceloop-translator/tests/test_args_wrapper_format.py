@@ -57,22 +57,22 @@ class TestArgsWrapperFormat:
         assert len(result) == 1, f"Should have 1 message, got {len(result)}"
 
         message = result[0]
-        assert (
-            message["role"] == "user"
-        ), f"Role should be 'user', got {message['role']}"
-        assert (
-            len(message["parts"]) == 1
-        ), f"Should have 1 part, got {len(message['parts'])}"
+        assert message["role"] == "user", (
+            f"Role should be 'user', got {message['role']}"
+        )
+        assert len(message["parts"]) == 1, (
+            f"Should have 1 part, got {len(message['parts'])}"
+        )
 
         part = message["parts"][0]
-        assert (
-            part["type"] == "text"
-        ), f"Part type should be 'text', got {part['type']}"
+        assert part["type"] == "text", (
+            f"Part type should be 'text', got {part['type']}"
+        )
         assert "Paris" in part["content"], "Content should mention Paris"
         assert "Seattle" in part["content"], "Content should mention Seattle"
-        assert (
-            "boutique hotel" in part["content"]
-        ), "Content should mention boutique hotel"
+        assert "boutique hotel" in part["content"], (
+            "Content should mention boutique hotel"
+        )
 
     def test_args_wrapper_with_multiple_messages(self):
         """Test args wrapper with conversation history."""
