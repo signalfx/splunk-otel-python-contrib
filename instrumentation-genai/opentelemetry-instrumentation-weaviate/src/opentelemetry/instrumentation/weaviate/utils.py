@@ -31,7 +31,7 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = (
 
 def is_content_enabled() -> bool:
     """Check if content capture is enabled via environment variable.
-    
+
     Returns:
         True if OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT is set to 'true',
         False otherwise.

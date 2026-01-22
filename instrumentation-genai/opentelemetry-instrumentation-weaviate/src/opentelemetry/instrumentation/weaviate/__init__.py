@@ -139,7 +139,10 @@ class WeaviateInstrumentor(BaseInstrumentor):
                 module=to_wrap["module"],
                 name=name,
                 wrapper=_WeaviateOperationWrapper(
-                    tracer, duration_histogram, wrap_properties=to_wrap, capture_content=capture_content
+                    tracer,
+                    duration_histogram,
+                    wrap_properties=to_wrap,
+                    capture_content=capture_content,
                 ),
             )
 

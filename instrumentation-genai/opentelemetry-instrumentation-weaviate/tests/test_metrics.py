@@ -6,9 +6,6 @@ from unittest.mock import Mock
 from opentelemetry.semconv.attributes import (
     db_attributes as DbAttributes,
 )
-from opentelemetry.semconv.attributes import (
-    server_attributes as ServerAttributes,
-)
 
 try:
     import weaviate

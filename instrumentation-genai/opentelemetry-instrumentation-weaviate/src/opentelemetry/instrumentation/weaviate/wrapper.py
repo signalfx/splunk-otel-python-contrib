@@ -219,7 +219,9 @@ class _WeaviateOperationWrapper:
                             if "query" in kwargs:
                                 query = json.dumps(kwargs["query"])
                             attributes = {
-                                "db.weaviate.document.content": json.dumps(doc["content"]),
+                                "db.weaviate.document.content": json.dumps(
+                                    doc["content"]
+                                ),
                             }
 
                             # Only add non-None values to attributes
