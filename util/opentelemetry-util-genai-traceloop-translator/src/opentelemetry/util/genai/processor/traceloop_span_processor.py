@@ -617,19 +617,39 @@ class TraceloopSpanProcessor(SpanProcessor):
                             span.name,
                         )
 
-                    # Close the invocation to trigger evaluations
-                    # This will call _emitter.on_end() and _notify_completion() for callbacks
+                    # Close the invocation to trigger core lifecycle handling
+                    # This will call the appropriate stop_* method and emit spans/metrics.
                     handler = self.telemetry_handler or get_telemetry_handler()
                     try:
                         handler.finish(invocation)
                         _logger.debug(
-                            "[TL_PROCESSOR] LLM invocation completed: %s, sampled=%s",
+                            "[TL_PROCESSOR] LLM/Agent invocation completed: %s, sampled=%s",
                             span.name,
                             getattr(invocation, "sample_for_evaluation", None),
                         )
+
+                        # If this invocation represents an agent call (invoke_agent),
+                        # explicitly trigger agent-level evaluations so that
+                        # gen_ai.evaluation.result events can be attached to the
+                        # agent span itself, in addition to any LLM-level evaluations.
+                        if isinstance(invocation, AgentInvocation):  # type: ignore[attr-defined]
+                            try:
+                                handler.evaluate_agent(invocation)
+                                _logger.debug(
+                                    "[TL_PROCESSOR] Agent invocation evaluated: %s",
+                                    span.name,
+                                )
+                            except (
+                                Exception
+                            ) as eval_err:  # pragma: no cover - defensive
+                                _logger.warning(
+                                    "[TL_PROCESSOR] Failed to evaluate AgentInvocation: %s",
+                                    eval_err,
+                                )
+
                     except Exception as stop_err:
                         _logger.warning(
-                            "[TL_PROCESSOR] Failed to finish LLM invocation: %s",
+                            "[TL_PROCESSOR] Failed to finish invocation: %s",
                             stop_err,
                         )
                 else:
