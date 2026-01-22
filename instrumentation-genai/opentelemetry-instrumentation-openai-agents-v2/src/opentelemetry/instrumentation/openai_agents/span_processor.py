@@ -60,7 +60,9 @@ class _InvocationState:
     """Tracks invocation state and parent-child relationships."""
 
     invocation: Optional[
-        Union[AgentCreation, AgentInvocation, LLMInvocation, ToolCall, Workflow]
+        Union[
+            AgentCreation, AgentInvocation, LLMInvocation, ToolCall, Workflow
+        ]
     ] = None
     parent_span_id: Optional[str] = None
     children: List[str] = field(default_factory=list)
@@ -1018,7 +1020,13 @@ class GenAISemanticProcessor(TracingProcessor):
         span_id: str,
         parent_span_id: Optional[str],
         invocation: Optional[
-            Union[AgentCreation, AgentInvocation, LLMInvocation, ToolCall, Workflow]
+            Union[
+                AgentCreation,
+                AgentInvocation,
+                LLMInvocation,
+                ToolCall,
+                Workflow,
+            ]
         ] = None,
     ) -> _InvocationState:
         """Add state to tracking dict with parent-child relationship."""
@@ -1399,19 +1407,11 @@ class GenAISemanticProcessor(TracingProcessor):
                                     part_type = part.get("type", "text")
                                     if part_type == "text":
                                         parts.append(
-                                            Text(
-                                                content=part.get(
-                                                    "text", ""
-                                                )
-                                            )
+                                            Text(content=part.get("text", ""))
                                         )
                                     elif part_type == "input_text":
                                         parts.append(
-                                            Text(
-                                                content=part.get(
-                                                    "text", ""
-                                                )
-                                            )
+                                            Text(content=part.get("text", ""))
                                         )
                                     else:
                                         # Keep other part types as-is
@@ -1548,7 +1548,9 @@ class GenAISemanticProcessor(TracingProcessor):
             return
 
         key = str(span.span_id)
-        parent_key = str(span.parent_id) if span.parent_id else str(span.trace_id)
+        parent_key = (
+            str(span.parent_id) if span.parent_id else str(span.trace_id)
+        )
 
         operation_name = self._get_operation_name(span.span_data)
         model = getattr(span.span_data, "model", None)
@@ -1601,7 +1603,9 @@ class GenAISemanticProcessor(TracingProcessor):
         elif _is_instance_of(
             span.span_data, (GenerationSpanData, ResponseSpanData)
         ):
-            self._handle_llm_span_start(span, key, parent_key, span_name, model)
+            self._handle_llm_span_start(
+                span, key, parent_key, span_name, model
+            )
         elif _is_instance_of(span.span_data, FunctionSpanData):
             self._handle_tool_span_start(
                 span, key, parent_key, span_name, attributes
@@ -1658,10 +1662,7 @@ class GenAISemanticProcessor(TracingProcessor):
                             )
 
             # Add input messages from payload (if not already set at start)
-            if (
-                payload.input_messages
-                and not invocation.input_messages
-            ):
+            if payload.input_messages and not invocation.input_messages:
                 input_msgs: list[InputMessage] = []
                 for msg in payload.input_messages:
                     if isinstance(msg, dict):
@@ -1669,18 +1670,13 @@ class GenAISemanticProcessor(TracingProcessor):
                         parts_data = msg.get("parts", [])
                         parts: list[Any] = []
                         for p in parts_data:
-                            if (
-                                isinstance(p, dict)
-                                and p.get("type") == "text"
-                            ):
+                            if isinstance(p, dict) and p.get("type") == "text":
                                 parts.append(
                                     Text(content=p.get("content", ""))
                                 )
                             else:
                                 parts.append(p)
-                        input_msgs.append(
-                            InputMessage(role=role, parts=parts)
-                        )
+                        input_msgs.append(InputMessage(role=role, parts=parts))
                 if input_msgs:
                     invocation.input_messages = input_msgs
 
@@ -1693,18 +1689,13 @@ class GenAISemanticProcessor(TracingProcessor):
                         parts_data = msg.get("parts", [])
                         parts: list[Any] = []
                         for p in parts_data:
-                            if (
-                                isinstance(p, dict)
-                                and p.get("type") == "text"
-                            ):
+                            if isinstance(p, dict) and p.get("type") == "text":
                                 parts.append(
                                     Text(content=p.get("content", ""))
                                 )
                             else:
                                 parts.append(p)
-                        finish_reason = msg.get(
-                            "finish_reason", "stop"
-                        )
+                        finish_reason = msg.get("finish_reason", "stop")
                         output_msgs.append(
                             OutputMessage(
                                 role=role,
@@ -1721,15 +1712,11 @@ class GenAISemanticProcessor(TracingProcessor):
                 if usage is not None:
                     input_tokens = getattr(usage, "input_tokens", None)
                     if input_tokens is None:
-                        input_tokens = getattr(
-                            usage, "prompt_tokens", None
-                        )
+                        input_tokens = getattr(usage, "prompt_tokens", None)
                     if input_tokens is not None:
                         invocation.input_tokens = input_tokens
 
-                    output_tokens = getattr(
-                        usage, "output_tokens", None
-                    )
+                    output_tokens = getattr(usage, "output_tokens", None)
                     if output_tokens is None:
                         output_tokens = getattr(
                             usage, "completion_tokens", None
