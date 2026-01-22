@@ -1,15 +1,24 @@
 """Simulation runner with drift modes."""
 
 import argparse
+import atexit
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from config import Config
 from validation import ValidationHarness
-from main import run_scenario, save_artifacts
+from main import run_scenario, save_artifacts, _flush_evaluations, _flush_telemetry_providers
+
+
+def _simulation_graceful_shutdown() -> None:
+    """Perform graceful shutdown for simulation runner."""
+    _flush_evaluations(timeout=60.0)
+    time.sleep(1.0)
+    _flush_telemetry_providers()
 
 
 class DriftSimulator:
@@ -66,14 +75,9 @@ def run_simulation(
 
     for scenario_id in scenario_ids:
         for iteration in range(iterations):
-            print(f"\n{'=' * 60}")
-            print(f"Scenario: {scenario_id}, Iteration: {iteration + 1}/{iterations}")
-            print(f"{'=' * 60}")
-
             # Apply drift if enabled
             if drift_mode:
                 drift_sim.apply_drift(config)
-                # Increase drift intensity over iterations (only if multiple iterations)
                 if iterations > 1:
                     current_intensity = drift_intensity * (1 + iteration * 0.1)
                     drift_sim.intensity = min(current_intensity, 1.0)
@@ -81,28 +85,20 @@ def run_simulation(
                     drift_sim.intensity = drift_intensity
 
             try:
-                # Run scenario
                 config.scenario_id = scenario_id
                 final_state = run_scenario(scenario_id, config)
 
-                # Generate run ID
                 run_id = f"{scenario_id}-iter{iteration + 1}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-
-                # Save artifacts
                 save_artifacts(final_state, config, run_id)
 
-                # Generate validation report (business logic only)
-                # Evaluation metrics are handled automatically by opentelemetry-util-genai-evals
                 validation_report = validation_harness.generate_validation_report(
                     final_state, run_id
                 )
 
-                # Save validation report
                 artifacts_dir = Path(config.artifacts_dir) / run_id
                 with open(artifacts_dir / "validation_report.json", "w") as f:
                     json.dump(validation_report, f, indent=2)
 
-                # Collect results
                 result = {
                     "run_id": run_id,
                     "scenario_id": scenario_id,
@@ -111,29 +107,22 @@ def run_simulation(
                     "drift_intensity": drift_sim.intensity if drift_sim else 0.0,
                     "validation_passed": validation_report["validation_passed"],
                     "validations": validation_report["validations"],
-                    "note": "Evaluation metrics (bias, toxicity, etc.) are emitted as OTEL metrics/logs automatically",
                 }
                 results.append(result)
 
-                print(f"\n✅ Iteration {iteration + 1} completed")
-                print(f"   Validation Passed: {validation_report['validation_passed']}")
-                print(
-                    f"   Hypothesis Match: {validation_report['validations']['hypothesis'].get('hypothesis_match', False)}"
-                )
-                print(
-                    f"   Evidence Sufficient: {validation_report['validations']['evidence'].get('evidence_sufficient', False)}"
-                )
+                status = "✓" if validation_report['validation_passed'] else "✗"
+                print(f"  {status} {scenario_id} iter {iteration + 1}", flush=True)
+                _flush_evaluations(timeout=30.0)
 
             except Exception as e:
-                print(f"\n❌ Error in iteration {iteration + 1}: {e}")
-                results.append(
-                    {
-                        "scenario_id": scenario_id,
-                        "iteration": iteration + 1,
-                        "error": str(e),
-                        "validation_passed": False,
-                    }
-                )
+                print(f"  ✗ {scenario_id} iter {iteration + 1}: {e}", flush=True)
+                results.append({
+                    "scenario_id": scenario_id,
+                    "iteration": iteration + 1,
+                    "error": str(e),
+                    "validation_passed": False,
+                })
+                _flush_evaluations(timeout=10.0)
 
     # Generate summary
     summary = {
@@ -183,23 +172,25 @@ def main():
         type=str,
         help="Output file for simulation results (JSON)",
     )
+    parser.add_argument(
+        "--eval-timeout",
+        type=float,
+        default=60.0,
+        help="Timeout in seconds to wait for evaluations between runs (default: 60)",
+    )
     args = parser.parse_args()
+
+    # Register graceful shutdown handler
+    atexit.register(_simulation_graceful_shutdown)
 
     config = Config.from_env()
     config.drift_enabled = args.drift_mode is not None
     config.drift_mode = args.drift_mode
     config.drift_intensity = args.drift_intensity
 
-    print("🔄 SRE Incident Copilot Simulation Runner")
-    print("=" * 60)
-    print(f"Scenarios: {args.scenarios}")
-    print(f"Iterations: {args.iterations}")
-    if args.drift_mode:
-        print(f"Drift Mode: {args.drift_mode}")
-        print(f"Drift Intensity: {args.drift_intensity}")
-    print()
+    drift_info = f" | drift: {args.drift_mode}" if args.drift_mode else ""
+    print(f"🔄 Simulation | {len(args.scenarios)} scenarios × {args.iterations} iterations{drift_info}", flush=True)
 
-    # Run simulation
     summary = run_simulation(
         args.scenarios,
         args.iterations,
@@ -208,23 +199,14 @@ def main():
         config,
     )
 
-    # Save summary
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(summary, f, indent=2)
-        print(f"\n📊 Summary saved to: {args.output}")
-    else:
-        summary_file = f"simulation_summary_{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
-        with open(summary_file, "w") as f:
-            json.dump(summary, f, indent=2)
-        print(f"\n📊 Summary saved to: {summary_file}")
+    _flush_evaluations(timeout=args.eval_timeout)
 
-    # Print summary
-    print("\n📈 Simulation Summary")
-    print(f"   Total Runs: {summary['total_runs']}")
-    print(f"   Passed: {summary['passed_runs']}")
-    print(f"   Failed: {summary['failed_runs']}")
-    print("\nNote: Evaluation metrics are emitted as OTEL metrics/logs automatically")
+    # Save summary
+    output_file = args.output or f"simulation_summary_{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
+    with open(output_file, "w") as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"\n📊 {summary['passed_runs']}/{summary['total_runs']} passed | {output_file}", flush=True)
 
 
 if __name__ == "__main__":

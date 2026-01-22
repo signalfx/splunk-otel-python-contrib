@@ -1,9 +1,11 @@
 """SRE Incident Copilot - Main application."""
 
 import argparse
+import atexit
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -20,6 +22,48 @@ from config import Config
 from data_loader import DataLoader
 from validation import ValidationHarness
 from incident_types import IncidentState
+
+
+def _flush_evaluations(timeout: float = 30.0) -> None:
+    """Force evaluation processing and wait for completion."""
+    try:
+        from opentelemetry.util.genai.handler import get_telemetry_handler
+
+        handler = get_telemetry_handler()
+        if handler is not None:
+            handler.wait_for_evaluations(timeout)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+
+def _flush_telemetry_providers() -> None:
+    """Flush all OTLP telemetry providers to ensure data is exported."""
+    try:
+        from opentelemetry import trace, metrics, _logs
+
+        trace_provider = trace.get_tracer_provider()
+        if hasattr(trace_provider, "force_flush"):
+            trace_provider.force_flush(timeout_millis=10000)
+
+        meter_provider = metrics.get_meter_provider()
+        if hasattr(meter_provider, "force_flush"):
+            meter_provider.force_flush(timeout_millis=10000)
+
+        logger_provider = _logs.get_logger_provider()
+        if hasattr(logger_provider, "force_flush"):
+            logger_provider.force_flush(timeout_millis=10000)
+    except Exception:
+        pass
+
+
+def _graceful_shutdown() -> None:
+    """Perform graceful shutdown: wait for evals and flush telemetry."""
+    _flush_evaluations(timeout=60.0)
+    time.sleep(1.0)
+    _flush_telemetry_providers()
+    sys.stdout.flush()
 
 
 def route_after_triage(state: IncidentState) -> str:
@@ -287,70 +331,26 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
     # Execute workflow
     final_state: IncidentState = initial_state
     nodes_executed = []
-    previous_node = None
 
-    for step in app.stream(initial_state, config_dict):
-        node_name, node_state = next(iter(step.items()))
-        final_state = node_state
-        nodes_executed.append(node_name)
+    try:
+        for step in app.stream(initial_state, config_dict):
+            node_name, node_state = next(iter(step.items()))
+            final_state = node_state
+            nodes_executed.append(node_name)
 
-        # Print routing decision AFTER previous node (if applicable)
-        if previous_node:
-            # Routing decision was already made, just show it was executed
-            pass
+            # Simple progress indicator
+            print(f"  → {node_name.replace('_', ' ').title()}", flush=True)
+            sys.stdout.flush()
+            sys.stderr.flush()
+    except Exception as e:
+        print(f"\n  ⚠️ Workflow error after {nodes_executed}: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
 
-        # Print node execution
-        print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
-        if node_state.get("current_agent"):
-            print(f"   Status: {node_state['current_agent']}")
-
-        # Print routing decision AFTER node execution
-        if node_name == "triage":
-            service_id = node_state.get("service_id", "unknown")
-            hypotheses = node_state.get("hypotheses", [])
-            investigation_result = node_state.get("investigation_result", {})
-            if hypotheses or investigation_result:
-                print(
-                    f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)"
-                )
-                print(f"   → Routing to action_planner (service: {service_id})")
-            else:
-                print(f"   → Routing to action_planner (service: {service_id})")
-                print("   ⚠️  Warning: Investigation not completed via agent-as-tool")
-        elif node_name == "action_planner":
-            action_plan = node_state.get("action_plan", {})
-            mitigation_plan = (
-                action_plan.get("mitigation_plan", []) if action_plan else []
-            )
-            print(f"   → Routing to quality_gate ({len(mitigation_plan)} actions)")
-        elif node_name == "quality_gate":
-            quality_result = node_state.get("quality_gate_result") or {}
-            validation_passed = quality_result.get("validation_passed", False)
-            confidence_score = node_state.get("confidence_score", 0.0)
-            if validation_passed:
-                print(
-                    f"   → Quality gate passed (confidence: {confidence_score:.2f}), ending workflow"
-                )
-            else:
-                print(
-                    f"   → Quality gate failed (confidence: {confidence_score:.2f}), ending workflow"
-                )
-
-        previous_node = node_name
-
-    print("\n📋 Workflow execution summary:")
-    print(f"   Nodes executed: {nodes_executed}")
-    expected_nodes = ["triage", "action_planner", "quality_gate"]
-    missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
-    if missing_nodes:
-        print(f"   ⚠️  Missing nodes: {missing_nodes}")
-
-    # Check if investigation was done via agent-as-tool
-    if final_state.get("hypotheses") or final_state.get("investigation_result"):
-        print(
-            "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
-        )
-
+    print(f"  ✓ Completed: {nodes_executed}", flush=True)
+    sys.stdout.flush()
     return final_state
 
 
@@ -367,7 +367,16 @@ def main():
         action="store_true",
         help="Enable manual OpenTelemetry instrumentation",
     )
+    parser.add_argument(
+        "--eval-timeout",
+        type=float,
+        default=60.0,
+        help="Timeout in seconds to wait for evaluations (default: 60)",
+    )
     args = parser.parse_args()
+
+    # Register graceful shutdown handler
+    atexit.register(_graceful_shutdown)
 
     # Load config
     config = Config.from_env()
@@ -378,11 +387,8 @@ def main():
         print("Error: --scenario is required or set SCENARIO_ID env var")
         sys.exit(1)
 
-    # Configure manual instrumentation if requested
-    if args.manual_instrumentation:
-        _configure_manual_instrumentation(config)
-
-    # Set up OpenTelemetry environment
+    # Set up OpenTelemetry environment BEFORE configuring instrumentation
+    # Exporters read env vars at construction time
     os.environ.setdefault("OTEL_SERVICE_NAME", config.otel_service_name)
     if config.otel_exporter_otlp_endpoint:
         os.environ.setdefault(
@@ -393,11 +399,11 @@ def main():
     )
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
-    print("🚨 SRE Incident Copilot")
-    print("=" * 60)
-    print(f"Scenario: {config.scenario_id}")
-    print(f"Service: {config.otel_service_name}")
-    print()
+    # Configure manual instrumentation if requested (AFTER env vars are set)
+    if args.manual_instrumentation:
+        _configure_manual_instrumentation(config)
+
+    print(f"🚨 SRE Incident Copilot | {config.scenario_id}", flush=True)
 
     # Run scenario
     run_id = (
@@ -420,77 +426,128 @@ def main():
         with open(artifacts_dir / "validation_report.json", "w") as f:
             json.dump(validation_report, f, indent=2)
 
-        print(f"\n✅ Run completed: {run_id}")
-        print(f"   Artifacts saved to: {config.artifacts_dir}/{run_id}")
-
-        # Print summary
         quality_result = final_state.get("quality_gate_result") or {}
-        print("\n📊 Quality Gate Results:")
-        print(
-            f"   Validation Passed: {quality_result.get('validation_passed', False) if quality_result else False}"
-        )
-        print(
-            f"   Writeback Allowed: {quality_result.get('writeback_allowed', False) if quality_result else False}"
-        )
-        print(f"   Confidence Score: {final_state.get('confidence_score', 0.0):.2f}")
+        validation_passed = validation_report.get('validation_passed', False)
+        confidence = final_state.get('confidence_score', 0.0)
+        
+        status = "✅ PASSED" if validation_passed else "❌ FAILED"
+        print(f"\n{status} | Confidence: {confidence:.2f} | Artifacts: {config.artifacts_dir}/{run_id}", flush=True)
+        sys.stdout.flush()
+        sys.stderr.flush()
 
-        # Print validation results
-        print("\n📈 Business Logic Validation:")
-        print(
-            f"   Overall Validation: {validation_report.get('validation_passed', False)}"
-        )
-        hypothesis_val = validation_report["validations"]["hypothesis"]
-        print(f"   Hypothesis Match: {hypothesis_val.get('hypothesis_match', False)}")
-        evidence_val = validation_report["validations"]["evidence"]
-        print(
-            f"   Evidence Sufficient: {evidence_val.get('evidence_sufficient', False)}"
-        )
-        action_val = validation_report["validations"]["action_safety"]
-        print(f"   Action Safety: {action_val.get('action_safety_validated', False)}")
+        _flush_evaluations(timeout=args.eval_timeout)
 
     except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-
-        traceback.print_exc()
+        print(f"❌ Error: {e}", flush=True)
+        _flush_evaluations(timeout=10.0)
         sys.exit(1)
 
 
 def _configure_manual_instrumentation(config: Config):
-    """Configure manual OpenTelemetry instrumentation."""
+    """Configure manual OpenTelemetry instrumentation for production use.
+    
+    Production best practices:
+    - Resource attributes for service identification
+    - Batch processors with appropriate timeouts
+    - Graceful error handling (don't crash if OTEL fails)
+    - Support for both gRPC (default) and HTTP protocols
+    
+    Environment variables:
+    - OTEL_EXPORTER_OTLP_PROTOCOL: "grpc" (default) or "http/protobuf"
+    - OTEL_EXPORTER_OTLP_ENDPOINT: Collector endpoint
+    - OTEL_EXPORTER_OTLP_TIMEOUT: Export timeout in milliseconds (default: 10000)
+    """
+    # Suppress gRPC C-level logging BEFORE importing gRPC modules
+    os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+    os.environ.setdefault("GRPC_TRACE", "")
+    
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry import _events, _logs, metrics, trace
-    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
-        OTLPMetricExporter,
-    )
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-        OTLPSpanExporter,
-    )
+    from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
+    from opentelemetry import _logs, metrics, trace
     from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-    from opentelemetry.sdk._events import EventLoggerProvider
     from opentelemetry.sdk._logs import LoggerProvider
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-    trace.set_tracer_provider(TracerProvider())
-    trace.get_tracer_provider().add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter())
-    )
+    protocol = os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+    timeout_ms = int(os.environ.get("OTEL_EXPORTER_OTLP_TIMEOUT", "10000"))
+    
+    if protocol == "grpc":
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    else:
+        from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
-    metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
+    # Production resource attributes
+    resource = Resource.create({
+        SERVICE_NAME: config.otel_service_name,
+        SERVICE_VERSION: os.environ.get("SERVICE_VERSION", "1.0.0"),
+        "deployment.environment": os.environ.get("DEPLOYMENT_ENV", "development"),
+    })
 
-    _logs.set_logger_provider(LoggerProvider())
-    _logs.get_logger_provider().add_log_record_processor(
-        BatchLogRecordProcessor(OTLPLogExporter())
-    )
-    _events.set_event_logger_provider(EventLoggerProvider())
+    try:
+        # Configure TracerProvider with batch processing
+        tracer_provider = trace.get_tracer_provider()
+        if not hasattr(tracer_provider, 'add_span_processor'):
+            tracer_provider = TracerProvider(resource=resource)
+            trace.set_tracer_provider(tracer_provider)
+        
+        if hasattr(tracer_provider, 'add_span_processor'):
+            span_exporter = OTLPSpanExporter(timeout=timeout_ms)
+            # BatchSpanProcessor with production settings
+            span_processor = BatchSpanProcessor(
+                span_exporter,
+                max_queue_size=2048,           # Buffer up to 2048 spans
+                max_export_batch_size=512,     # Export in batches of 512
+                schedule_delay_millis=5000,    # Export every 5 seconds
+                export_timeout_millis=timeout_ms,
+            )
+            tracer_provider.add_span_processor(span_processor)
 
-    instrumentor = LangchainInstrumentor()
-    instrumentor.instrument()
+        # Configure MeterProvider
+        meter_provider = metrics.get_meter_provider()
+        if not hasattr(meter_provider, 'force_flush'):
+            metric_exporter = OTLPMetricExporter(timeout=timeout_ms)
+            metric_reader = PeriodicExportingMetricReader(
+                metric_exporter,
+                export_interval_millis=60000,  # Export metrics every 60 seconds
+                export_timeout_millis=timeout_ms,
+            )
+            meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+            metrics.set_meter_provider(meter_provider)
+
+        # Configure LoggerProvider
+        logger_provider = _logs.get_logger_provider()
+        if not hasattr(logger_provider, 'add_log_record_processor'):
+            logger_provider = LoggerProvider(resource=resource)
+            _logs.set_logger_provider(logger_provider)
+        
+        if hasattr(logger_provider, 'add_log_record_processor'):
+            log_exporter = OTLPLogExporter(timeout=timeout_ms)
+            log_processor = BatchLogRecordProcessor(
+                log_exporter,
+                max_queue_size=2048,
+                max_export_batch_size=512,
+                schedule_delay_millis=5000,
+                export_timeout_millis=timeout_ms,
+            )
+            logger_provider.add_log_record_processor(log_processor)
+
+    except Exception as e:
+        # Don't crash the app if OTEL setup fails - log and continue
+        print(f"Warning: Failed to configure OTEL exporters: {e}", file=sys.stderr)
+
+    # Instrument Langchain (should not fail even if exporters failed)
+    try:
+        instrumentor = LangchainInstrumentor()
+        instrumentor.instrument()
+    except Exception as e:
+        print(f"Warning: Failed to instrument Langchain: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

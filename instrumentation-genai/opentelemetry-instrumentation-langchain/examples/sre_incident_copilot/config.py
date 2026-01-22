@@ -26,10 +26,11 @@ class Config:
     circuit_client_secret: Optional[str] = None
     circuit_app_key: Optional[str] = None
 
-    # OpenTelemetry
+    # OpenTelemetry - Production settings
     otel_service_name: str = "sre-incident-copilot"
     otel_exporter_otlp_endpoint: Optional[str] = None
-    otel_exporter_otlp_protocol: str = "grpc"
+    otel_exporter_otlp_protocol: str = "grpc"  # "grpc" (port 4317) or "http/protobuf" (port 4318)
+    otel_exporter_otlp_timeout: int = 10000    # Export timeout in milliseconds
 
     # Data paths
     data_dir: str = "data"
@@ -64,6 +65,9 @@ class Config:
             otel_exporter_otlp_protocol=os.getenv(
                 "OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"
             ),
+            otel_exporter_otlp_timeout=int(os.getenv(
+                "OTEL_EXPORTER_OTLP_TIMEOUT", "10000"
+            )),
             data_dir=os.getenv("DATA_DIR", "data"),
             artifacts_dir=os.getenv("ARTIFACTS_DIR", "artifacts"),
             scenario_id=os.getenv("SCENARIO_ID"),

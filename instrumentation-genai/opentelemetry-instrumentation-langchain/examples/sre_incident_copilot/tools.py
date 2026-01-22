@@ -16,9 +16,14 @@ logging.getLogger("mcp").setLevel(logging.ERROR)
 
 
 # Use stderr for debug output to avoid interfering with MCP stdio communication
+# Set DEBUG_TOOLS=1 to enable verbose tool debug output
+_DEBUG_TOOLS = os.getenv("DEBUG_TOOLS", "0").lower() in ("1", "true", "yes")
+
+
 def debug_print(msg: str):
     """Print debug messages to stderr to avoid breaking MCP stdio protocol."""
-    print(msg, file=sys.stderr)
+    if _DEBUG_TOOLS:
+        print(msg, file=sys.stderr, flush=True)
 
 
 from data_loader import DataLoader  # noqa: E402
