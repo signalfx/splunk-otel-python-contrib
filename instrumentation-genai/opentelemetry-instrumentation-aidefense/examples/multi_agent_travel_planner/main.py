@@ -143,7 +143,7 @@ def mock_search_hotels(destination: str, check_in: str, check_out: str) -> str:
     """Return mock hotel recommendation for the stay."""
     random.seed(hash((destination, check_in)) % (2**32))
     price = random.randint(150, 400)
-    return f"Hotels in {destination}: Grand Hotel (${price}/night, 4.5★), Boutique Inn (${price-50}/night, 4.8★)"
+    return f"Hotels in {destination}: Grand Hotel (${price}/night, 4.5★), Boutique Inn (${price - 50}/night, 4.8★)"
 
 
 @tool

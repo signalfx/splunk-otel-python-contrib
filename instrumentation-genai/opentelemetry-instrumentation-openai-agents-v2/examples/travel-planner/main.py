@@ -35,11 +35,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import argparse  # noqa: E402
+import os  # noqa: E402
 import random  # noqa: E402
 import time  # noqa: E402
 from datetime import datetime, timedelta  # noqa: E402
 
-from agents import Agent, Runner, function_tool, trace  # noqa: E402
+from agents import (  # noqa: E402
+    Agent,
+    Runner,
+    function_tool,
+    set_default_openai_client,
+)
+from openai import OpenAI  # noqa: E402
 
 from opentelemetry import _events, _logs, metrics  # noqa: E402
 from opentelemetry import trace as otel_trace  # noqa: E402
@@ -67,6 +74,49 @@ from opentelemetry.sdk.metrics.export import (  # noqa: E402
 from opentelemetry.sdk.resources import Resource  # noqa: E402
 from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: E402
+from util import OAuth2TokenManager  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# LLM Configuration - OAuth2 Provider
+# ---------------------------------------------------------------------------
+
+# Optional app key for request tracking
+LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
+
+# Check if we should use OAuth2 or standard OpenAI
+USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
+
+# Initialize token manager if OAuth2 credentials are present
+token_manager: OAuth2TokenManager | None = None
+if USE_OAUTH2:
+    token_manager = OAuth2TokenManager()
+    print("[AUTH] Using OAuth2 authentication")
+else:
+    print("[AUTH] Using standard OpenAI API key")
+
+
+def get_openai_client() -> OpenAI:
+    """Create OpenAI client with fresh OAuth2 token or standard API key."""
+    if USE_OAUTH2 and token_manager:
+        token = token_manager.get_token()
+        base_url = OAuth2TokenManager.get_llm_base_url(
+            os.environ.get("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        )
+
+        # Build extra headers
+        extra_headers: dict[str, str] = {"api-key": token}
+        if LLM_APP_KEY:
+            extra_headers["x-app-key"] = LLM_APP_KEY
+
+        return OpenAI(
+            api_key="placeholder",
+            base_url=base_url,
+            default_headers=extra_headers,
+        )
+    else:
+        # Standard OpenAI client using OPENAI_API_KEY
+        return OpenAI()
+
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -166,6 +216,10 @@ def configure_otel() -> None:
 
     # OpenAI Agents instrumentation
     OpenAIAgentsInstrumentor().instrument(tracer_provider=trace_provider)
+
+    # Set default OpenAI client for agents
+    client = get_openai_client()
+    set_default_openai_client(client)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -309,13 +363,47 @@ Please organize this into a clear, well-formatted itinerary for a romantic week-
         print("=" * 60)
         print(f"\n{final_output}\n")
 
-    # Allow time for telemetry to flush
-    time.sleep(2)
+    finally:
+        # Stop the workflow to finalize it with all agent steps
+        stop_workflow(final_output=final_output)
+
+        # Flush telemetry
+        flush_telemetry()
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+
+def flush_telemetry() -> None:
+    """Force flush all telemetry providers before exit."""
+    print("\n" + "=" * 80)
+    print("TELEMETRY OUTPUT BELOW")
+    print("=" * 80)
+    print("\n[FLUSH] Starting telemetry flush")
+
+    # Flush traces
+    tracer_provider = trace.get_tracer_provider()
+    if hasattr(tracer_provider, "force_flush"):
+        print("[FLUSH] Flushing traces (timeout=30s)")
+        tracer_provider.force_flush(timeout_millis=30000)
+
+    # Flush metrics
+    meter_provider = metrics.get_meter_provider()
+    if hasattr(meter_provider, "force_flush"):
+        print("[FLUSH] Flushing metrics (timeout=30s)")
+        meter_provider.force_flush(timeout_millis=30000)
+
+    # Flush logs
+    logger_provider = _logs.get_logger_provider()
+    if hasattr(logger_provider, "force_flush"):
+        print("[FLUSH] Flushing logs (timeout=30s)")
+        logger_provider.force_flush(timeout_millis=30000)
+
+    # Small delay for network buffers
+    time.sleep(2)
+    print("[FLUSH] Telemetry flush complete")
 
 
 def main(manual_instrumentation: bool = False) -> None:
