@@ -460,8 +460,6 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute("gen_ai.framework", workflow.framework)
         if workflow.initial_input and self._capture_content:
             # Format as a message with text content
-            import json
-
             input_msg = {
                 "role": "user",
                 "parts": [{"type": "text", "content": workflow.initial_input}],
@@ -480,8 +478,6 @@ class SpanEmitter(EmitterMeta):
             return
         # Set final output if capture_content enabled
         if workflow.final_output and self._capture_content:
-            import json
-
             output_msg = {
                 "role": "assistant",
                 "parts": [{"type": "text", "content": workflow.final_output}],
@@ -561,8 +557,6 @@ class SpanEmitter(EmitterMeta):
         if agent.tools:
             span.set_attribute(GEN_AI_AGENT_TOOLS, agent.tools)
         if agent.system_instructions and self._capture_content:
-            import json
-
             system_parts = [
                 {"type": "text", "content": agent.system_instructions}
             ]
@@ -574,8 +568,6 @@ class SpanEmitter(EmitterMeta):
             and agent.input_context
             and self._capture_content
         ):
-            import json
-
             input_msg = {
                 "role": "user",
                 "parts": [{"type": "text", "content": agent.input_context}],
@@ -598,8 +590,6 @@ class SpanEmitter(EmitterMeta):
             and agent.output_result
             and self._capture_content
         ):
-            import json
-
             output_msg = {
                 "role": "assistant",
                 "parts": [{"type": "text", "content": agent.output_result}],
@@ -674,8 +664,6 @@ class SpanEmitter(EmitterMeta):
         if step.status:
             span.set_attribute(GEN_AI_STEP_STATUS, step.status)
         if step.input_data and self._capture_content:
-            import json
-
             input_msg = {
                 "role": "user",
                 "parts": [{"type": "text", "content": step.input_data}],
@@ -699,8 +687,6 @@ class SpanEmitter(EmitterMeta):
             return
         # Set output data if capture_content enabled
         if step.output_data and self._capture_content:
-            import json
-
             output_msg = {
                 "role": "assistant",
                 "parts": [{"type": "text", "content": step.output_data}],
