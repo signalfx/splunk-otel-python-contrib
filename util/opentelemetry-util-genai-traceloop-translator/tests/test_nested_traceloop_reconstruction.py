@@ -95,9 +95,9 @@ class TestNestedTraceloopReconstruction:
         # Should NOT contain escaped JSON artifacts
         assert '\\"' not in content, "Should not have escaped quotes"
         assert 'lc": 1' not in content, "Should not contain LangChain metadata"
-        assert "kwargs" not in content or "romantic" in content, (
-            "Should extract actual content, not just wrapper metadata"
-        )
+        assert (
+            "kwargs" not in content or "romantic" in content
+        ), "Should extract actual content, not just wrapper metadata"
 
     def test_normalize_deeply_nested_content(self):
         """Test that normalize_traceloop_content handles deeply nested structures."""
@@ -190,9 +190,9 @@ class TestNestedTraceloopReconstruction:
         # This logic should be in the normalizer or reconstructor
         extracted = self._extract_message_content(nested_content)
 
-        assert extracted == expected_content, (
-            f"Should extract actual message content, got: {extracted}"
-        )
+        assert (
+            extracted == expected_content
+        ), f"Should extract actual message content, got: {extracted}"
 
     def _extract_message_content(self, nested_structure):
         """
@@ -258,9 +258,9 @@ class TestNestedTraceloopReconstruction:
 
             # For now, just verify it's not completely broken
             assert "Paris" in actual_content, "Should at least contain Paris"
-            assert "Seattle" in actual_content, (
-                "Should at least contain Seattle"
-            )
+            assert (
+                "Seattle" in actual_content
+            ), "Should at least contain Seattle"
 
     def test_output_message_with_nested_parts(self):
         """Test output messages with nested parts structure - REAL DATA."""
@@ -286,9 +286,9 @@ class TestNestedTraceloopReconstruction:
             None, traceloop_output
         )
 
-        assert output_messages is not None, (
-            "Should reconstruct output messages"
-        )
+        assert (
+            output_messages is not None
+        ), "Should reconstruct output messages"
         assert len(output_messages) > 0, "Should have messages"
 
         # Get the content - should be the AIMessage content, not the wrapper JSON
@@ -299,9 +299,9 @@ class TestNestedTraceloopReconstruction:
         )
 
         # The content should be the actual travel plan, not nested JSON
-        assert "Travel Plan for Paris Trip" in content or "Paris" in content, (
-            "Should contain the actual AI response content"
-        )
+        assert (
+            "Travel Plan for Paris Trip" in content or "Paris" in content
+        ), "Should contain the actual AI response content"
         assert (
             "Accommodation" in content
             or "Flight" in content
