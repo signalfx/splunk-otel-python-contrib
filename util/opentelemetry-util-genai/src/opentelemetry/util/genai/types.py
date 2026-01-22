@@ -124,12 +124,46 @@ class GenAI:
 
 @dataclass()
 class ToolCall(GenAI):
-    """Represents a single tool call invocation (Phase 4)."""
+    """Represents a single tool call invocation (Phase 4).
+
+    Supports MCP (Model Context Protocol) semantic conventions:
+    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+    """
 
     arguments: Any
     name: str
     id: Optional[str]
     type: Literal["tool_call"] = "tool_call"
+
+    # MCP-specific fields (semantic convention attributes)
+    # mcp.method.name: The name of the request or notification method
+    mcp_method_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.method.name"},
+    )
+    # network.transport: "pipe" for stdio, "tcp" for HTTP
+    network_transport: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.transport"},
+    )
+    # mcp.session.id: Session identifier
+    mcp_session_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.session.id"},
+    )
+    # mcp.protocol.version: MCP protocol version
+    mcp_protocol_version: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.protocol.version"},
+    )
+    # Output size in bytes for metrics tracking
+    output_size_bytes: Optional[int] = None
+    # Duration in seconds (for standalone metrics emission)
+    duration_s: Optional[float] = None
+    # Is this a client-side or server-side operation
+    is_client: bool = True
+    # Whether the tool call resulted in an error (for error.type attribute)
+    is_error: bool = False
 
 
 @dataclass()

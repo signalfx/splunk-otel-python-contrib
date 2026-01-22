@@ -686,6 +686,11 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
+        # Apply custom attributes (e.g., MCP semantic convention attributes)
+        if step.attributes:
+            for key, value in step.attributes.items():
+                if value is not None:
+                    span.set_attribute(key, value)
 
     def _finish_step(self, step: Step) -> None:
         """Finish a step span."""
@@ -710,6 +715,11 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
+        # Apply custom attributes (e.g., MCP duration, output size)
+        if step.attributes:
+            for key, value in step.attributes.items():
+                if value is not None:
+                    span.set_attribute(key, value)
         token = step.context_token
         if token is not None and hasattr(token, "__exit__"):
             try:
@@ -733,6 +743,11 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
+        # Apply custom attributes (e.g., MCP error details)
+        if step.attributes:
+            for key, value in step.attributes.items():
+                if value is not None:
+                    span.set_attribute(key, value)
         token = step.context_token
         if token is not None and hasattr(token, "__exit__"):
             try:
