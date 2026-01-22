@@ -45,8 +45,9 @@ from agents import (  # noqa: E402
     Runner,
     function_tool,
     set_default_openai_client,
+    trace,
 )
-from openai import OpenAI  # noqa: E402
+from openai import AsyncOpenAI  # noqa: E402
 
 from opentelemetry import _events, _logs, metrics  # noqa: E402
 from opentelemetry import trace as otel_trace  # noqa: E402
@@ -95,7 +96,7 @@ else:
     print("[AUTH] Using standard OpenAI API key")
 
 
-def get_openai_client() -> OpenAI:
+def get_openai_client() -> AsyncOpenAI:
     """Create OpenAI client with fresh OAuth2 token or standard API key."""
     if USE_OAUTH2 and token_manager:
         token = token_manager.get_token()
@@ -108,14 +109,14 @@ def get_openai_client() -> OpenAI:
         if LLM_APP_KEY:
             extra_headers["x-app-key"] = LLM_APP_KEY
 
-        return OpenAI(
+        return AsyncOpenAI(
             api_key="placeholder",
             base_url=base_url,
             default_headers=extra_headers,
         )
     else:
         # Standard OpenAI client using OPENAI_API_KEY
-        return OpenAI()
+        return AsyncOpenAI()
 
 
 # ---------------------------------------------------------------------------
@@ -310,37 +311,39 @@ def run_travel_planner() -> None:
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
     print(f"\nRequest: {initial_request}\n")
 
-    with trace("Travel planner workflow"):
-        # Step 1: Flight Specialist
-        print("\n✈️  Flight Specialist - Searching for flights...")
-        flight_result = Runner.run_sync(
-            flight_agent,
-            f"Find flights from {origin} to {destination} departing {departure}",
-        )
-        flight_info = flight_result.final_output
-        print(f"Result: {flight_info[:200]}...\n")
+    final_output = None
+    try:
+        with trace("Travel planner workflow"):
+            # Step 1: Flight Specialist
+            print("\n✈️  Flight Specialist - Searching for flights...")
+            flight_result = Runner.run_sync(
+                flight_agent,
+                f"Find flights from {origin} to {destination} departing {departure}",
+            )
+            flight_info = flight_result.final_output
+            print(f"Result: {flight_info[:200]}...\n")
 
-        # Step 2: Hotel Specialist
-        print("🏨 Hotel Specialist - Searching for hotels...")
-        hotel_result = Runner.run_sync(
-            hotel_agent,
-            f"Find a boutique hotel in {destination}, check-in {departure}, check-out {return_date}",
-        )
-        hotel_info = hotel_result.final_output
-        print(f"Result: {hotel_info[:200]}...\n")
+            # Step 2: Hotel Specialist
+            print("🏨 Hotel Specialist - Searching for hotels...")
+            hotel_result = Runner.run_sync(
+                hotel_agent,
+                f"Find a boutique hotel in {destination}, check-in {departure}, check-out {return_date}",
+            )
+            hotel_info = hotel_result.final_output
+            print(f"Result: {hotel_info[:200]}...\n")
 
-        # Step 3: Activity Specialist
-        print("🎭 Activity Specialist - Curating activities...")
-        activity_result = Runner.run_sync(
-            activity_agent,
-            f"Find unique activities and experiences in {destination}",
-        )
-        activity_info = activity_result.final_output
-        print(f"Result: {activity_info[:200]}...\n")
+            # Step 3: Activity Specialist
+            print("🎭 Activity Specialist - Curating activities...")
+            activity_result = Runner.run_sync(
+                activity_agent,
+                f"Find unique activities and experiences in {destination}",
+            )
+            activity_info = activity_result.final_output
+            print(f"Result: {activity_info[:200]}...\n")
 
-        # Step 4: Coordinator - Synthesize final itinerary
-        print("📝 Coordinator - Creating final itinerary...")
-        synthesis_prompt = f"""
+            # Step 4: Coordinator - Synthesize final itinerary
+            print("📝 Coordinator - Creating final itinerary...")
+            synthesis_prompt = f"""
 Create a comprehensive travel itinerary with the following information:
 
 FLIGHTS:
@@ -355,18 +358,15 @@ ACTIVITIES:
 Please organize this into a clear, well-formatted itinerary for a romantic week-long trip.
 """
 
-        final_result = Runner.run_sync(coordinator, synthesis_prompt)
-        final_output = final_result.final_output
+            final_result = Runner.run_sync(coordinator, synthesis_prompt)
+            final_output = final_result.final_output
 
-        print("\n" + "=" * 60)
-        print("✅ Travel Itinerary Complete!")
-        print("=" * 60)
-        print(f"\n{final_output}\n")
+            print("\n" + "=" * 60)
+            print("✅ Travel Itinerary Complete!")
+            print("=" * 60)
+            print(f"\n{final_output}\n")
 
     finally:
-        # Stop the workflow to finalize it with all agent steps
-        stop_workflow(final_output=final_output)
-
         # Flush telemetry
         flush_telemetry()
 
@@ -384,7 +384,7 @@ def flush_telemetry() -> None:
     print("\n[FLUSH] Starting telemetry flush")
 
     # Flush traces
-    tracer_provider = trace.get_tracer_provider()
+    tracer_provider = otel_trace.get_tracer_provider()
     if hasattr(tracer_provider, "force_flush"):
         print("[FLUSH] Flushing traces (timeout=30s)")
         tracer_provider.force_flush(timeout_millis=30000)

@@ -35,7 +35,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import get_tracer_provider, set_tracer_provider
 
 from agents import Agent, Runner, function_tool, set_default_openai_client
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from util import OAuth2TokenManager
 
@@ -56,7 +56,7 @@ if USE_OAUTH2:
     token_manager = OAuth2TokenManager()
 
 
-def get_openai_client() -> OpenAI:
+def get_openai_client() -> AsyncOpenAI:
     """Create OpenAI client with fresh OAuth2 token or standard API key."""
     if USE_OAUTH2 and token_manager:
         token = token_manager.get_token()
@@ -69,14 +69,14 @@ def get_openai_client() -> OpenAI:
         if LLM_APP_KEY:
             extra_headers["x-app-key"] = LLM_APP_KEY
 
-        return OpenAI(
+        return AsyncOpenAI(
             api_key="placeholder",  # Required but we use api-key header
             base_url=base_url,
             default_headers=extra_headers,
         )
     else:
         # Standard OpenAI API
-        return OpenAI()
+        return AsyncOpenAI()
 
 
 def _configure_manual_instrumentation() -> None:
@@ -183,9 +183,6 @@ def main() -> None:
         traceback.print_exc()
         exit_code = 1
     finally:
-        # Stop workflow to finalize the workflow span
-        stop_workflow()
-
         # CRITICAL: Always flush telemetry to ensure spans and metrics are exported
         print("\n" + "=" * 80)
         print("TELEMETRY OUTPUT BELOW")
