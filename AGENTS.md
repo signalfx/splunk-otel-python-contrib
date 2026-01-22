@@ -209,8 +209,14 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 - Tests are required for all new features
 - Environment variables should have `OTEL_INSTRUMENTATION_GENAI_` prefix
 - Use semantic conventions from OpenTelemetry GenAI spec where applicable
+- Update README.md and README.arhcitecture.md if needed.
+- Update CHANGELOG.md to document changes
+- Update version.py, only update the minor version unless backward-incompatible changes are introduced. Always communicate with human when the breaking changes are introduced.
+- Always keep backward compatibility in mind when refactoring existing
+- Follow DRY and SOLID software engineering principles when readability and maintainability is not compromised.
 
 ## Common Pitfalls to Avoid
 
 - Do not try to mock libraries if import in the current env fail. If in doubt - clearly communicate the problem to user
 - Always refer to README.md and README.packages.architecture.md
+- avoid creating multiple copies of example apps, when can introduce parameters and reuse the same demo app
