@@ -129,6 +129,13 @@ MAPPING_V4: list[dict[str, str]] = [
         "function": "get",
         "span_name": "collections.query.get",
     },
+    # Aggregate operations
+    {
+        "module": "weaviate.collections.aggregate",
+        "name": "_AggregateCollection",
+        "function": "over_all",
+        "span_name": "collections.aggregate.over_all",
+    },
     {
         "module": "weaviate.collections.data",
         "name": "_DataCollection",

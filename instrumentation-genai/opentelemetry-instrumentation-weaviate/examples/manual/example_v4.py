@@ -226,7 +226,6 @@ def query_near_text(collection):
     )
 
 
-# TODO: Not instrumented
 def query_aggregate(collection):
     """Query aggregate statistics over all objects in the collection."""
     return collection.aggregate.over_all(total_count=True)
@@ -298,6 +297,7 @@ if __name__ == "__main__":
     try:
         example_schema_workflow(client)
     finally:
-        # Ensure all spans are exported before exiting
+        # Ensure all spans and metrics are exported before exiting
         tracer_provider.force_flush(timeout_millis=5000)
+        meter_provider.force_flush(timeout_millis=5000)
         client.close()
