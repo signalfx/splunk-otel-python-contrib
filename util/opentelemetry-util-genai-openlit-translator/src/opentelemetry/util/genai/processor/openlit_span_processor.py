@@ -591,6 +591,27 @@ class OpenlitSpanProcessor(SpanProcessor):
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
+
+                        # If this invocation is an AgentInvocation (for example,
+                        # an OpenLit span representing an agent call), explicitly
+                        # trigger agent-level evaluations so that
+                        # gen_ai.evaluation.result events can be attached to the
+                        # agent span itself, mirroring the Traceloop behavior.
+                        if isinstance(invocation, AgentInvocation):  # type: ignore[attr-defined]
+                            try:
+                                handler.evaluate_agent(invocation)
+                                _logger.debug(
+                                    "[OPENLIT_PROCESSOR] Agent invocation evaluated: %s",
+                                    span.name,
+                                )
+                            except (
+                                Exception
+                            ) as eval_err:  # pragma: no cover - defensive
+                                _logger.warning(
+                                    "[OPENLIT_PROCESSOR] Failed to evaluate AgentInvocation: %s",
+                                    eval_err,
+                                )
+
                     except Exception as stop_err:
                         _logger.warning(
                             "[OPENLIT_PROCESSOR] handler.finish failed: %s",
