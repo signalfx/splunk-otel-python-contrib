@@ -18,21 +18,21 @@ logger = get_logger(__name__)
 def config(env, realm):
     """
     Load configuration for test environment.
-    
+
     Args:
         env: Environment name (rc0, us1, prod)
         realm: Optional realm override
-    
+
     Returns:
         Config instance
     """
     cfg = Config(environment=env)
-    
+
     # Override realm if specified
     if realm:
         cfg.config["splunk"]["realm"] = realm
         logger.info(f"Overriding realm to: {realm}")
-    
+
     logger.info(f"Loaded config for environment: {env}")
     return cfg
 
@@ -41,10 +41,10 @@ def config(env, realm):
 def splunk_access_token(config):
     """
     Get Splunk access token from config.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         Access token string
     """
@@ -57,10 +57,10 @@ def splunk_access_token(config):
 def splunk_realm(config):
     """
     Get Splunk realm from config.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         Realm string
     """
@@ -73,10 +73,10 @@ def splunk_realm(config):
 def apm_base_url(config):
     """
     Get APM API base URL.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         APM API base URL
     """
@@ -87,10 +87,10 @@ def apm_base_url(config):
 def app_base_url(config):
     """
     Get O11y application base URL.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         Application base URL
     """
@@ -101,17 +101,16 @@ def app_base_url(config):
 def api_client(apm_base_url, splunk_access_token):
     """
     Create generic API client.
-    
+
     Args:
         apm_base_url: APM API base URL
         splunk_access_token: Access token
-    
+
     Returns:
         APIClient instance
     """
     client = APIClient(
-        base_url=apm_base_url,
-        headers={"X-SF-TOKEN": splunk_access_token}
+        base_url=apm_base_url, headers={"X-SF-TOKEN": splunk_access_token}
     )
     logger.info(f"Created API client for: {apm_base_url}")
     return client
@@ -121,11 +120,11 @@ def api_client(apm_base_url, splunk_access_token):
 def apm_client(config, splunk_access_token):
     """
     Create APM client for trace/span operations.
-    
+
     Args:
         config: Config instance
         splunk_access_token: Access token
-    
+
     Returns:
         APMClient instance
     """
@@ -138,7 +137,7 @@ def apm_client(config, splunk_access_token):
 def trace_id_list():
     """
     Provide list to collect trace IDs during test.
-    
+
     Returns:
         Empty list for trace IDs
     """
@@ -149,7 +148,7 @@ def trace_id_list():
 def session_id_list():
     """
     Provide list to collect session IDs during test.
-    
+
     Returns:
         Empty list for session IDs
     """
@@ -160,17 +159,17 @@ def session_id_list():
 def cleanup_traces(apm_client, trace_id_list, request):
     """
     Cleanup fixture to delete test traces after test.
-    
+
     Args:
         apm_client: APM client instance
         trace_id_list: List of trace IDs to cleanup
         request: Pytest request object
-    
+
     Yields:
         None (fixture runs cleanup after test)
     """
     yield
-    
+
     # Cleanup only if test passed (optional behavior)
     if not request.node.rep_call.failed and trace_id_list:
         logger.info(f"Cleaning up {len(trace_id_list)} test traces")
@@ -186,10 +185,10 @@ def cleanup_traces(apm_client, trace_id_list, request):
 def api_timeout(config):
     """
     Get API timeout from config.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         Timeout in seconds
     """
@@ -200,10 +199,10 @@ def api_timeout(config):
 def trace_wait_timeout(config):
     """
     Get trace availability wait timeout.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         Timeout in seconds
     """
@@ -214,10 +213,10 @@ def trace_wait_timeout(config):
 def max_retries(config):
     """
     Get max retry count from config.
-    
+
     Args:
         config: Config instance
-    
+
     Returns:
         Max retry count
     """
