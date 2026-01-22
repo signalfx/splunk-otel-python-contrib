@@ -4,7 +4,7 @@ AOAN (Agent Observability & Analytics Navigator) Page Object.
 Provides methods for interacting with the Agent Observability UI.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict
 from playwright.sync_api import Page
 from page_objects.base_page import BasePage
 from core.logger import get_logger
