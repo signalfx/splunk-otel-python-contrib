@@ -34,10 +34,12 @@ from opentelemetry.semconv._incubating.attributes import (
 from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
 )
+from opentelemetry.util.genai.attributes import GEN_AI_WORKFLOW_NAME
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
 )
 from opentelemetry.util.genai.types import (
+    AgentCreation,
     AgentInvocation,
     InputMessage,
     LLMInvocation,
@@ -57,9 +59,9 @@ from opentelemetry.util.types import AttributeValue
 class _InvocationState:
     """Tracks invocation state and parent-child relationships."""
 
-    invocation: Optional[Union[AgentInvocation, LLMInvocation, ToolCall]] = (
-        None
-    )
+    invocation: Optional[
+        Union[AgentCreation, AgentInvocation, LLMInvocation, ToolCall, Workflow]
+    ] = None
     parent_span_id: Optional[str] = None
     children: List[str] = field(default_factory=list)
     # Accumulated content during span lifetime
@@ -526,8 +528,6 @@ class GenAISemanticProcessor(TracingProcessor):
         self._workflow: Workflow | None = None
         self._workflow_first_input: Optional[str] = None
         self._workflow_last_output: Optional[str] = None
-        self._trace_agent_count: dict[str, int] = {}
-        self._trace_depth: int = 0
 
     def _get_server_attributes(self) -> dict[str, Any]:
         """Get server attributes from configured values."""
@@ -1018,7 +1018,7 @@ class GenAISemanticProcessor(TracingProcessor):
         span_id: str,
         parent_span_id: Optional[str],
         invocation: Optional[
-            Union[AgentInvocation, LLMInvocation, ToolCall]
+            Union[AgentCreation, AgentInvocation, LLMInvocation, ToolCall, Workflow]
         ] = None,
     ) -> _InvocationState:
         """Add state to tracking dict with parent-child relationship."""
@@ -1265,11 +1265,8 @@ class GenAISemanticProcessor(TracingProcessor):
         return json.dumps([output_msg])
 
     def on_trace_start(self, trace: Trace) -> None:
-        """Create workflow span when outermost trace starts."""
+        """Create workflow span when trace starts."""
         try:
-            self._trace_agent_count[trace.trace_id] = 0
-            self._trace_depth += 1
-
             if self._workflow is None:
                 self._workflow_first_input = None
                 self._workflow_last_output = None
@@ -1283,7 +1280,8 @@ class GenAISemanticProcessor(TracingProcessor):
                     initial_input=metadata.get("initial_input"),
                     attributes={},
                 )
-                self._handler.start_workflow(self._workflow)
+                invocation = self._handler.start_workflow(self._workflow)
+                self._add_invocation_state(trace.trace_id, None, invocation)
         except Exception as e:
             logger.debug(
                 "Failed to create workflow for trace %s: %s",
@@ -1293,13 +1291,8 @@ class GenAISemanticProcessor(TracingProcessor):
             )
 
     def on_trace_end(self, trace: Trace) -> None:
-        """Stop workflow when outermost trace ends."""
-        self._trace_agent_count.pop(trace.trace_id, None)
-
-        if self._trace_depth > 0:
-            self._trace_depth -= 1
-
-        if self._workflow is not None and self._trace_depth == 0:
+        """Stop workflow when trace ends."""
+        if self._workflow is not None:
             if self._workflow_first_input and not self._workflow.initial_input:
                 self._workflow.initial_input = self._format_input_message(
                     self._workflow_first_input
@@ -1315,16 +1308,247 @@ class GenAISemanticProcessor(TracingProcessor):
 
         self._cleanup_spans_for_trace(trace.trace_id)
 
+    def _handle_agent_span_start(
+        self,
+        span: Span[Any],
+        key: str,
+        parent_key: str,
+        span_name: str,
+        attributes: dict[str, Any],
+        agent_name: Optional[str],
+    ) -> None:
+        """Handle AgentSpanData - create AgentInvocation."""
+        try:
+            agent_attrs: dict[str, Any] = dict(attributes)
+
+            # Add workflow name to attributes before creating invocation
+            if self._workflow is not None:
+                if hasattr(self._workflow, "name") and self._workflow.name:
+                    agent_attrs[GEN_AI_WORKFLOW_NAME] = self._workflow.name
+
+            agent_invocation = AgentInvocation(
+                name=agent_name or span_name,
+                attributes=agent_attrs,
+            )
+
+            if self._workflow is not None:
+                agent_invocation.parent_run_id = self._workflow.run_id
+                if hasattr(self._workflow, "span") and self._workflow.span:
+                    agent_invocation.parent_span = self._workflow.span
+
+            if agent_name:
+                agent_invocation.agent_name = agent_name
+
+            # Use span_id from the framework as agent_id
+            agent_invocation.agent_id = str(span.span_id)
+
+            agent_invocation.framework = "openai_agents"
+
+            invocation = self._handler.start_agent(agent_invocation)
+            self._add_invocation_state(key, parent_key, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create AgentInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_llm_span_start(
+        self,
+        span: Span[Any],
+        key: str,
+        parent_key: str,
+        span_name: str,
+        model: Optional[str],
+    ) -> None:
+        """Handle GenerationSpanData/ResponseSpanData - create LLMInvocation."""
+        try:
+            # Get parent state for context
+            parent_state = self._get_invocation_state(parent_key)
+            parent_agent = (
+                parent_state.invocation
+                if parent_state
+                and isinstance(parent_state.invocation, AgentInvocation)
+                else None
+            )
+
+            # Get model - use from span or fallback to parent's stored model
+            request_model: str = model if model else ""
+            if not request_model and parent_state:
+                request_model = parent_state.request_model or ""
+            if not request_model:
+                request_model = "unknown_model"
+
+            # Build input messages from span data
+            span_input = getattr(span.span_data, "input", None)
+            input_messages: list[InputMessage] = []
+            if span_input and isinstance(span_input, (list, tuple)):
+                for msg in span_input:
+                    if isinstance(msg, dict):
+                        role = msg.get("role", "user")
+                        content = msg.get("content", "")
+                        parts: list[Any] = []
+                        # Handle different content formats
+                        if isinstance(content, str):
+                            parts.append(Text(content=content))
+                        elif isinstance(content, list):
+                            # Content is a list of parts
+                            for part in content:
+                                if isinstance(part, dict):
+                                    part_type = part.get("type", "text")
+                                    if part_type == "text":
+                                        parts.append(
+                                            Text(
+                                                content=part.get(
+                                                    "text", ""
+                                                )
+                                            )
+                                        )
+                                    elif part_type == "input_text":
+                                        parts.append(
+                                            Text(
+                                                content=part.get(
+                                                    "text", ""
+                                                )
+                                            )
+                                        )
+                                    else:
+                                        # Keep other part types as-is
+                                        parts.append(part)
+                                elif isinstance(part, str):
+                                    parts.append(Text(content=part))
+                        if parts:
+                            input_messages.append(
+                                InputMessage(role=role, parts=parts)
+                            )
+
+            llm_invocation = LLMInvocation(
+                request_model=request_model,
+                input_messages=input_messages if input_messages else [],
+            )
+
+            # Set parent relationship - in agentic frameworks there's always a parent agent
+            if parent_agent is not None:
+                llm_invocation.parent_run_id = parent_agent.run_id
+                if hasattr(parent_agent, "span") and parent_agent.span:
+                    llm_invocation.parent_span = parent_agent.span
+                if (
+                    hasattr(parent_agent, "agent_name")
+                    and parent_agent.agent_name
+                ):
+                    llm_invocation.agent_name = parent_agent.agent_name
+                # Use span_id from the framework as agent_id
+                llm_invocation.agent_id = (
+                    parent_agent.agent_id
+                    if hasattr(parent_agent, "agent_id")
+                    and parent_agent.agent_id
+                    else None
+                )
+
+            llm_invocation.framework = "openai_agents"
+
+            # Pass workflow name to LLM invocation
+            if self._workflow is not None:
+                if hasattr(self._workflow, "name") and self._workflow.name:
+                    llm_invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                        self._workflow.name
+                    )
+
+            # Start LLM span immediately for correct duration
+            invocation = self._handler.start_llm(llm_invocation)
+            self._add_invocation_state(key, parent_key, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create LLMInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_tool_span_start(
+        self,
+        span: Span[Any],
+        key: str,
+        parent_key: str,
+        span_name: str,
+        attributes: dict[str, Any],
+    ) -> None:
+        """Handle FunctionSpanData - create ToolCall."""
+        try:
+            tool_attrs: dict[str, Any] = dict(attributes)
+
+            # Add workflow name to attributes before creating invocation
+            if self._workflow is not None:
+                if hasattr(self._workflow, "name") and self._workflow.name:
+                    tool_attrs[GEN_AI_WORKFLOW_NAME] = self._workflow.name
+
+            # Get tool arguments from span data
+            tool_args = getattr(span.span_data, "input", None)
+
+            # Get parent state for context
+            parent_state = self._get_invocation_state(parent_key)
+            parent_agent = (
+                parent_state.invocation
+                if parent_state
+                and isinstance(parent_state.invocation, AgentInvocation)
+                else None
+            )
+
+            # Get agent_id from parent agent (uses span_id from framework)
+            actual_agent_id: Optional[str] = None
+            if parent_agent is not None:
+                if (
+                    hasattr(parent_agent, "agent_name")
+                    and parent_agent.agent_name
+                ):
+                    tool_attrs[GEN_AI_AGENT_NAME] = parent_agent.agent_name
+                # Use agent_id (span_id from framework)
+                actual_agent_id = (
+                    parent_agent.agent_id
+                    if hasattr(parent_agent, "agent_id")
+                    and parent_agent.agent_id
+                    else None
+                )
+                if actual_agent_id:
+                    tool_attrs[GEN_AI_AGENT_ID] = actual_agent_id
+                if GEN_AI_AGENT_DESCRIPTION in tool_attrs:
+                    del tool_attrs[GEN_AI_AGENT_DESCRIPTION]
+
+            tool_entity = ToolCall(
+                name=getattr(span.span_data, "name", span_name),
+                id=getattr(span.span_data, "call_id", None),
+                arguments=tool_args,
+                attributes=tool_attrs,
+            )
+
+            # Set parent relationship - in agentic frameworks there's always a parent agent
+            if parent_agent is not None:
+                tool_entity.parent_run_id = parent_agent.run_id
+                tool_entity.agent_name = parent_agent.agent_name
+                tool_entity.agent_id = actual_agent_id
+                if hasattr(parent_agent, "span") and parent_agent.span:
+                    tool_entity.parent_span = parent_agent.span
+
+            tool_entity.framework = "openai_agents"
+
+            invocation = self._handler.start_tool_call(tool_entity)
+            self._add_invocation_state(key, parent_key, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create ToolCall for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
     def on_span_start(self, span: Span[Any]) -> None:
         """Start invocation tracking for a span."""
         if not span.started_at:
             return
 
         key = str(span.span_id)
-        parent_key = str(span.parent_id) if span.parent_id else None
-
-        # Create state entry for all spans to enable parent chain traversal
-        self._add_invocation_state(key, parent_key)
+        parent_key = str(span.parent_id) if span.parent_id else str(span.trace_id)
 
         operation_name = self._get_operation_name(span.span_data)
         model = getattr(span.span_data, "model", None)
@@ -1369,214 +1593,181 @@ class GenAISemanticProcessor(TracingProcessor):
 
         attributes.update(self._get_server_attributes())
 
-        # Handle AgentSpanData - create AgentInvocation
+        # Dispatch to type-specific handlers
         if _is_instance_of(span.span_data, AgentSpanData):
-            # Track agent count for this trace
-            trace_id = span.trace_id
-            self._trace_agent_count[trace_id] = (
-                self._trace_agent_count.get(trace_id, 0) + 1
+            self._handle_agent_span_start(
+                span, key, parent_key, span_name, attributes, agent_name
             )
-
-            try:
-                agent_attrs: dict[str, Any] = dict(attributes)
-                agent_entity = AgentInvocation(
-                    name=agent_name or span_name,
-                    attributes=agent_attrs,
-                )
-
-                if self._workflow is not None:
-                    agent_entity.parent_run_id = self._workflow.run_id
-                    if hasattr(self._workflow, "span") and self._workflow.span:
-                        agent_entity.parent_span = self._workflow.span
-
-                if agent_name:
-                    agent_entity.agent_name = agent_name
-
-                # Use span_id from the framework as agent_id
-                agent_entity.agent_id = str(span.span_id)
-
-                agent_entity.framework = "openai_agents"
-
-                self._handler.start_agent(agent_entity)
-                self._set_invocation(key, agent_entity)
-            except Exception as e:
-                logger.debug(
-                    "Failed to create AgentInvocation for span %s: %s",
-                    key,
-                    e,
-                    exc_info=True,
-                )
-
-        # Handle GenerationSpanData/ResponseSpanData - create LLMInvocation immediately
         elif _is_instance_of(
             span.span_data, (GenerationSpanData, ResponseSpanData)
         ):
-            try:
-                # Get parent agent for context
-                parent_agent_state = self._find_parent_agent_state(
-                    span.parent_id
-                )
-                parent_agent = (
-                    parent_agent_state.invocation
-                    if parent_agent_state
-                    and isinstance(
-                        parent_agent_state.invocation, AgentInvocation
-                    )
-                    else None
-                )
-
-                # Get model - use from span or fallback to parent agent's stored model
-                request_model = model
-                if not request_model and parent_agent_state:
-                    request_model = parent_agent_state.request_model
-                if not request_model:
-                    request_model = "unknown_model"
-
-                # Build input messages from span data
-                span_input = getattr(span.span_data, "input", None)
-                input_messages: list[InputMessage] = []
-                if span_input and isinstance(span_input, (list, tuple)):
-                    for msg in span_input:
-                        if isinstance(msg, dict):
-                            role = msg.get("role", "user")
-                            content = msg.get("content", "")
-                            parts: list[Any] = []
-                            # Handle different content formats
-                            if isinstance(content, str):
-                                parts.append(Text(content=content))
-                            elif isinstance(content, list):
-                                # Content is a list of parts
-                                for part in content:
-                                    if isinstance(part, dict):
-                                        part_type = part.get("type", "text")
-                                        if part_type == "text":
-                                            parts.append(
-                                                Text(
-                                                    content=part.get(
-                                                        "text", ""
-                                                    )
-                                                )
-                                            )
-                                        elif part_type == "input_text":
-                                            parts.append(
-                                                Text(
-                                                    content=part.get(
-                                                        "text", ""
-                                                    )
-                                                )
-                                            )
-                                        else:
-                                            # Keep other part types as-is
-                                            parts.append(part)
-                                    elif isinstance(part, str):
-                                        parts.append(Text(content=part))
-                            if parts:
-                                input_messages.append(
-                                    InputMessage(role=role, parts=parts)
-                                )
-
-                llm_entity = LLMInvocation(
-                    request_model=request_model,
-                    input_messages=input_messages if input_messages else [],
-                )
-
-                # Set parent relationship - in agentic frameworks there's always a parent agent
-                if parent_agent is not None:
-                    llm_entity.parent_run_id = parent_agent.run_id
-                    if hasattr(parent_agent, "span") and parent_agent.span:
-                        llm_entity.parent_span = parent_agent.span
-                    if (
-                        hasattr(parent_agent, "agent_name")
-                        and parent_agent.agent_name
-                    ):
-                        llm_entity.agent_name = parent_agent.agent_name
-                    # Use span_id from the framework as agent_id
-                    llm_entity.agent_id = (
-                        parent_agent.agent_id
-                        if hasattr(parent_agent, "agent_id")
-                        and parent_agent.agent_id
-                        else None
-                    )
-
-                llm_entity.framework = "openai_agents"
-
-                # Start LLM span immediately for correct duration
-                self._handler.start_llm(llm_entity)
-                self._set_invocation(key, llm_entity)
-            except Exception as e:
-                logger.debug(
-                    "Failed to create LLMInvocation for span %s: %s",
-                    key,
-                    e,
-                    exc_info=True,
-                )
-
-        # Handle FunctionSpanData - create ToolCall
+            self._handle_llm_span_start(span, key, parent_key, span_name, model)
         elif _is_instance_of(span.span_data, FunctionSpanData):
-            try:
-                tool_attrs: dict[str, Any] = dict(attributes)
+            self._handle_tool_span_start(
+                span, key, parent_key, span_name, attributes
+            )
 
-                # Get tool arguments from span data
-                tool_args = getattr(span.span_data, "input", None)
-
-                # Get parent agent info
-                parent_agent_state = self._find_parent_agent_state(
-                    span.parent_id
+    def _handle_agent_span_end(
+        self,
+        key: str,
+        invocation: AgentInvocation,
+        state: _InvocationState,
+    ) -> None:
+        """Handle AgentInvocation end - finalize agent span."""
+        try:
+            if state.output_messages:
+                invocation.output_context = safe_json_dumps(
+                    state.output_messages
                 )
-                parent_agent = (
-                    parent_agent_state.invocation
-                    if parent_agent_state
-                    and isinstance(
-                        parent_agent_state.invocation, AgentInvocation
+            self._handler.stop_agent(invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to stop AgentInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_llm_span_end(
+        self,
+        span: Span[Any],
+        key: str,
+        invocation: LLMInvocation,
+        payload: ContentPayload,
+    ) -> None:
+        """Handle LLMInvocation end - finalize LLM span with response data."""
+        try:
+            # Update model from response if available
+            response_obj = getattr(span.span_data, "response", None)
+            if response_obj is not None:
+                response_model = getattr(response_obj, "model", None)
+                if response_model:
+                    invocation.response_model_name = response_model
+                    # Update request_model and span name if it was unknown
+                    if invocation.request_model == "unknown_model":
+                        invocation.request_model = response_model
+                        # Update span name with actual model
+                        if invocation.span is not None and hasattr(
+                            invocation.span, "update_name"
+                        ):
+                            operation = getattr(
+                                invocation, "operation", "chat"
+                            )
+                            invocation.span.update_name(
+                                f"{operation} {response_model}"
+                            )
+
+            # Add input messages from payload (if not already set at start)
+            if (
+                payload.input_messages
+                and not invocation.input_messages
+            ):
+                input_msgs: list[InputMessage] = []
+                for msg in payload.input_messages:
+                    if isinstance(msg, dict):
+                        role = msg.get("role", "user")
+                        parts_data = msg.get("parts", [])
+                        parts: list[Any] = []
+                        for p in parts_data:
+                            if (
+                                isinstance(p, dict)
+                                and p.get("type") == "text"
+                            ):
+                                parts.append(
+                                    Text(content=p.get("content", ""))
+                                )
+                            else:
+                                parts.append(p)
+                        input_msgs.append(
+                            InputMessage(role=role, parts=parts)
+                        )
+                if input_msgs:
+                    invocation.input_messages = input_msgs
+
+            # Add output messages from payload
+            if payload.output_messages:
+                output_msgs: list[OutputMessage] = []
+                for msg in payload.output_messages:
+                    if isinstance(msg, dict):
+                        role = msg.get("role", "assistant")
+                        parts_data = msg.get("parts", [])
+                        parts: list[Any] = []
+                        for p in parts_data:
+                            if (
+                                isinstance(p, dict)
+                                and p.get("type") == "text"
+                            ):
+                                parts.append(
+                                    Text(content=p.get("content", ""))
+                                )
+                            else:
+                                parts.append(p)
+                        finish_reason = msg.get(
+                            "finish_reason", "stop"
+                        )
+                        output_msgs.append(
+                            OutputMessage(
+                                role=role,
+                                parts=parts,
+                                finish_reason=finish_reason,
+                            )
+                        )
+                if output_msgs:
+                    invocation.output_messages = output_msgs
+
+            # Add token usage from response
+            if response_obj is not None:
+                usage = getattr(response_obj, "usage", None)
+                if usage is not None:
+                    input_tokens = getattr(usage, "input_tokens", None)
+                    if input_tokens is None:
+                        input_tokens = getattr(
+                            usage, "prompt_tokens", None
+                        )
+                    if input_tokens is not None:
+                        invocation.input_tokens = input_tokens
+
+                    output_tokens = getattr(
+                        usage, "output_tokens", None
                     )
-                    else None
+                    if output_tokens is None:
+                        output_tokens = getattr(
+                            usage, "completion_tokens", None
+                        )
+                    if output_tokens is not None:
+                        invocation.output_tokens = output_tokens
+
+            self._handler.stop_llm(invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to stop LLMInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_tool_span_end(
+        self,
+        key: str,
+        invocation: ToolCall,
+        payload: ContentPayload,
+    ) -> None:
+        """Handle ToolCall end - finalize tool span with result."""
+        try:
+            # Add tool result from payload
+            if payload.tool_result is not None:
+                invocation.attributes.setdefault(
+                    "tool.response",
+                    safe_json_dumps(payload.tool_result),
                 )
-
-                # Get agent_id from parent agent (uses span_id from framework)
-                actual_agent_id: Optional[str] = None
-                if parent_agent is not None:
-                    if (
-                        hasattr(parent_agent, "agent_name")
-                        and parent_agent.agent_name
-                    ):
-                        tool_attrs[GEN_AI_AGENT_NAME] = parent_agent.agent_name
-                    # Use agent_id (span_id from framework)
-                    actual_agent_id = (
-                        parent_agent.agent_id
-                        if hasattr(parent_agent, "agent_id")
-                        and parent_agent.agent_id
-                        else None
-                    )
-                    if actual_agent_id:
-                        tool_attrs[GEN_AI_AGENT_ID] = actual_agent_id
-                    if GEN_AI_AGENT_DESCRIPTION in tool_attrs:
-                        del tool_attrs[GEN_AI_AGENT_DESCRIPTION]
-
-                tool_entity = ToolCall(
-                    name=getattr(span.span_data, "name", span_name),
-                    id=getattr(span.span_data, "call_id", None),
-                    arguments=tool_args,
-                    attributes=tool_attrs,
-                )
-
-                # Set parent relationship - in agentic frameworks there's always a parent agent
-                if parent_agent is not None:
-                    tool_entity.parent_run_id = parent_agent.run_id
-                    tool_entity.agent_name = parent_agent.agent_name
-                    tool_entity.agent_id = actual_agent_id
-                    if hasattr(parent_agent, "span") and parent_agent.span:
-                        tool_entity.parent_span = parent_agent.span
-
-                tool_entity.framework = "openai_agents"
-                self._handler.start_tool_call(tool_entity)
-                self._set_invocation(key, tool_entity)
-            except Exception as e:
-                logger.debug(
-                    "Failed to create ToolCall for span %s: %s",
-                    key,
-                    e,
-                    exc_info=True,
-                )
+            self._handler.stop_tool_call(invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to stop ToolCall for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
 
     def on_span_end(self, span: Span[Any]) -> None:
         """Finalize span with attributes, events, and metrics.
@@ -1620,152 +1811,16 @@ class GenAISemanticProcessor(TracingProcessor):
                 e,
             )
 
-        # Stop invocation based on type
+        # Dispatch to type-specific handlers
         if state is not None:
             invocation = state.invocation
 
             if isinstance(invocation, AgentInvocation):
-                try:
-                    if state.output_messages:
-                        invocation.output_context = safe_json_dumps(
-                            state.output_messages
-                        )
-                    self._handler.stop_agent(invocation)
-                except Exception as e:
-                    logger.debug(
-                        "Failed to stop AgentInvocation for span %s: %s",
-                        key,
-                        e,
-                        exc_info=True,
-                    )
-
+                self._handle_agent_span_end(key, invocation, state)
             elif isinstance(invocation, LLMInvocation):
-                try:
-                    # Update model from response if available
-                    response_obj = getattr(span.span_data, "response", None)
-                    if response_obj is not None:
-                        response_model = getattr(response_obj, "model", None)
-                        if response_model:
-                            invocation.response_model_name = response_model
-                            # Update request_model and span name if it was unknown
-                            if invocation.request_model == "unknown_model":
-                                invocation.request_model = response_model
-                                # Update span name with actual model
-                                if invocation.span is not None and hasattr(
-                                    invocation.span, "update_name"
-                                ):
-                                    operation = getattr(
-                                        invocation, "operation", "chat"
-                                    )
-                                    invocation.span.update_name(
-                                        f"{operation} {response_model}"
-                                    )
-
-                    # Add input messages from payload (if not already set at start)
-                    if (
-                        payload.input_messages
-                        and not invocation.input_messages
-                    ):
-                        input_msgs: list[InputMessage] = []
-                        for msg in payload.input_messages:
-                            if isinstance(msg, dict):
-                                role = msg.get("role", "user")
-                                parts_data = msg.get("parts", [])
-                                parts: list[Any] = []
-                                for p in parts_data:
-                                    if (
-                                        isinstance(p, dict)
-                                        and p.get("type") == "text"
-                                    ):
-                                        parts.append(
-                                            Text(content=p.get("content", ""))
-                                        )
-                                    else:
-                                        parts.append(p)
-                                input_msgs.append(
-                                    InputMessage(role=role, parts=parts)
-                                )
-                        if input_msgs:
-                            invocation.input_messages = input_msgs
-
-                    # Add output messages from payload
-                    if payload.output_messages:
-                        output_msgs: list[OutputMessage] = []
-                        for msg in payload.output_messages:
-                            if isinstance(msg, dict):
-                                role = msg.get("role", "assistant")
-                                parts_data = msg.get("parts", [])
-                                parts: list[Any] = []
-                                for p in parts_data:
-                                    if (
-                                        isinstance(p, dict)
-                                        and p.get("type") == "text"
-                                    ):
-                                        parts.append(
-                                            Text(content=p.get("content", ""))
-                                        )
-                                    else:
-                                        parts.append(p)
-                                finish_reason = msg.get(
-                                    "finish_reason", "stop"
-                                )
-                                output_msgs.append(
-                                    OutputMessage(
-                                        role=role,
-                                        parts=parts,
-                                        finish_reason=finish_reason,
-                                    )
-                                )
-                        if output_msgs:
-                            invocation.output_messages = output_msgs
-
-                    # Add token usage from response
-                    if response_obj is not None:
-                        usage = getattr(response_obj, "usage", None)
-                        if usage is not None:
-                            input_tokens = getattr(usage, "input_tokens", None)
-                            if input_tokens is None:
-                                input_tokens = getattr(
-                                    usage, "prompt_tokens", None
-                                )
-                            if input_tokens is not None:
-                                invocation.input_tokens = input_tokens
-
-                            output_tokens = getattr(
-                                usage, "output_tokens", None
-                            )
-                            if output_tokens is None:
-                                output_tokens = getattr(
-                                    usage, "completion_tokens", None
-                                )
-                            if output_tokens is not None:
-                                invocation.output_tokens = output_tokens
-
-                    self._handler.stop_llm(invocation)
-                except Exception as e:
-                    logger.debug(
-                        "Failed to stop LLMInvocation for span %s: %s",
-                        key,
-                        e,
-                        exc_info=True,
-                    )
-
+                self._handle_llm_span_end(span, key, invocation, payload)
             elif isinstance(invocation, ToolCall):
-                try:
-                    # Add tool result from payload
-                    if payload.tool_result is not None:
-                        invocation.attributes.setdefault(
-                            "tool.response",
-                            safe_json_dumps(payload.tool_result),
-                        )
-                    self._handler.stop_tool_call(invocation)
-                except Exception as e:
-                    logger.debug(
-                        "Failed to stop ToolCall for span %s: %s",
-                        key,
-                        e,
-                        exc_info=True,
-                    )
+                self._handle_tool_span_end(key, invocation, payload)
 
             # Remove from invocations
             self._delete_invocation_state(key)
@@ -1788,7 +1843,7 @@ class GenAISemanticProcessor(TracingProcessor):
             self._workflow_last_output = None
 
         # Stop any remaining invocations using unified tracking
-        for key, state in list(self._invocations.items()):
+        for state in self._invocations.values():
             try:
                 invocation = state.invocation
                 if isinstance(invocation, AgentInvocation):
@@ -1801,7 +1856,6 @@ class GenAISemanticProcessor(TracingProcessor):
                 pass
 
         self._invocations.clear()
-        self._trace_depth = 0
 
     def force_flush(self) -> None:
         """Force flush (no-op for this processor)."""
@@ -2440,12 +2494,10 @@ class GenAISemanticProcessor(TracingProcessor):
 
     def _cleanup_spans_for_trace(self, trace_id: str) -> None:
         """Clean up entities for a trace to prevent memory leaks."""
-        # Clean up any remaining invocations for this trace using unified tracking
-        keys_to_remove = [
-            key for key in self._invocations.keys() if key.startswith(trace_id)
-        ]
-        for key in keys_to_remove:
-            self._invocations.pop(key, None)
+        # Trace cleanup is a no-op since span_ids are UUIDs unrelated to trace_id.
+        # Invocations are already cleaned up in on_span_end via _delete_invocation_state.
+        # This method is kept for interface consistency but does nothing.
+        pass
 
 
 __all__ = [
