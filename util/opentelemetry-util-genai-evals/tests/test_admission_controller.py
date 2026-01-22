@@ -71,3 +71,52 @@ def test_admission_controller_allow_async(monkeypatch):
     allowed, reason = asyncio.run(controller.allow_async(None))
 
     assert (allowed, reason) == (True, None)
+
+
+def test_admission_controller_allow_async_rate_limits(monkeypatch):
+    """Test that async rate limiting works correctly."""
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS", "1"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST", "1"
+    )
+
+    # Use a mutable counter to track progression
+    state = {"time": 3000.0, "checks": 0}
+
+    def mock_monotonic():
+        # Advance time after second check
+        if state["checks"] >= 2:
+            return state["time"] + 1.5
+        return state["time"]
+
+    monkeypatch.setattr(
+        admission_controller.time,
+        "monotonic",
+        mock_monotonic,
+    )
+
+    controller = admission_controller.EvaluationAdmissionController()
+
+    async def run_checks():
+        state["checks"] = 0
+        allowed_first, reason_first = await controller.allow_async(None)
+
+        state["checks"] = 1
+        allowed_second, reason_second = await controller.allow_async(None)
+
+        state["checks"] = 2
+        allowed_third, reason_third = await controller.allow_async(None)
+
+        return (
+            (allowed_first, reason_first),
+            (allowed_second, reason_second),
+            (allowed_third, reason_third),
+        )
+
+    results = asyncio.run(run_checks())
+
+    assert results[0] == (True, None)
+    assert results[1] == (False, "client_evaluation_rate_limited")
+    assert results[2] == (True, None)
