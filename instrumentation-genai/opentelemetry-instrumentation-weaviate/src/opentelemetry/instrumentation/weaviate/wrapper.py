@@ -218,14 +218,14 @@ class _WeaviateOperationWrapper:
                             query = ""
                             if "query" in kwargs:
                                 query = json.dumps(kwargs["query"])
-                            
+
                             # Serialize content - if it's already a string, use it; otherwise json.dumps
                             content = doc["content"]
                             if isinstance(content, str):
                                 content_str = content
                             else:
                                 content_str = json.dumps(content)
-                            
+
                             attributes = {
                                 "db.weaviate.document.content": content_str,
                             }
@@ -249,16 +249,15 @@ class _WeaviateOperationWrapper:
 
     def _is_similarity_search(self) -> bool:
         """Check if the operation is a similarity search or retrieval operation that returns documents."""
-        module_name = self.wrap_properties.get("module", "")
         function_name = self.wrap_properties.get("function", "")
         return (
             "do" in function_name.lower()
             or "near_text" in function_name.lower()
             or "near_vector" in function_name.lower()
-            or "fetch_object" in function_name.lower()  # Matches both fetch_objects and fetch_object_by_id
+            or "fetch_object"
+            in function_name.lower()  # Matches both fetch_objects and fetch_object_by_id
             or "graphql_raw_query" in function_name.lower()  # Raw GraphQL queries
         )
-
 
     def _extract_documents_from_response(self, response: Any) -> list[dict[str, Any]]:
         """Extract documents from weaviate response."""
@@ -277,10 +276,7 @@ class _WeaviateOperationWrapper:
                 # Extract similarity scores from single object
                 if hasattr(response, "metadata") and response.metadata:
                     metadata = response.metadata
-                    if (
-                        hasattr(metadata, "distance")
-                        and metadata.distance is not None
-                    ):
+                    if hasattr(metadata, "distance") and metadata.distance is not None:
                         doc["distance"] = metadata.distance
                     if (
                         hasattr(metadata, "certainty")

@@ -369,9 +369,7 @@ class TestOperationSpanAttributes:
         for event in span.events:
             assert event.name == "weaviate.document"
 
-    def test_fetch_object_by_id_generates_events(
-        self, tracer_provider, span_exporter
-    ):
+    def test_fetch_object_by_id_generates_events(self, tracer_provider, span_exporter):
         """Test that fetch_object_by_id generates events when content capture is enabled."""
         trace.set_tracer_provider(tracer_provider)
         tracer = tracer_provider.get_tracer(__name__)
@@ -423,7 +421,9 @@ class TestOperationSpanAttributes:
         event_attrs = dict(event.attributes or {})
         assert "db.weaviate.document.content" in event_attrs
 
-    def test_get_operation_does_not_generate_events(self, tracer_provider, span_exporter):
+    def test_get_operation_does_not_generate_events(
+        self, tracer_provider, span_exporter
+    ):
         """Test that internal get operation does NOT generate events (to avoid duplicates with fetch_objects)."""
         trace.set_tracer_provider(tracer_provider)
         tracer = tracer_provider.get_tracer(__name__)
