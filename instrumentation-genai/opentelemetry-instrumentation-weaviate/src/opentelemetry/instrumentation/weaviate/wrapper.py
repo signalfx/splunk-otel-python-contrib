@@ -218,10 +218,16 @@ class _WeaviateOperationWrapper:
                             query = ""
                             if "query" in kwargs:
                                 query = json.dumps(kwargs["query"])
+                            
+                            # Serialize content - if it's already a string, use it; otherwise json.dumps
+                            content = doc["content"]
+                            if isinstance(content, str):
+                                content_str = content
+                            else:
+                                content_str = json.dumps(content)
+                            
                             attributes = {
-                                "db.weaviate.document.content": json.dumps(
-                                    doc["content"]
-                                ),
+                                "db.weaviate.document.content": content_str,
                             }
 
                             # Only add non-None values to attributes
@@ -242,25 +248,59 @@ class _WeaviateOperationWrapper:
         return return_value
 
     def _is_similarity_search(self) -> bool:
-        """Check if the operation is a similarity search."""
+        """Check if the operation is a similarity search or retrieval operation that returns documents."""
         module_name = self.wrap_properties.get("module", "")
         function_name = self.wrap_properties.get("function", "")
         return (
-            "query" in module_name.lower()
-            or "do" in function_name.lower()
+            "do" in function_name.lower()
             or "near_text" in function_name.lower()
-            or "fetch_objects" in function_name.lower()
+            or "near_vector" in function_name.lower()
+            or "fetch_object" in function_name.lower()  # Matches both fetch_objects and fetch_object_by_id
+            or "graphql_raw_query" in function_name.lower()  # Raw GraphQL queries
         )
+
 
     def _extract_documents_from_response(self, response: Any) -> list[dict[str, Any]]:
         """Extract documents from weaviate response."""
         documents: list[dict[str, Any]] = []
         try:
-            if hasattr(response, "objects"):
+            # Handle single object response (e.g., from fetch_object_by_id)
+            if hasattr(response, "properties") and not hasattr(response, "objects"):
+                doc: dict[str, Any] = {}
+                # Convert properties to dict if it's not already
+                if isinstance(response.properties, dict):
+                    doc["content"] = response.properties
+                else:
+                    # For non-dict properties, convert to string representation
+                    doc["content"] = str(response.properties)
+
+                # Extract similarity scores from single object
+                if hasattr(response, "metadata") and response.metadata:
+                    metadata = response.metadata
+                    if (
+                        hasattr(metadata, "distance")
+                        and metadata.distance is not None
+                    ):
+                        doc["distance"] = metadata.distance
+                    if (
+                        hasattr(metadata, "certainty")
+                        and metadata.certainty is not None
+                    ):
+                        doc["certainty"] = metadata.certainty
+                    if hasattr(metadata, "score") and metadata.score is not None:
+                        doc["score"] = metadata.score
+
+                documents.append(doc)
+            # Handle collection of objects (e.g., from fetch_objects, near_text, etc.)
+            elif hasattr(response, "objects"):
                 for obj in response.objects:
                     doc: dict[str, Any] = {}
                     if hasattr(obj, "properties"):
-                        doc["content"] = obj.properties
+                        # Convert properties to dict if it's not already
+                        if isinstance(obj.properties, dict):
+                            doc["content"] = obj.properties
+                        else:
+                            doc["content"] = str(obj.properties)
 
                     # Extract similarity scores
                     if hasattr(obj, "metadata") and obj.metadata:
@@ -279,32 +319,33 @@ class _WeaviateOperationWrapper:
                             doc["score"] = metadata.score
 
                     documents.append(doc)
-            elif hasattr(response, "data"):
-                # Handle GraphQL responses
-                for response_key in response.data.keys():
-                    for collection in response.data[response_key]:
-                        for obj in response.data[response_key][collection]:
-                            doc: dict[str, Any] = {}
-                            doc["content"] = dict(obj)
-                            del doc["content"]["_additional"]
-                            if "_additional" in obj:
-                                metadata = obj["_additional"]
-                                if (
-                                    "distance" in metadata
-                                    and metadata["distance"] is not None
-                                ):
-                                    doc["distance"] = metadata["distance"]
-                                if (
-                                    "certainty" in metadata
-                                    and metadata["certainty"] is not None
-                                ):
-                                    doc["certainty"] = metadata["certainty"]
-                                if (
-                                    "score" in metadata
-                                    and metadata["score"] is not None
-                                ):
-                                    doc["score"] = metadata["score"]
-                            documents.append(doc)
+            elif hasattr(response, "get") and response.get:
+                # Handle raw GraphQL query responses (_RawGQLReturn with .get attribute)
+                for collection_name, objects in response.get.items():
+                    if isinstance(objects, list):
+                        for obj in objects:
+                            if isinstance(obj, dict):
+                                doc: dict[str, Any] = {}
+                                doc["content"] = obj
+                                # Extract metadata from _additional if present
+                                if "_additional" in obj:
+                                    metadata = obj["_additional"]
+                                    if (
+                                        "distance" in metadata
+                                        and metadata["distance"] is not None
+                                    ):
+                                        doc["distance"] = metadata["distance"]
+                                    if (
+                                        "certainty" in metadata
+                                        and metadata["certainty"] is not None
+                                    ):
+                                        doc["certainty"] = metadata["certainty"]
+                                    if (
+                                        "score" in metadata
+                                        and metadata["score"] is not None
+                                    ):
+                                        doc["score"] = metadata["score"]
+                                documents.append(doc)
         except Exception as e:
             if Config.exception_logger:
                 Config.exception_logger(e)

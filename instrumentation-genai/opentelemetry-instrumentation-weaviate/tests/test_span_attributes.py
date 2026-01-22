@@ -369,6 +369,160 @@ class TestOperationSpanAttributes:
         for event in span.events:
             assert event.name == "weaviate.document"
 
+    def test_fetch_object_by_id_generates_events(
+        self, tracer_provider, span_exporter
+    ):
+        """Test that fetch_object_by_id generates events when content capture is enabled."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+
+        mock_histogram = MagicMock()
+
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={
+                "module": "weaviate.collections.queries.fetch_object_by_id",
+                "function": "fetch_object_by_id",
+                "span_name": "collections.query.fetch_object_by_id",
+            },
+            capture_content=True,
+        )
+
+        # Mock single object response
+        def mock_fetch_func(*args, **kwargs):
+            mock_response = MagicMock()
+            mock_response.properties = {"text": "single object content", "id": "123"}
+            mock_response.metadata = MagicMock()
+            mock_response.metadata.distance = None
+            mock_response.metadata.certainty = None
+            mock_response.metadata.score = None
+            # Single object doesn't have .objects attribute
+            del mock_response.objects
+            return mock_response
+
+        # Execute
+        wrapper(mock_fetch_func, None, (), {})
+
+        # Verify
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+
+        span = spans[0]
+        attributes = dict(span.attributes or {})
+
+        # Should capture document count
+        assert attributes.get("db.weaviate.documents.count") == 1
+
+        # Should emit 1 event
+        assert len(span.events) == 1
+
+        event = span.events[0]
+        assert event.name == "weaviate.document"
+
+        event_attrs = dict(event.attributes or {})
+        assert "db.weaviate.document.content" in event_attrs
+
+    def test_get_operation_does_not_generate_events(self, tracer_provider, span_exporter):
+        """Test that internal get operation does NOT generate events (to avoid duplicates with fetch_objects)."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+
+        mock_histogram = MagicMock()
+
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={
+                "module": "weaviate.collections.grpc.query",
+                "function": "get",
+                "span_name": "collections.query.get",
+            },
+            capture_content=True,
+        )
+
+        # Mock get response with objects
+        def mock_get_func(*args, **kwargs):
+            mock_response = MagicMock()
+            mock_obj = MagicMock()
+            mock_obj.properties = {"text": "get operation content"}
+            mock_obj.metadata = MagicMock()
+            mock_obj.metadata.distance = None
+            mock_obj.metadata.certainty = None
+            mock_obj.metadata.score = None
+            mock_response.objects = [mock_obj]
+            return mock_response
+
+        # Execute
+        wrapper(mock_get_func, None, (), {})
+
+        # Verify
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+
+        span = spans[0]
+        attributes = dict(span.attributes or {})
+
+        # Should NOT capture document count (internal operation)
+        assert "db.weaviate.documents.count" not in attributes
+
+        # Should NOT emit events (internal operation)
+        assert len(span.events) == 0
+
+    def test_graphql_raw_query_generates_events(self, tracer_provider, span_exporter):
+        """Test that graphql_raw_query generates events when content capture is enabled."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+
+        mock_histogram = MagicMock()
+
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={
+                "module": "weaviate.client",
+                "function": "graphql_raw_query",
+                "span_name": "graphql.raw_query",
+            },
+            capture_content=True,
+        )
+
+        # Mock GraphQL response
+        def mock_graphql_func(*args, **kwargs):
+            mock_response = MagicMock(spec=["get"])
+            mock_response.get = {
+                "Article": [
+                    {
+                        "text": "graphql content 1",
+                        "_additional": {"distance": 0.3},
+                    },
+                    {
+                        "text": "graphql content 2",
+                        "_additional": {"certainty": 0.7},
+                    },
+                ]
+            }
+            return mock_response
+
+        # Execute
+        wrapper(mock_graphql_func, None, (), {})
+
+        # Verify
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+
+        span = spans[0]
+        attributes = dict(span.attributes or {})
+
+        # Should capture document count
+        assert attributes.get("db.weaviate.documents.count") == 2
+
+        # Should emit 2 events
+        assert len(span.events) == 2
+
+        for event in span.events:
+            assert event.name == "weaviate.document"
+
 
 @pytest.mark.integration
 @pytest.mark.skipif(

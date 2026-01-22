@@ -226,6 +226,22 @@ def query_near_text(collection):
     )
 
 
+def query_near_vector(collection):
+    """Query using near_vector to find similar articles by vector.
+
+    Note: This requires a vectorizer to be configured and uses a sample vector.
+    Requires Ollama to be running.
+    """
+    # Sample vector (in practice, you'd get this from embedding text)
+    sample_vector = [0.1] * 768  # 768-dimensional vector with all 0.1 values
+    return collection.query.near_vector(
+        near_vector=sample_vector,
+        limit=2,
+        return_metadata=["distance"],
+        return_properties=["author", "text"],
+    )
+
+
 def query_aggregate(collection):
     """Query aggregate statistics over all objects in the collection."""
     return collection.aggregate.over_all(total_count=True)
@@ -273,6 +289,15 @@ def example_schema_workflow(client):
     except Exception as e:
         print(
             f"Near text query skipped (requires Ollama running at http://ollama:11434): {e}"
+        )
+
+    # Try near_vector query (requires vectorizer and Ollama)
+    try:
+        near_vector_result = query_near_vector(collection)
+        print("Near vector result:", near_vector_result)
+    except Exception as e:
+        print(
+            f"Near vector query skipped (requires Ollama running at http://ollama:11434): {e}"
         )
 
     aggregate_result = query_aggregate(collection)
