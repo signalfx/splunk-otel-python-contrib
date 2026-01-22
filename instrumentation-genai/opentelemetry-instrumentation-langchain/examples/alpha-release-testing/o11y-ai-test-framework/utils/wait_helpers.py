@@ -1,5 +1,5 @@
 import time
-from typing import Callable, Any, Optional
+from typing import Callable, Any
 from core.logger import get_logger
 
 
@@ -80,7 +80,7 @@ class WaitHelpers:
             try:
                 trace = get_trace_func(trace_id)
                 return trace is not None
-            except:
+            except Exception:
                 return False
         
         WaitHelpers.wait_for_condition(

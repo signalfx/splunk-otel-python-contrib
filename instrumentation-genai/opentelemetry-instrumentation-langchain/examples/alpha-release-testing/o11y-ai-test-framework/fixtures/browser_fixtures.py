@@ -5,7 +5,7 @@ Provides fixtures for browser automation, page objects, and UI testing.
 """
 
 import pytest
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
+from playwright.sync_api import sync_playwright
 from core.logger import get_logger
 
 

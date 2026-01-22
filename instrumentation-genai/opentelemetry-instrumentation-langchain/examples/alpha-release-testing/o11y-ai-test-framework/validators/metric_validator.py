@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, List
 from core.logger import get_logger
 
 
@@ -171,7 +171,7 @@ class MetricValidator:
         
         for metric in token_metrics:
             value = metric.get("value")
-            assert value is not None, f"Token metric missing value"
+            assert value is not None, "Token metric missing value"
             assert isinstance(value, (int, float)), \
                 f"Token count must be numeric, got {type(value)}"
             assert value >= 0, f"Token count must be non-negative, got {value}"
@@ -202,7 +202,7 @@ class MetricValidator:
         
         for metric in cost_metrics:
             value = metric.get("value")
-            assert value is not None, f"Cost metric missing value"
+            assert value is not None, "Cost metric missing value"
             assert isinstance(value, (int, float)), \
                 f"Cost must be numeric, got {type(value)}"
             assert value >= 0, f"Cost must be non-negative, got {value}"

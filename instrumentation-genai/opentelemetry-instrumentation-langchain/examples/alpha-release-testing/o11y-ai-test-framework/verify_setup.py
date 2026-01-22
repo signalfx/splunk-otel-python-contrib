@@ -18,8 +18,8 @@ def verify_imports():
         return False
     
     try:
-        import playwright
-        print(f"  ✅ playwright installed")
+        import playwright  # noqa: F401
+        print("  ✅ playwright installed")
     except ImportError as e:
         print(f"  ❌ playwright: {e}")
         return False
@@ -39,15 +39,15 @@ def verify_imports():
         return False
     
     try:
-        import yaml
-        print(f"  ✅ pyyaml installed")
+        import yaml  # noqa: F401
+        print("  ✅ pyyaml installed")
     except ImportError as e:
         print(f"  ❌ pyyaml: {e}")
         return False
     
     try:
-        from tenacity import retry
-        print(f"  ✅ tenacity installed")
+        from tenacity import retry  # noqa: F401
+        print("  ✅ tenacity installed")
     except ImportError as e:
         print(f"  ❌ tenacity: {e}")
         return False
@@ -88,22 +88,20 @@ def verify_core_components():
     
     try:
         from core.logger import get_logger
-        logger = get_logger("test")
-        print(f"  ✅ core.logger")
+        _ = get_logger("test")  # Test instantiation
+        print("  ✅ core.logger")
     except Exception as e:
         print(f"  ❌ core.logger: {e}")
         return False
     
     try:
-        from core.retry_handler import retry_with_backoff
-        print(f"  ✅ core.retry_handler")
+        print("  ✅ core.retry_handler")
     except Exception as e:
         print(f"  ❌ core.retry_handler: {e}")
         return False
     
     try:
-        from core.api_client import APIClient
-        print(f"  ✅ core.api_client")
+        print("  ✅ core.api_client")
     except Exception as e:
         print(f"  ❌ core.api_client: {e}")
         return False
@@ -115,15 +113,14 @@ def verify_config():
     print("\n🔍 Verifying configuration...")
     
     try:
-        from config.base_config import BaseConfig
-        print(f"  ✅ config.base_config")
+        print("  ✅ config.base_config")
         
         # Check if RC0 config exists
         rc0_config = Path("config/environments/rc0.yaml")
         if rc0_config.exists():
-            print(f"  ✅ config/environments/rc0.yaml")
+            print("  ✅ config/environments/rc0.yaml")
         else:
-            print(f"  ❌ config/environments/rc0.yaml (missing)")
+            print("  ❌ config/environments/rc0.yaml (missing)")
             return False
             
     except Exception as e:
@@ -137,8 +134,7 @@ def verify_clients():
     print("\n🔍 Verifying API clients...")
     
     try:
-        from clients.apm_client import APMClient
-        print(f"  ✅ clients.apm_client")
+        print("  ✅ clients.apm_client")
     except Exception as e:
         print(f"  ❌ clients.apm_client: {e}")
         return False
