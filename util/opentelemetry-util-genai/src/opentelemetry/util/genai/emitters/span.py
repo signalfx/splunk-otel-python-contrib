@@ -192,6 +192,22 @@ class SpanEmitter(EmitterMeta):
             semconv_attrs[GenAI.GEN_AI_OPERATION_NAME] = (
                 enum_val.value if enum_val else "execute_tool"
             )
+            # Add tool-specific semantic convention attributes
+            if invocation.name:
+                span.set_attribute("gen_ai.tool.name", invocation.name)
+            if invocation.id:
+                span.set_attribute("gen_ai.tool.call.id", invocation.id)
+            # Tool type defaults to "function" for LangChain tools
+            span.set_attribute("gen_ai.tool.type", "function")
+            # Tool description (if available from LangChain serialized)
+            tool_desc = getattr(invocation, "attributes", {}).get("tool.description")
+            if tool_desc:
+                span.set_attribute("gen_ai.tool.description", tool_desc)
+            # Tool arguments (from attributes dict if available)
+            if self._capture_content:
+                tool_args = getattr(invocation, "attributes", {}).get("tool.arguments")
+                if tool_args:
+                    span.set_attribute("gen_ai.tool.call.arguments", tool_args)
         elif isinstance(invocation, EmbeddingInvocation):
             semconv_attrs.setdefault(
                 GenAI.GEN_AI_REQUEST_MODEL, invocation.request_model
@@ -371,6 +387,8 @@ class SpanEmitter(EmitterMeta):
             self._finish_agent(invocation)
         elif isinstance(invocation, Step):
             self._finish_step(invocation)
+        elif isinstance(invocation, ToolCall):
+            self._finish_tool_call(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._finish_embedding(invocation)
         elif isinstance(invocation, RetrievalInvocation):
@@ -405,6 +423,8 @@ class SpanEmitter(EmitterMeta):
             self._error_agent(error, invocation)
         elif isinstance(invocation, Step):
             self._error_step(error, invocation)
+        elif isinstance(invocation, ToolCall):
+            self._error_tool_call(error, invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._error_embedding(error, invocation)
         elif isinstance(invocation, RetrievalInvocation):
@@ -734,6 +754,54 @@ class SpanEmitter(EmitterMeta):
             span, step.semantic_convention_attributes()
         )
         token = step.context_token
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        span.end()
+
+    # ---- Tool lifecycle --------------------------------------------------
+    def _finish_tool_call(self, tool: ToolCall) -> None:
+        """Finish a tool call span with result attributes."""
+        span = tool.span
+        if span is None:
+            return
+
+        tool_response = getattr(tool, "attributes", {}).get("tool.response")
+
+        # Add tool result if capture_content enabled and response available
+        if self._capture_content and tool_response:
+            span.set_attribute("gen_ai.tool.call.result", tool_response)
+
+        # Apply any semconv attributes from the tool
+        _apply_gen_ai_semconv_attributes(
+            span, tool.semantic_convention_attributes()
+        )
+        # Clean up context token and end span
+        token = tool.context_token
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        span.end()
+
+    def _error_tool_call(self, error: Error, tool: ToolCall) -> None:
+        """Fail a tool call span with error status."""
+        span = tool.span
+        if span is None:
+            return
+        span.set_status(Status(StatusCode.ERROR, error.message))
+        if span.is_recording():
+            span.set_attribute(
+                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
+            )
+        _apply_gen_ai_semconv_attributes(
+            span, tool.semantic_convention_attributes()
+        )
+        # Clean up context token and end span
+        token = tool.context_token
         if token is not None and hasattr(token, "__exit__"):
             try:
                 token.__exit__(None, None, None)  # type: ignore[misc]

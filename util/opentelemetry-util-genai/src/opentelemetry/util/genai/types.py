@@ -128,7 +128,7 @@ class ToolCall(GenAI):
 
     arguments: Any
     name: str
-    id: Optional[str]
+    id: Optional[str] = None
     type: Literal["tool_call"] = "tool_call"
 
 
