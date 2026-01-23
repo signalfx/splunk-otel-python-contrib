@@ -51,7 +51,6 @@ from opentelemetry.instrumentation.openai_v2.utils import is_content_enabled
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.metrics import get_meter
 from opentelemetry.semconv.schemas import Schemas
-from opentelemetry.trace import get_tracer
 from opentelemetry.util.genai.handler import get_telemetry_handler
 
 from .instruments import Instruments
@@ -73,12 +72,6 @@ class OpenAIInstrumentor(BaseInstrumentor):
     def _instrument(self, **kwargs):
         """Enable OpenAI instrumentation."""
         tracer_provider = kwargs.get("tracer_provider")
-        tracer = get_tracer(
-            __name__,
-            "",
-            tracer_provider,
-            schema_url=Schemas.V1_28_0.value,
-        )
         logger_provider = kwargs.get("logger_provider")
         logger = get_logger(
             __name__,
@@ -124,7 +117,7 @@ class OpenAIInstrumentor(BaseInstrumentor):
             module="openai.resources.embeddings",
             name="Embeddings.create",
             wrapper=embeddings_create(
-                tracer, instruments, is_content_enabled()
+                instruments, is_content_enabled(), handler
             ),
         )
 
@@ -132,7 +125,7 @@ class OpenAIInstrumentor(BaseInstrumentor):
             module="openai.resources.embeddings",
             name="AsyncEmbeddings.create",
             wrapper=async_embeddings_create(
-                tracer, instruments, is_content_enabled()
+                instruments, is_content_enabled(), handler
             ),
         )
 

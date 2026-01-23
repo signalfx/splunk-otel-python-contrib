@@ -193,9 +193,9 @@ def _generate_incident_summary(state: IncidentState) -> str:
     for i, hyp in enumerate(hypotheses[:3], 1):
         summary += f"""
 ### Hypothesis {i}
-- **Description**: {hyp.get('hypothesis', 'N/A')}
-- **Confidence**: {hyp.get('confidence', 0.0):.2f}
-- **Evidence**: {len(hyp.get('evidence', []))} pieces
+- **Description**: {hyp.get("hypothesis", "N/A")}
+- **Confidence**: {hyp.get("confidence", 0.0):.2f}
+- **Evidence**: {len(hyp.get("evidence", []))} pieces
 """
 
     summary += "\n## Recommended Actions\n"
@@ -221,7 +221,7 @@ def _generate_postmortem_draft(state: IncidentState) -> str:
 ## Incident Overview
 - Alert ID: {alert_id}
 - Service: {service_id}
-- Timestamp: {datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}
+- Timestamp: {datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
 
 ## Timeline
 - TBD: Add timeline of events

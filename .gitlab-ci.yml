@@ -108,6 +108,22 @@ build-genai-translator-traceloop:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-aidefense:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-aidefense
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-aidefense
+    - mv dist/* ../../dist/instrumentation-aidefense/
+    - cd ../../dist/instrumentation-aidefense
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-aidefense/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -205,6 +221,22 @@ sign-genai-translator-traceloop:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-aidefense:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-aidefense
+  variables:
+    ARTIFACT: dist/instrumentation-aidefense/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-aidefense
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-aidefense/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -283,3 +315,16 @@ deploy-genai-translator-traceloop:
     - sign-genai-translator-traceloop
   rules:
     - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-aidefense:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-aidefense
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-aidefense/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-aidefense
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'

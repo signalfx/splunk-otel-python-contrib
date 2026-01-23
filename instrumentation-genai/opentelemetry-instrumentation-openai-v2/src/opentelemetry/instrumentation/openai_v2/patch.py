@@ -28,12 +28,13 @@ from opentelemetry.semconv._incubating.attributes import (
 from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
 )
-from opentelemetry.trace import Span, SpanKind, Tracer
+from opentelemetry.trace import Span
 from opentelemetry.trace.propagation import set_span_in_context
 from opentelemetry.util.genai.handler import (
     Error as InvocationError,
 )
 from opentelemetry.util.genai.types import (
+    EmbeddingInvocation,
     InputMessage,
     LLMInvocation,
     OutputMessage,
@@ -246,6 +247,68 @@ def _parse_response(result: Any) -> Any:
     return result
 
 
+def _normalize_input_texts(input_val: Any) -> list[str]:
+    """Normalize embedding input to a list of strings."""
+    if input_val is None:
+        return []
+    if isinstance(input_val, str):
+        return [input_val]
+    if isinstance(input_val, list):
+        return [str(item) for item in input_val]
+    return [str(input_val)]
+
+
+def _build_embedding_invocation(
+    kwargs: dict[str, Any], attributes: Optional[dict[str, Any]] = None
+) -> EmbeddingInvocation:
+    invocation = EmbeddingInvocation(
+        request_model=kwargs.get("model", "") or "",
+        input_texts=_normalize_input_texts(kwargs.get("input")),
+        provider="openai",
+        framework="openai-sdk",
+        system=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
+    )
+
+    if "dimensions" in kwargs and value_is_set(kwargs.get("dimensions")):
+        invocation.dimension_count = kwargs.get("dimensions")
+
+    encoding_format = kwargs.get("encoding_format")
+    if value_is_set(encoding_format):
+        invocation.encoding_formats = [encoding_format]
+
+    if attributes:
+        if ServerAttributes.SERVER_ADDRESS in attributes:
+            invocation.server_address = attributes[
+                ServerAttributes.SERVER_ADDRESS
+            ]
+        if ServerAttributes.SERVER_PORT in attributes:
+            invocation.server_port = attributes[ServerAttributes.SERVER_PORT]
+
+    return invocation
+
+
+def _apply_embedding_response_to_invocation(
+    invocation: EmbeddingInvocation, result: Any
+) -> None:
+    if getattr(result, "usage", None):
+        invocation.input_tokens = result.usage.prompt_tokens
+
+    data = getattr(result, "data", None)
+    if not data:
+        return
+
+    first_embedding = data[0] if len(data) > 0 else None
+    if first_embedding is None:
+        return
+
+    embedding_vec = getattr(first_embedding, "embedding", None)
+    if embedding_vec is not None:
+        try:
+            invocation.dimension_count = len(embedding_vec)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+
 def chat_completions_create(
     logger: Logger,
     instruments: Instruments,
@@ -389,9 +452,9 @@ def async_chat_completions_create(
 
 
 def embeddings_create(
-    tracer: Tracer,
     instruments: Instruments,
     capture_content: bool,
+    handler,
 ):
     """Wrap the `create` method of the `Embeddings` class to trace it."""
 
@@ -401,52 +464,59 @@ def embeddings_create(
             instance,
             GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
         )
-        span_name = _get_embeddings_span_name(span_attributes)
-        input_text = kwargs.get("input", "")
+        invocation = _build_embedding_invocation(kwargs, span_attributes)
+        handler.start_embedding(invocation)
+        span = getattr(invocation, "span", None)
 
-        with tracer.start_as_current_span(
-            name=span_name,
-            kind=SpanKind.CLIENT,
-            attributes=span_attributes,
-            end_on_exit=True,
-        ) as span:
-            start = default_timer()
-            result = None
-            error_type = None
+        start = default_timer()
+        result = None
+        parsed_result = None
+        error_type = None
 
-            try:
-                result = wrapped(*args, **kwargs)
+        try:
+            result = wrapped(*args, **kwargs)
+            parsed_result = _parse_response(result)
 
-                if span.is_recording():
-                    _set_embeddings_response_attributes(
-                        span, result, capture_content, input_text
-                    )
-
-                return result
-
-            except Exception as error:
-                error_type = type(error).__qualname__
-                handle_span_exception(span, error)
-                raise
-
-            finally:
-                duration = max((default_timer() - start), 0)
-                _record_metrics(
-                    instruments,
-                    duration,
-                    result,
-                    span_attributes,
-                    error_type,
-                    GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
+            if span and span.is_recording():
+                _set_embeddings_response_attributes(
+                    span,
+                    parsed_result,
+                    capture_content,
+                    kwargs.get("input", ""),
                 )
+
+            _apply_embedding_response_to_invocation(invocation, parsed_result)
+            handler.stop_embedding(invocation)
+            return result
+
+        except Exception as error:
+            error_type = type(error).__qualname__
+            handler.fail_embedding(
+                invocation,
+                InvocationError(message=str(error), type=type(error)),
+            )
+            if span:
+                handle_span_exception(span, error)
+            raise
+
+        finally:
+            duration = max((default_timer() - start), 0)
+            _record_metrics(
+                instruments,
+                duration,
+                parsed_result or result,
+                span_attributes,
+                error_type,
+                GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
+            )
 
     return traced_method
 
 
 def async_embeddings_create(
-    tracer: Tracer,
     instruments: Instruments,
     capture_content: bool,
+    handler,
 ):
     """Wrap the `create` method of the `AsyncEmbeddings` class to trace it."""
 
@@ -456,44 +526,51 @@ def async_embeddings_create(
             instance,
             GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
         )
-        span_name = _get_embeddings_span_name(span_attributes)
-        input_text = kwargs.get("input", "")
+        invocation = _build_embedding_invocation(kwargs, span_attributes)
+        handler.start_embedding(invocation)
+        span = getattr(invocation, "span", None)
 
-        with tracer.start_as_current_span(
-            name=span_name,
-            kind=SpanKind.CLIENT,
-            attributes=span_attributes,
-            end_on_exit=True,
-        ) as span:
-            start = default_timer()
-            result = None
-            error_type = None
+        start = default_timer()
+        result = None
+        parsed_result = None
+        error_type = None
 
-            try:
-                result = await wrapped(*args, **kwargs)
+        try:
+            result = await wrapped(*args, **kwargs)
+            parsed_result = _parse_response(result)
 
-                if span.is_recording():
-                    _set_embeddings_response_attributes(
-                        span, result, capture_content, input_text
-                    )
-
-                return result
-
-            except Exception as error:
-                error_type = type(error).__qualname__
-                handle_span_exception(span, error)
-                raise
-
-            finally:
-                duration = max((default_timer() - start), 0)
-                _record_metrics(
-                    instruments,
-                    duration,
-                    result,
-                    span_attributes,
-                    error_type,
-                    GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
+            if span and span.is_recording():
+                _set_embeddings_response_attributes(
+                    span,
+                    parsed_result,
+                    capture_content,
+                    kwargs.get("input", ""),
                 )
+
+            _apply_embedding_response_to_invocation(invocation, parsed_result)
+            handler.stop_embedding(invocation)
+            return result
+
+        except Exception as error:
+            error_type = type(error).__qualname__
+            handler.fail_embedding(
+                invocation,
+                InvocationError(message=str(error), type=type(error)),
+            )
+            if span:
+                handle_span_exception(span, error)
+            raise
+
+        finally:
+            duration = max((default_timer() - start), 0)
+            _record_metrics(
+                instruments,
+                duration,
+                parsed_result or result,
+                span_attributes,
+                error_type,
+                GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
+            )
 
     return traced_method
 
