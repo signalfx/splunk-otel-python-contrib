@@ -114,12 +114,9 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     root_agent = None
     parent_context = None
     if telemetry_handler:
-        from uuid import uuid4
-
         # Create root agent invocation before workflow starts
         root_agent = AgentInvocation(
             name=f"agent.{type(instance).__name__}",
-            run_id=str(uuid4()),
             input_context=str(user_msg),
             attributes={},
         )

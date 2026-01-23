@@ -204,7 +204,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             request_presence_penalty=presence_penalty,
             request_stop_sequences=stop if stop else [],
             request_seed=seed,
-            parent_run_id=parent_id if parent_id else None,
         )
         llm_inv.framework = "llamaindex"
 
@@ -311,7 +310,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             input_texts=[],  # Will be populated on end event
             provider=provider,
             attributes={},
-            parent_run_id=parent_id if parent_id else None,
         )
         emb_inv.framework = "llamaindex"
         if provider:
@@ -380,10 +378,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not self._handler:
             return None
         current_id = parent_id
-        while current_id:
+        visited = set()
+        while current_id and current_id not in visited:
+            visited.add(current_id)
             entity = self._invocation_manager.get_invocation(current_id)
             if isinstance(entity, AgentInvocation):
                 return entity
+            if entity is None:
+                break
             # Move to parent
             current_id = getattr(entity, "parent_run_id", None)
             if current_id:
@@ -431,7 +433,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         agent_invocation = AgentInvocation(
             name=f"agent.task.{task_id}" if task_id else "agent.invoke",
             run_id=event_id,
-            parent_run_id=parent_id if parent_id else None,
             input_context=input_text if input_text else "",
             attributes={},
         )
@@ -533,7 +534,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             "tool.description": tool_description,
         }
         tool_call.run_id = event_id  # type: ignore[attr-defined]
-        tool_call.parent_run_id = parent_id if parent_id else None  # type: ignore[attr-defined]
         tool_call.framework = "llamaindex"  # type: ignore[attr-defined]
 
         # Propagate agent context to tool call
