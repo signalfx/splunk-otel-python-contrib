@@ -150,4 +150,3 @@ class OAuth2TokenManager:
         if not base:
             raise ValueError("LLM_BASE_URL environment variable is required")
         return f"{base}/{model}"
-

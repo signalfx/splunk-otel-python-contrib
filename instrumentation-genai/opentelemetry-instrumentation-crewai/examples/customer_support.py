@@ -39,9 +39,9 @@ os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric_event,
 # Instrumentation Mode Detection
 # =============================================================================
 
-MANUAL_INSTRUMENTATION = os.environ.get(
-    "OTEL_MANUAL_INSTRUMENTATION", "true"
-).lower() == "true"
+MANUAL_INSTRUMENTATION = (
+    os.environ.get("OTEL_MANUAL_INSTRUMENTATION", "true").lower() == "true"
+)
 
 # =============================================================================
 # Constants
@@ -56,6 +56,7 @@ DOCS_URL = "https://docs.crewai.com/"
 # =============================================================================
 # Utility Functions (DRY)
 # =============================================================================
+
 
 def log(tag: str, message: str, stderr: bool = False) -> None:
     """Unified logging with consistent format."""
@@ -96,11 +97,14 @@ def safe_flush(provider_getter: Callable, provider_name: str) -> None:
 # OpenTelemetry Setup (Single Responsibility)
 # =============================================================================
 
+
 def setup_telemetry():
     """Configure OpenTelemetry providers for traces, metrics, and logs."""
     from opentelemetry import trace, metrics, _logs, _events
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter,
+    )
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
     from opentelemetry.sdk import trace as trace_sdk
     from opentelemetry.sdk import metrics as metrics_sdk
@@ -128,11 +132,15 @@ def setup_telemetry():
 
     # Metrics
     metric_readers = [
-        PeriodicExportingMetricReader(OTLPMetricExporter(), export_interval_millis=60000)
+        PeriodicExportingMetricReader(
+            OTLPMetricExporter(), export_interval_millis=60000
+        )
     ]
     if enable_console:
         metric_readers.append(
-            PeriodicExportingMetricReader(ConsoleMetricExporter(), export_interval_millis=60000)
+            PeriodicExportingMetricReader(
+                ConsoleMetricExporter(), export_interval_millis=60000
+            )
         )
     meter_provider = metrics_sdk.MeterProvider(metric_readers=metric_readers)
     metrics.set_meter_provider(meter_provider)
@@ -196,6 +204,7 @@ def flush_telemetry() -> None:
 # LLM Configuration (Single Responsibility)
 # =============================================================================
 
+
 def create_llm_factory():
     """Create a factory for LLM instances with OAuth2 authentication."""
     from util import OAuth2TokenManager
@@ -225,6 +234,7 @@ def create_llm_factory():
 # =============================================================================
 # Crew Definition (Single Responsibility)
 # =============================================================================
+
 
 def create_agents(llm, tools: list):
     """Create crew agents with shared configuration."""
@@ -331,6 +341,7 @@ def create_tools():
 # Main Execution
 # =============================================================================
 
+
 def main() -> int:
     """Main entry point for the customer support crew."""
     # Setup telemetry based on instrumentation mode
@@ -386,6 +397,7 @@ def main() -> int:
     except Exception as e:
         log("ERROR", f"Crew execution failed: {e}", stderr=True)
         import traceback
+
         traceback.print_exc()
         exit_code = 1
 
