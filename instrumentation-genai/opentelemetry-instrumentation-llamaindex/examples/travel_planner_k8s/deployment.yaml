@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: travel-planner
-          image: shuniche855/llamaindex-travel-planner:0.0.12
+          image: shuniche855/llamaindex-travel-planner:0.0.13
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

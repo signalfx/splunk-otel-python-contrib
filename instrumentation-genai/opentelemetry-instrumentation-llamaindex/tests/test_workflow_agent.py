@@ -12,10 +12,13 @@ from llama_index.core import Settings
 from llama_index.core.llms import MockLLM
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.tools import FunctionTool
-from opentelemetry import trace
+from opentelemetry import trace, metrics
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 
 def multiply(a: int, b: int) -> int:
@@ -34,6 +37,115 @@ def setup_telemetry():
     tracer_provider = trace.get_tracer_provider()
     tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
     return tracer_provider
+
+
+def setup_telemetry_with_memory():
+    """Setup OpenTelemetry with in-memory exporter to capture spans and metrics."""
+    # Setup traces
+    memory_exporter = InMemorySpanExporter()
+    trace.set_tracer_provider(TracerProvider())
+    tracer_provider = trace.get_tracer_provider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(memory_exporter))
+
+    # Setup metrics
+    metric_reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(metric_readers=[metric_reader])
+    metrics.set_meter_provider(meter_provider)
+
+    return tracer_provider, memory_exporter, metric_reader
+
+
+def print_span_hierarchy(spans):
+    """Print span hierarchy showing parent-child relationships."""
+    print("\n" + "=" * 80)
+    print("SPAN HIERARCHY")
+    print("=" * 80)
+
+    # Build a map of span_id -> span
+    span_map = {span.context.span_id: span for span in spans}
+
+    # Find root spans (no parent)
+    root_spans = [
+        span
+        for span in spans
+        if span.parent is None or span.parent.span_id not in span_map
+    ]
+
+    def print_span_tree(span, indent=0):
+        prefix = "  " * indent
+        op_name = span.attributes.get("gen_ai.operation.name", span.name)
+        span_type = ""
+
+        if "workflow" in span.name.lower():
+            span_type = "Workflow"
+            details = f"name={span.attributes.get('gen_ai.workflow.name', 'N/A')}"
+        elif "agent" in span.name.lower():
+            span_type = "AgentInvocation"
+            details = f"name={span.attributes.get('gen_ai.agent.name', 'N/A')}"
+        elif "tool" in span.name.lower():
+            span_type = "ToolCall"
+            details = f"name={span.attributes.get('gen_ai.tool.name', 'N/A')}"
+        elif "chat" in span.name.lower() or "llm" in span.name.lower():
+            span_type = "LLMInvocation"
+            details = f"model={span.attributes.get('gen_ai.request.model', 'N/A')}"
+        else:
+            span_type = span.name
+            details = f"operation={op_name}"
+
+        print(f"{prefix}└─ {span_type} ({details})")
+
+        # Find and print children
+        children = [
+            s for s in spans if s.parent and s.parent.span_id == span.context.span_id
+        ]
+        for child in children:
+            print_span_tree(child, indent + 1)
+
+    for root in root_spans:
+        print_span_tree(root)
+
+    print("=" * 80)
+
+
+def print_metrics(metric_reader):
+    """Print captured metrics."""
+    print("\n" + "=" * 80)
+    print("WORKFLOW METRICS")
+    print("=" * 80)
+
+    metrics_data = metric_reader.get_metrics_data()
+
+    if not metrics_data or not metrics_data.resource_metrics:
+        print("No metrics captured")
+        print("=" * 80)
+        return
+
+    for resource_metric in metrics_data.resource_metrics:
+        for scope_metric in resource_metric.scope_metrics:
+            for metric in scope_metric.metrics:
+                print(f"\nMetric: {metric.name}")
+                print(f"  Description: {metric.description}")
+                print(f"  Unit: {metric.unit}")
+
+                for data_point in metric.data.data_points:
+                    attrs = dict(data_point.attributes) if data_point.attributes else {}
+
+                    # Format attributes for display
+                    attr_str = ", ".join([f"{k}={v}" for k, v in attrs.items()])
+
+                    # Get the value based on metric type
+                    if hasattr(data_point, "value"):
+                        value = data_point.value
+                    elif hasattr(data_point, "sum"):
+                        value = data_point.sum
+                    elif hasattr(data_point, "count"):
+                        value = f"count={data_point.count}, sum={data_point.sum}"
+                    else:
+                        value = "N/A"
+
+                    print(f"    [{attr_str}] = {value}")
+
+    print("=" * 80)
 
 
 class SequenceMockLLM(MockLLM):
@@ -100,13 +212,16 @@ class SequenceMockLLM(MockLLM):
 
 
 @pytest.mark.asyncio
-async def test_workflow_agent():
+async def test_workflow_agent(monkeypatch):
     """Test Workflow-based agent instrumentation."""
+
+    # Enable metric emitter
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric_event")
 
     print("=" * 80)
     print("Setting up telemetry...")
     print("=" * 80)
-    tracer_provider = setup_telemetry()
+    tracer_provider, memory_exporter, metric_reader = setup_telemetry_with_memory()
 
     # Setup Mock LLM
     mock_responses = [
@@ -138,7 +253,9 @@ Answer: The result is 17.""",
     print("Instrumenting LlamaIndex...")
     print("=" * 80)
     instrumentor = LlamaindexInstrumentor()
-    instrumentor.instrument(tracer_provider=tracer_provider)
+    instrumentor.instrument(
+        tracer_provider=tracer_provider, meter_provider=metrics.get_meter_provider()
+    )
 
     # Create tools
     multiply_tool = FunctionTool.from_defaults(fn=multiply)
@@ -164,15 +281,24 @@ Answer: The result is 17.""",
     print("=" * 80)
     print(f"Response: {result.response.content}")
 
+    # Print the actual span hierarchy
+    spans = memory_exporter.get_finished_spans()
+    print(f"\nTotal spans captured: {len(spans)}")
+    print_span_hierarchy(spans)
+
+    # Print captured metrics
+    print_metrics(metric_reader)
+
     print("\n" + "=" * 80)
     print("✓ Test completed!")
     print("=" * 80)
     print("\nExpected trace structure:")
-    print("  AgentInvocation (gen_ai.agent.name=agent.Agent)")
-    print("    ├─ LLMInvocation")
-    print("    ├─ ToolCall (gen_ai.tool.name=multiply)")
-    print("    ├─ ToolCall (gen_ai.tool.name=add)")
-    print("    └─ LLMInvocation (final answer)")
+    print("  Workflow (ReActAgent Workflow)")
+    print("    └─ AgentInvocation (agent.ReActAgent)")
+    print("        ├─ LLMInvocation")
+    print("        ├─ ToolCall (multiply)")
+    print("        ├─ ToolCall (add)")
+    print("        └─ LLMInvocation (final answer)")
     print("=" * 80)
 
 

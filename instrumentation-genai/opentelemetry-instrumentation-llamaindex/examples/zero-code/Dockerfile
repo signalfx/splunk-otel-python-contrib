@@ -19,6 +19,8 @@ RUN pip install -r /app/requirements.txt
 
 # Install local packages in editable mode - this will install their dependencies too
 RUN pip install -e /app/util/opentelemetry-util-genai && \
+    pip install -e /app/util/opentelemetry-util-genai-evals && \
+    pip install -e /app/util/opentelemetry-util-genai-evals-deepeval && \
     pip install -e /app/util/opentelemetry-util-genai-emitters-splunk && \
     pip install -e /app/instrumentation-genai/opentelemetry-instrumentation-llamaindex
 
