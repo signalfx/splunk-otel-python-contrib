@@ -1,0 +1,65 @@
+# Alpha Release Testing - LangChain/LangGraph Requirements
+# For: LangChain and LangGraph testing WITH DeepEval evaluation metrics
+# Environment: .venv-langchain
+
+# ============================================================================
+# Core OpenTelemetry
+# ============================================================================
+opentelemetry-api>=1.38.0
+opentelemetry-sdk>=1.38.0
+opentelemetry-exporter-otlp>=1.38.0
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+opentelemetry-instrumentation>=0.39b0
+
+# ============================================================================
+# Splunk OTel Packages (from local or Splunk repo)
+# ============================================================================
+# Install these from local source or Splunk artifactory
+# pip install -e ../../../opentelemetry-instrumentation-langchain/
+# pip install -e ../../../../util/opentelemetry-util-genai/
+# pip install -e ../../../../util/opentelemetry-util-genai-emitters-splunk/
+# pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval/
+
+# Or from Splunk repo:
+--index-url https://repo.splunkdev.net/artifactory/api/pypi/pypi-test/simple
+--extra-index-url https://pypi.org/simple
+
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-genai-evals-deepeval==0.1.3
+opentelemetry-instrumentation-langchain
+
+# ============================================================================
+# LangChain and LangGraph
+# ============================================================================
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langgraph>=0.2.0
+langchain-community>=0.3.0
+
+# ============================================================================
+# OpenAI
+# ============================================================================
+openai>=1.0.0
+
+# ============================================================================
+# DeepEval (for evaluation metrics)
+# ============================================================================
+# Note: Version constrained by splunk-otel-genai-evals-deepeval
+deepeval<=3.7.0
+
+# ============================================================================
+# Testing
+# ============================================================================
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-timeout>=2.1.0
+pytest-html>=3.2.0
+python-dotenv>=1.0.0
+
+# ============================================================================
+# Utilities
+# ============================================================================
+pydantic>=2.0.0
+requests>=2.31.0
