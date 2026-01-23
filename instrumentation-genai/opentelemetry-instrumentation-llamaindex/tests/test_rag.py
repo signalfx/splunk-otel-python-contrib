@@ -30,7 +30,7 @@ class DebugSpanExporter(SpanExporter):
             parent_id = span.parent.span_id if span.parent else "None (ROOT)"
             operation = span.attributes.get("gen_ai.operation.name", "unknown")
 
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"Span: {span.name}")
             print(f"  Operation: {operation}")
             print(f"  Span ID: {format(span.context.span_id, '016x')}")
