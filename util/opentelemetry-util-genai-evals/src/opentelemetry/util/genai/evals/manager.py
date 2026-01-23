@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
 from .admission_controller import EvaluationAdmissionController
 
-from opentelemetry import _events as _otel_events
 from opentelemetry.semconv.attributes import (
     error_attributes as ErrorAttributes,
 )
@@ -122,7 +121,6 @@ class Manager(CompletionCallback):
         _LOGGER.debug(
             "Evaluation queue configured with size: %d", self._queue_size
         )
-        self._event_logger = _otel_events.get_event_logger(__name__)
 
         # Concurrent mode configuration
         self._concurrent_mode = (
@@ -283,7 +281,6 @@ class Manager(CompletionCallback):
         allowed, reason = self._admission.allow(invocation)
         if not allowed:
             invocation.evaluation_error = reason
-            self._emit_rate_limit_event(invocation, reason)
             _LOGGER.debug(
                 "Evaluation rate limited (%s), dropping invocation.",
                 reason,
@@ -299,34 +296,6 @@ class Manager(CompletionCallback):
         return any(self._evaluators.values())
 
     # Internal helpers ---------------------------------------------------
-    def _emit_rate_limit_event(self, invocation: GenAI, reason: str) -> None:
-        """Emit an OpenTelemetry event for rate limiting."""
-        try:
-            attrs = getattr(invocation, "attributes", None) or {}
-            event_attrs = {
-                "gen_ai.evaluation.rate_limit.reason": reason,
-                "gen_ai.invocation.type": type(invocation).__name__,
-            }
-            # Include trace context if available
-            trace_id = attrs.get("gen_ai.trace_id")
-            span_id = attrs.get("gen_ai.span_id")
-            if trace_id:
-                event_attrs["gen_ai.trace_id"] = trace_id
-            if span_id:
-                event_attrs["gen_ai.span_id"] = span_id
-
-            self._event_logger.emit(
-                _otel_events.Event(
-                    name="gen_ai.evaluation.rate_limited",
-                    attributes=event_attrs,
-                )
-            )
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.debug(
-                "Failed to emit rate limit event",
-                exc_info=True,
-            )
-
     def _worker_loop(self) -> None:
         """Sequential worker loop (legacy mode)."""
         while not self._shutdown.is_set():
@@ -342,7 +311,6 @@ class Manager(CompletionCallback):
                 allowed, reason = self._admission.allow(invocation)
                 if not allowed:
                     invocation.evaluation_error = reason
-                    self._emit_rate_limit_event(invocation, reason)
                     _LOGGER.debug(
                         "Evaluation rate limited (%s), dropping invocation.",
                         reason,
@@ -379,7 +347,6 @@ class Manager(CompletionCallback):
                     )
                     if not allowed:
                         invocation.evaluation_error = reason
-                        self._emit_rate_limit_event(invocation, reason)
                         _LOGGER.debug(
                             "Evaluation rate limited (%s), dropping invocation.",
                             reason,
