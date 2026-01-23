@@ -374,34 +374,17 @@ async def chat_completion_tool_call(
 
     # validate both calls
     spans = span_exporter.get_finished_spans()
+    # Tool call spans (execute_tool) are not auto-created during response parsing.
+    # They should be created by user code or higher-level frameworks (e.g., LangChain)
+    # that can observe actual tool execution.
     chat_spans = [
         span
         for span in spans
         if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
         == GenAIAttributes.GenAiOperationNameValues.CHAT.value
     ]
-    tool_spans = [
-        span
-        for span in spans
-        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
-        == GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
-    ]
 
     assert len(chat_spans) == 2
-    assert len(tool_spans) == 2
-
-    # Verify tool spans
-    for span in tool_spans:
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
-            == "get_current_weather"
-        )
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
-        )
-        # Verify parent relationship - should be child of first chat span
-        assert span.parent is not None
-        assert span.parent.span_id == chat_spans[0].context.span_id
 
     assert_all_attributes(
         chat_spans[0],
@@ -849,21 +832,17 @@ async def async_chat_completion_multiple_tools_streaming(
     assert "tool_calls" == finish_reason
 
     spans = span_exporter.get_finished_spans()
+    # Tool call spans (execute_tool) are not auto-created during response parsing.
+    # They should be created by user code or higher-level frameworks (e.g., LangChain)
+    # that can observe actual tool execution.
     chat_spans = [
         span
         for span in spans
         if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
         == GenAIAttributes.GenAiOperationNameValues.CHAT.value
     ]
-    tool_spans = [
-        span
-        for span in spans
-        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
-        == GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
-    ]
 
     assert len(chat_spans) == 1
-    assert len(tool_spans) == 2
 
     assert_all_attributes(
         chat_spans[0],
@@ -873,18 +852,6 @@ async def async_chat_completion_multiple_tools_streaming(
         response_stream_usage.prompt_tokens,
         response_stream_usage.completion_tokens,
     )
-
-    for span in tool_spans:
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
-            == "get_current_weather"
-        )
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
-        )
-        # Verify parent relationship
-        assert span.parent is not None
-        assert span.parent.span_id == chat_spans[0].context.span_id
 
     logs = log_exporter.get_finished_logs()
     assert len(logs) == 3

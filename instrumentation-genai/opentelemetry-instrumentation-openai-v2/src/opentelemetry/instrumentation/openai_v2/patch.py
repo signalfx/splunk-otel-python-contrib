@@ -773,37 +773,6 @@ def _set_response_attributes(
             result.usage.completion_tokens,
         )
 
-    if handler:
-        _emit_tool_call_spans_from_response(
-            handler, span, result, capture_content
-        )
-
-
-def _emit_tool_call_spans_from_response(
-    handler,
-    parent_span: Span,
-    result: Any,
-    capture_content: bool,
-) -> None:
-    for choice in getattr(result, "choices", []):
-        message = getattr(choice, "message", None)
-
-        tool_calls = None
-        if isinstance(message, dict):
-            tool_calls = message.get("tool_calls")
-        elif message is not None:
-            tool_calls = getattr(message, "tool_calls", None)
-
-        if not tool_calls:
-            continue
-
-        for tool_call in tool_calls:
-            genai_tool_call, _ = _build_tool_call_invocation(
-                tool_call, capture_content
-            )
-            genai_tool_call.parent_span = parent_span
-            handler.start_tool_call(genai_tool_call)
-            handler.stop_tool_call(genai_tool_call)
 
 
 def _set_embeddings_response_attributes(
@@ -837,13 +806,18 @@ def _set_embeddings_response_attributes(
 
 
 class ToolCallBuffer:
+    """Accumulates streaming tool call chunks without creating spans.
+
+    Tool call spans (execute_tool) should be created by user code or higher-level
+    frameworks (e.g., LangChain) that can observe actual tool execution, not during
+    response parsing.
+    """
+
     def __init__(
         self,
         index: int,
         tool_call: GenAIToolCall,
         tool_type: str,
-        handler,
-        parent_span: Span,
         capture_content: bool,
     ):
         self.index = index
@@ -851,10 +825,7 @@ class ToolCallBuffer:
         self.tool_type = tool_type
         self._capture_content = capture_content
         self._argument_chunks: list[str] = []
-        self.handler = handler
-        self.tool_call.parent_span = parent_span
-        self.handler.start_tool_call(self.tool_call)
-        self._ended = False
+        self._finalized = False
 
     def append_arguments(self, arguments):
         if not self._capture_content or arguments is None:
@@ -862,7 +833,7 @@ class ToolCallBuffer:
         self._argument_chunks.append(arguments)
 
     def finalize(self) -> tuple[GenAIToolCall, str]:
-        if self._ended:
+        if self._finalized:
             return self.tool_call, self.tool_type
 
         if self._capture_content and self._argument_chunks:
@@ -871,9 +842,7 @@ class ToolCallBuffer:
             if not self._capture_content:
                 self.tool_call.arguments = None
 
-        self.handler.stop_tool_call(self.tool_call)
-        self._ended = True
-
+        self._finalized = True
         return self.tool_call, self.tool_type
 
 
@@ -881,16 +850,12 @@ class ChoiceBuffer:
     def __init__(
         self,
         index: int,
-        handler,
-        parent_span: Span,
         capture_content: bool,
     ):
         self.index = index
         self.finish_reason = None
         self.text_content = []
         self.tool_calls_buffers = []
-        self._handler = handler
-        self._parent_span = parent_span
         self._capture_content = capture_content
 
     def append_text_content(self, content):
@@ -910,8 +875,6 @@ class ChoiceBuffer:
                 idx,
                 genai_tool_call,
                 tool_type,
-                self._handler,
-                self._parent_span,
                 self._capture_content,
             )
             # Preserve initial arguments from the first chunk
@@ -1199,9 +1162,7 @@ class StreamWrapper:
             # make sure we have enough choice buffers
             for idx in range(len(self.choice_buffers), choice.index + 1):
                 self.choice_buffers.append(
-                    ChoiceBuffer(
-                        idx, self.handler, self.span, self.capture_content
-                    )
+                    ChoiceBuffer(idx, self.capture_content)
                 )
 
             if choice.finish_reason:
