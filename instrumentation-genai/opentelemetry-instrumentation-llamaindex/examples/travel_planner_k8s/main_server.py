@@ -455,16 +455,16 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     interests = request_data.get("interests", ["sightseeing", "food"])
                     departure_date = request_data.get("departure_date", "2024-06-01")
 
-                    print(f"\n{'='*60}")
+                    print(f"\n{'=' * 60}")
                     print("New Travel Planning Request")
-                    print(f"{'='*60}")
+                    print(f"{'=' * 60}")
                     print(f"Destination: {destination}")
                     print(f"Origin: {origin}")
                     print(f"Budget: ${budget}")
                     print(f"Duration: {duration} days")
                     print(f"Travelers: {travelers}")
                     print(f"Interests: {', '.join(interests)}")
-                    print(f"{'='*60}\n")
+                    print(f"{'=' * 60}\n")
 
                     # Calculate check-out date
                     check_in = datetime.strptime(departure_date, "%Y-%m-%d")
@@ -511,9 +511,9 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                         else:
                             raise
 
-                    print(f"\n{'='*60}")
+                    print(f"\n{'=' * 60}")
                     print("Planning Complete")
-                    print(f"{'='*60}\n")
+                    print(f"{'=' * 60}\n")
 
                     span.set_attribute("http.status_code", 200)
 
@@ -564,13 +564,13 @@ def main():
     port = int(os.getenv("PORT", "8080"))
     server = HTTPServer(("0.0.0.0", port), TravelPlannerHandler)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Travel Planner Server Starting")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Port: {port}")
     print(f"Health check: http://localhost:{port}/health")
     print(f"Planning endpoint: POST http://localhost:{port}/plan")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     try:
         server.serve_forever()
