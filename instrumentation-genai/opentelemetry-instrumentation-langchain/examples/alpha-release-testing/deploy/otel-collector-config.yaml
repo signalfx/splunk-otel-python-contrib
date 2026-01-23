@@ -1,0 +1,45 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlphttp/splunk:
+    endpoint: ${SPLUNK_INGEST_URL}
+    headers:
+      X-SF-Token: ${SPLUNK_ACCESS_TOKEN}
+    tls:
+      insecure_skip_verify: false
+  logging:
+    loglevel: info
+
+processors:
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: ${SPLUNK_MEMORY_TOTAL_MIB:512}
+
+extensions:
+  health_check:
+  pprof:
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/splunk]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/splunk]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/splunk]
