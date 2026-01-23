@@ -29,7 +29,14 @@ __all__ = ["_InvocationManager"]
 
 @dataclass
 class _InvocationState:
-    invocation: Union[LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow,AgentInvocation, ToolCall]
+    invocation: Union[
+        LLMInvocation,
+        EmbeddingInvocation,
+        RetrievalInvocation,
+        Workflow,
+        AgentInvocation,
+        ToolCall,
+    ]
     children: List[str] = field(default_factory=lambda: list())
 
 
@@ -52,7 +59,12 @@ class _InvocationManager:
         event_id: str,
         parent_id: Optional[str],
         invocation: Union[
-            LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow, AgentInvocation, ToolCall
+            LLMInvocation,
+            EmbeddingInvocation,
+            RetrievalInvocation,
+            Workflow,
+            AgentInvocation,
+            ToolCall,
         ],
     ) -> None:
         """Add an invocation to the manager."""
