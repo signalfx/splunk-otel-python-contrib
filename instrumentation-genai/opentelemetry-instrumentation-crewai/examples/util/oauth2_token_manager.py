@@ -44,22 +44,9 @@ class OAuth2TokenManager:
             token_url: Token endpoint URL (or use LLM_TOKEN_URL env var)
             token_refresh_buffer_seconds: Refresh token this many seconds before expiry
         """
-        # Support both generic env vars and legacy CISCO_* vars for backward compatibility
-        self.client_id = (
-            client_id
-            or os.environ.get("LLM_CLIENT_ID")
-            or os.environ.get("CISCO_CLIENT_ID")
-        )
-        self.client_secret = (
-            client_secret
-            or os.environ.get("LLM_CLIENT_SECRET")
-            or os.environ.get("CISCO_CLIENT_SECRET")
-        )
-        self.token_url = (
-            token_url
-            or os.environ.get("LLM_TOKEN_URL")
-            or os.environ.get("CISCO_TOKEN_URL")
-        )
+        self.client_id = client_id or os.environ.get("LLM_CLIENT_ID")
+        self.client_secret = client_secret or os.environ.get("LLM_CLIENT_SECRET")
+        self.token_url = token_url or os.environ.get("LLM_TOKEN_URL")
         self.token_refresh_buffer = token_refresh_buffer_seconds
 
         if not self.client_id or not self.client_secret:
@@ -146,7 +133,7 @@ class OAuth2TokenManager:
         Returns:
             Full base URL for the model endpoint
         """
-        base = os.environ.get("LLM_BASE_URL") or os.environ.get("CISCO_LLM_BASE_URL")
+        base = os.environ.get("LLM_BASE_URL")
         if not base:
             raise ValueError("LLM_BASE_URL environment variable is required")
         return f"{base}/{model}"
