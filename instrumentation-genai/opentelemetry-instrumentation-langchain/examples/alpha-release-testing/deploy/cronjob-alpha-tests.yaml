@@ -1,0 +1,196 @@
+# Kubernetes CronJob for Alpha Release Testing
+# Runs test applications on a schedule to validate AI observability features
+#
+# Deploy:
+#   kubectl apply -f cronjob-alpha-tests.yaml
+#
+# Check status:
+#   kubectl get cronjobs
+#   kubectl get jobs
+#   kubectl logs -l app=alpha-release-tests
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: alpha-release-tests-langgraph
+  namespace: default
+  labels:
+    app: alpha-release-tests
+    component: ai-observability-validation
+    test-type: langgraph
+spec:
+  # Run every 30 minutes
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app: alpha-release-tests
+        component: ai-observability-validation
+        test-type: langgraph
+    spec:
+      template:
+        metadata:
+          labels:
+            app: alpha-release-tests
+            component: ai-observability-validation
+            test-type: langgraph
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: alpha-tests
+            image: alpha-test-apps:latest
+            imagePullPolicy: Always
+            env:
+            # OpenAI Configuration
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-credentials
+                  key: api-key
+            - name: OPENAI_MODEL_NAME
+              value: "gpt-4o-mini"
+            
+            # Splunk Configuration (rc0 realm)
+            - name: SPLUNK_REALM
+              value: "rc0"
+            - name: SPLUNK_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: splunk-credentials-rc0
+                  key: access-token
+            - name: SPLUNK_HEC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: splunk-credentials-rc0
+                  key: hec-token
+            
+            # OpenTelemetry Configuration
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: OTEL_SERVICE_NAME
+              value: "alpha-release-test-langgraph"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=alpha-rc0,test.phase=validation,test.type=langgraph,realm=rc0"
+            
+            # GenAI Instrumentation Configuration
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: "gen_ai_latest_experimental"
+            - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+              value: "span_metric_event,splunk"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+              value: "SPAN_AND_EVENT"
+            - name: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
+              value: "deepeval(LLMInvocation(bias,toxicity,hallucination,relevance,sentiment))"
+            
+            # LangGraph Poisoning Configuration (optional)
+            - name: TRAVEL_POISON_PROB
+              value: "0.75"
+            - name: TRAVEL_POISON_SEED
+              value: "42"
+            
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+            
+            command: ["./run_tests.sh"]
+            args: ["langgraph"]
+          
+          nodeSelector:
+            kubernetes.io/arch: amd64
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: alpha-release-tests-langchain
+  namespace: default
+  labels:
+    app: alpha-release-tests
+    component: ai-observability-validation
+    test-type: langchain
+spec:
+  # Run every 30 minutes (offset by 15 minutes from langgraph)
+  schedule: "15,45 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app: alpha-release-tests
+        component: ai-observability-validation
+        test-type: langchain
+    spec:
+      template:
+        metadata:
+          labels:
+            app: alpha-release-tests
+            component: ai-observability-validation
+            test-type: langchain
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: alpha-tests
+            image: alpha-test-apps:latest
+            imagePullPolicy: Always
+            env:
+            # OpenAI Configuration
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-credentials
+                  key: api-key
+            - name: OPENAI_MODEL_NAME
+              value: "gpt-4o-mini"
+            
+            # Splunk Configuration (rc0 realm)
+            - name: SPLUNK_REALM
+              value: "rc0"
+            - name: SPLUNK_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: splunk-credentials-rc0
+                  key: access-token
+            
+            # OpenTelemetry Configuration
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "alpha-release-test-langchain"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=alpha-rc0,test.phase=validation,test.type=langchain,realm=rc0"
+            
+            # GenAI Instrumentation Configuration
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: "gen_ai_latest_experimental"
+            - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+              value: "span_metric_event,splunk"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
+              value: "deepeval(LLMInvocation(bias,toxicity,hallucination,relevance,sentiment))"
+            
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "200m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+            
+            command: ["./run_tests.sh"]
+            args: ["langchain"]
+          
+          nodeSelector:
+            kubernetes.io/arch: amd64
