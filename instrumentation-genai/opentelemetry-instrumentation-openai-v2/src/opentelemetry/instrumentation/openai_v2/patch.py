@@ -202,10 +202,25 @@ def _build_output_messages_from_response(
     for choice in getattr(result, "choices", []) or []:
         message = getattr(choice, "message", None)
         role = getattr(message, "role", None) if message else None
-        parts: list[Text] = []
+        parts: list[Any] = []
         content = getattr(message, "content", None) if message else None
         if content is not None:
-            parts = _to_text_parts(content, capture_content)
+            parts.extend(_to_text_parts(content, capture_content))
+
+        # Include tool calls in output_messages parts
+        tool_calls = None
+        if isinstance(message, dict):
+            tool_calls = message.get("tool_calls")
+        elif message is not None:
+            tool_calls = getattr(message, "tool_calls", None)
+
+        if tool_calls:
+            for tool_call in tool_calls:
+                genai_tool_call, _ = _build_tool_call_invocation(
+                    tool_call, capture_content
+                )
+                parts.append(genai_tool_call)
+
         finish_reason = getattr(choice, "finish_reason", None) or "error"
         output_messages.append(
             OutputMessage(
@@ -279,7 +294,7 @@ def _build_tool_call_invocation(
     if isinstance(tool_call, dict):
         tool_call_id = tool_call.get("id", tool_call_id)
 
-    tool_call_type = tool_type or "function"
+    tool_call_type = tool_type
 
     genai_tool_call = GenAIToolCall(
         name=function_name or "",
@@ -772,7 +787,6 @@ def _set_response_attributes(
             GenAIAttributes.GEN_AI_USAGE_OUTPUT_TOKENS,
             result.usage.completion_tokens,
         )
-
 
 
 def _set_embeddings_response_attributes(
