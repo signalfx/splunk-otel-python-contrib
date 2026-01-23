@@ -15,20 +15,25 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
-from opentelemetry.util.genai.types import EmbeddingInvocation, LLMInvocation
+from opentelemetry.util.genai.types import (
+    EmbeddingInvocation,
+    LLMInvocation,
+    RetrievalInvocation,
+    Workflow,
+)
 
 __all__ = ["_InvocationManager"]
 
 
 @dataclass
 class _InvocationState:
-    invocation: Union[LLMInvocation, EmbeddingInvocation]
+    invocation: Union[LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow]
     children: List[str] = field(default_factory=lambda: list())
 
 
 class _InvocationManager:
     """
-    Manages LlamaIndex invocations and their parent/child relationships.
+    Manages LlamaIndex invocations and workflows with parent/child relationships.
 
     This replaces the entity registry pattern from TelemetryHandler, as the
     handler is dropping support for entity tracking.
@@ -43,7 +48,9 @@ class _InvocationManager:
         self,
         event_id: str,
         parent_id: Optional[str],
-        invocation: Union[LLMInvocation, EmbeddingInvocation],
+        invocation: Union[
+            LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow
+        ],
     ) -> None:
         """Add an invocation to the manager."""
         invocation_state = _InvocationState(invocation=invocation)
@@ -55,8 +62,10 @@ class _InvocationManager:
 
     def get_invocation(
         self, event_id: str
-    ) -> Optional[Union[LLMInvocation, EmbeddingInvocation]]:
-        """Get an invocation by event_id."""
+    ) -> Optional[
+        Union[LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow]
+    ]:
+        """Get an invocation or workflow by event_id."""
         invocation_state = self._invocations.get(event_id)
         return invocation_state.invocation if invocation_state else None
 

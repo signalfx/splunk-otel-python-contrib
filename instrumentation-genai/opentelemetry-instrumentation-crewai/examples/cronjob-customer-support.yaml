@@ -1,0 +1,211 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: customer-support-crew-v2
+  namespace: o11y-4-ai-admehra
+  labels:
+    app: customer-support-crew-v2
+    component: telemetry
+  annotations:
+    description: "Customer Support CrewAI with traces, metrics, and logs/events"
+spec:
+  # Run every 15 minutes every day
+  schedule: "*/15 * * * *"
+  timeZone: "America/Los_Angeles"
+  suspend: false
+  
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: customer-support-crew-v2
+        component: telemetry
+    spec:
+      template:
+        metadata:
+          labels:
+            app: customer-support-crew-v2
+            component: telemetry
+        spec:
+          restartPolicy: OnFailure
+          
+          containers:
+            - name: customer-support-crew
+              image: admehra621/customer-support-crew-v2:latest
+              imagePullPolicy: Always
+              
+              env:
+                # =============================================================================
+                # GenAI Semantic Conventions
+                # =============================================================================
+                - name: OTEL_SEMCONV_STABILITY_OPT_IN
+                  value: "gen_ai_latest_experimental"
+                
+                # =============================================================================
+                # Service Configuration
+                # =============================================================================
+                - name: OTEL_SERVICE_NAME
+                  value: "customer-support-crew-v2"
+                
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=o11y-inframon-ai"
+                
+                # =============================================================================
+                # LLM OAuth2 Credentials
+                # =============================================================================
+                - name: LLM_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: client-id
+                
+                - name: LLM_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: client-secret
+                
+                - name: LLM_TOKEN_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: token-url
+                
+                - name: LLM_BASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: base-url
+                
+                - name: LLM_APP_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: app-key
+                
+                # =============================================================================
+                # DeepEval LLM Configuration (OAuth2 for evaluations)
+                # =============================================================================
+                - name: DEEPEVAL_LLM_BASE_URL
+                  value: "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini"
+                
+                - name: DEEPEVAL_LLM_MODEL
+                  value: "gpt-4o-mini"
+                
+                - name: DEEPEVAL_LLM_PROVIDER
+                  value: "openai"
+                
+                - name: DEEPEVAL_LLM_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: client-id
+                
+                - name: DEEPEVAL_LLM_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: client-secret
+                
+                - name: DEEPEVAL_LLM_TOKEN_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: token-url
+                
+                - name: DEEPEVAL_LLM_CLIENT_APP_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: app-key
+                
+                - name: DEEPEVAL_FILE_SYSTEM
+                  value: "READ_ONLY"
+                
+                - name: DEEPEVAL_TELEMETRY_OPT_OUT
+                  value: "YES"
+                
+                # =============================================================================
+                # CrewAI Configuration
+                # =============================================================================
+                - name: CREWAI_DISABLE_TELEMETRY
+                  value: "true"
+                
+                - name: OPENAI_MODEL_NAME
+                  value: "gpt-4o-mini"
+                
+                # =============================================================================
+                # GenAI Instrumentation (traces, metrics, logs/events)
+                # =============================================================================
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+                  value: "span_metric_event,splunk"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+                  value: "SPAN_AND_EVENT"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
+                  value: "replace-category:SplunkEvaluationResults"
+                
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
+                  value: "true"
+                
+                # =============================================================================
+                # OTLP Configuration
+                # =============================================================================
+                - name: SPLUNK_OTEL_AGENT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://$(SPLUNK_OTEL_AGENT):4317"
+                
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "grpc"
+                
+                - name: OTEL_TRACES_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_METRICS_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_LOGS_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                
+                # =============================================================================
+                # Python Logging
+                # =============================================================================
+                - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+                  value: "true"
+                
+                - name: OTEL_PYTHON_LOG_CORRELATION
+                  value: "true"
+                
+                # =============================================================================
+                # Evaluation Wait Time
+                # =============================================================================
+                - name: EVAL_FLUSH_WAIT_SECONDS
+                  value: "120"
+                
+                # =============================================================================
+                # Miscellaneous
+                # =============================================================================
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+              
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "500m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+
