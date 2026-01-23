@@ -15,7 +15,7 @@ def test_admission_controller_allows_when_disabled(monkeypatch):
 
     controller = admission_controller.EvaluationAdmissionController()
 
-    allowed, reason = controller.allow(None)
+    allowed, reason = controller.allow()
 
     assert allowed is True
     assert reason is None
@@ -38,9 +38,9 @@ def test_admission_controller_rate_limits(monkeypatch):
 
     controller = admission_controller.EvaluationAdmissionController()
 
-    allowed_first, reason_first = controller.allow(None)
-    allowed_second, reason_second = controller.allow(None)
-    allowed_third, reason_third = controller.allow(None)
+    allowed_first, reason_first = controller.allow()
+    allowed_second, reason_second = controller.allow()
+    allowed_third, reason_third = controller.allow()
 
     assert (allowed_first, reason_first) == (True, None)
     assert (
@@ -68,7 +68,7 @@ def test_admission_controller_allow_async(monkeypatch):
 
     controller = admission_controller.EvaluationAdmissionController()
 
-    allowed, reason = asyncio.run(controller.allow_async(None))
+    allowed, reason = asyncio.run(controller.allow_async())
 
     assert (allowed, reason) == (True, None)
 
@@ -101,13 +101,13 @@ def test_admission_controller_allow_async_rate_limits(monkeypatch):
 
     async def run_checks():
         state["checks"] = 0
-        allowed_first, reason_first = await controller.allow_async(None)
+        allowed_first, reason_first = await controller.allow_async()
 
         state["checks"] = 1
-        allowed_second, reason_second = await controller.allow_async(None)
+        allowed_second, reason_second = await controller.allow_async()
 
         state["checks"] = 2
-        allowed_third, reason_third = await controller.allow_async(None)
+        allowed_third, reason_third = await controller.allow_async()
 
         return (
             (allowed_first, reason_first),

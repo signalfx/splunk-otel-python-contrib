@@ -29,8 +29,8 @@ class _TokenBucketLimiter:
             # Disabled
             return True
 
-        now = time.monotonic()
         with self._lock:
+            now = time.monotonic()
             elapsed = now - self._last
             self._last = now
             self._tokens = min(
@@ -54,6 +54,8 @@ class EvaluationAdmissionController:
         * batch-level admission
     """
 
+    ERROR_CODE_RATE_LIMITED = "client_evaluation_rate_limited"
+
     def __init__(self):
         rps = read_evaluation_rate_limit_rps()
         burst = read_evaluation_rate_limit_burst()
@@ -65,33 +67,21 @@ class EvaluationAdmissionController:
                 burst=burst,
             )
 
-    def allow(self, invocation) -> Tuple[bool, Optional[str]]:
-        """
-        Returns:
-          (True, None) if allowed
-          (False, error_code) if dropped
-        """
-        _ = invocation
-
+    def allow(self) -> Tuple[bool, Optional[str]]:
+        """Return (True, None) if allowed; (False, error_code) if dropped."""
         if self._limiter is None:
             return True, None
 
         if self._limiter.allow():
             return True, None
 
-        return False, "client_evaluation_rate_limited"
+        return False, self.ERROR_CODE_RATE_LIMITED
 
-    async def allow_async(self, invocation) -> Tuple[bool, Optional[str]]:
-        """Check if invocation should be allowed (async version).
-
-        Returns:
-          (True, None) if allowed
-          (False, error_code) if dropped
-        """
-        _ = invocation
+    async def allow_async(self) -> Tuple[bool, Optional[str]]:
+        """Async version of allow()."""
         if self._limiter is None:
             return True, None
         allowed = await asyncio.to_thread(self._limiter.allow)
         if allowed:
             return True, None
-        return False, "client_evaluation_rate_limited"
+        return False, self.ERROR_CODE_RATE_LIMITED

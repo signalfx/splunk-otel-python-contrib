@@ -278,7 +278,7 @@ class Manager(CompletionCallback):
 
     def evaluate_now(self, invocation: GenAI) -> list[EvaluationResult]:
         """Synchronously evaluate an invocation."""
-        allowed, reason = self._admission.allow(invocation)
+        allowed, reason = self._admission.allow()
         if not allowed:
             invocation.evaluation_error = reason
             _LOGGER.debug(
@@ -308,7 +308,7 @@ class Manager(CompletionCallback):
                 # 1. Allow queue to buffer burst traffic
                 # 2. Protect actual evaluation execution (CPU, external APIs)
                 # 3. Support both sync and async evaluators
-                allowed, reason = self._admission.allow(invocation)
+                allowed, reason = self._admission.allow()
                 if not allowed:
                     invocation.evaluation_error = reason
                     _LOGGER.debug(
@@ -343,7 +343,7 @@ class Manager(CompletionCallback):
                     # 2. Protect actual evaluation execution (CPU, external APIs)
                     # 3. Support both sync and async evaluators
                     allowed, reason = loop.run_until_complete(
-                        self._admission.allow_async(invocation)
+                        self._admission.allow_async()
                     )
                     if not allowed:
                         invocation.evaluation_error = reason
