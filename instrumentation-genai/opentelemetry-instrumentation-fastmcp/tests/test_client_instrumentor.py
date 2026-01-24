@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, AsyncMock
 from opentelemetry.instrumentation.fastmcp.client_instrumentor import (
     ClientInstrumentor,
 )
-from opentelemetry.util.genai.types import AgentInvocation, ToolCall
+from opentelemetry.util.genai.types import AgentInvocation, MCPToolCall
 
 
 class TestClientInstrumentor:
@@ -115,9 +115,9 @@ class TestClientInstrumentor:
         assert mock_telemetry_handler.start_tool_call.called
         assert mock_telemetry_handler.stop_tool_call.called
 
-        # Verify ToolCall was created with MCP fields for metrics
+        # Verify MCPToolCall was created with MCP fields for metrics
         tool_call = mock_telemetry_handler.start_tool_call.call_args[0][0]
-        assert isinstance(tool_call, ToolCall)
+        assert isinstance(tool_call, MCPToolCall)
         assert tool_call.name == "my_tool"
         assert tool_call.arguments == {"arg": "value"}
         assert tool_call.mcp_method_name == "tools/call"

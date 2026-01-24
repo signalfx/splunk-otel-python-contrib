@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from opentelemetry.instrumentation.fastmcp.server_instrumentor import (
     ServerInstrumentor,
 )
-from opentelemetry.util.genai.types import ToolCall
+from opentelemetry.util.genai.types import MCPToolCall
 
 
 class TestServerInstrumentor:
@@ -86,13 +86,13 @@ class TestServerInstrumentor:
         # Verify result is returned
         assert result == mock_result
 
-        # Verify ToolCall was created with correct attributes
+        # Verify MCPToolCall was created with correct attributes
         tool_call = mock_telemetry_handler.start_tool_call.call_args[0][0]
-        assert isinstance(tool_call, ToolCall)
+        assert isinstance(tool_call, MCPToolCall)
         assert tool_call.name == "my_tool"
         assert tool_call.framework == "fastmcp"
         assert tool_call.system == "mcp"
-        assert tool_call.attributes["mcp.server.name"] == "test-server"
+        assert tool_call.mcp_server_name == "test-server"
 
     @pytest.mark.asyncio
     async def test_tool_call_wrapper_failure(self, mock_telemetry_handler):
@@ -159,6 +159,6 @@ class TestServerInstrumentor:
         # stop_tool_call should be called (not fail_tool_call since no exception)
         assert mock_telemetry_handler.stop_tool_call.called
 
-        # Verify error.type attribute was set per MCP semconv
+        # Verify error_type field was set per MCP semconv
         tool_call = mock_telemetry_handler.stop_tool_call.call_args[0][0]
-        assert tool_call.attributes.get("error.type") == "tool_error"
+        assert tool_call.error_type == "tool_error"

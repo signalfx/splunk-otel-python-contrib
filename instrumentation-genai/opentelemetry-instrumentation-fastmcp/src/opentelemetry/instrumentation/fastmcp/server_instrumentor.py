@@ -23,14 +23,13 @@ from wrapt import register_post_import_hook, wrap_function_wrapper
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
-    ToolCall,
+    MCPToolCall,
     Workflow,
     Error,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
     extract_tool_info,
     extract_result_content,
-    safe_serialize,
     should_capture_content,
     truncate_if_needed,
 )
@@ -116,40 +115,25 @@ class ServerInstrumentor:
             # Extract tool information
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
 
-            # Create ToolCall entity with MCP semantic convention attributes
-            tool_call = ToolCall(
+            # Create MCPToolCall entity with MCP semantic convention attributes
+            tool_call = MCPToolCall(
                 name=tool_name,
                 arguments=tool_arguments,
                 id=str(uuid4()),
                 framework="fastmcp",
                 system="mcp",
+                # Per execute_tool semconv: tool_type indicates type of tool
+                # MCP tools are "extension" - executed on agent-side calling external APIs
+                tool_type="extension",
                 # MCP semantic convention fields
                 mcp_method_name="tools/call",  # Per OTel semconv for tool calls
                 network_transport="pipe",  # stdio transport = pipe
+                mcp_server_name=instrumentor._server_name,  # Server name from init
                 is_client=False,  # This is server-side
             )
 
-            # Add MCP-specific attributes
-            if instrumentor._server_name:
-                tool_call.attributes["mcp.server.name"] = instrumentor._server_name
-            # gen_ai.operation.name should be "execute_tool" per semconv
-            tool_call.attributes["gen_ai.operation.name"] = "execute_tool"
-            tool_call.attributes["gen_ai.tool.name"] = tool_name
-
             # Capture input if content capture is enabled
-            if should_capture_content():
-                try:
-                    input_data = {
-                        "tool_name": tool_name,
-                        "arguments": tool_arguments,
-                    }
-                    serialized = safe_serialize(input_data)
-                    if serialized:
-                        tool_call.attributes["gen_ai.tool.call.arguments"] = (
-                            truncate_if_needed(serialized)
-                        )
-                except Exception as e:
-                    _LOGGER.debug(f"Error capturing tool input: {e}")
+            # Note: arguments field has semconv_content metadata, will be applied if capture enabled
 
             # Start tool tracking
             handler.start_tool_call(tool_call)
@@ -160,12 +144,9 @@ class ServerInstrumentor:
                 result = await wrapped(*args, **kwargs)
 
                 # Record duration for metrics
-                duration = time.time() - start_time
-                tool_call.duration_s = duration
-                tool_call.attributes["mcp.tool.duration_s"] = duration
+                tool_call.duration_s = time.time() - start_time
 
                 # Capture output if content capture is enabled
-                output_content: Optional[str] = None
                 if result:
                     try:
                         output_content = extract_result_content(result)
@@ -175,8 +156,9 @@ class ServerInstrumentor:
                                 output_content.encode("utf-8")
                             )
                             if should_capture_content():
-                                tool_call.attributes["gen_ai.tool.call.result"] = (
-                                    truncate_if_needed(output_content)
+                                # Use tool_result field - span emitter applies via semconv_content
+                                tool_call.tool_result = truncate_if_needed(
+                                    output_content
                                 )
                     except Exception as e:
                         _LOGGER.debug(f"Error capturing tool output: {e}")
@@ -184,7 +166,7 @@ class ServerInstrumentor:
                 # Check for error in result (tool_error per semconv)
                 if hasattr(result, "isError") and result.isError:
                     tool_call.is_error = True
-                    tool_call.attributes["error.type"] = "tool_error"
+                    tool_call.error_type = "tool_error"
 
                 # Stop tool tracking (success)
                 handler.stop_tool_call(tool_call)
@@ -193,11 +175,9 @@ class ServerInstrumentor:
 
             except Exception as e:
                 # Record error with duration
-                duration = time.time() - start_time
-                tool_call.duration_s = duration
+                tool_call.duration_s = time.time() - start_time
                 tool_call.is_error = True
-                tool_call.attributes["mcp.tool.duration_s"] = duration
-                tool_call.attributes["error.type"] = type(e).__name__
+                tool_call.error_type = type(e).__name__
 
                 # Fail tool tracking
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))

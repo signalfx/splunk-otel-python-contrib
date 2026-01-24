@@ -24,7 +24,7 @@ from opentelemetry.util.genai.types import (
     AgentInvocation,
     Step,
     Error,
-    ToolCall,
+    MCPToolCall,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
     safe_serialize,
@@ -180,13 +180,16 @@ class ClientInstrumentor:
             # Get parent agent invocation for context
             parent_session = instrumentor._active_sessions.get(id(instance))
 
-            # Create a ToolCall for proper MCP metrics emission
-            tool_call = ToolCall(
+            # Create a MCPToolCall for proper MCP metrics emission
+            tool_call = MCPToolCall(
                 name=tool_name,
                 arguments=tool_args,
                 id=str(uuid.uuid4()),
                 framework="fastmcp",
                 provider="mcp",
+                # Per execute_tool semconv: tool_type indicates type of tool
+                # MCP tools are "extension" - executed on agent-side calling external APIs
+                tool_type="extension",
                 # MCP semantic convention fields for metrics
                 mcp_method_name="tools/call",
                 network_transport="pipe",  # stdio = pipe

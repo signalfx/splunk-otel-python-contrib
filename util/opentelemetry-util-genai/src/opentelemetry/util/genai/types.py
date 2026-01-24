@@ -124,18 +124,82 @@ class GenAI:
 
 @dataclass()
 class ToolCall(GenAI):
-    """Represents a single tool call invocation (Phase 4).
+    """Represents a tool call invocation per execute_tool semantic conventions.
 
-    Supports MCP (Model Context Protocol) semantic conventions:
-    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+    See: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span
+
+    Required attributes:
+    - gen_ai.operation.name: Should be "execute_tool"
+
+    Conditionally required:
+    - error.type: If operation ended in error
+
+    Recommended:
+    - gen_ai.tool.name: Name of the tool
+    - gen_ai.tool.call.id: Tool call identifier
+    - gen_ai.tool.type: Type (function, extension, datastore)
+    - gen_ai.tool.description: Tool description
+
+    Opt-In:
+    - gen_ai.tool.call.arguments: Parameters passed to tool
+    - gen_ai.tool.call.result: Result returned by tool
     """
 
-    arguments: Any
-    name: str
-    id: Optional[str]
+    # Required: gen_ai.tool.name
+    name: str = field(metadata={"semconv": "gen_ai.tool.name"})
+    # Opt-In: gen_ai.tool.call.arguments (set on start if content capture enabled)
+    arguments: Any = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.arguments"},
+    )
+    # Recommended: gen_ai.tool.call.id
+    id: Optional[str] = field(
+        default=None, metadata={"semconv": "gen_ai.tool.call.id"}
+    )
     type: Literal["tool_call"] = "tool_call"
 
-    # MCP-specific fields (semantic convention attributes)
+    # Recommended: gen_ai.tool.type ("function", "extension", or "datastore")
+    tool_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.type"},
+    )
+    # Recommended: gen_ai.tool.description
+    tool_description: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.description"},
+    )
+    # Opt-In: gen_ai.tool.call.result (set on finish if content capture enabled)
+    tool_result: Optional[Any] = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.result"},
+    )
+    # Conditionally Required: error.type (set if error occurred)
+    error_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "error.type"},
+    )
+
+
+@dataclass()
+class MCPToolCall(ToolCall):
+    """Represents an MCP (Model Context Protocol) tool call invocation.
+
+    Extends ToolCall with MCP-specific semantic conventions:
+    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+
+    MCP Semantic Convention Attributes:
+    - mcp.method.name: The name of the request or notification method
+    - mcp.session.id: Session identifier for the MCP connection
+    - mcp.protocol.version: MCP protocol version
+    - mcp.server.name: Name of the MCP server
+    - network.transport: Transport type ("pipe" for stdio, "tcp" for HTTP)
+
+    Metrics-only fields (not span attributes):
+    - output_size_bytes: Output size for metrics tracking
+    - output_size_tokens: Token count for metrics tracking
+    - duration_s: Duration for standalone metrics emission
+    """
+
     # mcp.method.name: The name of the request or notification method
     mcp_method_name: Optional[str] = field(
         default=None,
@@ -156,13 +220,17 @@ class ToolCall(GenAI):
         default=None,
         metadata={"semconv": "mcp.protocol.version"},
     )
-    # Output size in bytes for metrics tracking
+    # mcp.server.name: Name of the MCP server
+    mcp_server_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.server.name"},
+    )
+    # Metrics-only fields (no semconv metadata - not span attributes)
     output_size_bytes: Optional[int] = None
-    # Duration in seconds (for standalone metrics emission)
+    output_size_tokens: Optional[int] = None
     duration_s: Optional[float] = None
-    # Is this a client-side or server-side operation
+    # Internal state tracking (no semconv)
     is_client: bool = True
-    # Whether the tool call resulted in an error (for error.type attribute)
     is_error: bool = False
 
 
