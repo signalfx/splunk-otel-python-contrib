@@ -124,12 +124,114 @@ class GenAI:
 
 @dataclass()
 class ToolCall(GenAI):
-    """Represents a single tool call invocation (Phase 4)."""
+    """Represents a tool call invocation per execute_tool semantic conventions.
 
-    arguments: Any
-    name: str
-    id: Optional[str]
+    See: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span
+
+    Required attributes:
+    - gen_ai.operation.name: Should be "execute_tool"
+
+    Conditionally required:
+    - error.type: If operation ended in error
+
+    Recommended:
+    - gen_ai.tool.name: Name of the tool
+    - gen_ai.tool.call.id: Tool call identifier
+    - gen_ai.tool.type: Type (function, extension, datastore)
+    - gen_ai.tool.description: Tool description
+
+    Opt-In:
+    - gen_ai.tool.call.arguments: Parameters passed to tool
+    - gen_ai.tool.call.result: Result returned by tool
+    """
+
+    # Required: gen_ai.tool.name
+    name: str = field(metadata={"semconv": "gen_ai.tool.name"})
+    # Opt-In: gen_ai.tool.call.arguments (set on start if content capture enabled)
+    arguments: Any = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.arguments"},
+    )
+    # Recommended: gen_ai.tool.call.id
+    id: Optional[str] = field(
+        default=None, metadata={"semconv": "gen_ai.tool.call.id"}
+    )
     type: Literal["tool_call"] = "tool_call"
+
+    # Recommended: gen_ai.tool.type ("function", "extension", or "datastore")
+    tool_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.type"},
+    )
+    # Recommended: gen_ai.tool.description
+    tool_description: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.description"},
+    )
+    # Opt-In: gen_ai.tool.call.result (set on finish if content capture enabled)
+    tool_result: Optional[Any] = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.result"},
+    )
+    # Conditionally Required: error.type (set if error occurred)
+    error_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "error.type"},
+    )
+
+
+@dataclass()
+class MCPToolCall(ToolCall):
+    """Represents an MCP (Model Context Protocol) tool call invocation.
+
+    Extends ToolCall with MCP-specific semantic conventions:
+    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+
+    MCP Semantic Convention Attributes:
+    - mcp.method.name: The name of the request or notification method
+    - mcp.session.id: Session identifier for the MCP connection
+    - mcp.protocol.version: MCP protocol version
+    - mcp.server.name: Name of the MCP server
+    - network.transport: Transport type ("pipe" for stdio, "tcp" for HTTP)
+
+    Metrics-only fields (not span attributes):
+    - output_size_bytes: Output size for metrics tracking
+    - output_size_tokens: Token count for metrics tracking
+    - duration_s: Duration for standalone metrics emission
+    """
+
+    # mcp.method.name: The name of the request or notification method
+    mcp_method_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.method.name"},
+    )
+    # network.transport: "pipe" for stdio, "tcp" for HTTP
+    network_transport: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.transport"},
+    )
+    # mcp.session.id: Session identifier
+    mcp_session_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.session.id"},
+    )
+    # mcp.protocol.version: MCP protocol version
+    mcp_protocol_version: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.protocol.version"},
+    )
+    # mcp.server.name: Name of the MCP server
+    mcp_server_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.server.name"},
+    )
+    # Metrics-only fields (no semconv metadata - not span attributes)
+    output_size_bytes: Optional[int] = None
+    output_size_tokens: Optional[int] = None
+    duration_s: Optional[float] = None
+    # Internal state tracking (no semconv)
+    is_client: bool = True
+    is_error: bool = False
 
 
 @dataclass()

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json  # noqa: F401 (kept for backward compatibility if external code relies on this module re-exporting json)
-from dataclasses import asdict  # noqa: F401
+from dataclasses import fields as dataclass_fields
 from typing import Any, Optional
 
 from opentelemetry import trace
@@ -115,6 +115,68 @@ def _apply_gen_ai_semconv_attributes(
             span.set_attribute(key, sanitized)
         except Exception:  # pragma: no cover - defensive
             pass
+
+
+def _apply_tool_semconv_attributes(
+    span: Span,
+    tool: "ToolCall",
+    capture_content: bool = False,
+) -> None:
+    """Apply semantic convention attributes from ToolCall/MCPToolCall fields.
+
+    Iterates over dataclass fields and applies attributes based on metadata:
+    - "semconv": Always applied if value is not None
+    - "semconv_content": Only applied if capture_content is True
+
+    This handles both base ToolCall attributes (gen_ai.tool.*) and
+    MCPToolCall attributes (mcp.*, network.*) automatically.
+    """
+
+    for data_field in dataclass_fields(tool):
+        # Check for regular semconv attribute
+        semconv_key = data_field.metadata.get("semconv")
+        if semconv_key:
+            value = getattr(tool, data_field.name)
+            if value is not None:
+                sanitized = _sanitize_span_attribute_value(value)
+                if sanitized is not None:
+                    span.set_attribute(semconv_key, sanitized)
+            continue
+
+        # Check for content-gated semconv attribute
+        semconv_content_key = data_field.metadata.get("semconv_content")
+        if semconv_content_key and capture_content:
+            value = getattr(tool, data_field.name)
+            if value is not None:
+                try:
+                    if isinstance(value, str):
+                        span.set_attribute(semconv_content_key, value)
+                    else:
+                        span.set_attribute(
+                            semconv_content_key,
+                            json.dumps(value, default=str),
+                        )
+                except Exception:
+                    pass
+
+
+def _apply_custom_attributes(
+    span: Span,
+    attributes: Optional[dict[str, Any]],
+) -> None:
+    """Apply custom attributes dictionary to a span.
+
+    This helper function applies any custom attributes from the attributes
+    dictionary to the span. Used for supplemental attributes that aren't
+    defined as dataclass fields with semconv metadata.
+    """
+    if not attributes:
+        return
+    for key, value in attributes.items():
+        if value is not None:
+            sanitized = _sanitize_span_attribute_value(value)
+            if sanitized is not None:
+                span.set_attribute(key, sanitized)
 
 
 def _apply_evaluation_attributes(
@@ -322,22 +384,7 @@ class SpanEmitter(EmitterMeta):
             self._start_step(invocation)
         # Handle existing types
         elif isinstance(invocation, ToolCall):
-            span_name = f"tool {invocation.name}"
-            parent_span = getattr(invocation, "parent_span", None)
-            parent_ctx = (
-                trace.set_span_in_context(parent_span)
-                if parent_span is not None
-                else None
-            )
-            cm = self._tracer.start_as_current_span(
-                span_name,
-                kind=SpanKind.CLIENT,
-                end_on_exit=False,
-                context=parent_ctx,
-            )
-            span = cm.__enter__()
-            self._attach_span(invocation, span, cm)
-            self._apply_start_attrs(invocation)
+            self._start_tool_call(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._start_embedding(invocation)
         elif isinstance(invocation, RetrievalInvocation):
@@ -371,6 +418,8 @@ class SpanEmitter(EmitterMeta):
             self._finish_agent(invocation)
         elif isinstance(invocation, Step):
             self._finish_step(invocation)
+        elif isinstance(invocation, ToolCall):
+            self._finish_tool_call(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._finish_embedding(invocation)
         elif isinstance(invocation, RetrievalInvocation):
@@ -405,6 +454,8 @@ class SpanEmitter(EmitterMeta):
             self._error_agent(error, invocation)
         elif isinstance(invocation, Step):
             self._error_step(error, invocation)
+        elif isinstance(invocation, ToolCall):
+            self._error_tool_call(error, invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._error_embedding(error, invocation)
         elif isinstance(invocation, RetrievalInvocation):
@@ -460,8 +511,6 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute("gen_ai.framework", workflow.framework)
         if workflow.initial_input and self._capture_content:
             # Format as a message with text content
-            import json
-
             input_msg = {
                 "role": "user",
                 "parts": [{"type": "text", "content": workflow.initial_input}],
@@ -480,8 +529,6 @@ class SpanEmitter(EmitterMeta):
             return
         # Set final output if capture_content enabled
         if workflow.final_output and self._capture_content:
-            import json
-
             output_msg = {
                 "role": "assistant",
                 "parts": [{"type": "text", "content": workflow.final_output}],
@@ -561,8 +608,6 @@ class SpanEmitter(EmitterMeta):
         if agent.tools:
             span.set_attribute(GEN_AI_AGENT_TOOLS, agent.tools)
         if agent.system_instructions and self._capture_content:
-            import json
-
             system_parts = [
                 {"type": "text", "content": agent.system_instructions}
             ]
@@ -574,8 +619,6 @@ class SpanEmitter(EmitterMeta):
             and agent.input_context
             and self._capture_content
         ):
-            import json
-
             input_msg = {
                 "role": "user",
                 "parts": [{"type": "text", "content": agent.input_context}],
@@ -598,8 +641,6 @@ class SpanEmitter(EmitterMeta):
             and agent.output_result
             and self._capture_content
         ):
-            import json
-
             output_msg = {
                 "role": "assistant",
                 "parts": [{"type": "text", "content": agent.output_result}],
@@ -674,8 +715,6 @@ class SpanEmitter(EmitterMeta):
         if step.status:
             span.set_attribute(GEN_AI_STEP_STATUS, step.status)
         if step.input_data and self._capture_content:
-            import json
-
             input_msg = {
                 "role": "user",
                 "parts": [{"type": "text", "content": step.input_data}],
@@ -694,8 +733,6 @@ class SpanEmitter(EmitterMeta):
             return
         # Set output data if capture_content enabled
         if step.output_data and self._capture_content:
-            import json
-
             output_msg = {
                 "role": "assistant",
                 "parts": [{"type": "text", "content": step.output_data}],
@@ -734,6 +771,89 @@ class SpanEmitter(EmitterMeta):
             span, step.semantic_convention_attributes()
         )
         token = step.context_token
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        span.end()
+
+    # ---- Tool Call lifecycle ---------------------------------------------
+    def _start_tool_call(self, tool: ToolCall) -> None:
+        """Start a tool call span per execute_tool semantic conventions.
+
+        Span name: execute_tool {gen_ai.tool.name}
+        Span kind: INTERNAL
+        See: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span
+        """
+        # Span name per semconv: "execute_tool {gen_ai.tool.name}"
+        span_name = f"execute_tool {tool.name}"
+        parent_span = getattr(tool, "parent_span", None)
+        parent_ctx = (
+            trace.set_span_in_context(parent_span)
+            if parent_span is not None
+            else None
+        )
+        # Span kind SHOULD be INTERNAL per semconv
+        cm = self._tracer.start_as_current_span(
+            span_name,
+            kind=SpanKind.INTERNAL,
+            end_on_exit=False,
+            context=parent_ctx,
+        )
+        span = cm.__enter__()
+        self._attach_span(tool, span, cm)
+
+        # Required: gen_ai.operation.name = "execute_tool"
+        span.set_attribute(
+            GenAI.GEN_AI_OPERATION_NAME,
+            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+        )
+
+        # Apply all semconv attributes from dataclass fields
+        # This handles gen_ai.tool.*, mcp.*, network.*, error.type
+        _apply_tool_semconv_attributes(span, tool, self._capture_content)
+
+        # Apply any supplemental custom attributes
+        _apply_custom_attributes(span, getattr(tool, "attributes", None))
+
+    def _finish_tool_call(self, tool: ToolCall) -> None:
+        """Finish a tool call span."""
+        span = tool.span
+        if span is None:
+            return
+        # Check if span is still recording
+        is_recording = hasattr(span, "is_recording") and span.is_recording()
+        if is_recording:
+            # Apply all semconv attributes (including tool_result if content capture)
+            _apply_tool_semconv_attributes(span, tool, self._capture_content)
+            # Apply any supplemental custom attributes
+            _apply_custom_attributes(span, getattr(tool, "attributes", None))
+        token = getattr(tool, "context_token", None)
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        if is_recording:
+            span.end()
+
+    def _error_tool_call(self, error: Error, tool: ToolCall) -> None:
+        """Fail a tool call span with error status."""
+        span = tool.span
+        if span is None:
+            return
+        span.set_status(Status(StatusCode.ERROR, error.message))
+        if span.is_recording():
+            # Set error type from the error object
+            span.set_attribute(
+                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
+            )
+            # Apply all semconv attributes
+            _apply_tool_semconv_attributes(span, tool, self._capture_content)
+            # Apply any supplemental custom attributes
+            _apply_custom_attributes(span, getattr(tool, "attributes", None))
+        token = getattr(tool, "context_token", None)
         if token is not None and hasattr(token, "__exit__"):
             try:
                 token.__exit__(None, None, None)  # type: ignore[misc]
