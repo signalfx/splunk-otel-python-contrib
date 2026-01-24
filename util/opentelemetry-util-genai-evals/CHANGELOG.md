@@ -12,6 +12,34 @@ All notable changes to this repository are documented in this file.
   - `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST` - Burst capacity (default: 20)
   - Thread-safe token bucket implementation prevents evaluation queue overload
 
+- **Separate Process Evaluation Mode** - Run evaluations in an isolated child process
+  - Prevents DeepEval/OpenAI instrumentation from polluting application telemetry
+  - Enable via `OTEL_INSTRUMENTATION_GENAI_EVALS_SEPARATE_PROCESS=true`
+  - Child process runs with `OTEL_SDK_DISABLED=true` for complete isolation
+  - Bi-directional IPC using `multiprocessing.Pipe` for invocation/result exchange
+  - Automatic fallback to in-process mode if multiprocessing fails
+
+- **New Components**
+  - `EvalManagerProxy` - CompletionCallback implementation for parent process
+  - `EvalWorker` - Worker class running evaluation loop in child process
+  - `NoOpTelemetryHandler` - Stub handler for child process (no telemetry emission)
+  - Serialization utilities for GenAI types and EvaluationResult
+
+- **New Environment Variables**
+  - `OTEL_INSTRUMENTATION_GENAI_EVALS_SEPARATE_PROCESS` - Enable separate process mode (default: `false`)
+  - `OTEL_INSTRUMENTATION_GENAI_EVALS_WORKER_TIMEOUT` - Worker startup timeout (default: 30s)
+  - `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULT_TIMEOUT` - Result wait timeout (default: 60s)
+
+- **New Exports from Package**
+  - `EvalManagerProxy`
+  - `is_separate_process_enabled()`
+  - `OTEL_INSTRUMENTATION_GENAI_EVALS_SEPARATE_PROCESS`
+  - `ErrorEvent`
+  - `ErrorTracker`
+
+### Changed
+- `create_evaluation_manager()` now returns `EvalManagerProxy` when separate process mode is enabled
+
 ## Version 0.1.6 - 2026-01-27
 
 - Release 0.1.6 of splunk-otel-util-genai-evals
