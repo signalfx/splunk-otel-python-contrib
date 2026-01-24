@@ -119,12 +119,8 @@ def _extract_type_specific_fields(invocation: GenAI) -> Dict[str, Any]:
         fields["model"] = invocation.model
         fields["tools"] = list(invocation.tools)
         fields["system_instructions"] = invocation.system_instructions
-        fields["input_messages"] = _serialize_input_messages(
-            invocation.input_messages
-        )
-        fields["output_messages"] = _serialize_output_messages(
-            invocation.output_messages
-        )
+        fields["input_context"] = invocation.input_context
+        fields["output_result"] = invocation.output_result
 
     elif isinstance(invocation, AgentCreation):
         fields["name"] = invocation.name
@@ -134,20 +130,14 @@ def _extract_type_specific_fields(invocation: GenAI) -> Dict[str, Any]:
         fields["model"] = invocation.model
         fields["tools"] = list(invocation.tools)
         fields["system_instructions"] = invocation.system_instructions
-        fields["input_messages"] = _serialize_input_messages(
-            invocation.input_messages
-        )
+        fields["input_context"] = invocation.input_context
 
     elif isinstance(invocation, Workflow):
         fields["name"] = invocation.name
         fields["workflow_type"] = invocation.workflow_type
         fields["description"] = invocation.description
-        fields["input_messages"] = _serialize_input_messages(
-            invocation.input_messages
-        )
-        fields["output_messages"] = _serialize_output_messages(
-            invocation.output_messages
-        )
+        fields["initial_input"] = invocation.initial_input
+        fields["final_output"] = invocation.final_output
 
     elif isinstance(invocation, Step):
         fields["name"] = invocation.name
@@ -157,6 +147,8 @@ def _extract_type_specific_fields(invocation: GenAI) -> Dict[str, Any]:
         fields["assigned_agent"] = invocation.assigned_agent
         fields["status"] = invocation.status
         fields["description"] = invocation.description
+        fields["input_data"] = invocation.input_data
+        fields["output_data"] = invocation.output_data
 
     elif isinstance(invocation, ToolCall):
         fields["name"] = invocation.name
@@ -299,12 +291,8 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
             model=payload.get("model"),
             tools=payload.get("tools", []),
             system_instructions=payload.get("system_instructions"),
-            input_messages=_deserialize_input_messages(
-                payload.get("input_messages", [])
-            ),
-            output_messages=_deserialize_output_messages(
-                payload.get("output_messages", [])
-            ),
+            input_context=payload.get("input_context"),
+            output_result=payload.get("output_result"),
             **common_kwargs,
         )
 
@@ -316,9 +304,7 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
             model=payload.get("model"),
             tools=payload.get("tools", []),
             system_instructions=payload.get("system_instructions"),
-            input_messages=_deserialize_input_messages(
-                payload.get("input_messages", [])
-            ),
+            input_context=payload.get("input_context"),
             **common_kwargs,
         )
 
@@ -327,12 +313,8 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
             name=payload.get("name", ""),
             workflow_type=payload.get("workflow_type"),
             description=payload.get("description"),
-            input_messages=_deserialize_input_messages(
-                payload.get("input_messages", [])
-            ),
-            output_messages=_deserialize_output_messages(
-                payload.get("output_messages", [])
-            ),
+            initial_input=payload.get("initial_input"),
+            final_output=payload.get("final_output"),
             **common_kwargs,
         )
 
@@ -345,6 +327,8 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
             assigned_agent=payload.get("assigned_agent"),
             status=payload.get("status"),
             description=payload.get("description"),
+            input_data=payload.get("input_data"),
+            output_data=payload.get("output_data"),
             **common_kwargs,
         )
 

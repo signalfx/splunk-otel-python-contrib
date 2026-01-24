@@ -59,19 +59,8 @@ class TestSerialization:
             name="test-agent",
             provider="anthropic",
             agent_type="researcher",
-            input_messages=[
-                InputMessage(
-                    role="user",
-                    parts=[Text(content="Find information about X")],
-                )
-            ],
-            output_messages=[
-                OutputMessage(
-                    role="assistant",
-                    parts=[Text(content="I found the following...")],
-                    finish_reason="stop",
-                )
-            ],
+            input_context="Find information about X",
+            output_result="I found the following...",
         )
 
         result = serialize_invocation(invocation)
@@ -80,8 +69,8 @@ class TestSerialization:
         assert result["name"] == "test-agent"
         assert result["provider"] == "anthropic"
         assert result["agent_type"] == "researcher"
-        assert len(result["input_messages"]) == 1
-        assert len(result["output_messages"]) == 1
+        assert result["input_context"] == "Find information about X"
+        assert result["output_result"] == "I found the following..."
 
     def test_serialize_workflow(self):
         """Test serializing a Workflow."""
@@ -92,18 +81,8 @@ class TestSerialization:
         invocation = Workflow(
             name="test-workflow",
             workflow_type="sequential",
-            input_messages=[
-                InputMessage(
-                    role="user", parts=[Text(content="Process this data")]
-                )
-            ],
-            output_messages=[
-                OutputMessage(
-                    role="assistant",
-                    parts=[Text(content="Data processed")],
-                    finish_reason="stop",
-                )
-            ],
+            initial_input="Process this data",
+            final_output="Data processed",
         )
 
         result = serialize_invocation(invocation)
@@ -111,8 +90,6 @@ class TestSerialization:
         assert result["type"] == "Workflow"
         assert result["name"] == "test-workflow"
         assert result["workflow_type"] == "sequential"
-        assert len(result["input_messages"]) == 1
-        assert len(result["output_messages"]) == 1
 
     def test_deserialize_llm_invocation(self):
         """Test deserializing an LLMInvocation."""
@@ -155,16 +132,8 @@ class TestSerialization:
         original = AgentInvocation(
             name="test-agent",
             provider="anthropic",
-            input_messages=[
-                InputMessage(role="user", parts=[Text(content="Test input")])
-            ],
-            output_messages=[
-                OutputMessage(
-                    role="assistant",
-                    parts=[Text(content="Test output")],
-                    finish_reason="stop",
-                )
-            ],
+            input_context="Test input",
+            output_result="Test output",
         )
 
         serialized = serialize_invocation(original)
@@ -173,8 +142,8 @@ class TestSerialization:
         assert isinstance(restored, AgentInvocation)
         assert restored.name == "test-agent"
         assert restored.provider == "anthropic"
-        assert len(restored.input_messages) == 1
-        assert len(restored.output_messages) == 1
+        assert restored.input_context == "Test input"
+        assert restored.output_result == "Test output"
 
     def test_serialize_evaluation_result(self):
         """Test serializing EvaluationResult."""
