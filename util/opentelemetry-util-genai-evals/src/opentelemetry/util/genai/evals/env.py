@@ -10,6 +10,7 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT,
     OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL,
+    OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING,
     OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE,
     OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION,
     OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
@@ -154,6 +155,26 @@ def read_max_concurrent(
         return default
 
 
+def read_monitoring_flag(
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Read the evaluation monitoring flag from environment.
+
+    When enabled, the evaluation manager emits metrics for LLM-as-a-judge
+    operations including duration, token usage, queue size, and enqueue errors.
+
+    Args:
+        env: Optional environment mapping (defaults to os.environ)
+
+    Returns:
+        True if monitoring is enabled, False otherwise.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING, env)
+    if raw is None:
+        return False
+    return raw.strip().lower() in _TRUTHY
+
+
 __all__ = [
     "read_raw_evaluators",
     "read_interval",
@@ -162,4 +183,5 @@ __all__ = [
     "read_concurrent_flag",
     "read_worker_count",
     "read_max_concurrent",
+    "read_monitoring_flag",
 ]

@@ -362,7 +362,7 @@ class TestRunEvaluationAsync:
         assert captured_config["async_config"].run_async is False
 
     def test_returns_evaluation_result(self, monkeypatch):
-        """Returns the evaluation result from deepeval."""
+        """Returns the evaluation result and duration from deepeval."""
 
         class _ExpectedResult:
             test_results = [{"metric": "test"}]
@@ -375,8 +375,10 @@ class TestRunEvaluationAsync:
         async def run_test():
             return await run_evaluation_async(MagicMock(), [MagicMock()])
 
-        result = asyncio.run(run_test())
+        result, duration = asyncio.run(run_test())
         assert result.test_results == [{"metric": "test"}]
+        assert isinstance(duration, float)
+        assert duration >= 0
 
     def test_can_run_multiple_concurrent_evaluations(self, monkeypatch):
         """Can run multiple evaluations concurrently."""
@@ -407,4 +409,8 @@ class TestRunEvaluationAsync:
         results = asyncio.run(run_multiple())
 
         assert len(results) == 3
+        # Each result is a tuple of (result, duration)
+        for result, duration in results:
+            assert hasattr(result, "test_results")
+            assert isinstance(duration, float)
         assert call_count["count"] == 3

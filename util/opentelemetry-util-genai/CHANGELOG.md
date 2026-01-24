@@ -2,7 +2,14 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.7 - 2026-01-26
+## Version 0.1.8 - 2026-01-26
+
+### Added
+- **Evaluation Monitoring Environment Variable** - New configuration for evaluation observability
+  - `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING` - Enable evaluation metrics collection (default: `false`)
+  - Exported from environment_variables module
+
+## Version 0.1.7 - 2026-01-17
 
 ### Added
 - **Concurrent Evaluation Support** - New environment variables for parallel evaluation processing:

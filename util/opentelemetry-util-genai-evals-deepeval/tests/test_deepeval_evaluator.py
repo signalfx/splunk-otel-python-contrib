@@ -270,7 +270,7 @@ def test_evaluator_converts_results(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics: fake_result,
+        lambda case, metrics: (fake_result, 0.5),  # Return tuple with duration
     )
 
     results = evaluator.evaluate(invocation)
@@ -330,7 +330,7 @@ def test_metric_options_coercion(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics: fake_result,
+        lambda case, metrics: (fake_result, 0.5),  # Return tuple with duration
     )
 
     results = evaluator.evaluate(invocation)
@@ -449,7 +449,7 @@ def test_retrieval_context_extracted_from_attributes(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics: fake_result,
+        lambda case, metrics: (fake_result, 0.5),
     )
 
     results = evaluator.evaluate(invocation)
@@ -511,7 +511,7 @@ def test_async_evaluate_converts_results(monkeypatch):
 
     # Mock the async runner
     async def mock_async_runner(case, metrics):
-        return fake_result
+        return (fake_result, 0.5)
 
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval_async",
