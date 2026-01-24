@@ -53,7 +53,7 @@ class MetricsEmitter(EmitterMeta):
         )
         self._retrieval_duration_histogram: Histogram = (
             instruments.retrieval_duration_histogram
-        ) 
+        )
         # MCP-specific histograms
         self._mcp_client_operation_duration: Histogram = (
             instruments.mcp_client_operation_duration
@@ -341,7 +341,6 @@ class MetricsEmitter(EmitterMeta):
             duration, attributes=metric_attrs, context=context
         )
 
-<<<<<<< HEAD
     def _record_retrieval_metrics(
         self, retrieval: RetrievalInvocation, error: Optional[Error] = None
     ) -> None:
@@ -378,7 +377,7 @@ class MetricsEmitter(EmitterMeta):
         self._retrieval_duration_histogram.record(
             duration, attributes=metric_attrs, context=context
         )
-=======
+
     def _record_mcp_tool_metrics(self, tool: ToolCall) -> None:
         """Record MCP-specific metrics for tool calls.
 
@@ -459,4 +458,3 @@ class MetricsEmitter(EmitterMeta):
             self._mcp_tool_output_size.record(
                 tool.output_size_bytes, attributes=mcp_attrs, context=context
             )
->>>>>>> c2759c0 (fastmcp server and client instrumentation)
