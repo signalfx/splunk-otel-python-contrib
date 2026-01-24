@@ -26,6 +26,9 @@ from ..attributes import (
     GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_ENCODING_FORMATS,
+    GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED,
+    GEN_AI_RETRIEVAL_QUERY_TEXT,
+    GEN_AI_RETRIEVAL_TOP_K,
     GEN_AI_STEP_ASSIGNED_AGENT,
     GEN_AI_STEP_NAME,
     GEN_AI_STEP_OBJECTIVE,
@@ -47,6 +50,7 @@ from ..types import (
     EmbeddingInvocation,
     Error,
     LLMInvocation,
+    RetrievalInvocation,
     Step,
     ToolCall,
     Workflow,
@@ -226,6 +230,9 @@ class SpanEmitter(EmitterMeta):
         provider = getattr(invocation, "provider", None)
         if provider:
             span.set_attribute(GEN_AI_PROVIDER_NAME, provider)
+        framework = getattr(invocation, "framework", None)
+        if framework:
+            span.set_attribute("gen_ai.framework", framework)
         server_address = getattr(invocation, "server_address", None)
         if server_address:
             span.set_attribute(SERVER_ADDRESS, server_address)
@@ -333,6 +340,8 @@ class SpanEmitter(EmitterMeta):
             self._apply_start_attrs(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._start_embedding(invocation)
+        elif isinstance(invocation, RetrievalInvocation):
+            self._start_retrieval(invocation)
         else:
             # Use operation field for span name (defaults to "chat")
             operation = getattr(invocation, "operation", "chat")
@@ -364,6 +373,8 @@ class SpanEmitter(EmitterMeta):
             self._finish_step(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._finish_embedding(invocation)
+        elif isinstance(invocation, RetrievalInvocation):
+            self._finish_retrieval(invocation)
         else:
             span = getattr(invocation, "span", None)
             if span is None:
@@ -396,6 +407,8 @@ class SpanEmitter(EmitterMeta):
             self._error_step(error, invocation)
         elif isinstance(invocation, EmbeddingInvocation):
             self._error_embedding(error, invocation)
+        elif isinstance(invocation, RetrievalInvocation):
+            self._error_retrieval(error, invocation)
         else:
             span = getattr(invocation, "span", None)
             if span is None:
@@ -799,6 +812,81 @@ class SpanEmitter(EmitterMeta):
                 ErrorAttributes.ERROR_TYPE, embedding.error_type
             )
         token = embedding.context_token
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        span.end()
+
+    def _start_retrieval(self, retrieval: RetrievalInvocation) -> None:
+        """Start a retrieval span."""
+        span_name = f"{retrieval.operation_name}"
+        if retrieval.provider:
+            span_name = f"{retrieval.operation_name} {retrieval.provider}"
+        parent_span = getattr(retrieval, "parent_span", None)
+        parent_ctx = (
+            trace.set_span_in_context(parent_span)
+            if parent_span is not None
+            else None
+        )
+        cm = self._tracer.start_as_current_span(
+            span_name,
+            kind=SpanKind.CLIENT,
+            end_on_exit=False,
+            context=parent_ctx,
+        )
+        span = cm.__enter__()
+        self._attach_span(retrieval, span, cm)
+        self._apply_start_attrs(retrieval)
+
+        # Set retrieval-specific start attributes
+        if retrieval.server_address:
+            span.set_attribute(SERVER_ADDRESS, retrieval.server_address)
+        if retrieval.server_port:
+            span.set_attribute(SERVER_PORT, retrieval.server_port)
+        if retrieval.top_k is not None:
+            span.set_attribute(GEN_AI_RETRIEVAL_TOP_K, retrieval.top_k)
+        if self._capture_content and retrieval.query:
+            span.set_attribute(GEN_AI_RETRIEVAL_QUERY_TEXT, retrieval.query)
+
+    def _finish_retrieval(self, retrieval: RetrievalInvocation) -> None:
+        """Finish a retrieval span."""
+        span = retrieval.span
+        if span is None:
+            return
+        # Apply finish-time semantic conventions
+        if retrieval.documents_retrieved is not None:
+            span.set_attribute(
+                GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED,
+                retrieval.documents_retrieved,
+            )
+        token = retrieval.context_token
+        if token is not None and hasattr(token, "__exit__"):
+            try:
+                token.__exit__(None, None, None)  # type: ignore[misc]
+            except Exception:
+                pass
+        span.end()
+
+    def _error_retrieval(
+        self, error: Error, retrieval: RetrievalInvocation
+    ) -> None:
+        """Fail a retrieval span with error status."""
+        span = retrieval.span
+        if span is None:
+            return
+        span.set_status(Status(StatusCode.ERROR, error.message))
+        if span.is_recording():
+            span.set_attribute(
+                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
+            )
+        # Set error type from invocation if available
+        if retrieval.error_type:
+            span.set_attribute(
+                ErrorAttributes.ERROR_TYPE, retrieval.error_type
+            )
+        token = retrieval.context_token
         if token is not None and hasattr(token, "__exit__"):
             try:
                 token.__exit__(None, None, None)  # type: ignore[misc]
