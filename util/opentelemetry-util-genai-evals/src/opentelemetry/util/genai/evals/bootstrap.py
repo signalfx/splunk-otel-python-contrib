@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from opentelemetry.util.genai.callbacks import CompletionCallback
 
 from .manager import Manager
+from .proxy import EvalManagerProxy, is_separate_process_enabled
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def create_evaluation_manager(
@@ -14,8 +18,44 @@ def create_evaluation_manager(
     *,
     interval: float | None = None,
     aggregate_results: bool | None = None,
-) -> Manager:
-    """Instantiate an evaluation manager bound to the provided handler."""
+) -> Manager | EvalManagerProxy:
+    """Instantiate an evaluation manager bound to the provided handler.
+
+    This function returns either:
+    - EvalManagerProxy (separate process mode) when enabled via environment
+    - Manager (in-process mode) otherwise
+
+    The separate process mode is preferred when running LLM-as-a-judge
+    evaluations (e.g., DeepEval) because it prevents the evaluator's
+    OpenAI calls from being instrumented alongside the application's
+    telemetry.
+
+    Configuration via environment variables:
+    - OTEL_INSTRUMENTATION_GENAI_EVALS_SEPARATE_PROCESS: "true" or "false" (default: "false")
+    - OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: Evaluator configuration
+
+    Args:
+        handler: The TelemetryHandler instance.
+        interval: Polling interval for the evaluation queue.
+        aggregate_results: Whether to aggregate evaluation results.
+
+    Returns:
+        Either a Manager or EvalManagerProxy implementing CompletionCallback.
+    """
+    if is_separate_process_enabled():
+        _LOGGER.info("Using separate process evaluation mode")
+        try:
+            return EvalManagerProxy(
+                handler,
+                interval=interval,
+                aggregate_results=aggregate_results,
+            )
+        except Exception as exc:
+            _LOGGER.warning(
+                "Failed to create EvalManagerProxy, falling back to in-process mode: %s",
+                exc,
+            )
+            # Fall through to in-process mode
 
     return Manager(
         handler,
