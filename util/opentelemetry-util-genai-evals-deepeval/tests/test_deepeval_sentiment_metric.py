@@ -193,7 +193,7 @@ def test_sentiment_metric_result_attributes(monkeypatch):
     )
     monkeypatch.setattr(
         "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics: fake_result,
+        lambda case, metrics: (fake_result, 0.5),
     )
 
     results = evaluator.evaluate(invocation)

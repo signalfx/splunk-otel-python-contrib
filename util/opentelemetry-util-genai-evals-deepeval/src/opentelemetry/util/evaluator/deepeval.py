@@ -464,9 +464,17 @@ class DeepevalEvaluator(Evaluator):
 
         try:
             # Use async runner for concurrent evaluation
-            evaluation = await _run_deepeval_async(
+            evaluation, duration = await _run_deepeval_async(
                 prep_result.test_case, prep_result.metrics
             )
+
+            # Record monitoring metrics
+            self._record_monitoring(
+                evaluation,
+                duration,
+                metric_names=self.metrics,
+            )
+
             genai_debug_log(
                 "evaluator.deepeval.async.complete",
                 invocation,
@@ -634,9 +642,17 @@ class DeepevalEvaluator(Evaluator):
             return prep_result.early_return
 
         try:
-            evaluation = _run_deepeval(
+            evaluation, duration = _run_deepeval(
                 prep_result.test_case, prep_result.metrics
             )
+
+            # Record monitoring metrics
+            self._record_monitoring(
+                evaluation,
+                duration,
+                metric_names=self.metrics,
+            )
+
             genai_debug_log(
                 "evaluator.deepeval.complete",
                 invocation,
@@ -706,6 +722,116 @@ class DeepevalEvaluator(Evaluator):
         return None
 
     # removed; see deepeval_runner.run_evaluation
+
+    def _record_monitoring(
+        self,
+        evaluation: Any,
+        duration: float,
+        metric_names: Sequence[str] | None = None,
+    ) -> None:
+        """Record monitoring metrics for the evaluation.
+
+        Args:
+            evaluation: The DeepEval evaluation result.
+            duration: Duration of the evaluation in seconds.
+            metric_names: Names of metrics that were evaluated.
+        """
+        monitor = _get_monitor()
+        if monitor is None:
+            return
+
+        try:
+            from opentelemetry.util.genai.evals.monitoring import (
+                EvaluationContext,
+            )
+
+            # Extract model info and cost from evaluation results
+            test_results = getattr(evaluation, "test_results", [])
+            for test in test_results:
+                metrics_data = getattr(test, "metrics_data", []) or []
+                for metric in metrics_data:
+                    metric_name = getattr(metric, "name", "unknown")
+                    evaluation_model = getattr(
+                        metric, "evaluation_model", None
+                    )
+                    evaluation_cost = getattr(metric, "evaluation_cost", None)
+
+                    # Create context and record
+                    ctx = EvaluationContext(
+                        evaluation_name=str(metric_name).lower(),
+                        evaluator_name="deepeval",
+                        request_model=str(evaluation_model)
+                        if evaluation_model
+                        else None,
+                        provider="openai",  # DeepEval primarily uses OpenAI
+                        start_time=0,  # Not used - we have duration
+                    )
+                    ctx.attributes["deepeval.batch_duration"] = duration
+
+                    # Estimate tokens from cost if available
+                    # DeepEval reports cost; estimate tokens (rough approximation)
+                    if evaluation_cost is not None:
+                        try:
+                            cost = float(evaluation_cost)
+                            ctx.attributes["deepeval.evaluation_cost"] = cost
+                            # Rough token estimate: $0.15/1M input, $0.60/1M output for gpt-4o-mini
+                            # Assume 50/50 split, avg $0.375/1M tokens
+                            estimated_tokens = (
+                                int(cost / 0.000000375) if cost > 0 else None
+                            )
+                            if estimated_tokens:
+                                # Split roughly 70% input, 30% output
+                                ctx.input_tokens = int(estimated_tokens * 0.7)
+                                ctx.output_tokens = int(estimated_tokens * 0.3)
+                        except (TypeError, ValueError):
+                            pass
+
+                    # Use per-metric duration if available, otherwise distribute batch duration
+                    num_metrics = len(metrics_data) if metrics_data else 1
+                    per_metric_duration = duration / num_metrics
+
+                    # Override start_time calculation by setting elapsed manually
+                    monitor._duration_histogram.record(
+                        per_metric_duration,
+                        {
+                            "gen_ai.operation.name": "evaluate",
+                            "gen_ai.evaluation.name": ctx.evaluation_name,
+                            "gen_ai.evaluation.evaluator": ctx.evaluator_name,
+                            **(
+                                {"gen_ai.request.model": ctx.request_model}
+                                if ctx.request_model
+                                else {}
+                            ),
+                            "gen_ai.system": ctx.provider,
+                        },
+                    )
+
+                    # Record token usage if available
+                    if ctx.input_tokens or ctx.output_tokens:
+                        base_attrs = {
+                            "gen_ai.operation.name": "evaluate",
+                            "gen_ai.evaluation.name": ctx.evaluation_name,
+                            "gen_ai.evaluation.evaluator": ctx.evaluator_name,
+                            "gen_ai.system": ctx.provider,
+                        }
+                        if ctx.request_model:
+                            base_attrs["gen_ai.request.model"] = (
+                                ctx.request_model
+                            )
+
+                        if ctx.input_tokens:
+                            monitor._token_histogram.record(
+                                ctx.input_tokens,
+                                {**base_attrs, "gen_ai.token.type": "input"},
+                            )
+                        if ctx.output_tokens:
+                            monitor._token_histogram.record(
+                                ctx.output_tokens,
+                                {**base_attrs, "gen_ai.token.type": "output"},
+                            )
+
+        except Exception as exc:  # pragma: no cover - defensive
+            _LOGGER.debug("Failed to record monitoring metrics: %s", exc)
 
     def _convert_results(self, evaluation: Any) -> Sequence[EvaluationResult]:
         results: list[EvaluationResult] = []

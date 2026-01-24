@@ -2,6 +2,34 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.7 - 2026-01-24
+
+### Added
+- **Evaluation Monitoring Metrics** - Observability for the evaluation system itself
+  - `gen_ai.evaluation.client.operation.duration` - Histogram tracking evaluation latency
+  - `gen_ai.evaluation.client.token.usage` - Histogram tracking token consumption per evaluation
+  - `gen_ai.evaluation.client.queue.size` - Gauge showing current queue depth
+  - `gen_ai.evaluation.client.enqueue.errors` - Counter for dropped evaluations
+
+- **New Components**
+  - `EvaluationMonitor` - Central class for evaluation metrics instrumentation
+  - `EvaluationContext` - Dataclass for tracking evaluation timing context
+  - `get_evaluation_monitor()` - Accessor for the global monitor singleton
+  - `read_monitoring_flag()` - Environment variable helper for monitoring enablement
+
+- **New Environment Variables**
+  - `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING` - Enable evaluation metrics (default: `false`)
+
+- **New Exports from Package**
+  - `EvaluationMonitor`
+  - `EvaluationContext`
+  - `get_evaluation_monitor`
+
+### Changed
+- `Manager` now accepts optional `monitoring_enabled` parameter
+- Queue operations (`enqueue`/`dequeue`) emit metrics when monitoring enabled
+- Full queue conditions are recorded as enqueue errors
+
 ## Version 0.1.6 - 2026-01-23
 
 ### Added

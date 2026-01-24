@@ -66,9 +66,10 @@ def test_answer_relevancy_variants_normalize(variant, expected_key):
         ),
         patch(
             "opentelemetry.util.evaluator.deepeval._run_deepeval",
-            lambda case, metrics: type(
-                "_DummyEval", (), {"test_results": []}
-            )(),
+            lambda case, metrics: (
+                type("_DummyEval", (), {"test_results": []})(),
+                0.5,
+            ),
         ),
     ):
         evaluator = plugin.DeepevalEvaluator(
