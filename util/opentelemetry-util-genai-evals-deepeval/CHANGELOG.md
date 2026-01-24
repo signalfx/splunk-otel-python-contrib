@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.10 - 2026-01-24
+
+### Added
+- **Evaluation Monitoring Integration** - DeepEval evaluator now emits monitoring metrics
+  - Records evaluation duration via `EvaluationMonitor.record_evaluation()`
+  - Records token usage from DeepEval results when available
+  - Supports both sync and async evaluation paths
+
+### Changed
+- `run_evaluation()` and `run_evaluation_async()` now return `tuple[result, duration]`
+  - Duration measured using `time.perf_counter()` for precise timing
+  - Enables accurate latency tracking for monitoring metrics
+- `_evaluate_generic()` and `_evaluate_generic_async()` capture and record monitoring data
+
 ## Version 0.1.9 - 2026-01-17
 
 ### Added

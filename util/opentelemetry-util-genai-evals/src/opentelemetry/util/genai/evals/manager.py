@@ -30,10 +30,12 @@ from .env import (
     read_aggregation_flag,
     read_concurrent_flag,
     read_interval,
+    read_monitoring_flag,
     read_queue_size,
     read_raw_evaluators,
     read_worker_count,
 )
+from .monitoring import EvaluationMonitor
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
 
@@ -99,6 +101,7 @@ class Manager(CompletionCallback):
         queue_size: int | None = None,
         concurrent_mode: bool | None = None,
         worker_count: int | None = None,
+        monitoring_enabled: bool | None = None,
     ) -> None:
         self._handler = handler
         self._interval = interval if interval is not None else read_interval()
@@ -128,6 +131,17 @@ class Manager(CompletionCallback):
         self._worker_count = (
             worker_count if worker_count is not None else read_worker_count()
         )
+
+        # Monitoring configuration
+        self._monitoring_enabled = (
+            monitoring_enabled
+            if monitoring_enabled is not None
+            else read_monitoring_flag()
+        )
+        self._monitor: EvaluationMonitor | None = None
+        if self._monitoring_enabled:
+            self._monitor = EvaluationMonitor()
+            _LOGGER.info("Evaluation monitoring enabled")
 
         self._shutdown = threading.Event()
         self._workers: list[threading.Thread] = []
@@ -232,6 +246,9 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
+            # Record successful enqueue for monitoring
+            if self._monitor:
+                self._monitor.on_enqueue()
         except queue.Full:
             # Bounded queue is full - apply backpressure by dropping
             invocation.evaluation_error = "client_evaluation_queue_full"
@@ -243,6 +260,9 @@ class Manager(CompletionCallback):
                 if self._queue_size > 0
                 else self._queue.maxsize,
             )
+            # Record enqueue error for monitoring
+            if self._monitor:
+                self._monitor.on_enqueue_error("queue_full")
         except Exception as exc:  # pragma: no cover - defensive
             invocation.evaluation_error = "client_evaluation_queue_error"
             _LOGGER.error(
@@ -250,6 +270,9 @@ class Manager(CompletionCallback):
                 exc,
                 exc_info=True,
             )
+            # Record enqueue error for monitoring
+            if self._monitor:
+                self._monitor.on_enqueue_error("queue_error")
 
     def wait_for_all(self, timeout: float | None = None) -> None:
         if not self.has_evaluators:
@@ -285,6 +308,16 @@ class Manager(CompletionCallback):
     def has_evaluators(self) -> bool:
         return any(self._evaluators.values())
 
+    @property
+    def monitor(self) -> EvaluationMonitor | None:
+        """Return the evaluation monitor if monitoring is enabled."""
+        return self._monitor
+
+    @property
+    def monitoring_enabled(self) -> bool:
+        """Whether evaluation monitoring is enabled."""
+        return self._monitoring_enabled
+
     # Internal helpers ---------------------------------------------------
     def _worker_loop(self) -> None:
         """Sequential worker loop (legacy mode)."""
@@ -294,6 +327,9 @@ class Manager(CompletionCallback):
             except queue.Empty:
                 continue
             try:
+                # Record dequeue for monitoring
+                if self._monitor:
+                    self._monitor.on_dequeue()
                 self._process_invocation(invocation)
             except Exception:  # pragma: no cover - defensive
                 _LOGGER.exception("Evaluator processing failed")
@@ -315,6 +351,9 @@ class Manager(CompletionCallback):
                     invocation = self._queue.get(timeout=self._interval)
                 except queue.Empty:
                     continue
+                # Record dequeue for monitoring
+                if self._monitor:
+                    self._monitor.on_dequeue()
                 try:
                     # Run async processing in event loop
                     loop.run_until_complete(

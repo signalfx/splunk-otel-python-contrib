@@ -241,6 +241,25 @@ OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE = (
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE"
 )
+
+OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING
+
+Enable evaluation monitoring metrics. When set to a truthy value (``true``,
+``1``, ``yes``, ``on``), the evaluation manager emits metrics for LLM-as-a-judge
+operations including:
+
+- ``gen_ai.evaluation.client.operation.duration`` - Duration of evaluation LLM calls
+- ``gen_ai.evaluation.client.token.usage`` - Token usage of evaluation LLM calls
+- ``gen_ai.evaluation.client.queue.size`` - Current evaluation queue size
+- ``gen_ai.evaluation.client.enqueue.errors`` - Count of failed enqueue operations
+
+Defaults to ``false`` to avoid overhead if monitoring is not needed.
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -265,6 +284,7 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC",
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
 ]

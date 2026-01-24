@@ -40,6 +40,12 @@ from .bootstrap import (
     create_evaluation_manager,
 )
 from .manager import Manager, Sampler
+from .monitoring import (
+    EvaluationContext,
+    EvaluationMonitor,
+    get_evaluation_monitor,
+    reset_evaluation_monitor,
+)
 from .proxy import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_SEPARATE_PROCESS,
     EvalManagerProxy,
@@ -57,6 +63,11 @@ __all__ = [
     "EvaluatorCompletionCallback",
     "create_completion_callback",
     "create_evaluation_manager",
+    # Monitoring
+    "EvaluationContext",
+    "EvaluationMonitor",
+    "get_evaluation_monitor",
+    "reset_evaluation_monitor",
     # Separate process mode
     "EvalManagerProxy",
     "is_separate_process_enabled",

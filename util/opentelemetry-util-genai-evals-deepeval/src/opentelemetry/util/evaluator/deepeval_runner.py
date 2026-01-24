@@ -10,7 +10,9 @@ The core evaluation logic is centralized in _execute_evaluation.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Sequence
+import logging
+import time
+from typing import Any, Callable, Optional, Sequence
 
 from deepeval import evaluate as deepeval_evaluate
 from deepeval.evaluate.configs import AsyncConfig, DisplayConfig
@@ -19,6 +21,28 @@ from opentelemetry.util.genai.evals.env import (
     read_concurrent_flag,
     read_max_concurrent,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+# Optional monitoring support - imported lazily to avoid circular imports
+_monitoring_callback: Optional[
+    Callable[[str, float, Optional[str], Optional[str]], None]
+] = None
+
+
+def set_monitoring_callback(
+    callback: Optional[
+        Callable[[str, float, Optional[str], Optional[str]], None]
+    ],
+) -> None:
+    """Set a callback to receive monitoring events.
+
+    Args:
+        callback: Function(metric_name, duration_seconds, model, provider)
+            Called after each metric evaluation completes.
+    """
+    global _monitoring_callback
+    _monitoring_callback = callback
 
 
 def _execute_evaluation(
@@ -35,9 +59,10 @@ def _execute_evaluation(
         test_case: The test case to evaluate.
         metrics: List of metrics to run.
         run_async: Whether to enable DeepEval's internal parallel metric evaluation.
+        metric_names: Optional list of metric names for monitoring (parallel with metrics).
 
     Returns:
-        Evaluation result from DeepEval.
+        Tuple of (evaluation result, duration in seconds).
     """
     display_config = DisplayConfig(show_indicator=False, print_results=False)
     max_concurrent = read_max_concurrent() if run_async else 1
@@ -45,18 +70,23 @@ def _execute_evaluation(
         run_async=run_async, max_concurrent=max_concurrent
     )
 
-    return deepeval_evaluate(
+    start_time = time.perf_counter()
+    result = deepeval_evaluate(
         [test_case],
         list(metrics),
         async_config=async_config,
         display_config=display_config,
     )
+    duration = time.perf_counter() - start_time
+
+    return result, duration
 
 
 def run_evaluation(
     test_case: Any,
     metrics: Sequence[Any],
-) -> Any:
+    metric_names: Optional[Sequence[str]] = None,
+) -> tuple[Any, float]:
     """Run DeepEval evaluation synchronously (sequential mode).
 
     This function is called from the sequential evaluation path where
@@ -66,9 +96,10 @@ def run_evaluation(
     Args:
         test_case: The test case to evaluate.
         metrics: List of metrics to run.
+        metric_names: Optional list of metric names for monitoring.
 
     Returns:
-        Evaluation result from DeepEval.
+        Tuple of (evaluation result, duration in seconds).
     """
     return _execute_evaluation(test_case, metrics, run_async=False)
 
@@ -76,7 +107,8 @@ def run_evaluation(
 async def run_evaluation_async(
     test_case: Any,
     metrics: Sequence[Any],
-) -> Any:
+    metric_names: Optional[Sequence[str]] = None,
+) -> tuple[Any, float]:
     """Run DeepEval evaluation asynchronously with parallel metrics.
 
     This function is called from the concurrent evaluation path. It runs
@@ -94,9 +126,10 @@ async def run_evaluation_async(
     Args:
         test_case: The test case to evaluate.
         metrics: List of metrics to run.
+        metric_names: Optional list of metric names for monitoring.
 
     Returns:
-        Evaluation result from DeepEval.
+        Tuple of (evaluation result, duration in seconds).
     """
     use_parallel = read_concurrent_flag()
     return await asyncio.to_thread(
