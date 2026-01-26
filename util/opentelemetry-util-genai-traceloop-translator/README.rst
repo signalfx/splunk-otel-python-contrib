@@ -26,42 +26,47 @@ Installation
 
    pip install opentelemetry-util-genai-traceloop-translator
 
-Quick Start (Automatic Registration)
--------------------------------------
-The easiest way to use the translator is to simply import it - no manual setup required!
+Quick Start
+-----------
+The translator automatically registers when Traceloop is initialized. See the examples for complete usage:
 
-.. code-block:: python
+- **Basic Example**: `examples/traceloop_processor_example.py <examples/traceloop_processor_example.py>`_ - Demonstrates workflow, agent, task, and tool decorators with automatic span translation.
 
-   import os
-   from openai import OpenAI
+- **Evaluation Example**: `examples/traceloop_eval_example.py <examples/traceloop_eval_example.py>`_ - Shows how to run GenAI evaluations on translated spans.
 
+.. code-block:: bash
 
-   from traceloop.sdk import Traceloop
-   from traceloop.sdk.decorators import workflow
+   # Run basic example
+   python examples/traceloop_processor_example.py
 
-   client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+   # Run evaluation example
+   python examples/traceloop_eval_example.py
 
-   Traceloop.init(app_name="story_service")
+Evaluations
+-----------
 
+In order to enable GenAI evaluations for Traceloop spans, the corresponding packages must be installed:
 
-   @workflow(name="streaming_story")
-   def joke_workflow():
-      stream = client.chat.completions.create(
-         model="gpt-4o-2024-05-13",
-         messages=[{"role": "user", "content": "Tell me a story about opentelemetry"}],
-         stream=True,
-      )
+.. code-block:: bash
 
-      for part in stream:
-         print(part.choices[0].delta.content or "", end="")
-      print()
+   # install evaluation packages
+   pip install opentelemetry-util-genai-evals opentelemetry-util-genai-evals-deepeval
 
+Also, see `.env.example` for environment variable setup, which includes setting up configuration for the evaluation provider.
 
-   joke_workflow()
-   # The translator automatically creates new gen_ai.* attributes based on the mapping.
+The translator enables GenAI evaluations by converting Traceloop spans to the standardized ``gen_ai.*`` format.
+Once translated, LLM / Agent spans can be evaluated using metrics like:
+
+- **Answer Relevancy** - How relevant is the response to the input
+- **Faithfulness** - Is the response grounded in context
+- **Bias/Toxicity** - Content safety checks
+
+Evaluations require a compatible evaluation provider (e.g., DeepEval). See `examples/traceloop_eval_example.py <examples/traceloop_eval_example.py>`_ for a complete example.
 
 Tests
 -----
+
+To run the test suite, use the following command:
 .. code-block:: bash
 
    pytest util/opentelemetry-util-genai-traceloop-translator/tests
