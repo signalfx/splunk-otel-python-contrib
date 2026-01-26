@@ -124,6 +124,22 @@ build-instrumentation-aidefense:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-weaviate:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-weaviate
+    - mv dist/* ../../dist/instrumentation-weaviate/
+    - cd ../../dist/instrumentation-weaviate
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-weaviate/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -237,6 +253,22 @@ sign-instrumentation-aidefense:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-weaviate:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-weaviate
+  variables:
+    ARTIFACT: dist/instrumentation-weaviate/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-weaviate
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-weaviate/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -328,3 +360,16 @@ deploy-instrumentation-aidefense:
     - sign-instrumentation-aidefense
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-weaviate:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-weaviate/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-weaviate
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
