@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC
 from typing import Iterable, Mapping, Sequence
 
@@ -31,6 +32,10 @@ class Evaluator(ABC):
     Evaluators may specialise for different invocation types (LLM, Agent, etc.).
     Subclasses override the type-specific ``evaluate_*`` methods. The top-level
     ``evaluate`` method performs dynamic dispatch and guarantees a list return type.
+
+    For concurrent processing, subclasses can override ``evaluate_async`` or the
+    type-specific ``evaluate_llm_async`` / ``evaluate_agent_async`` methods. The
+    default implementation runs the synchronous methods in a thread pool.
     """
 
     def __init__(
@@ -94,7 +99,7 @@ class Evaluator(ABC):
 
         return self._options
 
-    # ---- Evaluation dispatch -----------------------------------------
+    # ---- Synchronous evaluation dispatch -----------------------------
     def evaluate(self, item: GenAI) -> list[EvaluationResult]:
         """Evaluate any GenAI telemetry entity and return results."""
 
@@ -104,7 +109,21 @@ class Evaluator(ABC):
             return list(self.evaluate_agent(item))
         return []
 
-    # ---- Type-specific hooks -----------------------------------------
+    # ---- Asynchronous evaluation dispatch ----------------------------
+    async def evaluate_async(self, item: GenAI) -> list[EvaluationResult]:
+        """Asynchronously evaluate a GenAI telemetry entity.
+
+        Default implementation runs the synchronous evaluate method in a thread pool.
+        Subclasses with native async support should override this method or the
+        type-specific async hooks for better performance.
+        """
+        if isinstance(item, LLMInvocation):
+            return list(await self.evaluate_llm_async(item))
+        if isinstance(item, AgentInvocation):
+            return list(await self.evaluate_agent_async(item))
+        return []
+
+    # ---- Synchronous type-specific hooks -----------------------------
     def evaluate_llm(
         self, invocation: LLMInvocation
     ) -> Sequence[EvaluationResult]:
@@ -118,6 +137,27 @@ class Evaluator(ABC):
         """Evaluate an agent invocation. Override in subclasses."""
 
         return []
+
+    # ---- Asynchronous type-specific hooks ----------------------------
+    async def evaluate_llm_async(
+        self, invocation: LLMInvocation
+    ) -> Sequence[EvaluationResult]:
+        """Asynchronously evaluate an LLM invocation.
+
+        Default implementation runs evaluate_llm in a thread pool.
+        Override for native async support.
+        """
+        return await asyncio.to_thread(self.evaluate_llm, invocation)
+
+    async def evaluate_agent_async(
+        self, invocation: AgentInvocation
+    ) -> Sequence[EvaluationResult]:
+        """Asynchronously evaluate an agent invocation.
+
+        Default implementation runs evaluate_agent in a thread pool.
+        Override for native async support.
+        """
+        return await asyncio.to_thread(self.evaluate_agent, invocation)
 
 
 __all__ = ["Evaluator"]
