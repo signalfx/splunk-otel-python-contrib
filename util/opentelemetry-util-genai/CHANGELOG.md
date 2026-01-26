@@ -13,7 +13,7 @@ All notable changes to this repository are documented in this file.
 ### Fixed
 - **JSON serialization for agent/workflow messages** - Agent and workflow input/output messages are now properly serialized as valid JSON instead of Python repr strings, fixing rendering issues in observability UIs.
 
-## Version 0.1.7 - 2026-01-17
+## Version 0.1.7 - 2026-01-26
 
 ### Added
 - **Concurrent Evaluation Support** - New environment variables for parallel evaluation processing:
@@ -23,6 +23,10 @@ All notable changes to this repository are documented in this file.
 - These variables enable significant throughput improvements for LLM-as-a-Judge evaluations
 - Added `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` environment variable to support evaluation queue size.
   Added queue size check and error attribute on span while eval for a span is dropped.
+- **Explicit histogram bucket boundaries** per [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md):
+  - `gen_ai.client.operation.duration`, `gen_ai.workflow.duration`, `gen_ai.agent.duration`: exponential buckets in seconds
+  - `gen_ai.client.token.usage`: exponential buckets for token counts
+  - `gen_ai.evaluation.score` and evaluation metrics: linear buckets [0.1 - 1.0] for score range
 
 ## Version 0.1.6 - 2026-01-13
 
