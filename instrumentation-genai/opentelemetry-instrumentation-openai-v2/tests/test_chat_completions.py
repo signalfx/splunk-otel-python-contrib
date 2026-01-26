@@ -521,21 +521,10 @@ def chat_completion_tool_call(
     assert "stop" in response_1.choices[0].finish_reason
 
     spans = span_exporter.get_finished_spans()
-
-    # Tool call spans (execute_tool) are not auto-created during response parsing.
-    # They should be created by user code or higher-level frameworks (e.g., LangChain)
-    # that can observe actual tool execution.
-    chat_spans = [
-        span
-        for span in spans
-        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
-        == GenAIAttributes.GenAiOperationNameValues.CHAT.value
-    ]
-
-    assert len(chat_spans) == 2
+    assert len(spans) == 2
 
     assert_all_attributes(
-        chat_spans[0],
+        spans[0],
         llm_model_value,
         response_0.id,
         response_0.model,
@@ -543,7 +532,7 @@ def chat_completion_tool_call(
         response_0.usage.completion_tokens,
     )
     assert_all_attributes(
-        chat_spans[1],
+        spans[1],
         llm_model_value,
         response_1.id,
         response_1.model,
@@ -559,14 +548,14 @@ def chat_completion_tool_call(
         {"content": messages_value[0]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[0], "gen_ai.system.message", system_message, chat_spans[0]
+        logs[0], "gen_ai.system.message", system_message, spans[0]
     )
 
     user_message = (
         {"content": messages_value[1]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[1], "gen_ai.user.message", user_message, chat_spans[0]
+        logs[1], "gen_ai.user.message", user_message, spans[0]
     )
 
     function_call_0 = {"name": "get_current_weather"}
@@ -603,7 +592,7 @@ def chat_completion_tool_call(
         },
     }
     assert_message_in_logs(
-        logs[2], "gen_ai.choice", choice_event, chat_spans[0]
+        logs[2], "gen_ai.choice", choice_event, spans[0]
     )
 
     # call two
@@ -611,14 +600,14 @@ def chat_completion_tool_call(
         {"content": messages_value[0]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[3], "gen_ai.system.message", system_message, chat_spans[1]
+        logs[3], "gen_ai.system.message", system_message, spans[1]
     )
 
     user_message = (
         {"content": messages_value[1]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[4], "gen_ai.user.message", user_message, chat_spans[1]
+        logs[4], "gen_ai.user.message", user_message, spans[1]
     )
 
     assistant_tool_call = {"tool_calls": messages_value[2]["tool_calls"]}
@@ -627,7 +616,7 @@ def chat_completion_tool_call(
         assistant_tool_call["tool_calls"][1]["function"]["arguments"] = None
 
     assert_message_in_logs(
-        logs[5], "gen_ai.assistant.message", assistant_tool_call, chat_spans[1]
+        logs[5], "gen_ai.assistant.message", assistant_tool_call, spans[1]
     )
 
     tool_message_0 = {
@@ -636,7 +625,7 @@ def chat_completion_tool_call(
     }
 
     assert_message_in_logs(
-        logs[6], "gen_ai.tool.message", tool_message_0, chat_spans[1]
+        logs[6], "gen_ai.tool.message", tool_message_0, spans[1]
     )
 
     tool_message_1 = {
@@ -645,7 +634,7 @@ def chat_completion_tool_call(
     }
 
     assert_message_in_logs(
-        logs[7], "gen_ai.tool.message", tool_message_1, chat_spans[1]
+        logs[7], "gen_ai.tool.message", tool_message_1, spans[1]
     )
 
     message = {
@@ -659,7 +648,7 @@ def chat_completion_tool_call(
         "finish_reason": "stop",
         "message": message,
     }
-    assert_message_in_logs(logs[8], "gen_ai.choice", choice, chat_spans[1])
+    assert_message_in_logs(logs[8], "gen_ai.choice", choice, spans[1])
 
 
 @pytest.mark.vcr()
@@ -966,20 +955,10 @@ def chat_completion_multiple_tools_streaming(
     assert "tool_calls" == finish_reason
 
     spans = span_exporter.get_finished_spans()
-    # Tool call spans (execute_tool) are not auto-created during response parsing.
-    # They should be created by user code or higher-level frameworks (e.g., LangChain)
-    # that can observe actual tool execution.
-    chat_spans = [
-        span
-        for span in spans
-        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
-        == GenAIAttributes.GenAiOperationNameValues.CHAT.value
-    ]
-
-    assert len(chat_spans) == 1
+    assert len(spans) == 1
 
     assert_all_attributes(
-        chat_spans[0],
+        spans[0],
         llm_model_value,
         response_stream_id,
         response_stream_model,
@@ -994,7 +973,7 @@ def chat_completion_multiple_tools_streaming(
         {"content": messages_value[0]["content"]} if expect_content else None
     )
     assert_message_in_logs(
-        logs[0], "gen_ai.system.message", system_message, chat_spans[0]
+        logs[0], "gen_ai.system.message", system_message, spans[0]
     )
 
     user_message = (
@@ -1003,7 +982,7 @@ def chat_completion_multiple_tools_streaming(
         else None
     )
     assert_message_in_logs(
-        logs[1], "gen_ai.user.message", user_message, chat_spans[0]
+        logs[1], "gen_ai.user.message", user_message, spans[0]
     )
 
     choice_event = {
@@ -1036,7 +1015,7 @@ def chat_completion_multiple_tools_streaming(
         },
     }
     assert_message_in_logs(
-        logs[2], "gen_ai.choice", choice_event, chat_spans[0]
+        logs[2], "gen_ai.choice", choice_event, spans[0]
     )
 
 
