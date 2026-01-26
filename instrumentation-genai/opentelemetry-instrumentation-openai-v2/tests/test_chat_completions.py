@@ -591,9 +591,7 @@ def chat_completion_tool_call(
             ],
         },
     }
-    assert_message_in_logs(
-        logs[2], "gen_ai.choice", choice_event, spans[0]
-    )
+    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, spans[0])
 
     # call two
     system_message = (
@@ -1014,9 +1012,7 @@ def chat_completion_multiple_tools_streaming(
             ],
         },
     }
-    assert_message_in_logs(
-        logs[2], "gen_ai.choice", choice_event, spans[0]
-    )
+    assert_message_in_logs(logs[2], "gen_ai.choice", choice_event, spans[0])
 
 
 def assert_message_in_logs(log, event_name, expected_content, parent_span):
