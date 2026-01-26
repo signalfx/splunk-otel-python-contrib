@@ -137,26 +137,26 @@ class TestMessageCaching:
 
         # Verify input message format
         input_msg = cached_input[0]
-        assert isinstance(
-            input_msg, InputMessage
-        ), "Should be InputMessage object"
+        assert isinstance(input_msg, InputMessage), (
+            "Should be InputMessage object"
+        )
         assert input_msg.role == "user", "Should have user role"
         assert len(input_msg.parts) == 1, "Should have 1 part"
-        assert isinstance(
-            input_msg.parts[0], Text
-        ), "Part should be Text object"
+        assert isinstance(input_msg.parts[0], Text), (
+            "Part should be Text object"
+        )
         assert input_msg.parts[0].content == "Hello, how are you?"
 
         # Verify output message format
         output_msg = cached_output[0]
-        assert isinstance(
-            output_msg, OutputMessage
-        ), "Should be OutputMessage object"
+        assert isinstance(output_msg, OutputMessage), (
+            "Should be OutputMessage object"
+        )
         assert output_msg.role == "assistant", "Should have assistant role"
         assert len(output_msg.parts) == 1, "Should have 1 part"
-        assert isinstance(
-            output_msg.parts[0], Text
-        ), "Part should be Text object"
+        assert isinstance(output_msg.parts[0], Text), (
+            "Part should be Text object"
+        )
         assert output_msg.parts[0].content == "I'm doing great, thanks!"
 
     def test_reconstruction_not_repeated_unnecessarily(
@@ -233,14 +233,14 @@ class TestMessageCaching:
 
         # Verify messages are in correct format (not reconstructed again)
         input_msg = invocation.input_messages[0]
-        assert isinstance(
-            input_msg, InputMessage
-        ), "Should be InputMessage object"
+        assert isinstance(input_msg, InputMessage), (
+            "Should be InputMessage object"
+        )
         assert hasattr(input_msg, "parts"), "Should have parts attribute"
         assert len(input_msg.parts) > 0, "Should have parts"
-        assert isinstance(
-            input_msg.parts[0], Text
-        ), "Part should be Text object"
+        assert isinstance(input_msg.parts[0], Text), (
+            "Part should be Text object"
+        )
         assert input_msg.parts[0].content == "Cached message test"
 
 
@@ -294,9 +294,9 @@ class TestDeepEvalFormat:
         output_text = extract_text_from_messages(cached_output)
 
         assert input_text == "Test for DeepEval", "Should extract input text"
-        assert (
-            output_text == "Response for DeepEval"
-        ), "Should extract output text"
+        assert output_text == "Response for DeepEval", (
+            "Should extract output text"
+        )
 
     def test_messages_have_required_attributes(
         self, setup_tracer_with_handler
@@ -338,17 +338,17 @@ class TestRecursionGuards:
         _, _, _, processor, _ = setup_tracer_with_handler
 
         # Test None span
-        assert (
-            processor._should_skip_span(None) is True
-        ), "Should skip None span"
+        assert processor._should_skip_span(None) is True, (
+            "Should skip None span"
+        )
 
         # Test span without name
         mock_span = Mock(spec=ReadableSpan)
         mock_span.name = None
         mock_span.attributes = {}
-        assert (
-            processor._should_skip_span(mock_span) is True
-        ), "Should skip span without name"
+        assert processor._should_skip_span(mock_span) is True, (
+            "Should skip span without name"
+        )
 
     def test_should_skip_synthetic_span(self, setup_tracer_with_handler):
         """Test that synthetic spans are skipped."""
@@ -359,9 +359,9 @@ class TestRecursionGuards:
         mock_span.attributes = {"_traceloop_translated": True}
 
         # Should skip by attribute
-        assert (
-            processor._should_skip_span(mock_span) is True
-        ), "Should skip span with _traceloop_translated attribute"
+        assert processor._should_skip_span(mock_span) is True, (
+            "Should skip span with _traceloop_translated attribute"
+        )
 
     def test_should_skip_by_span_id(self, setup_tracer_with_handler):
         """Test that spans are skipped by ID in set."""
@@ -376,9 +376,9 @@ class TestRecursionGuards:
         mock_span.attributes = {}
 
         # Should skip by ID
-        assert (
-            processor._should_skip_span(mock_span, test_span_id) is True
-        ), "Should skip span with ID in synthetic set"
+        assert processor._should_skip_span(mock_span, test_span_id) is True, (
+            "Should skip span with ID in synthetic set"
+        )
 
     def test_should_not_skip_normal_span(self, setup_tracer_with_handler):
         """Test that normal spans are not skipped."""
@@ -389,9 +389,9 @@ class TestRecursionGuards:
         mock_span.attributes = {}
 
         # Should not skip
-        assert (
-            processor._should_skip_span(mock_span, 99999) is False
-        ), "Should not skip normal span"
+        assert processor._should_skip_span(mock_span, 99999) is False, (
+            "Should not skip normal span"
+        )
 
     def test_synthetic_span_not_reprocessed(self, setup_tracer_with_handler):
         """Test that synthetic spans created by processor are not reprocessed."""
@@ -414,16 +414,16 @@ class TestRecursionGuards:
 
         provider.force_flush()
 
-
         # start_llm should be called once (for the synthetic span)
-        assert (
-            mock_handler.start_llm.call_count == 1
-        ), "start_llm should be called once for synthetic span"
+        assert mock_handler.start_llm.call_count == 1, (
+            "start_llm should be called once for synthetic span"
+        )
 
         # stop_llm should be called once
-        assert (
-            mock_handler.stop_llm.call_count == 1
-        ), "stop_llm should be called once"
+        assert mock_handler.stop_llm.call_count == 1, (
+            "stop_llm should be called once"
+        )
+
 
 class TestCacheIntegration:
     """Test cache integration with full flow."""
@@ -487,9 +487,9 @@ class TestCacheIntegration:
         provider.force_flush()
 
         # Cache should exist
-        assert (
-            span_id in processor._message_cache
-        ), "Cache should exist after processing"
+        assert span_id in processor._message_cache, (
+            "Cache should exist after processing"
+        )
 
         # Note: Cache is not automatically cleared - this is intentional
         # as spans might be accessed later for debugging/evaluation
