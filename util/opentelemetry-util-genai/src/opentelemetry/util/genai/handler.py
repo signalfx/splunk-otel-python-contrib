@@ -159,12 +159,14 @@ class TelemetryHandler:
 
         evaluation_sample_rate = settings.evaluation_sample_rate
         self._sampler = TraceIdRatioBased(evaluation_sample_rate)
-        
+
         # Parse parent span requirement for evaluation (default: true)
-        self._eval_require_parent_span = os.getenv(
-            "OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN",
-            "true"
-        ).lower() == "true"
+        self._eval_require_parent_span = (
+            os.getenv(
+                "OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN", "true"
+            ).lower()
+            == "true"
+        )
 
         # Check if single metric mode is enabled
         use_single_metric = is_truthy_env(
@@ -255,37 +257,47 @@ class TelemetryHandler:
         if self._eval_require_parent_span:
             # Only apply parent span filter to LLMInvocation entities with chat operation
             from opentelemetry.util.genai.types import LLMInvocation
+
             if isinstance(entity, LLMInvocation):
                 operation = getattr(entity, "operation", None)
                 # Only apply filter to chat operations (not embeddings, etc.)
                 if operation == "chat":
                     # Primary check: parent_run_id (more reliable, thread-safe, survives serialization)
                     has_parent_run_id = entity.parent_run_id is not None
-                    
+
                     # Secondary check: span.parent (for backwards compatibility)
                     span = getattr(entity, "span", None)
-                    has_parent_span = span is not None and span.parent is not None
-                    
+                    has_parent_span = (
+                        span is not None
+                        and getattr(span, "parent", None) is not None
+                    )
+
                     # An LLM invocation has a parent if any check passes
                     has_parent = has_parent_run_id or has_parent_span
-                    
+
                     genai_debug_log(
                         "parent_span_filter",
                         {
                             "operation": operation,
                             "has_parent_run_id": has_parent_run_id,
-                            "parent_run_id": str(entity.parent_run_id) if entity.parent_run_id else None,
+                            "parent_run_id": str(entity.parent_run_id)
+                            if entity.parent_run_id
+                            else None,
                             "has_parent_span": has_parent_span,
-                            "span_id": str(span.get_span_context().span_id) if span else None,
-                            "trace_id": str(span.get_span_context().trace_id) if span else None,
+                            "span_id": str(span.get_span_context().span_id)
+                            if span
+                            else None,
+                            "trace_id": str(span.get_span_context().trace_id)
+                            if span
+                            else None,
                             "decision": "evaluate" if has_parent else "skip",
-                        }
+                        },
                     )
-                    
+
                     if not has_parent:
                         # Root LLM chat span without agent context - skip evaluation
                         return False
-        
+
         # Existing trace-based sampling
         try:
             trace_id = entity.trace_id
@@ -853,9 +865,7 @@ class TelemetryHandler:
         agent.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        agent.sample_for_evaluation = self._should_sample_for_evaluation(
-            agent
-        )
+        agent.sample_for_evaluation = self._should_sample_for_evaluation(agent)
 
         # Send invocation for evaluation if applicable
         self._notify_completion(agent)
@@ -924,9 +934,7 @@ class TelemetryHandler:
         step.end_time = time.time()
 
         # Determine if this invocation should be sampled for evaluation
-        step.sample_for_evaluation = self._should_sample_for_evaluation(
-            step
-        )
+        step.sample_for_evaluation = self._should_sample_for_evaluation(step)
 
         # Send invocation for evaluation if applicable
         self._notify_completion(step)

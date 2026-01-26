@@ -98,10 +98,15 @@ class TestVersion(unittest.TestCase):
         self.assertIn("not a valid option", cm.output[0])
 
     def test_legacy_env_triggers_warning(self):
+        # Use clear=True to ensure only the legacy var is set
         with patch.dict(
-            os.environ, {"OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES": "span"}
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES": "span"},
+            clear=True,
         ):
-            with self.assertLogs(level="WARNING") as cm:
+            with self.assertLogs(
+                "opentelemetry.util.genai.utils", level="WARNING"
+            ) as cm:
                 assert (
                     get_content_capturing_mode()
                     == ContentCapturingMode.NO_CONTENT
