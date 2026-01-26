@@ -241,17 +241,40 @@ class Manager(CompletionCallback):
         except queue.Full:
             # Bounded queue is full - apply backpressure by dropping
             invocation.evaluation_error = "client_evaluation_queue_full"
+            invocation_id = getattr(invocation, "span_id", None) or getattr(
+                invocation, "trace_id", None
+            )
             _LOGGER.warning(
-                "Evaluation queue full (size=%d). Dropping invocation. "
-                "Consider increasing OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE "
-                "or reducing evaluation load.",
-                self._queue_size
-                if self._queue_size > 0
-                else self._queue.maxsize,
+                "Evaluation queue full. Dropping invocation.",
+                extra={
+                    "error_type": "queue_full",
+                    "component": "manager",
+                    "invocation_type": type(invocation).__name__,
+                    "invocation_id": invocation_id,
+                    "queue_size": self._queue_size
+                    if self._queue_size > 0
+                    else self._queue.maxsize,
+                    "queue_depth": self._queue.qsize(),
+                },
+            )
+            self._error_tracker.record_error(
+                error_type="queue_full",
+                component="manager",
+                message="Evaluation queue full, dropping invocation",
+                invocation_id=invocation_id,
+                recovery_action="invocation_dropped",
+                operational_impact="Evaluation skipped due to backpressure",
+                details={
+                    "invocation_type": type(invocation).__name__,
+                    "queue_size": self._queue_size
+                    if self._queue_size > 0
+                    else self._queue.maxsize,
+                    "queue_depth": self._queue.qsize(),
+                },
             )
         except Exception as exc:  # pragma: no cover - defensive
-            invocation_id = getattr(invocation, "trace_id", None) or getattr(
-                invocation, "span_id", None
+            invocation_id = getattr(invocation, "span_id", None) or getattr(
+                invocation, "trace_id", None
             )
             _LOGGER.error(
                 "Failed to enqueue invocation for evaluation",
@@ -319,6 +342,7 @@ class Manager(CompletionCallback):
     # Internal helpers ---------------------------------------------------
     def _worker_loop(self) -> None:
         """Sequential worker loop (legacy mode)."""
+        worker_name = threading.current_thread().name
         while not self._shutdown.is_set():
             try:
                 invocation = self._queue.get(timeout=self._interval)
@@ -328,13 +352,14 @@ class Manager(CompletionCallback):
                 self._process_invocation(invocation)
             except Exception as exc:  # pragma: no cover - defensive
                 invocation_id = getattr(
-                    invocation, "trace_id", None
-                ) or getattr(invocation, "span_id", None)
+                    invocation, "span_id", None
+                ) or getattr(invocation, "trace_id", None)
                 _LOGGER.error(
                     "Evaluator processing failed",
                     extra={
                         "error_type": "processing_error",
                         "component": "worker",
+                        "worker_name": worker_name,
                         "invocation_type": type(invocation).__name__,
                         "invocation_id": invocation_id,
                         "exception_type": type(exc).__name__,
@@ -349,6 +374,7 @@ class Manager(CompletionCallback):
                     exception=exc,
                     recovery_action="invocation_skipped",
                     operational_impact="No evaluation results for this invocation",
+                    worker_name=worker_name,
                 )
             finally:
                 self._queue.task_done()
@@ -359,8 +385,32 @@ class Manager(CompletionCallback):
         Each worker creates its own event loop and processes invocations
         using async evaluation when available.
         """
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        worker_name = threading.current_thread().name
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        except Exception as exc:  # pragma: no cover - defensive
+            _LOGGER.error(
+                "Failed to create asyncio event loop",
+                extra={
+                    "error_type": "eventloop_error",
+                    "component": "concurrent_worker",
+                    "worker_name": worker_name,
+                    "exception_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            self._error_tracker.record_error(
+                error_type="eventloop_error",
+                component="concurrent_worker",
+                message="Failed to create asyncio event loop",
+                exception=exc,
+                recovery_action="worker_disabled",
+                operational_impact="Worker thread cannot process evaluations",
+                worker_name=worker_name,
+                async_context=False,
+            )
+            return  # Exit worker gracefully
 
         try:
             while not self._shutdown.is_set():
@@ -373,12 +423,50 @@ class Manager(CompletionCallback):
                     loop.run_until_complete(
                         self._process_invocation_async(invocation)
                     )
-                except Exception:  # pragma: no cover - defensive
-                    _LOGGER.exception("Concurrent evaluator processing failed")
+                except Exception as exc:  # pragma: no cover - defensive
+                    invocation_id = getattr(
+                        invocation, "span_id", None
+                    ) or getattr(invocation, "trace_id", None)
+                    _LOGGER.error(
+                        "Concurrent evaluator processing failed",
+                        extra={
+                            "error_type": "concurrent_processing_error",
+                            "component": "concurrent_worker",
+                            "worker_name": worker_name,
+                            "invocation_type": type(invocation).__name__,
+                            "invocation_id": invocation_id,
+                            "exception_type": type(exc).__name__,
+                        },
+                        exc_info=True,
+                    )
+                    self._error_tracker.record_error(
+                        error_type="concurrent_processing_error",
+                        component="concurrent_worker",
+                        message="Failed to process invocation in concurrent mode",
+                        invocation_id=invocation_id,
+                        exception=exc,
+                        recovery_action="invocation_skipped",
+                        operational_impact="No evaluation results for this invocation",
+                        worker_name=worker_name,
+                        async_context=True,
+                        details={"invocation_type": type(invocation).__name__},
+                    )
                 finally:
                     self._queue.task_done()
         finally:
-            loop.close()
+            try:
+                loop.close()
+            except Exception as exc:  # pragma: no cover - defensive
+                _LOGGER.warning(
+                    "Error closing asyncio event loop",
+                    extra={
+                        "error_type": "eventloop_close_error",
+                        "component": "concurrent_worker",
+                        "worker_name": worker_name,
+                        "exception_type": type(exc).__name__,
+                    },
+                    exc_info=True,
+                )
 
     async def _process_invocation_async(self, invocation: GenAI) -> None:
         """Process an invocation asynchronously with concurrent evaluator calls."""
@@ -403,13 +491,22 @@ class Manager(CompletionCallback):
         if not evaluators:
             return ()
 
+        invocation_id = getattr(invocation, "span_id", None) or getattr(
+            invocation, "trace_id", None
+        )
+        worker_name = threading.current_thread().name
+
         # Run all evaluators concurrently
         async def run_evaluator(
             evaluator: Evaluator,
         ) -> Sequence[EvaluationResult] | None:
+            evaluator_name = getattr(
+                evaluator, "__class__", type(evaluator)
+            ).__name__
+            used_async = hasattr(evaluator, "evaluate_async")
             try:
                 # Use async evaluation if available, otherwise run sync in thread pool
-                if hasattr(evaluator, "evaluate_async"):
+                if used_async:
                     return await evaluator.evaluate_async(invocation)
                 else:
                     # Run sync evaluate in thread pool to not block
@@ -417,7 +514,36 @@ class Manager(CompletionCallback):
                         evaluator.evaluate, invocation
                     )
             except Exception as exc:  # pragma: no cover - defensive
-                _LOGGER.debug("Evaluator %s failed: %s", evaluator, exc)
+                _LOGGER.warning(
+                    "Async evaluator failed",
+                    extra={
+                        "error_type": "async_evaluator_error",
+                        "component": "async_evaluator",
+                        "evaluator_name": evaluator_name,
+                        "invocation_type": type_name,
+                        "invocation_id": invocation_id,
+                        "worker_name": worker_name,
+                        "async_mode": used_async,
+                        "exception_type": type(exc).__name__,
+                    },
+                    exc_info=True,
+                )
+                self._error_tracker.record_error(
+                    error_type="async_evaluator_error",
+                    component="async_evaluator",
+                    message=f"Async evaluator {evaluator_name} failed",
+                    evaluator_name=evaluator_name,
+                    invocation_id=invocation_id,
+                    exception=exc,
+                    recovery_action="skip_evaluator",
+                    operational_impact="Partial evaluation results",
+                    worker_name=worker_name,
+                    async_context=True,
+                    details={
+                        "invocation_type": type_name,
+                        "async_mode": used_async,
+                    },
+                )
                 return None
 
         # Execute all evaluators concurrently
@@ -451,8 +577,8 @@ class Manager(CompletionCallback):
         if not evaluators:
             return ()
         buckets: list[Sequence[EvaluationResult]] = []
-        invocation_id = getattr(invocation, "trace_id", None) or getattr(
-            invocation, "span_id", None
+        invocation_id = getattr(invocation, "span_id", None) or getattr(
+            invocation, "trace_id", None
         )
         for descriptor in evaluators:
             evaluator_name = getattr(
@@ -508,8 +634,8 @@ class Manager(CompletionCallback):
         for bucket in buckets:
             flattened.extend(bucket)
 
-        invocation_id = getattr(invocation, "trace_id", None) or getattr(
-            invocation, "span_id", None
+        invocation_id = getattr(invocation, "span_id", None) or getattr(
+            invocation, "trace_id", None
         )
 
         if aggregate:
@@ -614,8 +740,8 @@ class Manager(CompletionCallback):
                     )
                     return True
         except Exception as exc:  # pragma: no cover - defensive
-            invocation_id = getattr(invocation, "trace_id", None) or getattr(
-                invocation, "span_id", None
+            invocation_id = getattr(invocation, "span_id", None) or getattr(
+                invocation, "trace_id", None
             )
             _LOGGER.warning(
                 "Skip policy evaluation failed",
