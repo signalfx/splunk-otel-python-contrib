@@ -741,21 +741,6 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(GEN_AI_STEP_ASSIGNED_AGENT, step.assigned_agent)
         if step.status:
             span.set_attribute(GEN_AI_STEP_STATUS, step.status)
-        if self._capture_content:
-            # Prefer structured input_messages over legacy input_data
-            if step.input_messages:
-                serialized = _serialize_messages(step.input_messages)
-                if serialized is not None:
-                    span.set_attribute("gen_ai.input.messages", serialized)
-            elif step.input_data:
-                # Fallback to legacy string field
-                input_msg = {
-                    "role": "user",
-                    "parts": [{"type": "text", "content": step.input_data}],
-                }
-                span.set_attribute(
-                    "gen_ai.input.messages", json.dumps([input_msg])
-                )
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
@@ -765,23 +750,6 @@ class SpanEmitter(EmitterMeta):
         span = step.span
         if span is None:
             return
-        # Set output if capture_content enabled
-        if self._capture_content:
-            # Prefer structured output_messages over legacy output_data
-            if step.output_messages:
-                serialized = _serialize_messages(step.output_messages)
-                if serialized is not None:
-                    span.set_attribute("gen_ai.output.messages", serialized)
-            elif step.output_data:
-                # Fallback to legacy string field
-                output_msg = {
-                    "role": "assistant",
-                    "parts": [{"type": "text", "content": step.output_data}],
-                    "finish_reason": "stop",
-                }
-                span.set_attribute(
-                    "gen_ai.output.messages", json.dumps([output_msg])
-                )
         # Update status if changed
         if step.status:
             span.set_attribute(GEN_AI_STEP_STATUS, step.status)

@@ -299,7 +299,6 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         # Set step fields from task
         if hasattr(instance, "description"):
             step.description = instance.description
-            step.input_messages = _make_input_message(instance.description)
         if hasattr(instance, "expected_output"):
             step.objective = instance.expected_output
         if hasattr(instance, "agent") and hasattr(instance.agent, "role"):
@@ -316,9 +315,6 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
 
         # Capture result
         try:
-            if result is not None:
-                step.output_messages = _make_output_message(result)
-
             # Stop the step successfully
             handler.stop_step(step)
         except Exception:

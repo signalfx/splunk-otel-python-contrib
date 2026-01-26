@@ -23,7 +23,6 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
-    Step,
     Text,
     Workflow,
 )
@@ -421,42 +420,6 @@ def test_workflow_with_structured_messages():
     assert (
         output_messages[0]["parts"][0]["content"]
         == "Here is your Paris itinerary"
-    )
-
-
-def test_step_with_structured_messages():
-    """Test Step with structured input_messages/output_messages."""
-    provider = TracerProvider()
-    tracer = provider.get_tracer(__name__)
-    emitter = SpanEmitter(tracer=tracer, capture_content=True)
-
-    input_msg = InputMessage(
-        role="user", parts=[Text(content="Execute step task")]
-    )
-    output_msg = OutputMessage(
-        role="assistant",
-        parts=[Text(content="Step completed successfully")],
-        finish_reason="stop",
-    )
-    step = Step(name="data_processing")
-    step.input_messages = [input_msg]
-    step.output_messages = [output_msg]
-
-    emitter.on_start(step)
-    emitter.on_end(step)
-
-    span = step.span
-    attrs = getattr(span, "attributes", None) or getattr(
-        span, "_attributes", {}
-    )
-
-    input_messages = json.loads(attrs.get(GEN_AI_INPUT_MESSAGES))
-    assert input_messages[0]["parts"][0]["content"] == "Execute step task"
-
-    output_messages = json.loads(attrs.get(GEN_AI_OUTPUT_MESSAGES))
-    assert (
-        output_messages[0]["parts"][0]["content"]
-        == "Step completed successfully"
     )
 
 

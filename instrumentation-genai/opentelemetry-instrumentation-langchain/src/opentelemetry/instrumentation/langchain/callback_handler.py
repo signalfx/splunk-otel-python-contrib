@@ -343,7 +343,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     if context_agent_name is not None:
                         step.agent_name = context_agent_name
                     step.agent_id = str(context_agent.run_id)
-                step.input_messages = _make_input_message(inputs)
                 self._handler.start_step(step)
 
     def on_chain_end(
@@ -364,7 +363,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             entity.output_messages = _make_output_message(outputs)
             self._handler.stop_agent(entity)
         elif isinstance(entity, Step):
-            entity.output_messages = _make_output_message(outputs)
             self._handler.stop_step(entity)
         elif isinstance(entity, ToolCall):
             serialized = _serialize(outputs)

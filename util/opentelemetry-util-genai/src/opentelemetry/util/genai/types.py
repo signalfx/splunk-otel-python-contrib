@@ -520,9 +520,15 @@ class Workflow(GenAI):
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
     )
-    # Legacy string fields (for backward compatibility)
-    initial_input: Optional[str] = None  # User's initial query/request
-    final_output: Optional[str] = None  # Final response/result
+    # Legacy string fields (DEPRECATED - use input_messages/output_messages instead)
+    initial_input: Optional[str] = field(
+        default=None,
+        metadata={"deprecated": "Use input_messages instead"},
+    )
+    final_output: Optional[str] = field(
+        default=None,
+        metadata={"deprecated": "Use output_messages instead"},
+    )
 
 
 @dataclass
@@ -558,8 +564,11 @@ class AgentCreation(_BaseAgent):
     input_messages: List[InputMessage] = field(
         default_factory=_new_input_messages
     )
-    # Legacy string field (for backward compatibility)
-    input_context: Optional[str] = None  # optional initial context
+    # Legacy string field (DEPRECATED - use input_messages instead)
+    input_context: Optional[str] = field(
+        default=None,
+        metadata={"deprecated": "Use input_messages instead"},
+    )
 
 
 @dataclass
@@ -578,9 +587,15 @@ class AgentInvocation(_BaseAgent):
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
     )
-    # Legacy string fields (for backward compatibility)
-    input_context: Optional[str] = None  # Input for invoke operations
-    output_result: Optional[str] = None  # Output for invoke operations
+    # Legacy string fields (DEPRECATED - use input_messages/output_messages instead)
+    input_context: Optional[str] = field(
+        default=None,
+        metadata={"deprecated": "Use input_messages instead"},
+    )
+    output_result: Optional[str] = field(
+        default=None,
+        metadata={"deprecated": "Use output_messages instead"},
+    )
 
 
 @dataclass
@@ -603,16 +618,6 @@ class Step(GenAI):
     assigned_agent: Optional[str] = None  # for workflow-assigned steps
     status: Optional[str] = None  # pending, in_progress, completed, failed
     description: Optional[str] = None
-    # Structured message fields (preferred)
-    input_messages: List[InputMessage] = field(
-        default_factory=_new_input_messages
-    )
-    output_messages: List[OutputMessage] = field(
-        default_factory=_new_output_messages
-    )
-    # Legacy string fields (for backward compatibility)
-    input_data: Optional[str] = None  # Input data/context for the step
-    output_data: Optional[str] = None  # Output data/result from the step
 
 
 __all__ = [
