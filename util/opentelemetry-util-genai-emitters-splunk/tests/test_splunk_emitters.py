@@ -149,8 +149,8 @@ def test_evaluation_results_aggregation_and_metrics() -> None:
         context = EmitterFactoryContext(
             tracer=None,
             meter=meter,
-            event_logger=logger,
-            content_logger=None,
+            event_logger=None,
+            content_logger=logger,  # Splunk evaluation emitter uses content_logger (Logs API)
             evaluation_histogram=None,
             capture_span_content=False,
             capture_event_content=True,
