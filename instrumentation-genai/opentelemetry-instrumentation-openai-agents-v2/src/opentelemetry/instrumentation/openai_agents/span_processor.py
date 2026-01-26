@@ -1176,9 +1176,7 @@ class GenAISemanticProcessor(TracingProcessor):
         """Delete an invocation state and return it."""
         return self._invocations.pop(span_id, None)
 
-    def _fail_invocation(
-        self, key: str, error: BaseException
-    ) -> None:
+    def _fail_invocation(self, key: str, error: BaseException) -> None:
         """Fail an invocation with an error."""
         state = self._get_invocation_state(key)
         if state is None:
