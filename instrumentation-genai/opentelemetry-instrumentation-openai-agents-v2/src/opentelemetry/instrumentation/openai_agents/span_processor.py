@@ -70,6 +70,7 @@ from opentelemetry.trace import (
     Tracer,
     set_span_in_context,
 )
+from opentelemetry.util.genai.instruments import Instruments
 from opentelemetry.util.types import AttributeValue
 
 # Import all semantic convention constants
@@ -534,19 +535,12 @@ class GenAISemanticProcessor(TracingProcessor):
             "opentelemetry.instrumentation.openai_agents", "0.1.0"
         )
 
-        # Operation duration histogram
-        self._duration_histogram = self._meter.create_histogram(
-            name="gen_ai.client.operation.duration",
-            description="GenAI operation duration",
-            unit="s",
-        )
-
-        # Token usage histogram
-        self._token_usage_histogram = self._meter.create_histogram(
-            name="gen_ai.client.token.usage",
-            description="Number of input and output tokens used",
-            unit="{token}",
-        )
+        # Use the shared Instruments class to ensure consistent bucket boundaries
+        # per OpenTelemetry semantic conventions:
+        # https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md
+        instruments = Instruments(self._meter)
+        self._duration_histogram = instruments.operation_duration_histogram
+        self._token_usage_histogram = instruments.token_usage_histogram
 
     def _record_metrics(
         self, span: Span[Any], attributes: dict[str, AttributeValue]
