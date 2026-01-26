@@ -2,6 +2,17 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.8 - 2026-01-26
+
+### Changed
+- **Structured message fields for agentic types** - Added `input_messages` and `output_messages` fields to `Workflow`, `AgentCreation`, and `AgentInvocation` types for properly structured message capture with valid JSON serialization.
+- **Made `finish_reason` optional in `OutputMessage`** - `finish_reason` is now optional (defaults to `None`) since it's only meaningful for LLM responses, not agent/workflow outputs.
+- **Deprecated legacy string fields** - Legacy fields (`initial_input`, `final_output`, `input_context`, `output_result`) are now marked as deprecated with metadata. Use structured `input_messages`/`output_messages` instead.
+- **Removed input/output from `Step`** - `Step` type no longer captures input/output data as it was redundant with agent-level capture.
+
+### Fixed
+- **JSON serialization for agent/workflow messages** - Agent and workflow input/output messages are now properly serialized as valid JSON instead of Python repr strings, fixing rendering issues in observability UIs.
+
 ## Version 0.1.7 - 2026-01-17
 
 ### Added

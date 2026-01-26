@@ -34,7 +34,7 @@ Base dataclass:  – fields include timing (`start_time`, `end_time`), identity 
 
 Semantic attributes: fields tagged with `metadata={"semconv": <attr name>}` feed `semantic_convention_attributes()` which returns only populated values; emitters rely on this reflective approach (no hard‑coded attribute lists).
 
-Messages: `InputMessage` / `OutputMessage` each hold `role` and `parts` (which may be `Text`, `ToolCall`, `ToolCallResponse`, or arbitrary parts). Output messages include `finish_reason`.
+Messages: `InputMessage` / `OutputMessage` each hold `role` and `parts` (which may be `Text`, `ToolCall`, `ToolCallResponse`, or arbitrary parts). Output messages have an optional `finish_reason` (meaningful for LLM responses, omitted for agent/workflow outputs).
 
 `EvaluationResult` fields: `metric_name`, optional `score` (float), `label` (categorical outcome), `explanation`, `error` (contains `type`, `message`), `attributes` (additional evaluator-specific key/values). No aggregate wrapper class yet.
 
