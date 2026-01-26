@@ -224,6 +224,20 @@ positioning). Categories: ``SPAN``, ``METRICS``, ``CONTENT_EVENTS``, ``EVALUATIO
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE = (
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE"
 )
+OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN = (
+    "OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN
+
+When set to a truthy value (``true``, ``1``, ``yes``, ``on``), only LLM chat invocations
+with a parent span are sampled for evaluation. This filters out root LLM spans (e.g.,
+internal LLM calls made by evaluation libraries like DeepEval) while retaining
+application LLM calls that are nested within Workflow, Agent, or Step spans.
+The filter only applies to ``LLMInvocation`` entities with ``operation="chat"``, so
+Workflow, Agent, and Step evaluations are unaffected.
+Defaults to ``true`` to prevent evaluation queue flooding from internal LLM calls.
+"""
 OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC = (
     "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC"
 )
@@ -256,6 +270,7 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS",
     "DEEPEVAL_MAX_CONCURRENT",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE",
+    "OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE",
     # generator selection
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS",
