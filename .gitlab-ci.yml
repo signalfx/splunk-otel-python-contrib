@@ -140,6 +140,22 @@ build-instrumentation-weaviate:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-crewai:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-crewai
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-crewai
+    - mv dist/* ../../dist/instrumentation-crewai/
+    - cd ../../dist/instrumentation-crewai
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-crewai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -269,6 +285,22 @@ sign-instrumentation-weaviate:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-crewai:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-crewai
+  variables:
+    ARTIFACT: dist/instrumentation-crewai/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-crewai
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-crewai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -373,3 +405,16 @@ deploy-instrumentation-weaviate:
     - sign-instrumentation-weaviate
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-crewai:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-crewai
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-crewai/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-crewai
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
