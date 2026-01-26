@@ -1,7 +1,7 @@
 """
 Workflow-based agent instrumentation for LlamaIndex.
 
-This module provides instrumentation for Workflow-based agents (ReActAgent, etc.)
+This module provides instrumentation for Workflow-based agents (ReActAgent, FunctionAgent, etc.)
 by intercepting workflow event streams to capture tool calls.
 """
 

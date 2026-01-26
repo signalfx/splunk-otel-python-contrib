@@ -50,15 +50,28 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             wrapper=_BaseCallbackManagerInitWrapper(llamaindexCallBackHandler),
         )
 
-        # Instrument Workflow-based agents
+        # Instrument Workflow-based agents (ReActAgent, FunctionAgent, CodeActAgent)
+        # All inherit from BaseWorkflowAgent and have .run() method
+        for agent_class in ["ReActAgent", "FunctionAgent", "CodeActAgent"]:
+            try:
+                wrap_function_wrapper(
+                    module="llama_index.core.agent",
+                    name=f"{agent_class}.run",
+                    wrapper=wrap_agent_run,
+                )
+            except Exception:
+                # Agent class might not be available or importable
+                pass
+
+        # Instrument MultiAgentWorkflow
         try:
             wrap_function_wrapper(
                 module="llama_index.core.agent",
-                name="ReActAgent.run",
+                name="MultiAgentWorkflow.run",
                 wrapper=wrap_agent_run,
             )
         except Exception:
-            # ReActAgent might not be available or importable
+            # MultiAgentWorkflow might not be available
             pass
 
     def _uninstrument(self, **kwargs):
