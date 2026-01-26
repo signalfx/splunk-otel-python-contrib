@@ -549,7 +549,6 @@ class SpanEmitter(EmitterMeta):
                     "parts": [
                         {"type": "text", "content": workflow.final_output}
                     ],
-                    "finish_reason": "stop",
                 }
                 span.set_attribute(
                     "gen_ai.output.messages", json.dumps([output_msg])
@@ -671,7 +670,6 @@ class SpanEmitter(EmitterMeta):
                     "parts": [
                         {"type": "text", "content": agent.output_result}
                     ],
-                    "finish_reason": "stop",
                 }
                 span.set_attribute(
                     "gen_ai.output.messages", json.dumps([output_msg])

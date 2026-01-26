@@ -246,11 +246,9 @@ def _serialize_messages(
                 "parts": [],
             }  # parts: list[Any]
 
-            # Add finish_reason for output messages
-            if isinstance(
-                msg, OutputMessage
-            ):  # Only OutputMessage has finish_reason
-                msg_dict["finish_reason"] = msg.finish_reason or "stop"
+            # Add finish_reason for output messages (only if set)
+            if isinstance(msg, OutputMessage) and msg.finish_reason:
+                msg_dict["finish_reason"] = msg.finish_reason
 
             # Process parts (text, tool_call, tool_call_response)
             for part in msg.parts:
@@ -541,11 +539,12 @@ def _llm_invocation_to_log_record(
         output_msgs = []
 
         for msg in invocation.output_messages:
-            output_msg = {
+            output_msg: dict[str, Any] = {
                 "role": msg.role,
                 "parts": [],
-                "finish_reason": msg.finish_reason or "stop",
             }
+            if msg.finish_reason:
+                output_msg["finish_reason"] = msg.finish_reason
 
             # Process parts (text, tool_calls, etc.)
             for part in msg.parts:
@@ -712,9 +711,9 @@ def _messages_to_log_format(
             "role": msg_role,
             "parts": [],
         }
-        # Add finish_reason for output messages
-        if isinstance(msg, OutputMessage):
-            msg_dict["finish_reason"] = msg.finish_reason or "stop"
+        # Add finish_reason for output messages (only if set)
+        if isinstance(msg, OutputMessage) and msg.finish_reason:
+            msg_dict["finish_reason"] = msg.finish_reason
 
         # Process parts
         for part in msg.parts:
@@ -808,7 +807,6 @@ def _workflow_to_log_record(
                 "assistant",
                 workflow.final_output,
                 capture=capture_content,
-                finish_reason="stop",
             )
         )
 
@@ -826,11 +824,6 @@ def _workflow_to_log_record(
             }
         )
     body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = workflow_instructions
-    # Ensure finish_reason present on all output messages (defensive)
-    if GenAI.GEN_AI_OUTPUT_MESSAGES in body:
-        for m in body[GenAI.GEN_AI_OUTPUT_MESSAGES]:
-            if "finish_reason" not in m:
-                m["finish_reason"] = "stop"
     return _build_log_record(
         workflow,
         # TODO: fixme in UI
@@ -899,14 +892,8 @@ def _agent_to_log_record(
                 "assistant",
                 output_result,
                 capture=capture_content,
-                finish_reason="stop",
             )
         ]
-    # Ensure finish_reason present on all output messages (defensive)
-    if GenAI.GEN_AI_OUTPUT_MESSAGES in body:
-        for m in body[GenAI.GEN_AI_OUTPUT_MESSAGES]:
-            if "finish_reason" not in m:
-                m["finish_reason"] = "stop"
     if not body:
         return None
     return _build_log_record(

@@ -265,7 +265,9 @@ class InputMessage:
 class OutputMessage:
     role: str
     parts: list[MessagePart]
-    finish_reason: Union[str, FinishReason]
+    finish_reason: Optional[Union[str, FinishReason]] = (
+        None  # Only for LLM responses
+    )
 
 
 @dataclass

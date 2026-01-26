@@ -62,7 +62,7 @@ def _make_output_message(data: Any) -> list[OutputMessage]:
     content = _serialize(data)
     if content is None:
         return []
-    return [OutputMessage(role="assistant", parts=[Text(content=content)], finish_reason="stop")]
+    return [OutputMessage(role="assistant", parts=[Text(content=content)])]
 
 
 def _resolve_agent_name(
