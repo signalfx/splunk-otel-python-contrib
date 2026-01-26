@@ -51,6 +51,9 @@ from opentelemetry.util.genai.types import (
 )
 from opentelemetry.util.genai.utils import gen_ai_json_dumps
 from opentelemetry.util.types import AttributeValue
+from opentelemetry.metrics import get_meter
+from opentelemetry.trace import Span as OtelSpan
+from opentelemetry.util.genai.instruments import Instruments
 
 
 # Invocation State Management
@@ -101,25 +104,6 @@ except ModuleNotFoundError:  # pragma: no cover - test stubs
     TranscriptionSpanData = getattr(
         tracing_module, "TranscriptionSpanData", Any
     )  # type: ignore[assignment]
-
-from opentelemetry.context import attach, detach
-from opentelemetry.metrics import Histogram, get_meter
-from opentelemetry.semconv._incubating.attributes import (
-    gen_ai_attributes as GenAIAttributes,
-)
-from opentelemetry.semconv._incubating.attributes import (
-    server_attributes as ServerAttributes,
-)
-from opentelemetry.trace import Span as OtelSpan
-from opentelemetry.trace import (
-    SpanKind,
-    Status,
-    StatusCode,
-    Tracer,
-    set_span_in_context,
-)
-from opentelemetry.util.genai.instruments import Instruments
-from opentelemetry.util.types import AttributeValue
 
 # Import all semantic convention constants
 # ---- GenAI semantic convention helpers (embedded from constants.py) ----
