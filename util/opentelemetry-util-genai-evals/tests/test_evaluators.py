@@ -234,7 +234,10 @@ class TestHandlerIntegration(unittest.TestCase):
 
     @patch.dict(
         os.environ,
-        {OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: "Static"},
+        {
+            OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: "Static",
+            "OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN": "false",
+        },
         clear=True,
     )
     def test_handler_registers_manager(self) -> None:
