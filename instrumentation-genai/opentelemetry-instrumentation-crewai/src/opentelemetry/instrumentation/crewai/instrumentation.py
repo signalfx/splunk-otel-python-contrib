@@ -4,8 +4,9 @@ OpenTelemetry CrewAI Instrumentation
 Wrapper-based instrumentation for CrewAI using splunk-otel-util-genai.
 """
 
+import json
 import logging
-from typing import Collection, Optional
+from typing import Any, Collection, Optional
 
 from wrapt import wrap_function_wrapper
 from opentelemetry.instrumentation.utils import unwrap
@@ -17,6 +18,9 @@ from opentelemetry.util.genai.types import (
     Step,
     ToolCall,
     Error,
+    InputMessage,
+    OutputMessage,
+    Text,
 )
 
 _instruments = ("crewai >= 0.70.0",)
@@ -25,6 +29,37 @@ _instruments = ("crewai >= 0.70.0",)
 _handler: Optional[TelemetryHandler] = None
 
 _logger = logging.getLogger(__name__)
+
+
+def _serialize(obj: Any) -> Optional[str]:
+    """Serialize object to JSON string.
+
+    Uses default=str to handle non-JSON-serializable objects by converting
+    them to their string representation while keeping the overall structure
+    as valid JSON.
+    """
+    if obj is None:
+        return None
+    try:
+        return json.dumps(obj, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return None
+
+
+def _make_input_message(data: Any) -> list[InputMessage]:
+    """Create structured input message with full data as JSON."""
+    content = _serialize(data)
+    if content is None:
+        return []
+    return [InputMessage(role="user", parts=[Text(content=content)])]
+
+
+def _make_output_message(data: Any) -> list[OutputMessage]:
+    """Create structured output message with full data as JSON."""
+    content = _serialize(data)
+    if content is None:
+        return []
+    return [OutputMessage(role="assistant", parts=[Text(content=content)], finish_reason="stop")]
 
 
 class CrewAIInstrumentor(BaseInstrumentor):
@@ -148,7 +183,7 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         if inputs is None and args:
             inputs = args[0]
         if inputs is not None:
-            workflow.initial_input = str(inputs)
+            workflow.input_messages = _make_input_message(inputs)
 
         # Start the workflow
         handler.start_workflow(workflow)
@@ -163,7 +198,7 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         try:
             if result:
                 if hasattr(result, "raw"):
-                    workflow.final_output = str(result.raw)
+                    workflow.output_messages = _make_output_message(result.raw)
 
             # Stop the workflow successfully
             handler.stop_workflow(workflow)
@@ -202,7 +237,7 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         if task is None and args:
             task = args[0]
         if task is not None and hasattr(task, "description"):
-            agent_invocation.input_context = str(task.description)
+            agent_invocation.input_messages = _make_input_message(task.description)
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)
@@ -216,7 +251,7 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         # Capture result and metrics
         try:
             if result is not None:
-                agent_invocation.output_result = str(result)
+                agent_invocation.output_messages = _make_output_message(result)
 
             # Extract token usage if available
             if hasattr(instance, "_token_process"):
@@ -264,7 +299,7 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         # Set step fields from task
         if hasattr(instance, "description"):
             step.description = instance.description
-            step.input_data = instance.description
+            step.input_messages = _make_input_message(instance.description)
         if hasattr(instance, "expected_output"):
             step.objective = instance.expected_output
         if hasattr(instance, "agent") and hasattr(instance.agent, "role"):
@@ -282,7 +317,7 @@ def _wrap_task_execute(wrapped, instance, args, kwargs):
         # Capture result
         try:
             if result is not None:
-                step.output_data = str(result)
+                step.output_messages = _make_output_message(result)
 
             # Stop the step successfully
             handler.stop_step(step)

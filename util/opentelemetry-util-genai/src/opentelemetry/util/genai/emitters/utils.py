@@ -686,6 +686,7 @@ def _record_duration(
 def _build_text_message(
     role: str, text: str, *, capture: bool, finish_reason: Optional[str] = None
 ) -> dict[str, Any]:
+    """Build a text message dict for spans/logs."""
     msg: dict[str, Any] = {
         "role": role,
         "parts": [{"type": "text", "content": text if capture else ""}],
@@ -693,6 +694,73 @@ def _build_text_message(
     if finish_reason is not None:
         msg["finish_reason"] = finish_reason
     return msg
+
+
+def _messages_to_log_format(
+    messages: Sequence[InputMessage | OutputMessage],
+    capture_content: bool,
+) -> list[dict[str, Any]]:
+    """Convert structured messages to log record format.
+
+    This is similar to the logic in _llm_invocation_to_log_record but extracted
+    for reuse in workflow/agent/step log records.
+    """
+    result: list[dict[str, Any]] = []
+    for msg in messages:
+        msg_role = getattr(msg, "role", None) or getattr(msg, "type", None)
+        msg_dict: dict[str, Any] = {
+            "role": msg_role,
+            "parts": [],
+        }
+        # Add finish_reason for output messages
+        if isinstance(msg, OutputMessage):
+            msg_dict["finish_reason"] = msg.finish_reason or "stop"
+
+        # Process parts
+        for part in msg.parts:
+            if isinstance(part, Text):
+                msg_dict["parts"].append(
+                    {
+                        "type": "text",
+                        "content": part.content if capture_content else "",
+                    }
+                )
+            elif isinstance(part, ToolCall):
+                msg_dict["parts"].append(
+                    {
+                        "type": "tool_call",
+                        "id": part.id,
+                        "name": part.name,
+                        "arguments": part.arguments if capture_content else {},
+                    }
+                )
+            elif isinstance(part, ToolCallResponse):
+                msg_dict["parts"].append(
+                    {
+                        "type": "tool_call_response",
+                        "id": part.id,
+                        "result": part.response if capture_content else "",
+                    }
+                )
+            else:
+                try:
+                    part_dict = (
+                        asdict(part)
+                        if hasattr(part, "__dataclass_fields__")
+                        else part
+                    )
+                    if not capture_content and isinstance(part_dict, dict):
+                        if "content" in part_dict:
+                            part_dict["content"] = ""
+                        if "arguments" in part_dict:
+                            part_dict["arguments"] = {}
+                        if "response" in part_dict:
+                            part_dict["response"] = ""
+                    msg_dict["parts"].append(part_dict)
+                except (TypeError, ValueError, AttributeError):
+                    pass
+        result.append(msg_dict)
+    return result
 
 
 def _workflow_to_log_record(
@@ -713,16 +781,28 @@ def _workflow_to_log_record(
         attributes[GEN_AI_FRAMEWORK] = workflow.framework
 
     body: Dict[str, Any] = {}
-    # Represent initial input / final output as standardized messages
+    # Prefer structured input_messages/output_messages over legacy fields
     input_msgs: list[dict[str, Any]] = []
     output_msgs: list[dict[str, Any]] = []
-    if workflow.initial_input:
+
+    if workflow.input_messages:
+        input_msgs = _messages_to_log_format(
+            workflow.input_messages, capture_content
+        )
+    elif workflow.initial_input:
+        # Fallback to legacy string field
         input_msgs.append(
             _build_text_message(
                 "user", workflow.initial_input, capture=capture_content
             )
         )
-    if workflow.final_output:
+
+    if workflow.output_messages:
+        output_msgs = _messages_to_log_format(
+            workflow.output_messages, capture_content
+        )
+    elif workflow.final_output:
+        # Fallback to legacy string field
         output_msgs.append(
             _build_text_message(
                 "assistant",
@@ -731,6 +811,7 @@ def _workflow_to_log_record(
                 finish_reason="stop",
             )
         )
+
     if input_msgs:
         body[GenAI.GEN_AI_INPUT_MESSAGES] = input_msgs
     if output_msgs:
@@ -790,13 +871,29 @@ def _agent_to_log_record(
             }
         )
     body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = agent_instructions
+
+    # Prefer structured input_messages over legacy input_context
+    input_messages = getattr(agent, "input_messages", None)
     input_context = getattr(agent, "input_context", None)
-    if input_context:
+    if input_messages:
+        body[GenAI.GEN_AI_INPUT_MESSAGES] = _messages_to_log_format(
+            input_messages, capture_content
+        )
+    elif input_context:
+        # Fallback to legacy string field
         body[GenAI.GEN_AI_INPUT_MESSAGES] = [
             _build_text_message("user", input_context, capture=capture_content)
         ]
+
+    # Prefer structured output_messages over legacy output_result
+    output_messages = getattr(agent, "output_messages", None)
     output_result = getattr(agent, "output_result", None)
-    if output_result:
+    if output_messages:
+        body[GenAI.GEN_AI_OUTPUT_MESSAGES] = _messages_to_log_format(
+            output_messages, capture_content
+        )
+    elif output_result:
+        # Fallback to legacy string field
         body[GenAI.GEN_AI_OUTPUT_MESSAGES] = [
             _build_text_message(
                 "assistant",
@@ -860,16 +957,26 @@ def _step_to_log_record(
     # If capture_content is disabled, emit empty content (like LLM messages do)
     body: Dict[str, Any] = {}
 
-    if capture_content:
-        if step.input_data:
+    # Prefer structured input_messages over legacy input_data
+    if step.input_messages:
+        body[GenAI.GEN_AI_INPUT_MESSAGES] = _messages_to_log_format(
+            step.input_messages, capture_content
+        )
+    elif step.input_data:
+        if capture_content:
             body["input_data"] = step.input_data
-        if step.output_data:
-            body["output_data"] = step.output_data
-    else:
-        # Emit structure with empty content when capture is disabled
-        if step.input_data:
+        else:
             body["input_data"] = ""
-        if step.output_data:
+
+    # Prefer structured output_messages over legacy output_data
+    if step.output_messages:
+        body[GenAI.GEN_AI_OUTPUT_MESSAGES] = _messages_to_log_format(
+            step.output_messages, capture_content
+        )
+    elif step.output_data:
+        if capture_content:
+            body["output_data"] = step.output_data
+        else:
             body["output_data"] = ""
 
     record = SDKLogRecord(
