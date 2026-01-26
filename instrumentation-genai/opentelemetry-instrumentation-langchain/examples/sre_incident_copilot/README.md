@@ -13,315 +13,280 @@ The SRE Incident Copilot demonstrates an agentic workflow that:
 
 ## Architecture
 
+### Production Deployment (Kubernetes)
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   K8s CronJob   │────▶│  SRE Copilot    │─MCP─▶│  MCP Server     │
+│   (curl)        │     │  (FastAPI)      │ SSE │  (fastmcp)      │
+│                 │     │  Port 8080      │     │  Port 8081      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                              │
+                              ▼
+                        ┌─────────────────┐
+                        │ OTEL Collector  │
+                        │ (DaemonSet)     │
+                        └─────────────────┘
+```
+
+### Components
+
+| Component | Description | Port |
+|-----------|-------------|------|
+| **SRE Copilot Server** | FastAPI server handling incident investigations | 8080 |
+| **MCP Tools Server** | MCP server (SSE transport) for observability tools | 8081 |
+| **OTEL Collector** | Receives telemetry from instrumented services | 4317 |
+| **K8s CronJob** | Triggers incident investigations on schedule | - |
+
+### MCP Communication
+
+The SRE Copilot communicates with the MCP Tools Server using the **Model Context Protocol (MCP)** over SSE (Server-Sent Events) transport:
+
+- **Local development**: MCP over stdio (spawns subprocess)
+- **Production/K8s**: MCP over SSE/HTTP (connects to remote server)
+
 ### Agents
 
 1. **Triage Agent**: Normalizes alerts, identifies affected services, selects investigation plan
-2. **Investigation Agent**: Queries metrics/logs/traces, assembles evidence, proposes hypotheses
+2. **Investigation Agent**: Queries metrics/logs/traces, assembles evidence, proposes hypotheses (called as tool)
 3. **Action Planner Agent**: Translates hypotheses into mitigation steps and tasks
 4. **Quality Gate Agent**: Enforces safety rails, validates outputs, computes eval metrics
-
-### Tools
-
-- **MCP Tools**: `metrics_query`, `logs_search`, `trace_query` (via MCP server)
-- **RAG Tools**: `runbook_search` (vector search over runbooks with citations)
-- **Integration Tools**: `service_catalog_lookup`, `task_writer`, `notifier`
-- **Agent-as-Tool**: `investigation_agent_mcp` (Investigation Agent exposed as MCP tool)
 
 ### Workflow
 
 ```mermaid
 graph LR
-    A[Alert] --> B[Triage Agent]
-    B --> C[Investigation Agent]
+    A[Alert/CronJob] --> B[POST /run]
+    B --> C[Triage Agent]
     C --> D[Action Planner Agent]
     D --> E[Quality Gate Agent]
-    E --> F[Artifacts]
+    E --> F[Response + Artifacts]
 
-    C --> G[MCP Tools]
-    B --> H[Runbook RAG]
-    D --> I[Task Writer]
+    C --> G[MCP Tools Server]
+    G --> H[metrics_query]
+    G --> I[logs_search]
+    G --> J[trace_query]
+    C --> K[Runbook RAG]
 ```
 
-## Features
+## Quick Start
 
-- **Multi-Agent Orchestration**: 4 agents working in sequence with LangGraph
-- **MCP Tools**: Observability tools exposed via MCP protocol
-- **Agent-as-MCP-Tool**: Investigation Agent can be called as an MCP tool
-- **RAG with Citations**: Runbook search with vector embeddings and citations
-- **Seeded Data**: Deterministic scenarios with consistent telemetry
-- **Evaluation Metrics**: DeepEval integration for quality assessment
-- **Drift Simulation**: Simulation runner with configurable drift modes
-- **K8s Ready**: CronJob configuration for scheduled runs
-
-## Setup
-
-### Prerequisites
-
-- Python 3.11+
-- OpenAI API key
-- OpenTelemetry collector endpoint (optional)
-
-### Installation
+### Local Development
 
 ```bash
+# 1. Setup
 cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-**Important**: Always activate the virtual environment before running the application:
-
-```bash
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-### Configuration
-
-The application supports two separate credential configurations for LLM and embeddings:
-
-#### Option 1: OpenAI (both chat and embeddings)
-
-Set the following environment variables:
-
-```bash
-export OPENAI_API_KEY=sk-your-openai-api-key
-export OPENAI_MODEL=gpt-4o-mini  # Optional, defaults to gpt-4o-mini
-```
-
-#### Option 2: Circuit + Azure (Circuit for chat, Azure for embeddings)
-
-Set the following environment variables:
-
-```bash
-# Circuit/Cisco credentials (all 5 required)
-export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
-export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
-export CIRCUIT_CLIENT_ID=your-client-id
-export CIRCUIT_CLIENT_SECRET=your-client-secret
-export CIRCUIT_APP_KEY=your-app-key
-
-# Azure OpenAI credentials (all 4 required)
-export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-export AZURE_OPENAI_API_KEY=your-azure-api-key
-export AZURE_OPENAI_API_VERSION=2024-02-01
-export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
-```
-
-**Note:** Circuit requires **all 5** variables to be set. Azure requires **all 4** variables to be set. If any are missing, the application will fall back to OpenAI credentials.
-
-#### Additional Configuration
-
-```bash
-# OpenTelemetry (optional)
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-export OTEL_SERVICE_NAME=sre-incident-copilot
-
-# Application settings
-export SCENARIO_ID=scenario-001
-export DATA_DIR=data
-export ARTIFACTS_DIR=artifacts
-```
-
-You can also create a `.env` file with these variables for convenience.
-
-## Running the Application
-
-### Prerequisites Checklist
-
-Before running the application, ensure:
-
-1. ✅ Virtual environment is activated
-2. ✅ Dependencies are installed (`pip install -r requirements.txt`)
-3. ✅ Credentials are configured (either OpenAI OR Circuit+Azure)
-
-### Step-by-Step Guide
-
-**1. Activate the virtual environment:**
-
-```bash
-cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-**2. Set up credentials:**
-
-Choose **one** of the following options:
-
-**Option A - OpenAI:**
-```bash
-export OPENAI_API_KEY=sk-your-openai-api-key
-```
-
-**Option B - Circuit + Azure:**
-```bash
-# All Circuit variables required
-export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
-export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
-export CIRCUIT_CLIENT_ID=your-client-id
-export CIRCUIT_CLIENT_SECRET=your-client-secret
-export CIRCUIT_APP_KEY=your-app-key
-
-# All Azure variables required
-export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-export AZURE_OPENAI_API_KEY=your-azure-api-key
-export AZURE_OPENAI_API_VERSION=2024-02-01
-export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
-```
-
-**3. Run a scenario:**
-
-```bash
-python main.py --scenario scenario-001
-```
-
-### Troubleshooting
-
-**Error: "No valid credentials configured"**
-- Ensure you've exported all required environment variables
-- For Circuit: all 5 variables must be set
-- For Azure: all 4 variables must be set
-- For OpenAI: `OPENAI_API_KEY` must be set
-
-**Error: "404 Not Found"**
-- Check that `CIRCUIT_BASE_URL` does NOT include `/chat/completions` suffix
-- Correct: `https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini`
-- Incorrect: `https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini/chat/completions`
-
-## Usage
-
-### Quick Start Examples
-
-**Run with OpenAI:**
-```bash
+# 2. Set credentials
 export OPENAI_API_KEY=sk-your-key
+
+# 3. Run CLI (no instrumentation)
 python main.py --scenario scenario-001
-```
 
-**Run with Circuit + Azure:**
-```bash
-export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
-export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
-export CIRCUIT_CLIENT_ID=your-id
-export CIRCUIT_CLIENT_SECRET=your-secret
-export CIRCUIT_APP_KEY=your-key
-export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-export AZURE_OPENAI_API_KEY=your-azure-key
-export AZURE_OPENAI_API_VERSION=2024-02-01
-export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
-python main.py --scenario scenario-001
-```
+# 4. Or run with zero-code instrumentation (recommended)
+opentelemetry-instrument python main.py --scenario scenario-001
 
-### Run a Single Scenario
-
-**Make sure the venv is activated first:**
-
-```bash
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-python main.py --scenario scenario-001
-```
-
-### Run with Manual Instrumentation
-
-```bash
+# 5. Or run with manual instrumentation (configures OTEL providers in code)
 python main.py --scenario scenario-001 --manual-instrumentation
 ```
 
-### Run Simulation with Drift
-
-**Make sure the venv is activated first:**
+### Production Mode (Server)
 
 ```bash
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-python simulation_runner.py \
-  --scenarios scenario-001 scenario-002 \
-  --iterations 10 \
-  --drift-mode tool_failure \
-  --drift-intensity 0.2
+# Terminal 1: Start MCP Tools Server (SSE transport)
+MCP_PORT=8081 python -m mcp_tools.mcp_server
+
+# Terminal 2: Start SRE Copilot Server
+export MCP_SERVER_URL=http://localhost:8081
+opentelemetry-instrument uvicorn server:app --host 0.0.0.0 --port 8080
+
+# Terminal 3: Call the API
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{"scenario_id": "scenario-001"}'
 ```
 
-### Validation
+## API Endpoints
 
-Validation is performed automatically when running scenarios. The `main.py` script runs business logic validation and displays results. To validate a scenario:
+### SRE Copilot Server (port 8080)
 
-```bash
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-python main.py --scenario scenario-001
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check for K8s probes |
+| `/run` | POST | Run an incident investigation |
+| `/scenarios` | GET | List available scenarios |
+
+#### POST /run
+
+Request:
+```json
+{
+  "scenario_id": "scenario-001",
+  "drift_mode": null,
+  "drift_intensity": 0.0
+}
 ```
 
-Validation checks:
+Response:
+```json
+{
+  "run_id": "scenario-001-20240116-120000",
+  "scenario_id": "scenario-001",
+  "validation_passed": true,
+  "confidence_score": 0.85,
+  "artifacts_path": "artifacts/scenario-001-20240116-120000",
+  "hypotheses_count": 2,
+  "tasks_created": 4
+}
+```
 
-- Hypothesis matching (top hypothesis contains expected root cause keywords)
-- Evidence sufficiency (collects expected evidence types)
-- Action safety (actions are safe given confidence level)
+### MCP Tools Server (port 8081)
 
-## Available Scenarios
-
-- `scenario-001`: Database connection pool exhaustion
-- `scenario-002`: Cache miss storm
-- `scenario-003`: Recent deployment issue
-- `scenario-004`: Database connection pool exhaustion (different service)
-- `scenario-005`: Redis cache memory pressure
-- `scenario-006`: Authentication service failures
-- `scenario-007`: Notification queue depth runaway
-- `scenario-008`: Analytics service latency degradation
-- `scenario-009`: Payment service deployment correlation
-- `scenario-010`: User service dependency failure
-
-## Outputs
-
-Each run produces artifacts in `artifacts/<run_id>/`:
-
-- `inputs.json`: Input alert and scenario details
-- `outputs.json`: Agent outputs and results
-- `run_meta.json`: Run metadata and configuration
-- `incident_summary.md`: Formatted incident summary
-- `postmortem_draft.md`: Postmortem template
-- `eval_report.json`: Evaluation metrics and scores
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/tools/metrics_query` | POST | Query metrics |
+| `/tools/logs_search` | POST | Search logs |
+| `/tools/trace_query` | POST | Query traces |
 
 ## Kubernetes Deployment
 
-See `k8s-cronjob.yaml` for a complete CronJob configuration. The app runs every 10 minutes by default.
+### Deploy Services
+
+```yaml
+# See k8s-cronjob.yaml for full configuration
+kubectl apply -f k8s-cronjob.yaml
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MCP_SERVER_URL` | URL of MCP Tools Server | None (uses stdio locally) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint | None |
+| `OTEL_SERVICE_NAME` | Service name for telemetry | `sre-incident-copilot` |
+| `OPENAI_API_KEY` | OpenAI API key | Required |
+| `DEBUG_TOOLS` | Enable tool debug output | `0` |
+
+### Example K8s CronJob
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-copilot-runner
+spec:
+  schedule: "*/10 * * * *"  # Every 10 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: runner
+            image: curlimages/curl
+            command:
+            - curl
+            - -X
+            - POST
+            - http://sre-copilot:8080/run
+            - -H
+            - "Content-Type: application/json"
+            - -d
+            - '{"scenario_id": "scenario-001"}'
+          restartPolicy: OnFailure
+```
+
+## Zero-Code Instrumentation
+
+The application supports zero-code OpenTelemetry instrumentation:
 
 ```bash
-kubectl apply -f k8s-cronjob.yaml
+# Install auto-instrumentation
+pip install opentelemetry-distro opentelemetry-exporter-otlp
+
+# Run with auto-instrumentation
+opentelemetry-instrument \
+  --service_name sre-incident-copilot \
+  --exporter_otlp_endpoint http://localhost:4317 \
+  uvicorn server:app --host 0.0.0.0 --port 8080
+```
+
+The `LangchainInstrumentor` is automatically initialized at startup, requiring no manual OTEL configuration.
+
+## Available Scenarios
+
+| ID | Description | Service |
+|----|-------------|---------|
+| `scenario-001` | Database connection pool exhaustion | payment-service |
+| `scenario-002` | Cache miss storm | user-service |
+| `scenario-003` | Recent deployment issue | api-gateway |
+| `scenario-004` | Database connection pool exhaustion | database-primary |
+| `scenario-005` | Redis cache memory pressure | redis-cache |
+| `scenario-006` | Authentication service failures | auth-service |
+| `scenario-007` | Notification queue depth runaway | notification-service |
+| `scenario-008` | Analytics service latency degradation | analytics-service |
+| `scenario-009` | Payment service deployment correlation | payment-service |
+| `scenario-010` | User service dependency failure | user-service |
+
+## Project Structure
+
+```
+sre_incident_copilot/
+├── server.py              # FastAPI server (production)
+├── main.py                # CLI application (development)
+├── agents.py              # Agent implementations
+├── tools.py               # LangChain tools (MCP SSE + stdio modes)
+├── config.py              # Configuration management
+├── validation.py          # Business logic validation
+├── mcp_tools/
+│   ├── mcp_server.py      # MCP server with SSE transport (production)
+│   └── observability_tools.py  # MCP server with stdio transport (development)
+├── data/
+│   ├── alert_catalog.json
+│   ├── service_catalog.json
+│   └── runbooks/
+└── artifacts/             # Generated artifacts
 ```
 
 ## Development
 
-## Key Files
+### Running Tests
 
-| File                                   | Purpose                                                    |
-| -------------------------------------- | ---------------------------------------------------------- |
-| `main.py`                              | Workflow orchestration, artifact generation                |
-| `agents.py`                            | Triage, Investigation, Action Planner, Quality Gate agents |
-| `tools.py`                             | LangChain tools including MCP tool wrappers                |
-| `mcp_tools/observability_tools.py`     | MCP server for metrics/logs/traces                         |
-| `mcp_tools/investigation_agent_mcp.py` | Investigation Agent as MCP tool                            |
-| `runbook_search.py`                    | RAG implementation for runbook search                      |
-| `validation.py`                        | Business logic validation harness                          |
-| `simulation_runner.py`                 | Batch simulation with drift modes                          |
+```bash
+pytest tests/
+```
 
-## Environment Variables
+### Adding New Scenarios
 
-| Variable                      | Purpose                        | Default                |
-| ----------------------------- | ------------------------------ | ---------------------- |
-| `OPENAI_API_KEY`              | OpenAI API key                 | Optional*              |
-| `OPENAI_MODEL`                | Model to use                   | `gpt-4o-mini`          |
-| `OPENAI_BASE_URL`             | OpenAI custom endpoint         | Optional               |
-| `CIRCUIT_BASE_URL`            | Circuit/Cisco endpoint         | Optional               |
-| `CIRCUIT_TOKEN_URL`           | Circuit OAuth2 token endpoint  | Optional*              |
-| `CIRCUIT_CLIENT_ID`           | Circuit OAuth2 client ID       | Optional*              |
-| `CIRCUIT_CLIENT_SECRET`       | Circuit OAuth2 client secret   | Optional*              |
-| `CIRCUIT_APP_KEY`             | Circuit OAuth2 app key         | Optional               |
-| `AZURE_OPENAI_ENDPOINT`       | Azure OpenAI endpoint          | Optional               |
-| `AZURE_OPENAI_API_KEY`        | Azure OpenAI API key           | Optional               |
-| `AZURE_OPENAI_API_VERSION`    | Azure OpenAI API version       | `2024-02-01`           |
-| `AZURE_EMBEDDING_DEPLOYMENT`  | Azure embedding deployment     | Optional               |
-| `OTEL_SERVICE_NAME`           | Service name for telemetry     | `sre-incident-copilot` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint                  | Optional               |
-| `SCENARIO_ID`                 | Scenario to run                | Required               |
-| `DATA_DIR`                    | Data directory                 | `data`                 |
-| `ARTIFACTS_DIR`               | Artifacts directory            | `artifacts`            |
-| `CONFIDENCE_THRESHOLD`        | Minimum confidence for actions | `0.7`                  |
-| `EVIDENCE_COUNT_THRESHOLD`    | Minimum evidence pieces        | `3`                    |
+1. Add alert to `data/alert_catalog.json`
+2. Add seeded data to `mcp_tools/observability_tools.py`
+3. Add expected validation to scenario config
+
+## Credentials
+
+### Option 1: OpenAI
+
+```bash
+export OPENAI_API_KEY=sk-your-key
+export OPENAI_MODEL=gpt-4o-mini  # Optional
+```
+
+### Option 2: Circuit + Azure
+
+```bash
+# Circuit (all 5 required)
+export CIRCUIT_BASE_URL=https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
+export CIRCUIT_TOKEN_URL=https://id.cisco.com/oauth2/default/v1/token
+export CIRCUIT_CLIENT_ID=your-client-id
+export CIRCUIT_CLIENT_SECRET=your-client-secret
+export CIRCUIT_APP_KEY=your-app-key
+
+# Azure (all 4 required)
+export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+export AZURE_OPENAI_API_KEY=your-azure-api-key
+export AZURE_OPENAI_API_VERSION=2024-02-01
+export AZURE_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
+```

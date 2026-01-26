@@ -40,6 +40,62 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from agents import investigation_agent  # noqa: E402
 from config import Config  # noqa: E402
 
+# Setup OTEL instrumentation for this subprocess
+# (zero-code instrumentation doesn't apply to child processes)
+_tracer_provider = None
+
+def _setup_subprocess_instrumentation():
+    """Setup OTEL providers and LangChain instrumentation for subprocess."""
+    global _tracer_provider
+    
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    # Only setup if OTEL endpoint is configured
+    if not endpoint:
+        print("[investigation-agent] No OTEL_EXPORTER_OTLP_ENDPOINT, skipping instrumentation", file=sys.stderr, flush=True)
+        return
+    
+    print(f"[investigation-agent] Setting up instrumentation -> {endpoint}", file=sys.stderr, flush=True)
+    
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.resources import Resource, SERVICE_NAME
+        
+        protocol = os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+        if protocol == "http/protobuf":
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        else:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        
+        resource = Resource.create({
+            SERVICE_NAME: os.environ.get("OTEL_SERVICE_NAME", "investigation-agent-mcp"),
+        })
+        
+        _tracer_provider = TracerProvider(resource=resource)
+        _tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        trace.set_tracer_provider(_tracer_provider)
+        
+        # Now instrument LangChain
+        from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+        instrumentor = LangchainInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+    except Exception:
+        pass  # Instrumentation optional
+
+
+def _flush_telemetry():
+    """Flush telemetry before subprocess exits."""
+    global _tracer_provider
+    if _tracer_provider:
+        try:
+            _tracer_provider.force_flush(timeout_millis=5000)
+        except Exception:
+            pass
+
+_setup_subprocess_instrumentation()
+
 mcp = FastMCP("investigation-agent")
 
 
@@ -62,6 +118,8 @@ async def investigate_incident(
     Returns:
         Dict containing investigation results with hypotheses and evidence
     """
+    print(f"[investigation-agent] Called: service_id={service_id}, scenario_id={scenario_id}", file=sys.stderr, flush=True)
+    
     # Create a minimal state for the agent
     config = Config.from_env()
     if scenario_id:
@@ -86,6 +144,9 @@ async def investigate_incident(
         # Run investigation agent
         updated_state = investigation_agent(state, config)
 
+        # Flush telemetry before returning
+        _flush_telemetry()
+
         # Extract results
         investigation_result = updated_state.get("investigation_result", {})
         hypotheses = updated_state.get("hypotheses", [])
@@ -100,6 +161,7 @@ async def investigate_incident(
             "evidence_count": sum(len(h.get("evidence", [])) for h in hypotheses),
         }
     except Exception as e:
+        _flush_telemetry()
         return {
             "status": "error",
             "error": str(e),

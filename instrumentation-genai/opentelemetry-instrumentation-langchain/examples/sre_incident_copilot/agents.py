@@ -109,7 +109,7 @@ def triage_agent(state: Dict, config: Config) -> Dict:
     triage_tools = [service_catalog_lookup, runbook_search, investigation_agent_mcp]
     agent = create_react_agent(llm, tools=triage_tools).with_config(
         {
-            "run_name": "triage_agent",
+            "run_name": "triage",
             "tags": ["agent", "agent:triage"],
             "metadata": {
                 "agent_name": "triage",
@@ -258,7 +258,7 @@ def investigation_agent(state: Dict, config: Config) -> Dict:
     investigation_tools = [metrics_query, logs_search, trace_query]
     agent = create_react_agent(llm, tools=investigation_tools).with_config(
         {
-            "run_name": "investigation_agent",
+            "run_name": "investigation",
             "tags": ["agent", "agent:investigation"],
             "metadata": {
                 "agent_name": "investigation",
@@ -515,7 +515,7 @@ def action_planner_agent(state: Dict, config: Config) -> Dict:
     planner_tools = [task_writer, notifier, runbook_search]
     agent = create_react_agent(llm, tools=planner_tools).with_config(
         {
-            "run_name": "action_planner_agent",
+            "run_name": "action_planner",
             "tags": ["agent", "agent:action_planner"],
             "metadata": {
                 "agent_name": "action_planner",
@@ -628,7 +628,7 @@ def quality_gate_agent(state: Dict, config: Config) -> Dict:
 
     agent = create_react_agent(llm, tools=[]).with_config(
         {
-            "run_name": "quality_gate_agent",
+            "run_name": "quality_gate",
             "tags": ["agent", "agent:quality_gate"],
             "metadata": {
                 "agent_name": "quality_gate",

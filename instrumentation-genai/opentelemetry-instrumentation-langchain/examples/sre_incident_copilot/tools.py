@@ -1,4 +1,12 @@
-"""Tools for agents to use."""
+"""Tools for agents to use.
+
+Supports two modes for MCP tool calls:
+- stdio: Local development (spawns MCP server as subprocess)
+- sse: Production/K8s deployment (calls MCP server via SSE/HTTP using MCP protocol)
+
+Set MCP_SERVER_URL environment variable to use SSE mode.
+Example: MCP_SERVER_URL=http://mcp-server:8081
+"""
 
 import asyncio
 import json
@@ -8,12 +16,14 @@ import sys
 from typing import Any, Dict, Optional
 
 from langchain_core.tools import tool
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
 # Suppress MCP client logging
 logging.getLogger("mcp").setLevel(logging.ERROR)
 
+
+def _get_mcp_server_url() -> str | None:
+    """Get MCP_SERVER_URL dynamically (allows dotenv to set it)."""
+    return os.getenv("MCP_SERVER_URL")
 
 # Use stderr for debug output to avoid interfering with MCP stdio communication
 # Set DEBUG_TOOLS=1 to enable verbose tool debug output
@@ -75,19 +85,43 @@ def runbook_search(query: str, k: int = 3) -> str:
     return json.dumps(results, indent=2)
 
 
-async def _call_mcp_tool(
-    tool_name: str, params: Dict[str, Any], scenario_id: Optional[str] = None
+async def _call_mcp_tool_sse(
+    tool_name: str, params: Dict[str, Any], server_url: str
 ) -> Dict[str, Any]:
-    """Call an MCP tool from the observability tools server."""
+    """Call an MCP tool via SSE (MCP over HTTP, production/K8s mode)."""
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+    
+    # SSE endpoint URL (fastmcp serves at /sse)
+    sse_url = f"{server_url}/sse"
+    
+    async with sse_client(sse_url) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(tool_name, params)
+            
+            if result.content:
+                content = result.content[0]
+                if hasattr(content, "text"):
+                    return json.loads(content.text)
+                return {"status": "success", "data": str(content)}
+            return {"status": "error", "message": "No content returned"}
+
+
+async def _call_mcp_tool_stdio(
+    tool_name: str, params: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Call an MCP tool via stdio (local development mode)."""
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client, StdioServerParameters
+    
     mcp_script_path = os.path.join(
         os.path.dirname(__file__), "mcp_tools", "observability_tools.py"
     )
 
-    # Ensure absolute path
     if not os.path.isabs(mcp_script_path):
         mcp_script_path = os.path.abspath(mcp_script_path)
 
-    # Pass environment variables to suppress MCP server logs
     env = os.environ.copy()
     env.setdefault("FASTMCP_QUIET", "1")
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -98,26 +132,40 @@ async def _call_mcp_tool(
         env=env,
     )
 
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(tool_name, params)
+
+            if result.content:
+                content = result.content[0]
+                if hasattr(content, "text"):
+                    return json.loads(content.text)
+                return {"status": "success", "data": str(content)}
+            return {"status": "error", "message": "No content returned"}
+
+
+async def _call_mcp_tool(
+    tool_name: str, params: Dict[str, Any], scenario_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Call an MCP tool - automatically selects SSE or stdio mode.
+    
+    Uses SSE mode (MCP over HTTP) if MCP_SERVER_URL is set, otherwise uses stdio mode.
+    """
+    # Add scenario_id to params if provided
+    if scenario_id and "scenario_id" not in params:
+        params["scenario_id"] = scenario_id
+
     try:
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-
-                # Add scenario_id to params if provided
-                if scenario_id and "scenario_id" not in params:
-                    params["scenario_id"] = scenario_id
-
-                result = await session.call_tool(tool_name, params)
-
-                if result.content:
-                    content = result.content[0]
-                    if hasattr(content, "text"):
-                        return json.loads(content.text)
-                    return {"status": "success", "data": str(content)}
-                return {"status": "error", "message": "No content returned"}
+        mcp_server_url = _get_mcp_server_url()
+        if mcp_server_url:
+            debug_print(f"🔧 Using MCP SSE mode: {mcp_server_url}")
+            return await _call_mcp_tool_sse(tool_name, params, mcp_server_url)
+        else:
+            debug_print("🔧 Using MCP stdio mode (local)")
+            return await _call_mcp_tool_stdio(tool_name, params)
     except Exception as e:
         import traceback
-
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
         return {"status": "error", "message": error_msg}
 
@@ -388,6 +436,8 @@ def investigation_agent_mcp(
     Returns:
         JSON string with investigation results
     """
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client, StdioServerParameters
 
     mcp_script_path = os.path.join(
         os.path.dirname(__file__), "mcp_tools", "investigation_agent_mcp.py"

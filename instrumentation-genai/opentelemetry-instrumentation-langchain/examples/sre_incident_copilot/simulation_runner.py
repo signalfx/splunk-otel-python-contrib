@@ -1,49 +1,38 @@
-"""Simulation runner with drift modes."""
+"""Simulation runner with drift modes.
+
+Usage:
+    python simulation_runner.py --scenarios scenario-001 scenario-002 --iterations 5
+
+    # With zero-code instrumentation
+    opentelemetry-instrument python simulation_runner.py --scenarios scenario-001 --iterations 3
+"""
 
 import argparse
-import atexit
 import json
 import os
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from config import Config
+from main import run_scenario, save_artifacts, _setup_instrumentation
 from validation import ValidationHarness
-from main import run_scenario, save_artifacts, _flush_evaluations, _flush_telemetry_providers
-
-
-def _simulation_graceful_shutdown() -> None:
-    """Perform graceful shutdown for simulation runner."""
-    _flush_evaluations(timeout=60.0)
-    time.sleep(1.0)
-    _flush_telemetry_providers()
 
 
 class DriftSimulator:
     """Simulates drift in tool responses and agent behavior."""
 
     def __init__(self, mode: str, intensity: float):
-        """Initialize drift simulator.
-
-        Args:
-            mode: Drift mode ("tool_failure", "retriever_drift", "prompt_drift")
-            intensity: Intensity of drift (0.0 to 1.0)
-        """
         self.mode = mode
         self.intensity = intensity
 
     def apply_drift(self, config: Config):
         """Apply drift to configuration."""
         if self.mode == "tool_failure":
-            # Simulate tool failures by adding error rate
             os.environ["TOOL_ERROR_RATE"] = str(self.intensity)
         elif self.mode == "retriever_drift":
-            # Degrade retrieval by reducing top-k
             os.environ["RETRIEVER_TOP_K"] = str(int(3 * (1 - self.intensity)))
         elif self.mode == "prompt_drift":
-            # Add noise to prompts (handled in agents)
             os.environ["PROMPT_NOISE_LEVEL"] = str(self.intensity)
 
 
@@ -54,18 +43,7 @@ def run_simulation(
     drift_intensity: float,
     config: Config,
 ) -> Dict:
-    """Run simulation over multiple iterations.
-
-    Args:
-        scenario_ids: List of scenario IDs to run
-        iterations: Number of iterations per scenario
-        drift_mode: Optional drift mode to apply
-        drift_intensity: Intensity of drift
-        config: Configuration
-
-    Returns:
-        Dict with simulation results
-    """
+    """Run simulation over multiple iterations."""
     results = []
     validation_harness = ValidationHarness(config)
 
@@ -75,8 +53,7 @@ def run_simulation(
 
     for scenario_id in scenario_ids:
         for iteration in range(iterations):
-            # Apply drift if enabled
-            if drift_mode:
+            if drift_mode and drift_sim:
                 drift_sim.apply_drift(config)
                 if iterations > 1:
                     current_intensity = drift_intensity * (1 + iteration * 0.1)
@@ -112,7 +89,6 @@ def run_simulation(
 
                 status = "✓" if validation_report['validation_passed'] else "✗"
                 print(f"  {status} {scenario_id} iter {iteration + 1}", flush=True)
-                _flush_evaluations(timeout=30.0)
 
             except Exception as e:
                 print(f"  ✗ {scenario_id} iter {iteration + 1}: {e}", flush=True)
@@ -122,66 +98,28 @@ def run_simulation(
                     "error": str(e),
                     "validation_passed": False,
                 })
-                _flush_evaluations(timeout=10.0)
 
-    # Generate summary
-    summary = {
+    return {
         "total_runs": len(results),
         "passed_runs": sum(1 for r in results if r.get("validation_passed", False)),
         "failed_runs": sum(1 for r in results if not r.get("validation_passed", True)),
         "drift_mode": drift_mode,
         "results": results,
-        "note": "Evaluation metrics (bias, toxicity, relevance, etc.) are emitted automatically as OTEL metrics/logs during runs",
     }
-
-    return summary
 
 
 def main():
     """Main entry point for simulation runner."""
-    parser = argparse.ArgumentParser(
-        description="SRE Incident Copilot Simulation Runner"
-    )
-    parser.add_argument(
-        "--scenarios",
-        type=str,
-        nargs="+",
-        default=["scenario-001"],
-        help="Scenario IDs to run",
-    )
-    parser.add_argument(
-        "--iterations",
-        type=int,
-        default=1,
-        help="Number of iterations per scenario (default: 1, use 1 for single run with drift)",
-    )
-    parser.add_argument(
-        "--drift-mode",
-        type=str,
-        choices=["tool_failure", "retriever_drift", "prompt_drift"],
-        help="Drift mode to apply",
-    )
-    parser.add_argument(
-        "--drift-intensity",
-        type=float,
-        default=0.1,
-        help="Initial drift intensity (0.0 to 1.0)",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        help="Output file for simulation results (JSON)",
-    )
-    parser.add_argument(
-        "--eval-timeout",
-        type=float,
-        default=60.0,
-        help="Timeout in seconds to wait for evaluations between runs (default: 60)",
-    )
+    parser = argparse.ArgumentParser(description="SRE Incident Copilot Simulation Runner")
+    parser.add_argument("--scenarios", type=str, nargs="+", default=["scenario-001"], help="Scenario IDs to run")
+    parser.add_argument("--iterations", type=int, default=1, help="Number of iterations per scenario")
+    parser.add_argument("--drift-mode", type=str, choices=["tool_failure", "retriever_drift", "prompt_drift"])
+    parser.add_argument("--drift-intensity", type=float, default=0.1, help="Drift intensity (0.0 to 1.0)")
+    parser.add_argument("--output", type=str, help="Output file for results (JSON)")
     args = parser.parse_args()
 
-    # Register graceful shutdown handler
-    atexit.register(_simulation_graceful_shutdown)
+    # Setup instrumentation
+    _setup_instrumentation()
 
     config = Config.from_env()
     config.drift_enabled = args.drift_mode is not None
@@ -198,8 +136,6 @@ def main():
         args.drift_intensity,
         config,
     )
-
-    _flush_evaluations(timeout=args.eval_timeout)
 
     # Save summary
     output_file = args.output or f"simulation_summary_{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
