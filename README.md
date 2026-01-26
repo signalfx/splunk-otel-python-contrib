@@ -23,6 +23,7 @@ Implemented dataclasses (in `types.py`):
 - `GenAI` - base class
 - `LLMInvocation`
 - `EmbeddingInvocation`
+- `RetrievalInvocation`
 - `Workflow`
 - `AgentInvocation`
 - `Step`
@@ -160,18 +161,19 @@ An example of the third-party emitter:
 
 ## 6. Configuration & Environment Variables
 
-| Variable | Purpose | Notes |
-|----------|---------|-------|
-| `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Baseline + extras selection | Values: `span`, `span_metric`, `span_metric_event`, plus extras
-| `OTEL_INSTRUMENTATION_GENAI_EMITTERS_<CATEGORY>` | Category overrides | Directives: append / prepend / replace / replace-category / replace-same-name |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Enable/disable message capture | Truthy enables capture; default disabled |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN_ONLY` or `EVENT_ONLY` or `SPAN_AND_EVENT` or `NONE` | Defaults to `SPAN_AND_EVENT` when capture enabled |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` | Evaluator config grammar | `Evaluator(Type(metric(opt=val)))` syntax supported |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION` | Aggregate vs per-evaluator emission | Boolean |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL` | Eval worker poll interval | Default 5.0 seconds |
-| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE` | Trace-id ratio sampling | Float (0–1], default 1.0 |
-| `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape | Adds second event per result |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: false) |
+| Variable | Purpose                                                                                 | Notes                                                                         |
+|----------|-----------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Baseline + extras selection                                                             | Values: `span`, `span_metric`, `span_metric_event`, plus extras               
+| `OTEL_INSTRUMENTATION_GENAI_EMITTERS_<CATEGORY>` | Category overrides                                                                      | Directives: append / prepend / replace / replace-category / replace-same-name |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Enable/disable message capture                                                          | Truthy enables capture; default disabled                                      |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN_ONLY` or `EVENT_ONLY` or `SPAN_AND_EVENT` or `NONE`                               | Defaults to `SPAN_AND_EVENT` when capture enabled                             |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` | Evaluator config grammar                                                                | `Evaluator(Type(metric(opt=val)))` syntax supported                           |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION` | Aggregate vs per-evaluator emission                                                     | Boolean                                                                       |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL` | Eval worker poll interval                                                               | Default 5.0 seconds                                                           |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE` | Trace-id ratio sampling                                                                 | Float (0–1], default 1.0                                                      |
+| `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape                                                      | Adds second event per result                                                  |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: false)                                                      |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` | Evaluation queue size                                                              | int (default: 100)                                                            |
 
 ## 7. Extensibility Mechanics
 
@@ -297,7 +299,17 @@ inv.output_messages = [OutputMessage(role="assistant", parts=[Text("Hi!")], fini
 handler.stop_llm(inv)
 ```
 
-## 16. Linting and Formatting
+Additionally, for `aidefense`
+
+```bash
+pip install -e instrumentation-genai/opentelemetry-instrumentation-aidefense
+
+export AI_DEFENSE_API_KEY="your-ai-defense-key"
+
+python instrumentation-genai/opentelemetry-instrumentation-aidefense/examples/multi_agent_travel_planner/main.py
+```
+
+## 15. Linting and Formatting
 
 This project uses [pre-commit](https://pre-commit.com/) hooks to automatically check and fix linting and formatting issues before committing.
 

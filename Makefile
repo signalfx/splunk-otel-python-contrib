@@ -4,7 +4,7 @@
 lint:
 	@echo "Installing ruff..."
 	@python -m pip install --upgrade pip > /dev/null 2>&1
-	@pip install ruff==0.6.9 > /dev/null 2>&1
+	@pip install --upgrade ruff==0.14.1 > /dev/null 2>&1
 	@echo "✓ Ruff installed"
 	@echo ""
 	@echo "Fixing linting issues..."

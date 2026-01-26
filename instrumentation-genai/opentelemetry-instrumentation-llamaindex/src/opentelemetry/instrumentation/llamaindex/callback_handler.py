@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from llama_index.core.callbacks.base_handler import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType
@@ -9,7 +9,9 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
+    RetrievalInvocation,
     Text,
+    Workflow,
 )
 
 from .invocation_manager import _InvocationManager
@@ -48,6 +50,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             event_ends_to_ignore=[],
         )
         self._handler = telemetry_handler
+        self._auto_workflow_ids: List[str] = []  # Track auto-created workflows (stack)
         self._invocation_manager = _InvocationManager()
 
     def start_trace(self, trace_id: Optional[str] = None) -> None:
@@ -62,6 +65,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         """End a trace - required by BaseCallbackHandler."""
         pass
 
+    def _get_parent_span(self, parent_id: str) -> Optional[Any]:
+        """Get parent span from invocation manager using parent_id."""
+        if not parent_id:
+            return None
+        parent_entity = self._invocation_manager.get_invocation(parent_id)
+        if parent_entity:
+            return getattr(parent_entity, "span", None)
+        return None
+
     def on_event_start(
         self,
         event_type: CBEventType,
@@ -70,11 +82,17 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         parent_id: str = "",
         **kwargs: Any,
     ) -> str:
-        """Handle event start - processing LLM and EMBEDDING events."""
+        """Handle event start - processing LLM, EMBEDDING, QUERY, RETRIEVE, and SYNTHESIZE events."""
         if event_type == CBEventType.LLM:
             self._handle_llm_start(event_id, parent_id, payload, **kwargs)
         elif event_type == CBEventType.EMBEDDING:
             self._handle_embedding_start(event_id, parent_id, payload, **kwargs)
+        elif event_type == CBEventType.QUERY:
+            self._handle_query_start(event_id, parent_id, payload, **kwargs)
+        elif event_type == CBEventType.RETRIEVE:
+            self._handle_retrieve_start(event_id, parent_id, payload, **kwargs)
+        elif event_type == CBEventType.SYNTHESIZE:
+            self._handle_synthesize_start(event_id, parent_id, payload, **kwargs)
         return event_id
 
     def on_event_end(
@@ -84,11 +102,17 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         event_id: str = "",
         **kwargs: Any,
     ) -> None:
-        """Handle event end - processing LLM and EMBEDDING events."""
+        """Handle event end - processing LLM, EMBEDDING, QUERY, RETRIEVE, and SYNTHESIZE events."""
         if event_type == CBEventType.LLM:
             self._handle_llm_end(event_id, payload, **kwargs)
         elif event_type == CBEventType.EMBEDDING:
             self._handle_embedding_end(event_id, payload, **kwargs)
+        elif event_type == CBEventType.QUERY:
+            self._handle_query_end(event_id, payload, **kwargs)
+        elif event_type == CBEventType.RETRIEVE:
+            self._handle_retrieve_end(event_id, payload, **kwargs)
+        elif event_type == CBEventType.SYNTHESIZE:
+            self._handle_synthesize_end(event_id, payload, **kwargs)
 
     def _handle_llm_start(
         self,
@@ -166,6 +190,10 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         llm_inv.framework = "llamaindex"
 
+        # Resolve parent_id to parent_span before starting, for proper span context
+        parent_span = self._get_parent_span(parent_id)
+        if parent_span:
+            llm_inv.parent_span = parent_span  # type: ignore[attr-defined]
         # Start the LLM invocation
         llm_inv = self._handler.start_llm(llm_inv)
 
@@ -255,9 +283,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         class_name = serialized.get("class_name", "")
         provider = detect_vendor_from_class(class_name)
 
-        # Note: input texts are not available at start time in LlamaIndex
-        # They will be available in the end event payload
-
         # Create embedding invocation
         emb_inv = EmbeddingInvocation(
             request_model=_safe_str(model_name),
@@ -267,9 +292,12 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if provider:
             emb_inv.provider = provider
 
+        # Resolve parent_id to parent_span before starting, for proper span context
+        parent_span = self._get_parent_span(parent_id)
+        if parent_span:
+            emb_inv.parent_span = parent_span  # type: ignore[attr-defined]
         # Start the embedding invocation
         emb_inv = self._handler.start_embedding(emb_inv)
-
         # Store in invocation manager
         self._invocation_manager.add_invocation_state(
             event_id=event_id,
@@ -317,3 +345,208 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Clean up from invocation manager if span is complete
         if not emb_inv.span.is_recording():
             self._invocation_manager.delete_invocation_state(event_id)
+
+    def _handle_query_start(
+        self,
+        event_id: str,
+        parent_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Handle query pipeline start - create Workflow if no parent exists."""
+        if not self._handler or not payload:
+            return
+
+        query_str = payload.get("query_str", "")
+
+        # If no parent, this is the root workflow
+        if not parent_id:
+            workflow = Workflow(
+                name="llama_index_query_pipeline",
+                workflow_type="workflow",
+                initial_input=_safe_str(query_str),
+                attributes={},
+                run_id=event_id,
+            )
+            workflow.framework = "llamaindex"
+            workflow = self._handler.start_workflow(workflow)
+            self._invocation_manager.add_invocation_state(
+                event_id=event_id,
+                parent_id=None,
+                invocation=workflow,
+            )
+
+    def _handle_query_end(
+        self,
+        event_id: str,
+        payload: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> None:
+        """Handle query pipeline end."""
+        if not self._handler:
+            return
+
+        entity = self._invocation_manager.get_invocation(event_id)
+        if not entity or not isinstance(entity, Workflow):
+            return
+        if payload:
+            response = payload.get("response")
+            if response:
+                entity.final_output = _safe_str(_get_attr(response, "response", ""))
+        self._handler.stop_workflow(entity)
+        self._invocation_manager.delete_invocation_state(event_id)
+
+    def _handle_retrieve_start(
+        self,
+        event_id: str,
+        parent_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Handle retrieval start - create RetrievalInvocation for retrieve task.
+
+        If no valid parent exists, automatically creates a root Workflow to hold
+        the RAG operations. Sets proper parent-child span relationships.
+        """
+        if not self._handler or not payload:
+            return
+
+        query_str = payload.get("query_str", "")
+
+        # If parent_id doesn't exist or doesn't resolve to a tracked entity,
+        # check for a root LLM invocation; otherwise create a root Workflow.
+        parent_entity = None
+        parent_span = None
+        parent_run_id = parent_id if parent_id else None
+
+        if parent_id:
+            parent_entity = self._invocation_manager.get_invocation(parent_id)
+            if parent_entity:
+                parent_span = getattr(parent_entity, "span", None)
+            else:
+                parent_run_id = None
+
+        if not parent_entity:
+            # No valid parent - create auto-workflow
+            workflow_id = f"{event_id}_workflow"
+            workflow = Workflow(
+                name="llama_index_rag",
+                workflow_type="rag",
+                initial_input=_safe_str(query_str),
+                attributes={},
+                run_id=workflow_id,
+            )
+            workflow.framework = "llamaindex"
+            workflow = self._handler.start_workflow(workflow)
+            # Track this auto-created workflow
+            self._auto_workflow_ids.append(workflow_id)
+            self._invocation_manager.add_invocation_state(
+                event_id=workflow_id,
+                parent_id=None,
+                invocation=workflow,
+            )
+            parent_span = getattr(workflow, "span", None)
+            parent_run_id = workflow_id
+
+        # Create a retrieval invocation for the retrieval task
+        retrieval = RetrievalInvocation(
+            operation_name="retrieve",
+            retriever_type="llamaindex_retriever",
+            query=_safe_str(query_str),
+            run_id=event_id,
+            parent_run_id=parent_run_id,
+            attributes={},
+        )
+
+        # Set parent_span if we have one
+        if parent_span:
+            retrieval.parent_span = parent_span  # type: ignore[attr-defined]
+
+        retrieval = self._handler.start_retrieval(retrieval)
+        self._invocation_manager.add_invocation_state(
+            event_id=event_id,
+            parent_id=parent_run_id,
+            invocation=retrieval,
+        )
+
+    def _handle_retrieve_end(
+        self,
+        event_id: str,
+        payload: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> None:
+        """Handle retrieval end - update RetrievalInvocation with retrieved nodes.
+
+        Extracts document count, relevance scores, and document IDs from the
+        retrieved nodes and stores them as attributes.
+        """
+        if not self._handler:
+            return
+
+        retrieval = self._invocation_manager.get_invocation(event_id)
+        if not retrieval or not isinstance(retrieval, RetrievalInvocation):
+            return
+
+        if payload:
+            nodes = payload.get("nodes", [])
+            if nodes:
+                # Set documents retrieved count
+                retrieval.documents_retrieved = len(nodes)
+
+                # Store scores and document IDs as attributes
+                scores = []
+                doc_ids = []
+                for node in nodes:
+                    if hasattr(node, "score") and node.score is not None:
+                        scores.append(node.score)
+                    if hasattr(node, "node_id"):
+                        doc_ids.append(str(node.node_id))
+                    elif hasattr(node, "id_"):
+                        doc_ids.append(str(node.id_))
+
+                if scores:
+                    retrieval.attributes["retrieve.scores"] = scores
+                if doc_ids:
+                    retrieval.attributes["retrieve.document_ids"] = doc_ids
+
+        self._handler.stop_retrieval(retrieval)
+        self._invocation_manager.delete_invocation_state(event_id)
+
+    def _handle_synthesize_start(
+        self,
+        event_id: str,
+        parent_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Handle synthesis start - no span needed, LLM invocation inside will be tracked."""
+        pass
+
+    def _handle_synthesize_end(
+        self,
+        event_id: str,
+        payload: Optional[Dict[str, Any]],
+        **kwargs: Any,
+    ) -> None:
+        """Handle synthesis end - close auto-created workflow if present."""
+        if not self._handler:
+            return
+
+        # If we auto-created a workflow, close the most recent one after synthesize completes
+        # The workflow_id follows the pattern: {retrieve_event_id}_workflow
+        if self._auto_workflow_ids:
+            # Get the most recent auto-workflow (LIFO)
+            workflow_id = self._auto_workflow_ids[-1]
+            workflow = self._invocation_manager.get_invocation(workflow_id)
+            if workflow and isinstance(workflow, Workflow):
+                # Set final output from synthesize response
+                if payload:
+                    response = payload.get("response")
+                    if response:
+                        workflow.final_output = _safe_str(
+                            _get_attr(response, "response", "")
+                        )
+                self._handler.stop_workflow(workflow)
+                self._invocation_manager.delete_invocation_state(workflow_id)
+                # Remove from tracking after successful close
+                self._auto_workflow_ids.remove(workflow_id)

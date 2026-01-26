@@ -1,5 +1,6 @@
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
+import asyncio
 import logging
 import queue
 import threading
@@ -7,18 +8,12 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from ..callbacks import CompletionCallback
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from ..handler import TelemetryHandler
-
 from opentelemetry.semconv.attributes import (
     error_attributes as ErrorAttributes,
 )
 
-from ..environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS,
-)
+from ..callbacks import CompletionCallback
+from ..environment_variables import OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
 from ..types import (
     AgentCreation,
     AgentInvocation,
@@ -33,11 +28,17 @@ from ..types import (
 from .base import Evaluator
 from .env import (
     read_aggregation_flag,
+    read_concurrent_flag,
     read_interval,
+    read_queue_size,
     read_raw_evaluators,
+    read_worker_count,
 )
 from .normalize import is_tool_only_llm
 from .registry import get_default_metrics, get_evaluator, list_evaluators
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..handler import TelemetryHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,7 +78,17 @@ _GENAI_TYPE_LOOKUP: Mapping[str, type[GenAI]] = {
 
 
 class Manager(CompletionCallback):
-    """Asynchronous evaluation manager implementing the completion callback."""
+    """Asynchronous evaluation manager implementing the completion callback.
+
+    Supports two processing modes controlled by OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT:
+
+    1. Sequential mode (default): Single worker thread processes evaluations one at a time.
+       Suitable for low-volume workloads or when LLM API rate limits are strict.
+
+    2. Concurrent mode: Multiple worker threads process evaluations in parallel with
+       async LLM calls. Significantly improves throughput for LLM-as-a-judge evaluations.
+       Configure worker count with OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS.
+    """
 
     def __init__(
         self,
@@ -85,6 +96,9 @@ class Manager(CompletionCallback):
         *,
         interval: float | None = None,
         aggregate_results: bool | None = None,
+        queue_size: int | None = None,
+        concurrent_mode: bool | None = None,
+        worker_count: int | None = None,
     ) -> None:
         self._handler = handler
         self._interval = interval if interval is not None else read_interval()
@@ -95,28 +109,81 @@ class Manager(CompletionCallback):
         )
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
-        self._queue: queue.Queue[GenAI] = queue.Queue()
+
+        # Queue configuration with bounded size for backpressure
+        self._queue_size = (
+            queue_size if queue_size is not None else read_queue_size()
+        )
+        self._queue: queue.Queue[GenAI] = queue.Queue(maxsize=self._queue_size)
+        _LOGGER.debug(
+            "Evaluation queue configured with size: %d", self._queue_size
+        )
+
+        # Concurrent mode configuration
+        self._concurrent_mode = (
+            concurrent_mode
+            if concurrent_mode is not None
+            else read_concurrent_flag()
+        )
+        self._worker_count = (
+            worker_count if worker_count is not None else read_worker_count()
+        )
+
         self._shutdown = threading.Event()
-        self._worker: threading.Thread | None = None
+        self._workers: list[threading.Thread] = []
+
         if self.has_evaluators:
-            self._worker = threading.Thread(
-                target=self._worker_loop,
-                name="opentelemetry-genai-evaluator",
-                daemon=True,
-            )
-            self._worker.start()
+            if self._concurrent_mode:
+                # Concurrent mode: multiple workers with async support
+                _LOGGER.info(
+                    "Starting concurrent evaluation mode with %d workers",
+                    self._worker_count,
+                )
+                for i in range(self._worker_count):
+                    worker = threading.Thread(
+                        target=self._concurrent_worker_loop,
+                        name=f"genai-evaluator-{i}",
+                        daemon=True,
+                    )
+                    self._workers.append(worker)
+                    worker.start()
+            else:
+                # Sequential mode (legacy): single worker
+                _LOGGER.debug(
+                    "Starting sequential evaluation mode (single worker)"
+                )
+                worker = threading.Thread(
+                    target=self._worker_loop,
+                    name="opentelemetry-genai-evaluator",
+                    daemon=True,
+                )
+                self._workers.append(worker)
+                worker.start()
+
+    @property
+    def concurrent_mode(self) -> bool:
+        """Whether concurrent evaluation mode is enabled."""
+        return self._concurrent_mode
 
     # CompletionCallback -------------------------------------------------
     def on_completion(self, invocation: GenAI) -> None:
         # Early exit if no evaluators configured
         if not self.has_evaluators:
             return
-        # Only evaluate LLMInvocation or AgentInvocation
+
+        # Only evaluate LLMInvocation or AgentInvocation or Workflow
         if (
             not isinstance(invocation, LLMInvocation)
             and not isinstance(invocation, AgentInvocation)
             and not isinstance(invocation, Workflow)
         ):
+            invocation.evaluation_error = (
+                "client_evaluation_skipped_as_invocation_type_not_supported"
+            )
+            _LOGGER.debug(
+                "Skipping evaluation for invocation type: %s. Only support LLM, Agent and Workflow invocation types.",
+                type(invocation).__name__,
+            )
             return
 
         offer: bool = True
@@ -131,11 +198,24 @@ class Manager(CompletionCallback):
                         and first.parts[0] == "ToolCall"
                         and first.finish_reason == "tool_calls"
                     ):
+                        invocation.evaluation_error = "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
+                        _LOGGER.debug(
+                            "Skipping evaluation for type tool llm invocation: %s. No output to evaluate.",
+                            type(invocation).__name__,
+                        )
                         offer = False
 
             # Do not evaluate if error
             error = invocation.attributes.get(ErrorAttributes.ERROR_TYPE)
             if error:
+                invocation.evaluation_error = (
+                    "client_evaluation_skipped_as_error_on_invocation"
+                )
+                _LOGGER.debug(
+                    "Skipping evaluation for invocation type: %s as error on span, error: %s.",
+                    type(invocation).__name__,
+                    error,
+                )
                 offer = False
 
             if offer:
@@ -143,15 +223,32 @@ class Manager(CompletionCallback):
 
     # Public API ---------------------------------------------------------
     def offer(self, invocation: GenAI) -> None:
-        """Enqueue an invocation for asynchronous evaluation."""
+        """Enqueue an invocation for asynchronous evaluation.
 
+        If the queue is bounded and full, the invocation is dropped with a warning.
+        This implements backpressure to prevent memory exhaustion under heavy load.
+        """
         if not self.has_evaluators:
             return
         try:
             self._queue.put_nowait(invocation)
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.debug(
-                "Failed to enqueue invocation for evaluation", exc_info=True
+        except queue.Full:
+            # Bounded queue is full - apply backpressure by dropping
+            invocation.evaluation_error = "client_evaluation_queue_full"
+            _LOGGER.warning(
+                "Evaluation queue full (size=%d). Dropping invocation. "
+                "Consider increasing OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE "
+                "or reducing evaluation load.",
+                self._queue_size
+                if self._queue_size > 0
+                else self._queue.maxsize,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            invocation.evaluation_error = "client_evaluation_queue_error"
+            _LOGGER.error(
+                "Failed to enqueue invocation for evaluation: %s",
+                exc,
+                exc_info=True,
             )
 
     def wait_for_all(self, timeout: float | None = None) -> None:
@@ -167,11 +264,14 @@ class Manager(CompletionCallback):
             time.sleep(0.05)
 
     def shutdown(self) -> None:
-        if self._worker is None:
+        """Gracefully shutdown evaluation workers."""
+        if not self._workers:
             return
         self._shutdown.set()
-        self._worker.join(timeout=1.0)
-        self._worker = None
+        for worker in self._workers:
+            worker.join(timeout=1.0)
+        self._workers.clear()
+        _LOGGER.debug("Evaluation manager shutdown complete")
 
     def evaluate_now(self, invocation: GenAI) -> list[EvaluationResult]:
         """Synchronously evaluate an invocation."""
@@ -187,6 +287,7 @@ class Manager(CompletionCallback):
 
     # Internal helpers ---------------------------------------------------
     def _worker_loop(self) -> None:
+        """Sequential worker loop (legacy mode)."""
         while not self._shutdown.is_set():
             try:
                 invocation = self._queue.get(timeout=self._interval)
@@ -198,6 +299,85 @@ class Manager(CompletionCallback):
                 _LOGGER.exception("Evaluator processing failed")
             finally:
                 self._queue.task_done()
+
+    def _concurrent_worker_loop(self) -> None:
+        """Concurrent worker loop with async support.
+
+        Each worker creates its own event loop and processes invocations
+        using async evaluation when available.
+        """
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            while not self._shutdown.is_set():
+                try:
+                    invocation = self._queue.get(timeout=self._interval)
+                except queue.Empty:
+                    continue
+                try:
+                    # Run async processing in event loop
+                    loop.run_until_complete(
+                        self._process_invocation_async(invocation)
+                    )
+                except Exception:  # pragma: no cover - defensive
+                    _LOGGER.exception("Concurrent evaluator processing failed")
+                finally:
+                    self._queue.task_done()
+        finally:
+            loop.close()
+
+    async def _process_invocation_async(self, invocation: GenAI) -> None:
+        """Process an invocation asynchronously with concurrent evaluator calls."""
+        if not self.has_evaluators:
+            return
+
+        buckets = await self._evaluate_invocation_async(invocation)
+        self._publish_results(invocation, buckets)
+        self._flag_invocation(invocation)
+
+    async def _evaluate_invocation_async(
+        self, invocation: GenAI
+    ) -> Sequence[Sequence[EvaluationResult]]:
+        """Evaluate an invocation using concurrent async evaluator calls."""
+        if not self.has_evaluators:
+            return ()
+        if self._should_skip(invocation):
+            return ()
+
+        type_name = type(invocation).__name__
+        evaluators = self._evaluators.get(type_name, ())
+        if not evaluators:
+            return ()
+
+        # Run all evaluators concurrently
+        async def run_evaluator(
+            evaluator: Evaluator,
+        ) -> Sequence[EvaluationResult] | None:
+            try:
+                # Use async evaluation if available, otherwise run sync in thread pool
+                if hasattr(evaluator, "evaluate_async"):
+                    return await evaluator.evaluate_async(invocation)
+                else:
+                    # Run sync evaluate in thread pool to not block
+                    return await asyncio.to_thread(
+                        evaluator.evaluate, invocation
+                    )
+            except Exception as exc:  # pragma: no cover - defensive
+                _LOGGER.debug("Evaluator %s failed: %s", evaluator, exc)
+                return None
+
+        # Execute all evaluators concurrently
+        tasks = [run_evaluator(evaluator) for evaluator in evaluators]
+        results_list = await asyncio.gather(*tasks, return_exceptions=False)
+
+        # Collect non-empty results
+        buckets: list[Sequence[EvaluationResult]] = []
+        for results in results_list:
+            if results:
+                buckets.append(list(results))
+
+        return buckets
 
     def _process_invocation(self, invocation: GenAI) -> None:
         if not self.has_evaluators:

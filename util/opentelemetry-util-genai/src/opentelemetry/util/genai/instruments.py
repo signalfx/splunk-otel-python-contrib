@@ -84,3 +84,40 @@ class Instruments:
             description="Duration of agent operations",
             explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
         )
+        self.retrieval_duration_histogram: Histogram = meter.create_histogram(
+            name="gen_ai.retrieval.duration",
+            unit="s",
+            description="Duration of retrieval operations",
+        )
+        # MCP (Model Context Protocol) metrics
+        # Per OTel semconv: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+        # Bucket boundaries: [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]
+        self.mcp_client_operation_duration: Histogram = meter.create_histogram(
+            name="mcp.client.operation.duration",
+            unit="s",
+            description="Duration of MCP request or notification as observed on "
+            "the sender from the time it was sent until response or ack is received",
+        )
+        self.mcp_server_operation_duration: Histogram = meter.create_histogram(
+            name="mcp.server.operation.duration",
+            unit="s",
+            description="MCP request or notification duration as observed on "
+            "the receiver from the time it was received until result or ack is sent",
+        )
+        self.mcp_client_session_duration: Histogram = meter.create_histogram(
+            name="mcp.client.session.duration",
+            unit="s",
+            description="Duration of the MCP session as observed on the MCP client",
+        )
+        self.mcp_server_session_duration: Histogram = meter.create_histogram(
+            name="mcp.server.session.duration",
+            unit="s",
+            description="Duration of the MCP session as observed on the MCP server",
+        )
+        # Custom metric: Track tool output size (impacts LLM token usage when passed as context)
+        self.mcp_tool_output_size: Histogram = meter.create_histogram(
+            name="mcp.tool.output.size",
+            unit="{byte}",
+            description="Size of the tool call output in bytes. "
+            "This output typically becomes part of the LLM input context.",
+        )

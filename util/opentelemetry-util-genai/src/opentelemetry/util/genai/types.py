@@ -103,6 +103,7 @@ class GenAI:
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},
     )
     sample_for_evaluation: Optional[bool] = field(default=True)
+    evaluation_error: Optional[str] = None
 
     def semantic_convention_attributes(self) -> dict[str, Any]:
         """Return semantic convention attributes defined on this dataclass."""
@@ -123,12 +124,114 @@ class GenAI:
 
 @dataclass()
 class ToolCall(GenAI):
-    """Represents a single tool call invocation (Phase 4)."""
+    """Represents a tool call invocation per execute_tool semantic conventions.
 
-    arguments: Any
-    name: str
-    id: Optional[str]
+    See: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span
+
+    Required attributes:
+    - gen_ai.operation.name: Should be "execute_tool"
+
+    Conditionally required:
+    - error.type: If operation ended in error
+
+    Recommended:
+    - gen_ai.tool.name: Name of the tool
+    - gen_ai.tool.call.id: Tool call identifier
+    - gen_ai.tool.type: Type (function, extension, datastore)
+    - gen_ai.tool.description: Tool description
+
+    Opt-In:
+    - gen_ai.tool.call.arguments: Parameters passed to tool
+    - gen_ai.tool.call.result: Result returned by tool
+    """
+
+    # Required: gen_ai.tool.name
+    name: str = field(metadata={"semconv": "gen_ai.tool.name"})
+    # Opt-In: gen_ai.tool.call.arguments (set on start if content capture enabled)
+    arguments: Any = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.arguments"},
+    )
+    # Recommended: gen_ai.tool.call.id
+    id: Optional[str] = field(
+        default=None, metadata={"semconv": "gen_ai.tool.call.id"}
+    )
     type: Literal["tool_call"] = "tool_call"
+
+    # Recommended: gen_ai.tool.type ("function", "extension", or "datastore")
+    tool_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.type"},
+    )
+    # Recommended: gen_ai.tool.description
+    tool_description: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.description"},
+    )
+    # Opt-In: gen_ai.tool.call.result (set on finish if content capture enabled)
+    tool_result: Optional[Any] = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.result"},
+    )
+    # Conditionally Required: error.type (set if error occurred)
+    error_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "error.type"},
+    )
+
+
+@dataclass()
+class MCPToolCall(ToolCall):
+    """Represents an MCP (Model Context Protocol) tool call invocation.
+
+    Extends ToolCall with MCP-specific semantic conventions:
+    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+
+    MCP Semantic Convention Attributes:
+    - mcp.method.name: The name of the request or notification method
+    - mcp.session.id: Session identifier for the MCP connection
+    - mcp.protocol.version: MCP protocol version
+    - mcp.server.name: Name of the MCP server
+    - network.transport: Transport type ("pipe" for stdio, "tcp" for HTTP)
+
+    Metrics-only fields (not span attributes):
+    - output_size_bytes: Output size for metrics tracking
+    - output_size_tokens: Token count for metrics tracking
+    - duration_s: Duration for standalone metrics emission
+    """
+
+    # mcp.method.name: The name of the request or notification method
+    mcp_method_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.method.name"},
+    )
+    # network.transport: "pipe" for stdio, "tcp" for HTTP
+    network_transport: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.transport"},
+    )
+    # mcp.session.id: Session identifier
+    mcp_session_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.session.id"},
+    )
+    # mcp.protocol.version: MCP protocol version
+    mcp_protocol_version: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.protocol.version"},
+    )
+    # mcp.server.name: Name of the MCP server
+    mcp_server_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.server.name"},
+    )
+    # Metrics-only fields (no semconv metadata - not span attributes)
+    output_size_bytes: Optional[int] = None
+    output_size_tokens: Optional[int] = None
+    duration_s: Optional[float] = None
+    # Internal state tracking (no semconv)
+    is_client: bool = True
+    is_error: bool = False
 
 
 @dataclass()
@@ -337,6 +440,51 @@ class EmbeddingInvocation(GenAI):
 
 
 @dataclass
+class RetrievalInvocation(GenAI):
+    """Represents a single retrieval/search invocation."""
+
+    # Required attribute
+    operation_name: str = field(
+        default="retrieval",
+        metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
+    )
+
+    # Recommended attributes
+    retriever_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.type"},
+    )
+    request_model: Optional[str] = field(
+        default=None,
+        metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_MODEL},
+    )
+    query: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.query.text"},
+    )
+    top_k: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.top_k"},
+    )
+    documents_retrieved: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.documents_retrieved"},
+    )
+
+    # Opt-in attribute
+    results: list[dict[str, Any]] = field(
+        default_factory=list,
+        metadata={"semconv": "gen_ai.retrieval.documents"},
+    )
+
+    # Additional utility fields (not in semantic conventions)
+    query_vector: Optional[list[float]] = None
+    server_port: Optional[int] = None
+    server_address: Optional[str] = None
+    error_type: Optional[str] = None
+
+
+@dataclass
 class Workflow(GenAI):
     """Represents a workflow orchestrating multiple agents and steps.
 
@@ -447,6 +595,7 @@ __all__ = [
     "GenAI",
     "LLMInvocation",
     "EmbeddingInvocation",
+    "RetrievalInvocation",
     "Error",
     "EvaluationResult",
     # agentic AI types
