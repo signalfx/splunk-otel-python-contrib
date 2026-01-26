@@ -34,7 +34,7 @@ requests-toolbelt==1.0.0
 rich==14.2.0
 rsa==4.9.1
 ruamel.yaml==0.17.21
-ruff==0.6.9
+ruff==0.14.1
 sentry-sdk==2.43.0
 setuptools==80.9.0
 shellingham==1.5.4

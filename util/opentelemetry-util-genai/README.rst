@@ -24,6 +24,29 @@ Example usage for LLM Invocation.
 
 See the example in ``examples/agentic_example.py`` for a full agent + LLM invocation flow.
 
+Concurrent Evaluation Mode
+--------------------------
+
+For high-throughput LLM-as-a-Judge evaluations, enable concurrent processing:
+
+.. code-block:: bash
+
+    # Enable concurrent evaluation with 4 workers
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS=4
+    
+    # Optional: Set bounded queue for backpressure
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE=100
+
+Configuration options:
+
+* ``OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT`` - Enable concurrent mode (default: ``false``)
+* ``OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS`` - Number of worker threads (default: ``4``)
+* ``OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE`` - Bounded queue size, ``0`` for unbounded (default: ``0``)
+
+Concurrent mode processes multiple evaluations in parallel, significantly improving throughput
+when using LLM-as-a-Judge metrics like DeepEval's Bias, Toxicity, and Answer Relevancy.
+
 Further Documentation
 ---------------------
 For architecture, design rationale, and broader usage patterns please consult:
