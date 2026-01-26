@@ -36,6 +36,9 @@ RUN pip install --upgrade --force-reinstall \
     opentelemetry-exporter-otlp-proto-grpc \
     opentelemetry-exporter-otlp-proto-http
 
+# Copy shared util module (OAuth2TokenManager)
+COPY instrumentation-genai/opentelemetry-instrumentation-llamaindex/examples/util /app/util/
+
 # Copy application code
 COPY instrumentation-genai/opentelemetry-instrumentation-llamaindex/examples/zero-code /app/zero-code
 

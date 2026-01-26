@@ -6,15 +6,20 @@ OpenTelemetry instrumentation to capture traces and metrics.
 """
 
 import os
+import sys
+from pathlib import Path
 
 import asyncio
-import base64
 import json
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import requests
+
+# Add parent directory to path to import from util
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from util import OAuth2TokenManager
 from llama_index.core.agent import ReActAgent
 from llama_index.core.base.llms.types import (
     ChatMessage,
@@ -25,6 +30,13 @@ from llama_index.core.base.llms.types import (
 )
 from llama_index.core.llms import CustomLLM
 from llama_index.core.tools import FunctionTool
+from llama_index.core.workflow import (
+    Event,
+    StartEvent,
+    StopEvent,
+    Workflow,
+    step,
+)
 from llama_index.llms.openai import OpenAI
 
 from opentelemetry import trace, metrics
@@ -35,95 +47,6 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
-
-
-# OAuth2 Token Manager for CircuIT
-class OAuth2TokenManager:
-    """Manages OAuth2 token lifecycle for CircuIT.
-
-    Handles token retrieval, file-based caching, and automatic refresh with a 5-minute buffer.
-    """
-
-    def __init__(
-        self,
-        token_url: str,
-        client_id: str,
-        client_secret: str,
-        scope: str = None,
-        cache_file: str = "/tmp/circuit_token_cache.json",
-    ):
-        self.token_url = token_url
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.scope = scope
-        self.cache_file = cache_file
-
-    def _get_cached_token(self):
-        """Get token from cache file if valid."""
-        if not os.path.exists(self.cache_file):
-            return None
-
-        try:
-            with open(self.cache_file, "r") as f:
-                cache_data = json.load(f)
-
-            expires_at = datetime.fromisoformat(cache_data["expires_at"])
-            if datetime.now() < expires_at - timedelta(minutes=5):
-                return cache_data["access_token"]
-        except (json.JSONDecodeError, KeyError, ValueError):
-            pass
-        return None
-
-    def _fetch_new_token(self):
-        """Request a new access token from the OAuth2 server."""
-        # Create Basic Auth header
-        credentials = f"{self.client_id}:{self.client_secret}"
-        encoded_credentials = base64.b64encode(credentials.encode()).decode()
-
-        headers = {
-            "Authorization": f"Basic {encoded_credentials}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        data = {"grant_type": "client_credentials"}
-        if self.scope:
-            data["scope"] = self.scope
-
-        response = requests.post(self.token_url, headers=headers, data=data)
-        response.raise_for_status()
-
-        token_data = response.json()
-        expires_in = token_data.get("expires_in", 3600)
-        expires_at = datetime.now() + timedelta(seconds=expires_in)
-
-        # Cache token to file with secure permissions
-        cache_data = {
-            "access_token": token_data["access_token"],
-            "expires_at": expires_at.isoformat(),
-        }
-
-        with open(self.cache_file, "w") as f:
-            json.dump(cache_data, f, indent=2)
-        os.chmod(self.cache_file, 0o600)  # rw------- (owner only)
-
-        return token_data["access_token"]
-
-    def get_token(self) -> str:
-        """Get a valid access token, refreshing if necessary."""
-        token = self._get_cached_token()
-        if token:
-            return token
-        return self._fetch_new_token()
-
-    def cleanup_token_cache(self):
-        """Securely remove token cache file."""
-        if os.path.exists(self.cache_file):
-            # Overwrite file with zeros before deletion for security
-            with open(self.cache_file, "r+b") as f:
-                length = f.seek(0, 2)  # Get file size
-                f.seek(0)
-                f.write(b"\0" * length)  # Overwrite with zeros
-            os.remove(self.cache_file)
 
 
 # Custom LLM for CircuIT
@@ -353,64 +276,98 @@ def get_activity_agent():
     return _activity_agent
 
 
-# Multi-Agent Workflow Orchestrator
-async def invoke_workflow(
-    origin: str,
-    destination: str,
-    departure_date: str,
-    check_out_date: str,
-    budget: int = 3000,
-    duration: int = 5,
-    travelers: int = 2,
-    interests: list = None,
-) -> str:
+# Workflow Event Classes
+class FlightEvent(Event):
+    """Event containing flight search results."""
+
+    flight_result: str
+    destination: str
+    departure_date: str
+    check_out_date: str
+
+
+class HotelEvent(Event):
+    """Event containing hotel search results."""
+
+    flight_result: str
+    hotel_result: str
+    destination: str
+
+
+class TravelPlanRequest(Event):
+    """Initial travel plan request parameters."""
+
+    origin: str
+    destination: str
+    departure_date: str
+    check_out_date: str
+    budget: int
+    duration: int
+    travelers: int
+    interests: list
+
+
+# Multi-Agent Workflow using LlamaIndex Workflow Pattern
+class TravelPlannerWorkflow(Workflow):
     """
-    Orchestrates the multi-agent travel planning workflow.
+    LlamaIndex Workflow for multi-agent travel planning orchestration.
 
-    Workflow: invoke_workflow → flight_specialist → hotel_specialist → activity_specialist
+    This workflow orchestrates three specialist agents:
+    1. Flight Specialist - searches for flights
+    2. Hotel Specialist - searches for hotels
+    3. Activity Specialist - recommends activities
 
-    Args:
-        origin: Departure city
-        destination: Arrival city
-        departure_date: Departure date (YYYY-MM-DD)
-        check_out_date: Hotel check-out date (YYYY-MM-DD)
-        budget: Total budget in USD
-        duration: Trip duration in days
-        travelers: Number of travelers
-        interests: List of traveler interests
-
-    Returns:
-        Aggregated results from all specialist agents
+    The workflow automatically creates proper span hierarchy for observability.
     """
-    results = []
 
-    # 1. Flight Specialist Agent
-    print("\n--- Flight Specialist Agent ---")
-    flight_agent = get_flight_agent()
-    flight_query = f"Search for flights from {origin} to {destination} departing on {departure_date}"
-    flight_handler = flight_agent.run(user_msg=flight_query, max_iterations=3)
-    flight_response = await flight_handler
-    results.append(f"Flights: {flight_response}")
+    @step
+    async def search_flights(self, ev: StartEvent) -> FlightEvent:
+        """Step 1: Search for flights using flight specialist agent."""
+        print("\n--- Flight Specialist Agent ---")
+        flight_agent = get_flight_agent()
+        flight_query = f"Search for flights from {ev.origin} to {ev.destination} departing on {ev.departure_date}"
+        flight_handler = flight_agent.run(user_msg=flight_query, max_iterations=3)
+        flight_response = await flight_handler
 
-    # 2. Hotel Specialist Agent
-    print("\n--- Hotel Specialist Agent ---")
-    hotel_agent = get_hotel_agent()
-    hotel_query = (
-        f"Search for hotels in {destination} from {departure_date} to {check_out_date}"
-    )
-    hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
-    hotel_response = await hotel_handler
-    results.append(f"Hotels: {hotel_response}")
+        return FlightEvent(
+            flight_result=str(flight_response),
+            destination=ev.destination,
+            departure_date=ev.departure_date,
+            check_out_date=ev.check_out_date,
+        )
 
-    # 3. Activity Specialist Agent
-    print("\n--- Activity Specialist Agent ---")
-    activity_agent = get_activity_agent()
-    activity_query = f"Recommend activities in {destination}"
-    activity_handler = activity_agent.run(user_msg=activity_query, max_iterations=3)
-    activity_response = await activity_handler
-    results.append(f"Activities: {activity_response}")
+    @step
+    async def search_hotels(self, ev: FlightEvent) -> HotelEvent:
+        """Step 2: Search for hotels using hotel specialist agent."""
+        print("\n--- Hotel Specialist Agent ---")
+        hotel_agent = get_hotel_agent()
+        hotel_query = f"Search for hotels in {ev.destination} from {ev.departure_date} to {ev.check_out_date}"
+        hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
+        hotel_response = await hotel_handler
 
-    return "\n\n".join(results)
+        return HotelEvent(
+            flight_result=ev.flight_result,
+            hotel_result=str(hotel_response),
+            destination=ev.destination,
+        )
+
+    @step
+    async def search_activities(self, ev: HotelEvent) -> StopEvent:
+        """Step 3: Recommend activities using activity specialist agent."""
+        print("\n--- Activity Specialist Agent ---")
+        activity_agent = get_activity_agent()
+        activity_query = f"Recommend activities in {ev.destination}"
+        activity_handler = activity_agent.run(user_msg=activity_query, max_iterations=3)
+        activity_response = await activity_handler
+
+        # Aggregate all results
+        final_result = (
+            f"Flights: {ev.flight_result}\n\n"
+            f"Hotels: {ev.hotel_result}\n\n"
+            f"Activities: {activity_response}"
+        )
+
+        return StopEvent(result=final_result)
 
 
 class TravelPlannerHandler(BaseHTTPRequestHandler):
@@ -471,20 +428,25 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     check_out = check_in + timedelta(days=duration)
                     check_out_date = check_out.strftime("%Y-%m-%d")
 
-                    # Invoke the multi-agent workflow
-                    try:
-                        asyncio.run(
-                            invoke_workflow(
-                                origin=origin,
-                                destination=destination,
-                                departure_date=departure_date,
-                                check_out_date=check_out_date,
-                                budget=budget,
-                                duration=duration,
-                                travelers=travelers,
-                                interests=interests,
-                            )
+                    # Invoke the multi-agent workflow using LlamaIndex Workflow
+                    workflow = TravelPlannerWorkflow(timeout=300, verbose=False)
+
+                    # Define async wrapper to run the workflow
+                    async def run_workflow():
+                        return await workflow.run(
+                            origin=origin,
+                            destination=destination,
+                            departure_date=departure_date,
+                            check_out_date=check_out_date,
+                            budget=budget,
+                            duration=duration,
+                            travelers=travelers,
+                            interests=interests,
                         )
+
+                    try:
+                        # Run the workflow in a new event loop
+                        result = asyncio.run(run_workflow())
                     except RuntimeError as e:
                         if (
                             "asyncio.run() cannot be called from a running event loop"
@@ -494,8 +456,8 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
-                                loop.run_until_complete(
-                                    invoke_workflow(
+                                result = loop.run_until_complete(
+                                    workflow.run(
                                         origin=origin,
                                         destination=destination,
                                         departure_date=departure_date,
@@ -516,6 +478,16 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     print(f"{'=' * 60}\n")
 
                     span.set_attribute("http.status_code", 200)
+
+                    # Send success response
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    response_data = {
+                        "status": "success",
+                        "plan": str(result),
+                    }
+                    self.wfile.write(json.dumps(response_data).encode())
 
                 except Exception as e:
                     print(f"Error processing request: {e}")

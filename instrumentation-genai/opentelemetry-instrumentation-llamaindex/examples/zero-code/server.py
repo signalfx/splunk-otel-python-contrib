@@ -9,68 +9,19 @@ Run with: opentelemetry-instrument python main_server.py
 
 import json
 import os
-from typing import Any, Optional
+import sys
+from pathlib import Path
+from typing import Any
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
+
+# Add parent directory to path to import from util
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from util import OAuth2TokenManager
 from llama_index.core.base.llms.types import ChatMessage, ChatResponse, MessageRole
 from llama_index.core.llms import CustomLLM, CompletionResponse, LLMMetadata
 from llama_index.core.llms.callbacks import llm_chat_callback
-
-
-# OAuth2 Token Manager for Cisco CircuIT
-class OAuth2TokenManager:
-    """Manages OAuth2 token lifecycle for Cisco CircuIT gateway."""
-
-    def __init__(
-        self,
-        token_url: str,
-        client_id: str,
-        client_secret: str,
-        scope: Optional[str] = None,
-    ):
-        self.token_url = token_url
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.scope = scope
-        self._access_token: Optional[str] = None
-        self._token_expiry: Optional[float] = None
-
-    def get_token(self) -> str:
-        """Get valid access token, refreshing if needed."""
-        import time
-        import base64
-
-        # Check if token is still valid (with 5-minute buffer)
-        if self._access_token and self._token_expiry:
-            if time.time() < self._token_expiry - 300:
-                return self._access_token
-
-        # Request new token using Basic Auth (Cisco CircuIT method)
-        auth_string = f"{self.client_id}:{self.client_secret}"
-        auth_b64 = base64.b64encode(auth_string.encode()).decode()
-
-        headers = {
-            "Authorization": f"Basic {auth_b64}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        data = {"grant_type": "client_credentials"}
-        if self.scope:
-            data["scope"] = self.scope
-
-        response = requests.post(self.token_url, headers=headers, data=data)
-        response.raise_for_status()
-
-        token_data = response.json()
-        self._access_token = token_data["access_token"]
-
-        # Calculate expiry time (default to 3600 seconds if not provided)
-        expires_in = token_data.get("expires_in", 3600)
-        self._token_expiry = time.time() + expires_in
-
-        print(f"✓ OAuth2 token obtained, expires in {expires_in}s")
-        return self._access_token
 
 
 # Custom LLM for Cisco CircuIT

@@ -22,6 +22,9 @@ COPY instrumentation-genai/opentelemetry-instrumentation-llamaindex /tmp/instrum
 RUN pip install --no-cache-dir /tmp/instrumentation-llamaindex && \
     rm -rf /tmp/instrumentation-llamaindex
 
+# Copy shared util module (OAuth2TokenManager)
+COPY instrumentation-genai/opentelemetry-instrumentation-llamaindex/examples/util /app/util/
+
 # Copy application code
 COPY instrumentation-genai/opentelemetry-instrumentation-llamaindex/examples/travel_planner_k8s/main_server.py .
 

@@ -15,7 +15,7 @@ from llama_index.core.tools import FunctionTool
 from opentelemetry import trace, metrics
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -29,14 +29,6 @@ def multiply(a: int, b: int) -> int:
 def add(a: int, b: int) -> int:
     """Add two numbers."""
     return a + b
-
-
-def setup_telemetry():
-    """Setup OpenTelemetry with console exporter."""
-    trace.set_tracer_provider(TracerProvider())
-    tracer_provider = trace.get_tracer_provider()
-    tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
-    return tracer_provider
 
 
 def setup_telemetry_with_memory():
