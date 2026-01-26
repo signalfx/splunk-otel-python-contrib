@@ -40,7 +40,7 @@ class MetricData:  # lightweight stub
         self.error = error
 
 
-class TestResult:  # lightweight stub
+class FakeTestResult:  # lightweight stub (renamed from TestResult to avoid pytest collection)
     def __init__(
         self,
         *,
@@ -56,7 +56,9 @@ class TestResult:  # lightweight stub
 
 
 class DeeEvaluationResult:  # stub container
-    def __init__(self, *, test_results: list[TestResult], confident_link=None):
+    def __init__(
+        self, *, test_results: list[FakeTestResult], confident_link=None
+    ):
         self.test_results = test_results
         self.confident_link = confident_link
 
@@ -164,7 +166,7 @@ def test_sentiment_metric_result_attributes(monkeypatch):
     # Fake deepeval result with a sentiment score of 0.8 (positive, in 0-1 scale)
     fake_result = DeeEvaluationResult(
         test_results=[
-            TestResult(
+            FakeTestResult(
                 name="case",
                 success=True,
                 metrics_data=[
@@ -242,7 +244,7 @@ def test_sentiment_label_thresholds(monkeypatch):
         # Create a new fake_result for each test case
         fake_result = DeeEvaluationResult(
             test_results=[
-                TestResult(
+                FakeTestResult(
                     name="case",
                     success=True,
                     metrics_data=[
@@ -262,7 +264,7 @@ def test_sentiment_label_thresholds(monkeypatch):
 
         # Use a closure to capture the current fake_result
         def make_fake_runner(result):
-            def fake_runner(case, metrics, debug_log):
+            def fake_runner(case, metrics):
                 return result
 
             return fake_runner

@@ -40,7 +40,7 @@ class MetricData:  # lightweight stub
         self.error = error
 
 
-class TestResult:  # lightweight stub
+class FakeTestResult:  # lightweight stub (renamed from TestResult to avoid pytest collection)
     def __init__(
         self,
         *,
@@ -56,7 +56,9 @@ class TestResult:  # lightweight stub
 
 
 class DeeEvaluationResult:  # stub container
-    def __init__(self, *, test_results: list[TestResult], confident_link=None):
+    def __init__(
+        self, *, test_results: list[FakeTestResult], confident_link=None
+    ):
         self.test_results = test_results
         self.confident_link = confident_link
 
@@ -189,7 +191,7 @@ def test_hallucination_metric_score_inversion(monkeypatch):
 
         fake_result = DeeEvaluationResult(
             test_results=[
-                TestResult(
+                FakeTestResult(
                     name="case",
                     success=success,
                     metrics_data=[
@@ -211,7 +213,7 @@ def test_hallucination_metric_score_inversion(monkeypatch):
 
         # Use a closure to capture the current fake_result
         def make_fake_runner(result):
-            def fake_runner(case, metrics, debug_log):
+            def fake_runner(case, metrics):
                 return result
 
             return fake_runner
@@ -267,7 +269,7 @@ def test_hallucination_metric_name_variants(monkeypatch):
         # GEval score 0.9 should invert to final score 0.1
         fake_result = DeeEvaluationResult(
             test_results=[
-                TestResult(
+                FakeTestResult(
                     name="case",
                     success=True,
                     metrics_data=[
@@ -291,7 +293,7 @@ def test_hallucination_metric_name_variants(monkeypatch):
         )
         monkeypatch.setattr(
             "opentelemetry.util.evaluator.deepeval._run_deepeval",
-            lambda case, metrics, debug_log: fake_result,
+            lambda case, metrics: fake_result,
         )
 
         results = evaluator.evaluate(invocation)
