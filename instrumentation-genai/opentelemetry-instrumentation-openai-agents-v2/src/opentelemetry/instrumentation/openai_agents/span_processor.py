@@ -41,6 +41,7 @@ from opentelemetry.util.genai.handler import (
 from opentelemetry.util.genai.types import (
     AgentCreation,
     AgentInvocation,
+    Error,
     InputMessage,
     LLMInvocation,
     OutputMessage,
@@ -1064,6 +1065,28 @@ class GenAISemanticProcessor(TracingProcessor):
         """Delete an invocation state and return it."""
         return self._invocations.pop(span_id, None)
 
+    def _fail_invocation(
+        self, key: str, error: BaseException
+    ) -> None:
+        """Fail an invocation with an error."""
+        state = self._get_invocation_state(key)
+        if state is None:
+            return
+
+        invocation = state.invocation
+        gen_ai_error = Error(message=str(error), type=type(error))
+
+        if isinstance(invocation, AgentInvocation):
+            self._handler.fail_agent(invocation, gen_ai_error)
+        elif isinstance(invocation, LLMInvocation):
+            self._handler.fail_llm(invocation, gen_ai_error)
+        elif isinstance(invocation, ToolCall):
+            self._handler.fail_tool_call(invocation, gen_ai_error)
+        elif isinstance(invocation, Workflow):
+            self._handler.fail_workflow(invocation, gen_ai_error)
+
+        self._delete_invocation_state(key)
+
     def _find_agent_parent_span_id(
         self, span_id: Optional[str]
     ) -> Optional[str]:
@@ -1300,21 +1323,27 @@ class GenAISemanticProcessor(TracingProcessor):
 
     def on_trace_end(self, trace: Trace) -> None:
         """Stop workflow when trace ends."""
-        if self._workflow is not None:
-            if self._workflow_first_input and not self._workflow.initial_input:
-                self._workflow.initial_input = self._format_input_message(
+        key = str(trace.trace_id)
+        state = self._get_invocation_state(key)
+        if state is None:
+            return
+
+        workflow = state.invocation
+        if isinstance(workflow, Workflow):
+            if self._workflow_first_input and not workflow.initial_input:
+                workflow.initial_input = self._format_input_message(
                     self._workflow_first_input
                 )
             if self._workflow_last_output:
-                self._workflow.final_output = self._format_output_message(
+                workflow.final_output = self._format_output_message(
                     self._workflow_last_output
                 )
-            self._handler.stop_workflow(self._workflow)
-            self._workflow = None
-            self._workflow_first_input = None
-            self._workflow_last_output = None
+            self._handler.stop_workflow(workflow)
 
-        self._cleanup_spans_for_trace(trace.trace_id)
+        self._workflow = None
+        self._workflow_first_input = None
+        self._workflow_last_output = None
+        self._delete_invocation_state(key)
 
     def _handle_agent_span_start(
         self,
@@ -1340,7 +1369,6 @@ class GenAISemanticProcessor(TracingProcessor):
             )
 
             if self._workflow is not None:
-                agent_invocation.parent_run_id = self._workflow.run_id
                 if hasattr(self._workflow, "span") and self._workflow.span:
                     agent_invocation.parent_span = self._workflow.span
 
@@ -1430,7 +1458,6 @@ class GenAISemanticProcessor(TracingProcessor):
 
             # Set parent relationship - in agentic frameworks there's always a parent agent
             if parent_agent is not None:
-                llm_invocation.parent_run_id = parent_agent.run_id
                 if hasattr(parent_agent, "span") and parent_agent.span:
                     llm_invocation.parent_span = parent_agent.span
                 if (
@@ -1524,7 +1551,6 @@ class GenAISemanticProcessor(TracingProcessor):
 
             # Set parent relationship - in agentic frameworks there's always a parent agent
             if parent_agent is not None:
-                tool_entity.parent_run_id = parent_agent.run_id
                 tool_entity.agent_name = parent_agent.agent_name
                 tool_entity.agent_id = actual_agent_id
                 if hasattr(parent_agent, "span") and parent_agent.span:
@@ -1761,15 +1787,16 @@ class GenAISemanticProcessor(TracingProcessor):
 
         Uses unified _invocations dict for all entity tracking.
         """
+        key = str(span.span_id)
+        state = self._get_invocation_state(key)
+        if state is None:
+            return
+
         payload = self._build_content_payload(span)
         self._update_agent_aggregate(span, payload)
 
-        key = str(span.span_id)
-        state = self._get_invocation_state(key)
-
-        # Track workflow input/output from agent spans and extract content for attributes
-        agent_content_for_metrics = None
-        if state and isinstance(state.invocation, AgentInvocation):
+        # Track workflow input/output from agent spans
+        if isinstance(state.invocation, AgentInvocation):
             if state.input_messages:
                 input_data = safe_json_dumps(state.input_messages)
                 if self._workflow_first_input is None:
@@ -1778,39 +1805,33 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._workflow_last_output = safe_json_dumps(
                     state.output_messages
                 )
-            agent_content_for_metrics = {
-                "input_messages": state.input_messages,
-                "output_messages": state.output_messages,
-                "system_instructions": state.system_instructions,
-                "request_model": state.request_model,
-            }
-
-        try:
-            _ = dict(
-                self._extract_genai_attributes(
-                    span, payload, agent_content_for_metrics
-                )
-            )
-        except Exception as e:
-            logger.debug(
-                "Failed to extract attributes for span %s: %s",
-                span.span_id,
-                e,
-            )
 
         # Dispatch to type-specific handlers
-        if state is not None:
-            invocation = state.invocation
+        invocation = state.invocation
+        if isinstance(invocation, AgentInvocation):
+            self._handle_agent_span_end(key, invocation, state)
+        elif isinstance(invocation, LLMInvocation):
+            self._handle_llm_span_end(span, key, invocation, payload)
+        elif isinstance(invocation, ToolCall):
+            self._handle_tool_span_end(key, invocation, payload)
 
-            if isinstance(invocation, AgentInvocation):
-                self._handle_agent_span_end(key, invocation, state)
-            elif isinstance(invocation, LLMInvocation):
-                self._handle_llm_span_end(span, key, invocation, payload)
-            elif isinstance(invocation, ToolCall):
-                self._handle_tool_span_end(key, invocation, payload)
+        # Remove from invocations
+        self._delete_invocation_state(key)
 
-            # Remove from invocations
-            self._delete_invocation_state(key)
+    def on_span_error(self, span: Span[Any], error: BaseException) -> None:
+        """Handle span error by failing the invocation."""
+        key = str(span.span_id)
+        self._fail_invocation(key, error)
+
+    def on_trace_error(self, trace: Trace, error: BaseException) -> None:
+        """Handle trace error by failing the workflow."""
+        key = str(trace.trace_id)
+        self._fail_invocation(key, error)
+
+        # Clean up workflow state
+        self._workflow = None
+        self._workflow_first_input = None
+        self._workflow_last_output = None
 
     def shutdown(self) -> None:
         """Clean up resources on shutdown."""

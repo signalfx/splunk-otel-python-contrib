@@ -724,3 +724,174 @@ def test_llm_and_tool_entities_lifecycle(processor_setup):
         "chat gpt-4o" in exported_names
         or "text_completion gpt-4o" in exported_names
     )
+
+
+def test_on_span_error_fails_invocation(processor_setup):
+    """Test that on_span_error properly fails the invocation and cleans up state."""
+    processor, _ = processor_setup
+
+    trace = FakeTrace(name="error-workflow", trace_id="trace-error-1")
+    processor.on_trace_start(trace)
+
+    # Create an agent span
+    agent_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="agent-error-span",
+        span_data=AgentSpanData(operation="invoke_agent", name="ErrorAgent"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:01Z",
+    )
+    processor.on_span_start(agent_span)
+
+    # Verify agent is tracked
+    assert str(agent_span.span_id) in processor._invocations
+
+    # Simulate an error on the span
+    test_error = RuntimeError("Test error occurred")
+    processor.on_span_error(agent_span, test_error)
+
+    # After on_span_error, invocation should be cleaned up
+    assert str(agent_span.span_id) not in processor._invocations
+
+    # Clean up
+    processor.on_trace_end(trace)
+
+
+def test_on_trace_error_fails_workflow(processor_setup):
+    """Test that on_trace_error properly fails the workflow and cleans up state."""
+    processor, _ = processor_setup
+
+    trace = FakeTrace(name="error-workflow", trace_id="trace-error-2")
+    processor.on_trace_start(trace)
+
+    # Verify workflow is created
+    assert processor._workflow is not None
+    # Verify trace is tracked in invocations
+    assert str(trace.trace_id) in processor._invocations
+
+    # Simulate an error on the trace
+    test_error = ValueError("Workflow error occurred")
+    processor.on_trace_error(trace, test_error)
+
+    # After on_trace_error, workflow state should be cleaned up
+    assert processor._workflow is None
+    assert processor._workflow_first_input is None
+    assert processor._workflow_last_output is None
+    # Invocation state should be removed
+    assert str(trace.trace_id) not in processor._invocations
+
+
+def test_on_span_error_with_llm_invocation(processor_setup):
+    """Test that on_span_error properly fails LLM invocations."""
+    processor, _ = processor_setup
+
+    trace = FakeTrace(name="llm-error-workflow", trace_id="trace-llm-error")
+    processor.on_trace_start(trace)
+
+    # Create an agent span first (LLM spans need a parent agent)
+    agent_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="parent-agent-span",
+        span_data=AgentSpanData(operation="invoke_agent", name="ParentAgent"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:05Z",
+    )
+    processor.on_span_start(agent_span)
+
+    # Create an LLM span as child of agent
+    llm_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="llm-error-span",
+        parent_id=agent_span.span_id,
+        span_data=GenerationSpanData(
+            input=[{"role": "user", "content": "test"}],
+            model="gpt-4o",
+        ),
+        started_at="2025-01-01T00:00:01Z",
+        ended_at="2025-01-01T00:00:02Z",
+    )
+    processor.on_span_start(llm_span)
+
+    # Verify LLM is tracked
+    assert str(llm_span.span_id) in processor._invocations
+
+    # Simulate an error on the LLM span
+    test_error = ConnectionError("API connection failed")
+    processor.on_span_error(llm_span, test_error)
+
+    # After on_span_error, LLM invocation should be cleaned up
+    assert str(llm_span.span_id) not in processor._invocations
+
+    # Agent should still be tracked
+    assert str(agent_span.span_id) in processor._invocations
+
+    # Clean up
+    processor.on_span_end(agent_span)
+    processor.on_trace_end(trace)
+
+
+def test_on_span_error_with_tool_invocation(processor_setup):
+    """Test that on_span_error properly fails tool invocations."""
+    processor, _ = processor_setup
+
+    trace = FakeTrace(name="tool-error-workflow", trace_id="trace-tool-error")
+    processor.on_trace_start(trace)
+
+    # Create an agent span first (tool spans need a parent agent)
+    agent_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="tool-parent-agent",
+        span_data=AgentSpanData(operation="invoke_agent", name="ToolAgent"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:05Z",
+    )
+    processor.on_span_start(agent_span)
+
+    # Create a tool span as child of agent
+    tool_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="tool-error-span",
+        parent_id=agent_span.span_id,
+        span_data=FunctionSpanData(name="failing_tool"),
+        started_at="2025-01-01T00:00:01Z",
+        ended_at="2025-01-01T00:00:02Z",
+    )
+    processor.on_span_start(tool_span)
+
+    # Verify tool is tracked
+    assert str(tool_span.span_id) in processor._invocations
+
+    # Simulate an error on the tool span
+    test_error = TimeoutError("Tool execution timed out")
+    processor.on_span_error(tool_span, test_error)
+
+    # After on_span_error, tool invocation should be cleaned up
+    assert str(tool_span.span_id) not in processor._invocations
+
+    # Agent should still be tracked
+    assert str(agent_span.span_id) in processor._invocations
+
+    # Clean up
+    processor.on_span_end(agent_span)
+    processor.on_trace_end(trace)
+
+
+def test_on_span_error_nonexistent_span(processor_setup):
+    """Test that on_span_error handles nonexistent spans gracefully."""
+    processor, _ = processor_setup
+
+    # Create a span that was never started (not in invocations)
+    unknown_span = FakeSpan(
+        trace_id="unknown-trace",
+        span_id="unknown-span",
+        span_data=AgentSpanData(operation="invoke_agent", name="Unknown"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:01Z",
+    )
+
+    # This should not raise an exception
+    test_error = RuntimeError("Error on unknown span")
+    processor.on_span_error(unknown_span, test_error)
+
+    # Verify no state was created
+    assert str(unknown_span.span_id) not in processor._invocations
