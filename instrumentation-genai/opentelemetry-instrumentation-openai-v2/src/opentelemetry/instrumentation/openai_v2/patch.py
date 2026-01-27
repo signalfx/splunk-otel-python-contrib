@@ -560,10 +560,6 @@ def embeddings_create(
     """Wrap the `create` method of the `Embeddings` class to trace it."""
 
     def traced_method(wrapped, instance, args, kwargs):
-        # Check if instrumentation is suppressed (e.g., by LangChain)
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
-            return wrapped(*args, **kwargs)
-
         span_attributes = get_llm_request_attributes(
             kwargs,
             instance,
@@ -626,10 +622,6 @@ def async_embeddings_create(
     """Wrap the `create` method of the `AsyncEmbeddings` class to trace it."""
 
     async def traced_method(wrapped, instance, args, kwargs):
-        # Check if instrumentation is suppressed (e.g., by LangChain)
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
-            return await wrapped(*args, **kwargs)
-
         span_attributes = get_llm_request_attributes(
             kwargs,
             instance,
@@ -921,6 +913,7 @@ class ChoiceBuffer:
                 self.tool_calls_buffers[idx].append_arguments(
                     tool_call.function.arguments
                 )
+
 
 class StreamWrapper:
     span: Span
