@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import logging
 import os
 from typing import Optional
@@ -180,3 +180,13 @@ def parse_callback_filter(value: Optional[str]) -> set[str] | None:
         item.strip().lower() for item in value.split(",") if item.strip()
     }
     return selected or None
+
+
+def gen_ai_json_dumps(value: object) -> str:
+    """
+    Serialize GenAI payloads to JSON.
+
+    This is the helper expected by openai-agents-v2 span_processor.safe_json_dumps.
+    It should behave like json.dumps, but can be extended later (e.g., custom encoder).
+    """
+    return json.dumps(value, ensure_ascii=False)
