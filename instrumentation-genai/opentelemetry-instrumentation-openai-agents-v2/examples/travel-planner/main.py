@@ -28,29 +28,31 @@ Agents:
 See README.md for more information
 """
 
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import random  # noqa: E402
+import time  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
+from typing import Any  # noqa: E402
+
 # Load environment variables FIRST before any other imports
 # This ensures OTEL_SERVICE_NAME and other env vars are available when SDK initializes
 from dotenv import load_dotenv
 
 load_dotenv()
 
-import argparse  # noqa: E402
-import os  # noqa: E402
-import random  # noqa: E402
-import time  # noqa: E402
-from datetime import datetime, timedelta  # noqa: E402
-
-from agents import (  # noqa: E402
+from agents import (  # noqa: E402, I001
     Agent,
     Runner,
     function_tool,
     set_default_openai_client,
     trace,
 )
+from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel  # noqa: E402
 from openai import AsyncOpenAI  # noqa: E402
 
-from opentelemetry import _events, _logs, metrics  # noqa: E402
-from opentelemetry import trace as otel_trace  # noqa: E402
+from opentelemetry import _events, _logs, metrics, trace as otel_trace  # noqa: E402
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # noqa: E402
     OTLPLogExporter,
 )
@@ -75,6 +77,7 @@ from opentelemetry.sdk.metrics.export import (  # noqa: E402
 from opentelemetry.sdk.resources import Resource  # noqa: E402
 from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: E402
+
 from util import OAuth2TokenManager  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -83,6 +86,9 @@ from util import OAuth2TokenManager  # noqa: E402
 
 # Optional app key for request tracking
 LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
+
+# Model name from environment
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1")
 
 # Check if we should use OAuth2 or standard OpenAI
 USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
@@ -100,9 +106,7 @@ def get_openai_client() -> AsyncOpenAI:
     """Create OpenAI client with fresh OAuth2 token or standard API key."""
     if USE_OAUTH2 and token_manager:
         token = token_manager.get_token()
-        base_url = OAuth2TokenManager.get_llm_base_url(
-            os.environ.get("OPENAI_MODEL_NAME", "gpt-4o-mini")
-        )
+        base_url = OAuth2TokenManager.get_llm_base_url(OPENAI_MODEL)
 
         # Build extra headers
         extra_headers: dict[str, str] = {"api-key": token}
@@ -117,6 +121,40 @@ def get_openai_client() -> AsyncOpenAI:
     else:
         # Standard OpenAI client using OPENAI_API_KEY
         return AsyncOpenAI()
+
+
+class CustomChatCompletionsModel(OpenAIChatCompletionsModel):
+    """Custom ChatCompletions model that adds 'user' field with app key for OAuth2 endpoints."""
+
+    def __init__(
+        self,
+        model: str,
+        openai_client: AsyncOpenAI,
+        app_key: str | None = None,
+    ):
+        super().__init__(model=model, openai_client=openai_client)
+        # Some LLM APIs require user field as JSON: {"appkey": "<value>"}
+
+        self._user = json.dumps({"appkey": app_key or ""})
+
+    async def _fetch_response(self, *args, **kwargs):
+        # Get the original client
+        client = self._get_client()
+
+        # Create a wrapped chat completions that adds user field
+        original_create = client.chat.completions.create
+
+        async def create_with_user(*create_args, **create_kwargs):
+            create_kwargs["user"] = self._user
+            return await original_create(*create_args, **create_kwargs)
+
+        # Temporarily replace the create method
+        client.chat.completions.create = create_with_user
+        try:
+            return await super()._fetch_response(*args, **kwargs)
+        finally:
+            # Restore original method
+            client.chat.completions.create = original_create
 
 
 # ---------------------------------------------------------------------------
@@ -228,11 +266,22 @@ def configure_otel() -> None:
 # ---------------------------------------------------------------------------
 
 
+def get_chat_completions_model() -> OpenAIChatCompletionsModel:
+    """Create a ChatCompletions model using the configured OpenAI client."""
+    client = get_openai_client()
+    if USE_OAUTH2:
+        # Use custom model that adds 'user' field with appkey for OAuth2 endpoints
+        return CustomChatCompletionsModel(
+            model=OPENAI_MODEL, openai_client=client, app_key=LLM_APP_KEY
+        )
+    return OpenAIChatCompletionsModel(model=OPENAI_MODEL, openai_client=client)
+
+
 def create_flight_agent() -> Agent:
     """Create the flight specialist agent."""
     return Agent(
         name="Flight Specialist",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are a flight specialist. Search for the best flight options "
             "using the search_flights tool. Provide clear recommendations including "
@@ -246,7 +295,7 @@ def create_hotel_agent() -> Agent:
     """Create the hotel specialist agent."""
     return Agent(
         name="Hotel Specialist",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are a hotel specialist. Find the best accommodation using the "
             "search_hotels tool. Provide detailed recommendations including "
@@ -260,7 +309,7 @@ def create_activity_agent() -> Agent:
     """Create the activity specialist agent."""
     return Agent(
         name="Activity Specialist",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are an activities specialist. Curate memorable experiences using "
             "the search_activities tool. Provide detailed activity recommendations "
@@ -274,7 +323,7 @@ def create_coordinator_agent() -> Agent:
     """Create the travel coordinator agent that synthesizes the final itinerary."""
     return Agent(
         name="Travel Coordinator",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are a travel coordinator. Synthesize flight, hotel, and activity information "
             "into a comprehensive, well-organized travel itinerary with clear sections."
@@ -310,10 +359,11 @@ def run_travel_planner() -> None:
 
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
     print(f"\nRequest: {initial_request}\n")
+    trace_metadata: dict[str, Any] = {"initial_request": initial_request}
 
     final_output = None
     try:
-        with trace("Travel planner workflow"):
+        with trace("Travel planner workflow", metadata=trace_metadata):
             # Step 1: Flight Specialist
             print("\n✈️  Flight Specialist - Searching for flights...")
             flight_result = Runner.run_sync(
