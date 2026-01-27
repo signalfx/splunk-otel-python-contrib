@@ -20,6 +20,7 @@ from typing import Any, Iterable, Optional
 
 from openai import Stream
 
+from opentelemetry import context as context_api
 from opentelemetry._logs import Logger, LogRecord
 from opentelemetry.context import get_current
 from opentelemetry.semconv._incubating.attributes import (
@@ -30,6 +31,9 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.trace import Span
 from opentelemetry.trace.propagation import set_span_in_context
+from opentelemetry.util.genai.attributes import (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
 from opentelemetry.util.genai.handler import (
     Error as InvocationError,
 )
@@ -294,8 +298,6 @@ def _build_tool_call_invocation(
     if isinstance(tool_call, dict):
         tool_call_id = tool_call.get("id", tool_call_id)
 
-    tool_call_type = tool_type
-
     genai_tool_call = GenAIToolCall(
         name=function_name or "unnamed_tool_call",
         id=tool_call_id,
@@ -305,9 +307,7 @@ def _build_tool_call_invocation(
     genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_NAME] = (
         function_name or ""
     )
-    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_TYPE] = (
-        tool_call_type
-    )
+    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_TYPE] = tool_type
     if tool_call_id:
         genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_CALL_ID] = (
             tool_call_id
@@ -317,7 +317,7 @@ def _build_tool_call_invocation(
             description
         )
 
-    return genai_tool_call, tool_call_type
+    return genai_tool_call, tool_type
 
 
 def _tool_call_body(
@@ -407,6 +407,10 @@ def chat_completions_create(
     """Wrap the `create` method of the `ChatCompletion` class to trace it."""
 
     def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return wrapped(*args, **kwargs)
+
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
@@ -478,6 +482,10 @@ def async_chat_completions_create(
     """Wrap the `create` method of the `AsyncChatCompletion` class to trace it."""
 
     async def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return await wrapped(*args, **kwargs)
+
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
