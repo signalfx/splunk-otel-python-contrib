@@ -172,6 +172,22 @@ build-instrumentation-openai-agents:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-fastmcp:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-fastmcp
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-fastmcp
+    - mv dist/* ../../dist/instrumentation-fastmcp/
+    - cd ../../dist/instrumentation-fastmcp
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-fastmcp/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -333,6 +349,22 @@ sign-instrumentation-openai-agents:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-fastmcp:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-fastmcp
+  variables:
+    ARTIFACT: dist/instrumentation-fastmcp/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-fastmcp
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-fastmcp/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -463,3 +495,16 @@ deploy-instrumentation-openai-agents:
     - sign-instrumentation-openai-agents
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-fastmcp:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-fastmcp
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-fastmcp/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-fastmcp
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
