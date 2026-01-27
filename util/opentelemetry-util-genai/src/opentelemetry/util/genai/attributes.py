@@ -79,4 +79,6 @@ GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
 
 # Context key for suppressing instrumentation to avoid duplicate telemetry
 # when multiple instrumentations (e.g., LangChain + OpenAI) are active
-SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY = "suppress_language_model_instrumentation"
+SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY = (
+    "suppress_language_model_instrumentation"
+)

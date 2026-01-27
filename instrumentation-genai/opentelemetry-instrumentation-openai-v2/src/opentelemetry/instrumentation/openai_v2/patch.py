@@ -298,8 +298,6 @@ def _build_tool_call_invocation(
     if isinstance(tool_call, dict):
         tool_call_id = tool_call.get("id", tool_call_id)
 
-    tool_call_type = tool_type
-
     genai_tool_call = GenAIToolCall(
         name=function_name or "unnamed_tool_call",
         id=tool_call_id,
@@ -309,9 +307,7 @@ def _build_tool_call_invocation(
     genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_NAME] = (
         function_name or ""
     )
-    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_TYPE] = (
-        tool_call_type
-    )
+    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_TYPE] = tool_type
     if tool_call_id:
         genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_CALL_ID] = (
             tool_call_id
@@ -321,7 +317,7 @@ def _build_tool_call_invocation(
             description
         )
 
-    return genai_tool_call, tool_call_type
+    return genai_tool_call, tool_type
 
 
 def _tool_call_body(
