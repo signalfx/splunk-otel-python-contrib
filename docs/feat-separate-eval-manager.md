@@ -1004,6 +1004,110 @@ Since `Span` objects and OpenTelemetry contexts are not picklable, we serialize 
 
 ---
 
+## Failure Scenarios and Recovery
+
+This section documents how the system behaves when the evaluation worker process fails or becomes unresponsive.
+
+### Worker Process Crash/Kill Scenarios
+
+| Scenario | Behavior | Application Impact |
+|----------|----------|-------------------|
+| Worker crashes during startup | `EvalManagerProxy` falls back to in-process `Manager` | Minimal - evaluations continue in-process |
+| Worker killed while idle | `on_completion()` returns immediately (worker not alive check) | None - invocations silently skipped |
+| Worker killed during evaluation | Pending invocations remain in `_pending` dict until timeout | Results for in-flight evaluations lost |
+| Worker OOM killed | Same as crash - `is_alive()` returns False | Same as above |
+| Worker hangs (deadlock) | Parent's IPC `send()` may block briefly if pipe buffer full | Potential brief delay (see below) |
+
+### Synchronous Enqueue Behavior (Critical Path Analysis)
+
+The `on_completion()` method is called synchronously within the `TelemetryHandler.stop_llm()` / `stop_agent()` flow. This means any blocking operation in `on_completion()` directly affects span completion latency.
+
+**Current Design (Low Overhead):**
+
+```python
+def on_completion(self, invocation: GenAI) -> None:
+    # Fast path checks (nanoseconds)
+    if not self._worker_ready.is_set() or self._worker_failed:
+        return  # ← Immediate return if worker failed
+    
+    if not self._worker_process or not self._worker_process.is_alive():
+        return  # ← Fast liveness check (~microseconds)
+    
+    # Queue size check with lock (~microseconds)  
+    with self._pending_lock:
+        if len(self._pending) >= self._queue_size:
+            return  # ← Backpressure, drop invocation
+    
+    # Serialization (typically 0.1-0.5ms)
+    serializable = serialize_invocation(invocation)
+    
+    # IPC send (typically <1ms, but can block if pipe buffer full)
+    self._parent_conn.send(("evaluate", serializable))
+```
+
+**Timing Characteristics:**
+
+| Operation | Typical Latency | Worst Case |
+|-----------|-----------------|------------|
+| Worker state checks | ~1µs | ~10µs |
+| Queue size check (lock) | ~1µs | ~100µs (contention) |
+| Serialization | 0.1-0.5ms | 1-2ms (large messages) |
+| IPC send (pipe) | <0.1ms | ~10-100ms (pipe buffer full) |
+| **Total overhead** | **<1ms** | **~100ms** (degraded) |
+
+### Pipe Buffer Full Scenario
+
+When the worker process is slow or unresponsive, the IPC pipe buffer can fill up. The `send()` call will then block until space is available.
+
+**Mitigations:**
+1. The result receiver thread continuously drains results, freeing buffer space
+2. Queue size limit (`_queue_size`) prevents unbounded pending list growth
+3. If worker is detected as not alive, `on_completion()` returns immediately
+
+**Recommendation:** If evaluation latency is a concern, consider:
+- Reducing `OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE` to limit backlog
+- Monitoring `client_evaluation_queue_full` errors in `invocation.evaluation_error`
+
+### Comparison: In-Process vs Separate Process Enqueue
+
+| Aspect | In-Process (`Manager`) | Separate Process (`EvalManagerProxy`) |
+|--------|------------------------|---------------------------------------|
+| Enqueue mechanism | `queue.Queue.put_nowait()` | `multiprocessing.Pipe.send()` |
+| Blocking behavior | Non-blocking (uses `put_nowait`) | Can block if pipe buffer full |
+| Queue full behavior | Sets `evaluation_error`, returns | Sets `evaluation_error`, returns |
+| Serialization overhead | None (object reference) | ~0.1-0.5ms per invocation |
+| Worker crash impact | Affects application process | Isolated, detected via `is_alive()` |
+
+### Graceful Degradation
+
+When the worker process fails:
+
+1. **Startup Failure**: Falls back to in-process `Manager` automatically
+2. **Runtime Failure**: 
+   - `_worker_process.is_alive()` returns False
+   - `on_completion()` logs warning and returns immediately
+   - No automatic restart (by design - avoids thrashing)
+   - Pending evaluations are orphaned (results lost)
+
+3. **Shutdown**: `shutdown()` sends shutdown message, waits up to 5s, then terminates
+
+### Monitoring Recommendations
+
+To detect evaluation system health issues:
+
+1. **Log monitoring**: Watch for these log messages:
+   - `"Evaluator worker process not running"` - Worker crashed
+   - `"Evaluation queue full"` - Backpressure, dropping invocations
+   - `"Failed to send invocation to worker"` - IPC failure
+
+2. **Invocation error attributes**: Check `invocation.evaluation_error` for:
+   - `client_evaluation_queue_full` - Queue backpressure
+   - `client_evaluation_serialization_error` - Serialization failure
+   - `client_evaluation_send_error` - IPC send failure
+   - `client_evaluation_worker_error: <message>` - Worker-side error
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests
