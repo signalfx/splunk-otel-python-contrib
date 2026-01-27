@@ -39,7 +39,10 @@ class TestAsyncEvaluation(unittest.TestCase):
 
     @patch.dict(
         os.environ,
-        {OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: "length"},
+        {
+            OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: "length",
+            "OTEL_INSTRUMENTATION_GENAI_EVAL_REQUIRE_PARENT_SPAN": "false",
+        },
         clear=True,
     )
     def test_async_evaluation_emits_results(self) -> None:
