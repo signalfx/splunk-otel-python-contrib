@@ -509,23 +509,10 @@ class SpanEmitter(EmitterMeta):
             )
         if workflow.framework:
             span.set_attribute("gen_ai.framework", workflow.framework)
-        if self._capture_content:
-            # Prefer structured input_messages over legacy initial_input
-            if workflow.input_messages:
-                serialized = _serialize_messages(workflow.input_messages)
-                if serialized is not None:
-                    span.set_attribute("gen_ai.input.messages", serialized)
-            elif workflow.initial_input:
-                # Fallback to legacy string field
-                input_msg = {
-                    "role": "user",
-                    "parts": [
-                        {"type": "text", "content": workflow.initial_input}
-                    ],
-                }
-                span.set_attribute(
-                    "gen_ai.input.messages", json.dumps([input_msg])
-                )
+        if self._capture_content and workflow.input_messages:
+            serialized = _serialize_messages(workflow.input_messages)
+            if serialized is not None:
+                span.set_attribute("gen_ai.input.messages", serialized)
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
@@ -536,23 +523,10 @@ class SpanEmitter(EmitterMeta):
         if span is None:
             return
         # Set output if capture_content enabled
-        if self._capture_content:
-            # Prefer structured output_messages over legacy final_output
-            if workflow.output_messages:
-                serialized = _serialize_messages(workflow.output_messages)
-                if serialized is not None:
-                    span.set_attribute("gen_ai.output.messages", serialized)
-            elif workflow.final_output:
-                # Fallback to legacy string field
-                output_msg = {
-                    "role": "assistant",
-                    "parts": [
-                        {"type": "text", "content": workflow.final_output}
-                    ],
-                }
-                span.set_attribute(
-                    "gen_ai.output.messages", json.dumps([output_msg])
-                )
+        if self._capture_content and workflow.output_messages:
+            serialized = _serialize_messages(workflow.output_messages)
+            if serialized is not None:
+                span.set_attribute("gen_ai.output.messages", serialized)
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
@@ -631,22 +605,11 @@ class SpanEmitter(EmitterMeta):
                 GenAI.GEN_AI_SYSTEM_INSTRUCTIONS, json.dumps(system_parts)
             )
         if self._capture_content:
-            # Prefer structured input_messages over legacy input_context
             input_messages = getattr(agent, "input_messages", None)
-            input_context = getattr(agent, "input_context", None)
             if input_messages:
                 serialized = _serialize_messages(input_messages)
                 if serialized is not None:
                     span.set_attribute("gen_ai.input.messages", serialized)
-            elif input_context:
-                # Fallback to legacy string field
-                input_msg = {
-                    "role": "user",
-                    "parts": [{"type": "text", "content": input_context}],
-                }
-                span.set_attribute(
-                    "gen_ai.input.messages", json.dumps([input_msg])
-                )
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
@@ -658,22 +621,10 @@ class SpanEmitter(EmitterMeta):
             return
         # Set output if capture_content enabled
         if self._capture_content and isinstance(agent, AgentInvocation):
-            # Prefer structured output_messages over legacy output_result
             if agent.output_messages:
                 serialized = _serialize_messages(agent.output_messages)
                 if serialized is not None:
                     span.set_attribute("gen_ai.output.messages", serialized)
-            elif agent.output_result:
-                # Fallback to legacy string field
-                output_msg = {
-                    "role": "assistant",
-                    "parts": [
-                        {"type": "text", "content": agent.output_result}
-                    ],
-                }
-                span.set_attribute(
-                    "gen_ai.output.messages", json.dumps([output_msg])
-                )
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )

@@ -233,8 +233,17 @@ def test_span_emitter_workflow_captures_content():
     workflow = Workflow(
         name="trip_planner",
         workflow_type="sequential",
-        initial_input="Plan a trip to Rome",
-        final_output="Here is your itinerary",
+        input_messages=[
+            InputMessage(
+                role="user", parts=[Text(content="Plan a trip to Rome")]
+            )
+        ],
+        output_messages=[
+            OutputMessage(
+                role="assistant",
+                parts=[Text(content="Here is your itinerary")],
+            )
+        ],
     )
 
     emitter.on_start(workflow)
@@ -360,33 +369,6 @@ def test_agent_invocation_prefers_structured_over_legacy():
     assert output_messages[0]["parts"][0]["content"] == "Structured output"
 
 
-def test_agent_invocation_falls_back_to_legacy():
-    """Test that legacy fields are used when structured messages are empty."""
-    provider = TracerProvider()
-    tracer = provider.get_tracer(__name__)
-    emitter = SpanEmitter(tracer=tracer, capture_content=True)
-
-    agent = AgentInvocation(name="test_agent")
-    # Only set legacy fields (input_messages/output_messages default to empty lists)
-    agent.input_context = "Legacy input"
-    agent.output_result = "Legacy output"
-
-    emitter.on_start(agent)
-    emitter.on_end(agent)
-
-    span = agent.span
-    attrs = getattr(span, "attributes", None) or getattr(
-        span, "_attributes", {}
-    )
-
-    # Verify legacy fields are used as fallback
-    input_messages = json.loads(attrs.get(GEN_AI_INPUT_MESSAGES))
-    assert input_messages[0]["parts"][0]["content"] == "Legacy input"
-
-    output_messages = json.loads(attrs.get(GEN_AI_OUTPUT_MESSAGES))
-    assert output_messages[0]["parts"][0]["content"] == "Legacy output"
-
-
 def test_workflow_with_structured_messages():
     """Test Workflow with structured input_messages/output_messages."""
     provider = TracerProvider()
@@ -421,47 +403,6 @@ def test_workflow_with_structured_messages():
         output_messages[0]["parts"][0]["content"]
         == "Here is your Paris itinerary"
     )
-
-
-def test_agent_invocation_with_legacy_json_string():
-    """Test that legacy fields with JSON strings are passed through correctly."""
-    provider = TracerProvider()
-    tracer = provider.get_tracer(__name__)
-    emitter = SpanEmitter(tracer=tracer, capture_content=True)
-
-    # Instrumentations should use json.dumps(obj, default=str) for proper JSON
-    serialized_input = json.dumps(
-        {
-            "messages": [{"role": "user", "content": "Plan a trip to Paris"}],
-            "user_request": "Plan a trip to Paris",
-            "session_id": "abc-123",
-        }
-    )
-    serialized_output = json.dumps(
-        {
-            "output": "Here is your itinerary for Paris",
-            "final_itinerary": "detailed plan...",
-        }
-    )
-
-    agent = AgentInvocation(name="travel_agent")
-    agent.input_context = serialized_input
-    agent.output_result = serialized_output
-
-    emitter.on_start(agent)
-    emitter.on_end(agent)
-
-    span = agent.span
-    attrs = getattr(span, "attributes", None) or getattr(
-        span, "_attributes", {}
-    )
-
-    # Verify the full JSON string is passed through as content
-    input_messages = json.loads(attrs.get(GEN_AI_INPUT_MESSAGES))
-    assert input_messages[0]["parts"][0]["content"] == serialized_input
-
-    output_messages = json.loads(attrs.get(GEN_AI_OUTPUT_MESSAGES))
-    assert output_messages[0]["parts"][0]["content"] == serialized_output
 
 
 def test_llm_span_emitter_for_sampled_attribute():

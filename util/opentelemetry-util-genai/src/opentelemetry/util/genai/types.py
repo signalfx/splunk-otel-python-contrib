@@ -499,10 +499,8 @@ class Workflow(GenAI):
         workflow_type: Type of orchestration (e.g., "sequential", "parallel", "graph", "dynamic")
         description: Human-readable description of the workflow's purpose
         framework: Framework implementing the workflow (e.g., "langgraph", "crewai", "autogen")
-        initial_input: User's initial query/request that triggered the workflow (legacy)
-        final_output: Final response/result produced by the workflow (legacy)
-        input_messages: Structured input messages (preferred over initial_input)
-        output_messages: Structured output messages (preferred over final_output)
+        input_messages: Structured input messages for the workflow
+        output_messages: Structured output messages from the workflow
         attributes: Additional custom attributes for workflow-specific metadata
         start_time: Timestamp when workflow started
         end_time: Timestamp when workflow completed
@@ -515,21 +513,11 @@ class Workflow(GenAI):
     name: str
     workflow_type: Optional[str] = None  # sequential, parallel, graph, dynamic
     description: Optional[str] = None
-    # Structured message fields (preferred)
     input_messages: List[InputMessage] = field(
         default_factory=_new_input_messages
     )
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
-    )
-    # Legacy string fields (DEPRECATED - use input_messages/output_messages instead)
-    initial_input: Optional[str] = field(
-        default=None,
-        metadata={"deprecated": "Use input_messages instead"},
-    )
-    final_output: Optional[str] = field(
-        default=None,
-        metadata={"deprecated": "Use output_messages instead"},
     )
 
 
@@ -562,14 +550,8 @@ class AgentCreation(_BaseAgent):
         default="create_agent",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    # Structured message fields (preferred)
     input_messages: List[InputMessage] = field(
         default_factory=_new_input_messages
-    )
-    # Legacy string field (DEPRECATED - use input_messages instead)
-    input_context: Optional[str] = field(
-        default=None,
-        metadata={"deprecated": "Use input_messages instead"},
     )
 
 
@@ -582,21 +564,11 @@ class AgentInvocation(_BaseAgent):
         default="invoke_agent",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    # Structured message fields (preferred)
     input_messages: List[InputMessage] = field(
         default_factory=_new_input_messages
     )
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
-    )
-    # Legacy string fields (DEPRECATED - use input_messages/output_messages instead)
-    input_context: Optional[str] = field(
-        default=None,
-        metadata={"deprecated": "Use input_messages instead"},
-    )
-    output_result: Optional[str] = field(
-        default=None,
-        metadata={"deprecated": "Use output_messages instead"},
     )
 
 

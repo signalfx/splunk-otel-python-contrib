@@ -788,26 +788,10 @@ def _workflow_to_log_record(
         input_msgs = _messages_to_log_format(
             workflow.input_messages, capture_content
         )
-    elif workflow.initial_input:
-        # Fallback to legacy string field
-        input_msgs.append(
-            _build_text_message(
-                "user", workflow.initial_input, capture=capture_content
-            )
-        )
 
     if workflow.output_messages:
         output_msgs = _messages_to_log_format(
             workflow.output_messages, capture_content
-        )
-    elif workflow.final_output:
-        # Fallback to legacy string field
-        output_msgs.append(
-            _build_text_message(
-                "assistant",
-                workflow.final_output,
-                capture=capture_content,
-            )
         )
 
     if input_msgs:
@@ -865,35 +849,17 @@ def _agent_to_log_record(
         )
     body[GenAI.GEN_AI_SYSTEM_INSTRUCTIONS] = agent_instructions
 
-    # Prefer structured input_messages over legacy input_context
     input_messages = getattr(agent, "input_messages", None)
-    input_context = getattr(agent, "input_context", None)
     if input_messages:
         body[GenAI.GEN_AI_INPUT_MESSAGES] = _messages_to_log_format(
             input_messages, capture_content
         )
-    elif input_context:
-        # Fallback to legacy string field
-        body[GenAI.GEN_AI_INPUT_MESSAGES] = [
-            _build_text_message("user", input_context, capture=capture_content)
-        ]
 
-    # Prefer structured output_messages over legacy output_result
     output_messages = getattr(agent, "output_messages", None)
-    output_result = getattr(agent, "output_result", None)
     if output_messages:
         body[GenAI.GEN_AI_OUTPUT_MESSAGES] = _messages_to_log_format(
             output_messages, capture_content
         )
-    elif output_result:
-        # Fallback to legacy string field
-        body[GenAI.GEN_AI_OUTPUT_MESSAGES] = [
-            _build_text_message(
-                "assistant",
-                output_result,
-                capture=capture_content,
-            )
-        ]
     if not body:
         return None
     return _build_log_record(
