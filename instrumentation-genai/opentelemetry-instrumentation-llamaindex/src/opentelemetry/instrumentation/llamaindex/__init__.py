@@ -50,29 +50,31 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             wrapper=_BaseCallbackManagerInitWrapper(llamaindexCallBackHandler),
         )
 
-        # Instrument Workflow-based agents (ReActAgent, FunctionAgent, CodeActAgent)
-        # All inherit from BaseWorkflowAgent and have .run() method
-        for agent_class in ["ReActAgent", "FunctionAgent", "CodeActAgent"]:
+        # Instrument workflow-based agents by wrapping BaseWorkflowAgent (and async variant).
+        # This covers ReActAgent, FunctionAgent, CodeActAgent, and subclasses.
+        for method_name in ["run", "arun"]:
             try:
                 wrap_function_wrapper(
-                    module="llama_index.core.agent",
-                    name=f"{agent_class}.run",
+                    module="llama_index.core.agent.workflow.base_agent",
+                    name=f"BaseWorkflowAgent.{method_name}",
                     wrapper=wrap_agent_run,
                 )
             except Exception:
-                # Agent class might not be available or importable
+                # Module/class/method might not be available in some versions.
                 pass
 
-        # Instrument MultiAgentWorkflow
-        try:
-            wrap_function_wrapper(
-                module="llama_index.core.agent",
-                name="MultiAgentWorkflow.run",
-                wrapper=wrap_agent_run,
-            )
-        except Exception:
-            # MultiAgentWorkflow might not be available
-            pass
+        # Instrument MultiAgentWorkflow explicitly (sync/async), which does not inherit
+        # from BaseWorkflowAgent in all versions.
+        for method_name in ["run", "arun"]:
+            try:
+                wrap_function_wrapper(
+                    module="llama_index.core.agent.workflow.multi_agent_workflow",
+                    name=f"MultiAgentWorkflow.{method_name}",
+                    wrapper=wrap_agent_run,
+                )
+            except Exception:
+                # MultiAgentWorkflow might not be available or importable.
+                pass
 
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")

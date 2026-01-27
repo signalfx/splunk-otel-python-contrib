@@ -20,7 +20,7 @@ import requests
 # Add parent directory to path to import from util
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from util import OAuth2TokenManager
-from llama_index.core.agent import ReActAgent
+from llama_index.core.agent.workflow import ReActAgent
 from llama_index.core.base.llms.types import (
     ChatMessage,
     ChatResponse,
