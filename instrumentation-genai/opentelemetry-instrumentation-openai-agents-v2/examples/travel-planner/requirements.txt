@@ -1,18 +1,14 @@
-# OpenAI Agents SDK
-openai-agents~=0.3.3
+# OpenAI SDK (for direct client usage)
 openai>=1.0.0
 
 # Environment and utilities
 python-dotenv~=1.0.0
 requests>=2.25.0
 
-# OpenTelemetry core and exporters
-opentelemetry-api>=1.38.0
+# OpenTelemetry SDK and exporters (not included in local packages)
 opentelemetry-sdk>=1.38.0
 opentelemetry-exporter-otlp-proto-grpc>=1.38.0
-opentelemetry-instrumentation>=0.59b0
-opentelemetry-semantic-conventions>=0.59b0
 
-# OpenAI Agents v2 instrumentation (install from local editable)
-# Use: pip install -e ../../
-# opentelemetry-instrumentation-openai-agents-v2~=0.1.0.dev
+# Local packages installed via Dockerfile:
+# - splunk-otel-util-genai (includes: api, instrumentation, semantic-conventions)
+# - opentelemetry-instrumentation-openai-agents-v2[instruments] (includes: openai-agents)
