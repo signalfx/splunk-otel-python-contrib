@@ -13,9 +13,6 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-# Import the Langsmith processor that translates attributes to GenAI semconv
-from opentelemetry.util.genai.langsmith import LangsmithSpanProcessor
-
 load_dotenv()
 
 
@@ -38,11 +35,6 @@ def search_database(query: str, limit: int = 10) -> str:
 
 # Configure the OTLP exporter for your custom endpoint
 provider = TracerProvider()
-
-# Add the LangsmithSpanProcessor FIRST to translate Langsmith attributes
-# to GenAI semantic convention format BEFORE they are exported
-langsmith_processor = LangsmithSpanProcessor()
-provider.add_span_processor(langsmith_processor)
 
 # Then add the OTLP exporter to send the translated spans
 otlp_exporter = OTLPSpanExporter(

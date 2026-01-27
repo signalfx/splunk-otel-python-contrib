@@ -919,20 +919,81 @@ class LangsmithSpanProcessor(SpanProcessor):
                                             if isinstance(parts[0], dict)
                                             else str(parts[0])
                                         )
+                                        # CRITICAL: Check if content is nested LangChain/generations JSON
+                                        # and extract the actual message content
+                                        if isinstance(
+                                            content, str
+                                        ) and content.startswith("{"):
+                                            try:
+                                                from .content_normalizer import (
+                                                    _extract_langchain_messages,
+                                                )
+
+                                                extracted = _extract_langchain_messages(
+                                                    content
+                                                )
+                                                if extracted:
+                                                    # Use extracted message instead
+                                                    ext_msg = extracted[0]
+                                                    content = ext_msg.get(
+                                                        "content", ""
+                                                    )
+                                                    role = ext_msg.get(
+                                                        "role", role
+                                                    )
+                                                    # Get finish_reason and tool_calls from extracted
+                                                    if (
+                                                        "finish_reason"
+                                                        in ext_msg
+                                                    ):
+                                                        msg[
+                                                            "finish_reason"
+                                                        ] = ext_msg[
+                                                            "finish_reason"
+                                                        ]
+                                                    if "tool_calls" in ext_msg:
+                                                        msg["tool_calls"] = (
+                                                            ext_msg[
+                                                                "tool_calls"
+                                                            ]
+                                                        )
+                                            except Exception as e:
+                                                _logger.debug(
+                                                    "[LANGSMITH_PROCESSOR] Failed to extract nested content: %s",
+                                                    e,
+                                                )
                                     else:
                                         content = msg.get("content", str(msg))
                                     finish_reason = msg.get(
                                         "finish_reason", "stop"
                                     )
+                                    # Build parts list - include tool_calls if present
+                                    msg_parts = []
+                                    if content:
+                                        msg_parts.append(
+                                            Text(content=content, type="text")
+                                        )
+                                    if msg.get("tool_calls"):
+                                        # For now, represent tool calls as text (could be enhanced)
+                                        for tc in msg["tool_calls"]:
+                                            tc_text = f"Tool call: {tc.get('name', 'unknown')}"
+                                            if tc.get("args"):
+                                                tc_text += f"({json.dumps(tc['args'])})"
+                                            msg_parts.append(
+                                                Text(
+                                                    content=tc_text,
+                                                    type="text",
+                                                )
+                                            )
+                                    if not msg_parts:
+                                        # Empty content but might be tool call - add empty text
+                                        msg_parts.append(
+                                            Text(content="", type="text")
+                                        )
                                     output_messages.append(
                                         OutputMessage(
                                             role=role,
-                                            parts=[
-                                                Text(
-                                                    content=content,
-                                                    type="text",
-                                                )
-                                            ],
+                                            parts=msg_parts,
                                             finish_reason=finish_reason,
                                         )
                                     )
@@ -1250,6 +1311,32 @@ class LangsmithSpanProcessor(SpanProcessor):
         add_map = transformations.get("add") or {}
         for k, v in add_map.items():
             base[k] = v
+
+        # Post-process: Normalize gen_ai.input/output.messages if they contain raw LangChain data
+        # This handles the case where Langsmith native OTEL export sets these directly
+        for msg_attr, direction in [
+            ("gen_ai.input.messages", "input"),
+            ("gen_ai.output.messages", "output"),
+        ]:
+            if msg_attr in base:
+                value = base[msg_attr]
+                # Check if it looks like it contains raw LangChain/generations data
+                if isinstance(value, str) and (
+                    '"generations"' in value or '"lc":' in value
+                ):
+                    try:
+                        normalized = normalize_langsmith_content(
+                            value, direction
+                        )
+                        base[msg_attr] = json.dumps(normalized)
+                        logging.getLogger(__name__).debug(
+                            f"Normalized existing {msg_attr} containing raw LangChain data"
+                        )
+                    except Exception as e:
+                        logging.getLogger(__name__).debug(
+                            f"Failed to normalize {msg_attr}: {e}"
+                        )
+
         return base
 
     def _derive_new_name(

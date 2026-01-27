@@ -100,6 +100,75 @@ def _try_parse_json_safe(text: str) -> Optional[Any]:
         return None
 
 
+def _extract_from_generations(
+    content_val: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Extract messages from LangChain LLMResult 'generations' format.
+
+    Format: {"generations": [[{"text": "...", "message": {"lc": 1, ...}}]], ...}
+
+    Returns list of extracted messages with their content and role.
+    """
+    extracted = []
+
+    if "generations" not in content_val or not isinstance(
+        content_val["generations"], list
+    ):
+        return []
+
+    for gen_batch in content_val["generations"]:
+        if not isinstance(gen_batch, list):
+            continue
+        for gen in gen_batch:
+            if not isinstance(gen, dict):
+                continue
+
+            content = ""
+            finish_reason = "stop"
+            tool_calls = None
+
+            # Try to extract from "message" if present (LangChain format)
+            message = gen.get("message")
+            if isinstance(message, dict):
+                # Check for LangChain serialized message
+                if message.get("lc") == 1 and "kwargs" in message:
+                    kwargs = message["kwargs"]
+                    content = kwargs.get("content", "")
+                    # Extract tool_calls if present
+                    tool_calls = kwargs.get("tool_calls")
+                    # Extract finish_reason from response_metadata
+                    resp_meta = kwargs.get("response_metadata", {})
+                    if isinstance(resp_meta, dict):
+                        finish_reason = resp_meta.get("finish_reason", "stop")
+                else:
+                    content = message.get("content", "")
+                    tool_calls = message.get("tool_calls")
+            else:
+                # Fallback to "text" field
+                content = gen.get("text", "")
+
+            # Get finish_reason from generation_info
+            gen_info = gen.get("generation_info", {})
+            if isinstance(gen_info, dict):
+                finish_reason = gen_info.get("finish_reason", finish_reason)
+
+            # Build the message dict
+            msg_dict: Dict[str, Any] = {
+                "content": content,
+                "role": "assistant",
+                "finish_reason": finish_reason,
+            }
+
+            # Include tool_calls if present
+            if tool_calls:
+                msg_dict["tool_calls"] = tool_calls
+
+            extracted.append(msg_dict)
+
+    return extracted
+
+
 def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
     """
     Extract actual message content from nested LangChain message objects.
@@ -167,6 +236,15 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
                 content_val["args"][0], dict
             ):
                 content_val = content_val["args"][0]
+
+        # Check for LangChain LLMResult "generations" format FIRST
+        # Format: {"generations": [[{"text": "...", "message": {"lc": 1, ...}}]], ...}
+        if "generations" in content_val and isinstance(
+            content_val["generations"], list
+        ):
+            gen_msgs = _extract_from_generations(content_val)
+            if gen_msgs:
+                return gen_msgs
 
         # Look for "messages" array
         messages = content_val.get("messages", [])
@@ -407,8 +485,10 @@ def normalize_langsmith_content(
                             "parts": [_coerce_text_part(lc_msg["content"])],
                         }
                         if direction == "output":
+                            # Prefer finish_reason from extracted message, fallback to outer message
                             msg["finish_reason"] = (
-                                m.get("finish_reason")
+                                lc_msg.get("finish_reason")
+                                or m.get("finish_reason")
                                 or m.get("finishReason")
                                 or "stop"
                             )
