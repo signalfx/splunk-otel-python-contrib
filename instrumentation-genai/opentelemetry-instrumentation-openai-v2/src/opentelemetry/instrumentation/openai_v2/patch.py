@@ -290,7 +290,7 @@ def _build_tool_call_invocation(
     tool_call_type = tool_type or "function"
 
     genai_tool_call = GenAIToolCall(
-        name=function_name or "",
+        name=function_name or "unnamed_tool_call",
         id=tool_call_id,
         arguments=arguments,
         provider=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
