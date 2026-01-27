@@ -230,10 +230,15 @@ OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC = (
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC
 
-When set to a truthy value (``true``, ``1``, ``yes``, ``on``), evaluation metrics
-are emitted to a single histogram ``gen_ai.evaluation.score`` with the evaluation
-type distinguished by the ``gen_ai.evaluation.name`` attribute. When unset or falsey,
-evaluation metrics are emitted to separate histograms per evaluation type:
+Controls whether evaluation metrics are emitted to a single histogram or separate
+histograms per evaluation type. Default: ``true``.
+
+When ``true`` (default) or unset, evaluation metrics are emitted to a single histogram
+``gen_ai.evaluation.score`` with the evaluation type distinguished by the
+``gen_ai.evaluation.name`` attribute.
+
+When set to a falsey value (``false``, ``0``, ``no``, ``off``), evaluation metrics
+are emitted to separate histograms per evaluation type:
 ``gen_ai.evaluation.bias``, ``gen_ai.evaluation.toxicity``, etc.
 """
 OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"

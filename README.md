@@ -129,8 +129,8 @@ Emits **one** structured log record summarizing an entire LLM invocation (inputs
 Always present:
 
 - `EvaluationMetricsEmitter` – emits evaluation scores to histograms. Behavior depends on `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC`:
-  - **Single metric mode** (when `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC=true`): All evaluation scores are emitted to a single histogram `gen_ai.evaluation.score` with the evaluation type distinguished by the `gen_ai.evaluation.name` attribute.
-  - **Multiple metric mode** (default, when unset or false): Separate histograms per evaluation type:
+  - **Single metric mode** (default, when unset or `true`): All evaluation scores are emitted to a single histogram `gen_ai.evaluation.score` with the evaluation type distinguished by the `gen_ai.evaluation.name` attribute.
+  - **Multiple metric mode** (when `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC=false`): Separate histograms per evaluation type:
     - `gen_ai.evaluation.relevance`
     - `gen_ai.evaluation.hallucination`
     - `gen_ai.evaluation.sentiment`
@@ -172,7 +172,7 @@ An example of the third-party emitter:
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL` | Eval worker poll interval                                                               | Default 5.0 seconds                                                           |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE` | Trace-id ratio sampling                                                                 | Float (0–1], default 1.0                                                      |
 | `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape                                                      | Adds second event per result                                                  |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: false)                                                      |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: true)                                                       |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` | Evaluation queue size                                                              | int (default: 100)                                                            |
 
 ## 7. Extensibility Mechanics

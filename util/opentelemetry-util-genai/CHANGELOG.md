@@ -9,6 +9,7 @@ All notable changes to this repository are documented in this file.
 - **Made `finish_reason` optional in `OutputMessage`** - `finish_reason` is now optional (defaults to `None`) since it's only meaningful for LLM responses, not agent/workflow outputs.
 - **Deprecated legacy string fields** - Legacy fields (`initial_input`, `final_output`, `input_context`, `output_result`) are now marked as deprecated with metadata. Use structured `input_messages`/`output_messages` instead.
 - **Removed input/output from `Step`** - `Step` type no longer captures input/output data as it was redundant with agent-level capture.
+- **Single metric mode now default** - `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` now defaults to `true`, emitting all evaluation scores to a unified `gen_ai.evaluation.score` histogram with evaluation type in the `gen_ai.evaluation.name` attribute. 
 
 ### Fixed
 - **JSON serialization for agent/workflow messages** - Agent and workflow input/output messages are now properly serialized as valid JSON instead of Python repr strings, fixing rendering issues in observability UIs.
