@@ -2,6 +2,21 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.10 - 2026-01-26
+
+### Changed
+- **Hallucination GEval Metric** - Improved accuracy and industry-standard scoring
+  - Score inversion: GEval outputs higher=better (1.0=no hallucination), now inverted to lower=better (0.0=no hallucination) to match DeepEval's HallucinationMetric convention
+  - Enhanced criteria with explicit guidance to distinguish logical inference from fabrication
+  - Updated evaluation steps with self-verification and conservative flagging to reduce false positives
+  - New attribute `deepeval.hallucination.geval_score` preserves the original GEval score for debugging
+  
+- **Sentiment GEval Metric** - Clearer scoring scale and thresholds
+  - Updated to use 0-1 scale: 0=negative, 0.5=neutral, 1=positive (instead of -1 to +1)
+  - Clear threshold boundaries: 0.0-0.35=Negative, 0.35-0.65=Neutral, 0.65-1.0=Positive
+  - Improved criteria and steps for better intensity and mixed sentiment handling
+  - Backward-compatible `deepeval.sentiment.compound` attribute still available
+
 ## Version 0.1.9 - 2026-01-17
 
 ### Added

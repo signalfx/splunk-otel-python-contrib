@@ -13,8 +13,7 @@ from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
-from opentelemetry.semconv.schemas import Schemas
-from opentelemetry.trace import get_tracer
+from opentelemetry.util.genai.handler import get_telemetry_handler
 
 from .package import _instruments
 from .span_processor import (
@@ -41,7 +40,6 @@ logger = logging.getLogger(__name__)
 _CONTENT_CAPTURE_ENV = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 _SYSTEM_OVERRIDE_ENV = "OTEL_INSTRUMENTATION_OPENAI_AGENTS_SYSTEM"
 _CAPTURE_CONTENT_ENV = "OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_CONTENT"
-_CAPTURE_METRICS_ENV = "OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_METRICS"
 
 
 def _load_tracing_module():  # pragma: no cover - exercised via tests
@@ -108,19 +106,6 @@ def _resolve_content_mode(value: Any) -> ContentCaptureMode:
     return mapping.get(text, ContentCaptureMode.SPAN_AND_EVENT)
 
 
-def _resolve_bool(value: Any, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {"true", "1", "yes", "on"}:
-        return True
-    if text in {"false", "0", "no", "off"}:
-        return False
-    return default
-
-
 class OpenAIAgentsInstrumentor(BaseInstrumentor):
     """Instrumentation that bridges OpenAI Agents tracing to OpenTelemetry."""
 
@@ -133,12 +118,6 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             return
 
         tracer_provider = kwargs.get("tracer_provider")
-        tracer = get_tracer(
-            __name__,
-            "",
-            tracer_provider,
-            schema_url=Schemas.V1_28_0.value,
-        )
 
         system_override = kwargs.get("system") or os.getenv(
             _SYSTEM_OVERRIDE_ENV
@@ -152,28 +131,24 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             )
         content_mode = _resolve_content_mode(content_override)
 
-        metrics_override = kwargs.get("capture_metrics")
-        if metrics_override is None:
-            metrics_override = os.getenv(_CAPTURE_METRICS_ENV)
-        metrics_enabled = _resolve_bool(metrics_override, default=True)
-
-        agent_name = kwargs.get("agent_name")
-        agent_id = kwargs.get("agent_id")
-        agent_description = kwargs.get("agent_description")
         base_url = kwargs.get("base_url")
         server_address = kwargs.get("server_address")
         server_port = kwargs.get("server_port")
 
+        # Create telemetry handler with tracer_provider and meter_provider
+        # Handler will take care of generating metrics when meter_provider is passed
+        meter_provider = kwargs.get("meter_provider")
+        handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+        )
+
         processor = GenAISemanticProcessor(
-            tracer=tracer,
+            handler=handler,
             system_name=system,
             include_sensitive_data=content_mode
             != ContentCaptureMode.NO_CONTENT,
             content_mode=content_mode,
-            metrics_enabled=metrics_enabled,
-            agent_name=agent_name,
-            agent_id=agent_id,
-            agent_description=agent_description,
             base_url=base_url,
             server_address=server_address,
             server_port=server_port,

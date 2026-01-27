@@ -7,6 +7,8 @@ file-level ignore to prefer clarity over strict ordering.
 # ruff: noqa: E402
 
 import importlib
+import sys
+import types
 
 import pytest
 
@@ -38,7 +40,7 @@ class MetricData:  # lightweight stub
         self.error = error
 
 
-class TestResult:  # lightweight stub
+class FakeTestResult:  # lightweight stub (renamed from TestResult to avoid pytest collection)
     def __init__(
         self,
         *,
@@ -54,17 +56,16 @@ class TestResult:  # lightweight stub
 
 
 class DeeEvaluationResult:  # stub container
-    def __init__(self, *, test_results: list[TestResult], confident_link=None):
+    def __init__(
+        self, *, test_results: list[FakeTestResult], confident_link=None
+    ):
         self.test_results = test_results
         self.confident_link = confident_link
 
 
 # Install deepeval stubs if dependency absent (reuse logic similar to main evaluator tests)
 def _install_deepeval_stubs():
-    import sys as _sys
-    import types
-
-    if "deepeval" in _sys.modules:
+    if "deepeval" in sys.modules:
         return
     root = types.ModuleType("deepeval")
     metrics_mod = types.ModuleType("deepeval.metrics")
@@ -111,11 +112,11 @@ def _install_deepeval_stubs():
         return _Eval()
 
     root.evaluate = evaluate
-    _sys.modules["deepeval"] = root
-    _sys.modules["deepeval.metrics"] = metrics_mod
-    _sys.modules["deepeval.test_case"] = test_case_mod
-    _sys.modules["deepeval.evaluate"] = root
-    _sys.modules["deepeval.evaluate.configs"] = eval_cfg_mod
+    sys.modules["deepeval"] = root
+    sys.modules["deepeval.metrics"] = metrics_mod
+    sys.modules["deepeval.test_case"] = test_case_mod
+    sys.modules["deepeval.evaluate"] = root
+    sys.modules["deepeval.evaluate.configs"] = eval_cfg_mod
 
 
 _install_deepeval_stubs()
@@ -162,10 +163,10 @@ def test_sentiment_metric_result_attributes(monkeypatch):
         ("sentiment [geval] [GEval]",), invocation_type="LLMInvocation"
     )
 
-    # Fake deepeval result with a sentiment compound score 0.6 (will be mapped to (0.6+1)/2=0.8 recorded score)
+    # Fake deepeval result with a sentiment score of 0.8 (positive, in 0-1 scale)
     fake_result = DeeEvaluationResult(
         test_results=[
-            TestResult(
+            FakeTestResult(
                 name="case",
                 success=True,
                 metrics_data=[
@@ -173,7 +174,7 @@ def test_sentiment_metric_result_attributes(monkeypatch):
                         name="sentiment [geval] [GEval]",
                         threshold=0.0,
                         success=True,
-                        score=0.6,
+                        score=0.8,
                         reason="Positive tone",
                         evaluation_model="gpt-4o-mini",
                         evaluation_cost=0.001,
@@ -199,8 +200,10 @@ def test_sentiment_metric_result_attributes(monkeypatch):
     assert len(results) == 1
     res = results[0]
     assert res.metric_name == "sentiment [geval] [GEval]"
-    # Recorded score should be mapped to [0,1]
-    assert res.score == pytest.approx((0.6 + 1) / 2, rel=1e-6)
+    # Score is now directly 0-1 (no mapping needed)
+    assert res.score == pytest.approx(0.8, rel=1e-6)
+    # Label should be "Positive" for score >= 0.65 (new thresholds: 0.35/0.65)
+    assert res.label == "Positive"
     # Distribution attributes should be present
     assert "deepeval.sentiment.neg" in res.attributes
     assert "deepeval.sentiment.neu" in res.attributes
@@ -210,6 +213,7 @@ def test_sentiment_metric_result_attributes(monkeypatch):
     assert 0.0 <= res.attributes["deepeval.sentiment.neg"] <= 1.0
     assert 0.0 <= res.attributes["deepeval.sentiment.neu"] <= 1.0
     assert 0.0 <= res.attributes["deepeval.sentiment.pos"] <= 1.0
+    # Compound is derived from 0-1 score: (score * 2) - 1 = (0.8 * 2) - 1 = 0.6
     compound = res.attributes["deepeval.sentiment.compound"]
     assert compound == pytest.approx(0.6, rel=1e-6)
     # Normalization check (allow tiny float drift)
@@ -219,3 +223,65 @@ def test_sentiment_metric_result_attributes(monkeypatch):
         + res.attributes["deepeval.sentiment.pos"]
     )
     assert abs(total - 1.0) < 1e-6
+
+
+def test_sentiment_label_thresholds(monkeypatch):
+    """Test that sentiment labels match the new thresholds (0.35/0.65)."""
+    invocation = _build_invocation()
+    evaluator = plugin.DeepevalEvaluator(
+        ("sentiment [geval] [GEval]",), invocation_type="LLMInvocation"
+    )
+
+    test_cases = [
+        (0.2, "Negative"),  # <= 0.35
+        (0.35, "Negative"),  # <= 0.35 (boundary)
+        (0.5, "Neutral"),  # 0.35 < score < 0.65
+        (0.65, "Positive"),  # >= 0.65 (boundary)
+        (0.9, "Positive"),  # >= 0.65
+    ]
+
+    for score, expected_label in test_cases:
+        # Create a new fake_result for each test case
+        fake_result = DeeEvaluationResult(
+            test_results=[
+                FakeTestResult(
+                    name="case",
+                    success=True,
+                    metrics_data=[
+                        MetricData(
+                            name="sentiment [geval] [GEval]",
+                            threshold=0.0,
+                            success=True,
+                            score=score,
+                            reason=f"Test score {score}",
+                        )
+                    ],
+                    conversational=False,
+                )
+            ],
+            confident_link=None,
+        )
+
+        # Use a closure to capture the current fake_result
+        def make_fake_runner(result):
+            def fake_runner(case, metrics):
+                return result
+
+            return fake_runner
+
+        monkeypatch.setattr(
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            lambda specs, test_case, model: ([object()], []),
+        )
+        monkeypatch.setattr(
+            "opentelemetry.util.evaluator.deepeval._run_deepeval",
+            make_fake_runner(fake_result),
+        )
+
+        results = evaluator.evaluate(invocation)
+        assert len(results) == 1
+        res = results[0]
+        assert res.score == pytest.approx(score, rel=1e-6)
+        assert res.label == expected_label, (  # fmt: skip
+            f"Score {score} should be labeled '{expected_label}'"
+        )

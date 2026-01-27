@@ -34,6 +34,8 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
     Handles formats like:
     - {"messages": [{"lc": 1, "kwargs": {"content": "text", "type": "human"}}]}
     - {"outputs": {"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}}
+    - {"inputs": {"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}}
+    - {"args": [{"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}]}
 
     Returns list of extracted messages with their content and role.
     """
@@ -55,6 +57,17 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
             content_val["outputs"], dict
         ):
             content_val = content_val["outputs"]
+
+        # Check for "inputs" wrapper (common in workflow inputs)
+        if "inputs" in content_val and isinstance(content_val["inputs"], dict):
+            content_val = content_val["inputs"]
+
+        # Check for "args" wrapper (LangGraph format)
+        if "args" in content_val and isinstance(content_val["args"], list):
+            if len(content_val["args"]) > 0 and isinstance(
+                content_val["args"][0], dict
+            ):
+                content_val = content_val["args"][0]
 
         # Look for "messages" array
         messages = content_val.get("messages", [])
@@ -108,6 +121,95 @@ def normalize_traceloop_content(
         normalized: List[Dict[str, Any]] = []
         limit = INPUT_MAX if direction == "input" else OUTPUT_MAX
         for m in raw[:limit]:
+            # FIRST: Check if this dict IS a LangChain serialized message
+            # Format: {"lc": 1, "type": "constructor", "kwargs": {"content": "...", "type": "human"}}
+            if m.get("lc") == 1 and "kwargs" in m:
+                kwargs = m.get("kwargs", {})
+                if isinstance(kwargs, dict):
+                    msg_content = kwargs.get("content")
+                    msg_type = kwargs.get("type", "unknown")
+
+                    if msg_content:
+                        # Map LangChain types to roles
+                        if msg_type == "human":
+                            role = "user"
+                        elif msg_type == "ai":
+                            role = "assistant"
+                        elif msg_type == "system":
+                            role = "system"
+                        else:
+                            role = (
+                                "user" if direction == "input" else "assistant"
+                            )
+
+                        parts = [_coerce_text_part(msg_content)]
+                        msg_dict: Dict[str, Any] = {
+                            "role": role,
+                            "parts": parts,
+                        }
+                        if direction == "output":
+                            msg_dict["finish_reason"] = "stop"
+                        normalized.append(msg_dict)
+                        continue  # Skip to next message in list
+
+            # SECOND: Check if message already has "parts" with nested LangChain data
+            # Format: {"role": "user", "parts": [{"type": "text", "content": "{\"args\": [...]}"}]}
+            if "parts" in m and isinstance(m.get("parts"), list):
+                role = m.get(
+                    "role", "user" if direction == "input" else "assistant"
+                )
+                extracted_msgs = []
+                plain_parts = []
+
+                for part in m["parts"]:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        part_content = part.get("content", "")
+                        # Try to extract nested LangChain messages from part content
+                        lc_msgs = _extract_langchain_messages(part_content)
+                        if lc_msgs:
+                            extracted_msgs.extend(lc_msgs)
+                        else:
+                            plain_parts.append(_coerce_text_part(part_content))
+                    else:
+                        # Non-text part, keep as-is
+                        plain_parts.append(
+                            part
+                            if isinstance(part, dict)
+                            else _coerce_text_part(part)
+                        )
+
+                # If we found nested LangChain messages, use those
+                if extracted_msgs:
+                    for lc_msg in extracted_msgs:
+                        msg: Dict[str, Any] = {
+                            "role": lc_msg["role"],
+                            "parts": [_coerce_text_part(lc_msg["content"])],
+                        }
+                        if direction == "output":
+                            msg["finish_reason"] = (
+                                m.get("finish_reason")
+                                or m.get("finishReason")
+                                or "stop"
+                            )
+                        normalized.append(msg)
+                else:
+                    # No nested messages, use plain parts
+                    msg: Dict[str, Any] = {
+                        "role": role,
+                        "parts": plain_parts
+                        if plain_parts
+                        else [_coerce_text_part("")],
+                    }
+                    if direction == "output":
+                        msg["finish_reason"] = (
+                            m.get("finish_reason")
+                            or m.get("finishReason")
+                            or "stop"
+                        )
+                    normalized.append(msg)
+                continue  # Skip to next message in list
+
+            # Standard message format with role/content
             role = m.get(
                 "role", "user" if direction == "input" else "assistant"
             )
@@ -116,7 +218,8 @@ def normalize_traceloop_content(
                 temp = {
                     k: v
                     for k, v in m.items()
-                    if k not in ("role", "finish_reason", "finishReason")
+                    if k
+                    not in ("role", "finish_reason", "finishReason", "parts")
                 }
                 content_val = temp or ""
 
@@ -246,6 +349,14 @@ def normalize_traceloop_content(
         # wrapper inputs
         if "inputs" in raw:
             inner = raw["inputs"]
+            if isinstance(inner, list):
+                return normalize_traceloop_content(inner, direction)
+            if isinstance(inner, dict):
+                # Recursively process - might contain "messages" array
+                return normalize_traceloop_content(inner, direction)
+        # wrapper outputs (for output data)
+        if "outputs" in raw:
+            inner = raw["outputs"]
             if isinstance(inner, list):
                 return normalize_traceloop_content(inner, direction)
             if isinstance(inner, dict):

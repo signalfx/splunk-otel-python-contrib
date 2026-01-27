@@ -62,6 +62,14 @@ GEN_AI_RETRIEVAL_TOP_K = "gen_ai.retrieval.top_k"
 GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED = "gen_ai.retrieval.documents_retrieved"
 GEN_AI_RETRIEVAL_DOCUMENTS = "gen_ai.retrieval.documents"
 
+# Tool attributes (from semantic conventions execute_tool span)
+GEN_AI_TOOL_NAME = "gen_ai.tool.name"
+GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
+GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
+GEN_AI_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments"
+GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
+
 # Server attributes (from semantic conventions)
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"

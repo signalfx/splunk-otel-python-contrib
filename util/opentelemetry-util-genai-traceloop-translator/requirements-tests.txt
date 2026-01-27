@@ -9,6 +9,7 @@
 
 # Test runner
 pytest>=7.0.0
+langchain_core
 
 # Optional (uncomment if you want coverage):
 # pytest-cov>=4.0.0

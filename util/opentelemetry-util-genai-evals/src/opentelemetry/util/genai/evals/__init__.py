@@ -39,6 +39,7 @@ from .bootstrap import (
     create_completion_callback,
     create_evaluation_manager,
 )
+from .errors import ErrorEvent, ErrorTracker
 from .manager import Manager, Sampler
 from .proxy import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_SEPARATE_PROCESS,
@@ -57,6 +58,8 @@ __all__ = [
     "EvaluatorCompletionCallback",
     "create_completion_callback",
     "create_evaluation_manager",
+    "ErrorEvent",
+    "ErrorTracker",
     # Separate process mode
     "EvalManagerProxy",
     "is_separate_process_enabled",

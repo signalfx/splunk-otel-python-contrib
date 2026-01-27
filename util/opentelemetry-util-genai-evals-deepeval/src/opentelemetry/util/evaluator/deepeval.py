@@ -256,6 +256,36 @@ def _derive_passed(label: str | None, success: Any) -> bool | None:
     return None
 
 
+def _apply_hallucination_postprocessing(
+    ctx: _MetricContext, label: str | None
+) -> tuple[float | None, str | None]:
+    """Invert hallucination GEval score to match industry standard (lower=better).
+
+    GEval uses higher=better (1.0=no hallucination) for threshold logic, but we need
+    lower=better (0.0=no hallucination) to match deepeval's HallucinationMetric convention.
+    This function inverts: GEval score 1.0 → final score 0.0, GEval score 0.0 → final score 1.0.
+    """
+    if ctx.name not in {
+        "hallucination",
+        "hallucination [geval]",
+        "hallucination [geval] [GEval]",
+    }:
+        return ctx.score, label
+    if ctx.score is None:
+        return ctx.score, label
+    try:
+        # GEval outputs 0-1 scale where 1.0=no hallucination, 0.0=hallucination
+        # Invert to industry standard: 0.0=no hallucination, 1.0=hallucination
+        geval_score = max(0.0, min(1.0, float(ctx.score)))
+        inverted_score = 1.0 - geval_score
+        ctx.attributes.setdefault(
+            "deepeval.hallucination.geval_score", round(geval_score, 6)
+        )
+    except Exception:
+        return ctx.score, label
+    return inverted_score, label
+
+
 def _apply_sentiment_postprocessing(
     ctx: _MetricContext, label: str | None
 ) -> tuple[float | None, str | None]:
@@ -268,26 +298,33 @@ def _apply_sentiment_postprocessing(
     if ctx.score is None:
         return ctx.score, label
     try:
-        compound = max(-1.0, min(1.0, float(ctx.score)))
-    except (TypeError, ValueError):
+        # GEval outputs 0-1 scale: 0=negative, 0.5=neutral, 1=positive
+        score = max(0.0, min(1.0, float(ctx.score)))
+    except Exception:
         return ctx.score, label
-    mapped = (compound + 1.0) / 2.0
+
+    # Convert 0-1 score to -1 to 1 compound for backwards-compatible attributes
+    compound = (score * 2.0) - 1.0
     ctx.attributes.setdefault(
         "deepeval.sentiment.compound", round(compound, 6)
     )
 
     if label is None:
-        if compound >= 0.25:
+        # Label thresholds based on 0-1 scale, matching GEval step guidance
+        # Thresholds: 0.0-0.35 = Negative, 0.35-0.65 = Neutral, 0.65-1.0 = Positive
+        if score >= 0.65:
             label = "Positive"
-        elif compound <= -0.25:
+        elif score <= 0.35:
             label = "Negative"
-        else:
+        else:  # 0.35 < score < 0.65
             label = "Neutral"
 
     try:
-        neg_strength = 1 - mapped
-        pos_strength = mapped
-        neu_strength = 1 - abs(compound)
+        # Compute distribution attributes from the 0-1 score
+        pos_strength = score
+        neg_strength = 1.0 - score
+        # Neutrality peaks at 0.5 (center of scale)
+        neu_strength = 1.0 - abs(compound)
         total = neg_strength + neu_strength + pos_strength
         if total > 0:
             neg_strength /= total
@@ -303,7 +340,7 @@ def _apply_sentiment_postprocessing(
         )
     except (TypeError, ZeroDivisionError):
         pass
-    return mapped, label
+    return score, label
 
 
 _METRIC_REGISTRY: Mapping[str, str] = _DEEPEVAL_METRIC_REGISTRY
@@ -652,6 +689,10 @@ class DeepevalEvaluator(Evaluator):
             for metric in metrics_data:
                 ctx = _build_metric_context(metric, test)
                 label = _determine_label(ctx)
+                # Apply hallucination post-processing first (inverts score)
+                score, label = _apply_hallucination_postprocessing(ctx, label)
+                ctx.score = score
+                # Then apply sentiment post-processing
                 score, label = _apply_sentiment_postprocessing(ctx, label)
                 ctx.score = score
                 passed = _derive_passed(label, ctx.success)

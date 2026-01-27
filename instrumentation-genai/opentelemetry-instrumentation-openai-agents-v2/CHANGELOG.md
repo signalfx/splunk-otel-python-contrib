@@ -2,13 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-01-26
 
 ### Added
-- Initial release of OpenTelemetry instrumentation for OpenAI Agents v2.
+- Initial release of OpenTelemetry instrumentation for OpenAI Agents SDK.
+- `GenAISemanticProcessor` for processing spans with GenAI semantic conventions.
+- Support for agent, LLM (chat), tool, workflow, handoff, guardrail, and response spans.
+- Metrics collection with duration and token usage histograms.
+- Multi-agent workflow support with proper span hierarchy.
+- Example applications: travel-concierge and travel-planner demos.
 
-## [0.1.0] - 2024-06-10
-
-### Added
-- Instrumentation for OpenAI Agents v2.
-- Example usage and documentation.
+### Fixed
+- Cleaned up duplicate and unused imports in span_processor.py.

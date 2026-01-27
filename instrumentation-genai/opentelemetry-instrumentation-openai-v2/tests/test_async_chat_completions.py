@@ -375,6 +375,7 @@ async def chat_completion_tool_call(
     # validate both calls
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 2
+
     assert_all_attributes(
         spans[0],
         llm_model_value,
@@ -819,6 +820,8 @@ async def async_chat_completion_multiple_tools_streaming(
     assert "tool_calls" == finish_reason
 
     spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+
     assert_all_attributes(
         spans[0],
         llm_model_value,
