@@ -76,6 +76,18 @@ class LlamaindexInstrumentor(BaseInstrumentor):
                 # MultiAgentWorkflow might not be available or importable.
                 pass
 
+        # Instrument AgentWorkflow (sync/async) for workflow-level orchestration spans.
+        for method_name in ["run", "arun"]:
+            try:
+                wrap_function_wrapper(
+                    module="llama_index.core.agent.workflow.multi_agent_workflow",
+                    name=f"AgentWorkflow.{method_name}",
+                    wrapper=wrap_agent_run,
+                )
+            except Exception:
+                # AgentWorkflow might not be available or importable.
+                pass
+
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
 
