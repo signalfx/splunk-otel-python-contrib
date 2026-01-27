@@ -13,8 +13,6 @@ from ..callbacks import CompletionCallback
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..handler import TelemetryHandler
 
-from .admission_controller import EvaluationAdmissionController
-
 from opentelemetry.semconv.attributes import (
     error_attributes as ErrorAttributes,
 )
@@ -31,6 +29,7 @@ from ..types import (
     ToolCall,
     Workflow,
 )
+from .admission_controller import EvaluationAdmissionController
 from .base import Evaluator
 from .env import (
     read_aggregation_flag,
