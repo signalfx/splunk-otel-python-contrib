@@ -28,6 +28,7 @@ from .bootstrap import (
     create_completion_callback,
     create_evaluation_manager,
 )
+from .errors import ErrorEvent, ErrorTracker
 from .manager import Manager, Sampler
 from .registry import get_evaluator, list_evaluators, register_evaluator
 
@@ -41,4 +42,6 @@ __all__ = [
     "EvaluatorCompletionCallback",
     "create_completion_callback",
     "create_evaluation_manager",
+    "ErrorEvent",
+    "ErrorTracker",
 ]
