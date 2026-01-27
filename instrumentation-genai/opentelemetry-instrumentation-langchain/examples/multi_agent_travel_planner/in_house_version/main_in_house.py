@@ -263,7 +263,9 @@ def run_travel_planner(
 
     # Set output_messages and stop the internally-created workflow (no extra attributes added).
     if final_plan:
-        workflow.output_messages = [OutputMessage(role="assistant", parts=[Text(content=final_plan)])]
+        workflow.output_messages = [
+            OutputMessage(role="assistant", parts=[Text(content=final_plan)])
+        ]
     handler.stop_workflow(workflow)
 
     return {
@@ -559,7 +561,11 @@ def coordinator_node(state: PlannerState) -> PlannerState:
             "You are the lead travel coordinator. Extract key details from the user's request, "
             "outline required specialist agents (flight, hotel, activities, synthesis) and provide planning guidance."
         ),
-        input_messages=[InputMessage(role="user", parts=[Text(content=state.get("user_request", ""))])],
+        input_messages=[
+            InputMessage(
+                role="user", parts=[Text(content=state.get("user_request", ""))]
+            )
+        ],
     )
     handler.start_agent(agent)
 
@@ -591,7 +597,9 @@ def coordinator_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(response, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent.output_messages = [OutputMessage(role="assistant", parts=[Text(content=response_text)])]
+    agent.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=response_text)])
+    ]
     state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "flight_specialist"
     handler.stop_agent(agent)
@@ -660,7 +668,9 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_messages = [OutputMessage(role="assistant", parts=[Text(content=summary)])]
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=summary)])
+    ]
     state["messages"].append(
         cast(
             AnyMessage,
@@ -737,7 +747,9 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_messages = [OutputMessage(role="assistant", parts=[Text(content=summary)])]
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=summary)])
+    ]
     state["messages"].append(
         cast(
             AnyMessage,
@@ -813,7 +825,9 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_messages = [OutputMessage(role="assistant", parts=[Text(content=summary)])]
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=summary)])
+    ]
     state["messages"].append(
         cast(
             AnyMessage,
@@ -892,7 +906,9 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(response, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_messages = [OutputMessage(role="assistant", parts=[Text(content=response_text)])]
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=response_text)])
+    ]
     handler.stop_agent(agent_invocation)
     return state
 
