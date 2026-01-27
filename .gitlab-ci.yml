@@ -156,6 +156,22 @@ build-instrumentation-crewai:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-openai-agents:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-openai-agents
+    - mv dist/* ../../dist/instrumentation-openai-agents/
+    - cd ../../dist/instrumentation-openai-agents
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-openai-agents/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -301,6 +317,22 @@ sign-instrumentation-crewai:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-openai-agents:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-openai-agents
+  variables:
+    ARTIFACT: dist/instrumentation-openai-agents/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-openai-agents
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-openai-agents/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -418,3 +450,16 @@ deploy-instrumentation-crewai:
     - sign-instrumentation-crewai
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-openai-agents:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-openai-agents/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-openai-agents
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
