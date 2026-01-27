@@ -1,4 +1,4 @@
-"""Sentiment metric tests with stubbed deepeval modules.
+"""Hallucination metric tests with stubbed deepeval modules.
 
 Dynamic stub injection precedes some imports (violating E402), so we apply a
 file-level ignore to prefer clarity over strict ordering.
@@ -77,6 +77,8 @@ def _install_deepeval_stubs():
             self.name = kwargs.get("name", "geval")
 
     class LLMTestCaseParams:
+        INPUT_OUTPUT = "io"
+        INPUT = "input"
         ACTUAL_OUTPUT = "actual_output"
 
     class LLMTestCase:
@@ -89,9 +91,8 @@ def _install_deepeval_stubs():
     test_case_mod.LLMTestCase = LLMTestCase
 
     class AsyncConfig:  # noqa: D401
-        def __init__(self, run_async=False, max_concurrent=None):
+        def __init__(self, run_async=False):
             self.run_async = run_async
-            self.max_concurrent = max_concurrent
 
     class DisplayConfig:
         def __init__(self, show_indicator=False, print_results=False):
@@ -143,117 +144,65 @@ def _reset_registry():
 
 
 def _build_invocation():
-    inv = LLMInvocation(request_model="sentiment-model")
+    inv = LLMInvocation(request_model="hallucination-model")
     inv.input_messages.append(
-        InputMessage(role="user", parts=[Text(content="I love sunny days")])
+        InputMessage(
+            role="user", parts=[Text(content="What is the capital of France?")]
+        )
     )
     inv.output_messages.append(
         OutputMessage(
             role="assistant",
-            parts=[Text(content="Today is wonderful and bright!")],
+            parts=[Text(content="The capital of France is Paris.")],
             finish_reason="stop",
         )
     )
     return inv
 
 
-def test_sentiment_metric_result_attributes(monkeypatch):
+def test_hallucination_metric_score_inversion(monkeypatch):
+    """Test that hallucination GEval scores are inverted correctly.
+
+    GEval uses higher=better (1.0=no hallucination), but final score should be
+    lower=better (0.0=no hallucination) to match industry standard.
+    """
     invocation = _build_invocation()
     evaluator = plugin.DeepevalEvaluator(
-        ("sentiment [geval] [GEval]",), invocation_type="LLMInvocation"
-    )
-
-    # Fake deepeval result with a sentiment score of 0.8 (positive, in 0-1 scale)
-    fake_result = DeeEvaluationResult(
-        test_results=[
-            FakeTestResult(
-                name="case",
-                success=True,
-                metrics_data=[
-                    MetricData(
-                        name="sentiment [geval] [GEval]",
-                        threshold=0.0,
-                        success=True,
-                        score=0.8,
-                        reason="Positive tone",
-                        evaluation_model="gpt-4o-mini",
-                        evaluation_cost=0.001,
-                    )
-                ],
-                conversational=False,
-            )
-        ],
-        confident_link=None,
-    )
-
-    # Bypass instantiation logic to avoid real deepeval dependency usage
-    monkeypatch.setattr(
-        "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
-        lambda specs, test_case, model: ([object()], []),
-    )
-    monkeypatch.setattr(
-        "opentelemetry.util.evaluator.deepeval._run_deepeval",
-        lambda case, metrics: fake_result,
-    )
-
-    results = evaluator.evaluate(invocation)
-    assert len(results) == 1
-    res = results[0]
-    assert res.metric_name == "sentiment [geval] [GEval]"
-    # Score is now directly 0-1 (no mapping needed)
-    assert res.score == pytest.approx(0.8, rel=1e-6)
-    # Label should be "Positive" for score >= 0.65 (new thresholds: 0.35/0.65)
-    assert res.label == "Positive"
-    # Distribution attributes should be present
-    assert "deepeval.sentiment.neg" in res.attributes
-    assert "deepeval.sentiment.neu" in res.attributes
-    assert "deepeval.sentiment.pos" in res.attributes
-    assert "deepeval.sentiment.compound" in res.attributes
-    # Values within valid ranges
-    assert 0.0 <= res.attributes["deepeval.sentiment.neg"] <= 1.0
-    assert 0.0 <= res.attributes["deepeval.sentiment.neu"] <= 1.0
-    assert 0.0 <= res.attributes["deepeval.sentiment.pos"] <= 1.0
-    # Compound is derived from 0-1 score: (score * 2) - 1 = (0.8 * 2) - 1 = 0.6
-    compound = res.attributes["deepeval.sentiment.compound"]
-    assert compound == pytest.approx(0.6, rel=1e-6)
-    # Normalization check (allow tiny float drift)
-    total = (
-        res.attributes["deepeval.sentiment.neg"]
-        + res.attributes["deepeval.sentiment.neu"]
-        + res.attributes["deepeval.sentiment.pos"]
-    )
-    assert abs(total - 1.0) < 1e-6
-
-
-def test_sentiment_label_thresholds(monkeypatch):
-    """Test that sentiment labels match the new thresholds (0.35/0.65)."""
-    invocation = _build_invocation()
-    evaluator = plugin.DeepevalEvaluator(
-        ("sentiment [geval] [GEval]",), invocation_type="LLMInvocation"
+        ("hallucination",), invocation_type="LLMInvocation"
     )
 
     test_cases = [
-        (0.2, "Negative"),  # <= 0.35
-        (0.35, "Negative"),  # <= 0.35 (boundary)
-        (0.5, "Neutral"),  # 0.35 < score < 0.65
-        (0.65, "Positive"),  # >= 0.65 (boundary)
-        (0.9, "Positive"),  # >= 0.65
+        # (GEval score, expected final score, expected label)
+        (1.0, 0.0, "Not Hallucinated"),  # Perfect: GEval 1.0 → final 0.0
+        (0.9, 0.1, "Not Hallucinated"),  # Very good: GEval 0.9 → final 0.1
+        (0.7, 0.3, "Not Hallucinated"),  # Good: GEval 0.7 → final 0.3
+        (
+            0.5,
+            0.5,
+            None,
+        ),  # Moderate: GEval 0.5 → final 0.5 (label determined by success)
+        (0.3, 0.7, "Hallucinated"),  # Bad: GEval 0.3 → final 0.7
+        (0.0, 1.0, "Hallucinated"),  # Worst: GEval 0.0 → final 1.0
     ]
 
-    for score, expected_label in test_cases:
-        # Create a new fake_result for each test case
+    for geval_score, expected_final_score, expected_label in test_cases:
+        # Determine success based on threshold (0.7): GEval score >= 0.7 passes
+        success = geval_score >= 0.7
+
         fake_result = DeeEvaluationResult(
             test_results=[
                 FakeTestResult(
                     name="case",
-                    success=True,
+                    success=success,
                     metrics_data=[
                         MetricData(
-                            name="sentiment [geval] [GEval]",
-                            threshold=0.0,
-                            success=True,
-                            score=score,
-                            reason=f"Test score {score}",
+                            name="hallucination",
+                            threshold=0.7,
+                            success=success,
+                            score=geval_score,
+                            reason=f"GEval score {geval_score}",
+                            evaluation_model="gpt-4o-mini",
+                            evaluation_cost=0.001,
                         )
                     ],
                     conversational=False,
@@ -281,7 +230,80 @@ def test_sentiment_label_thresholds(monkeypatch):
         results = evaluator.evaluate(invocation)
         assert len(results) == 1
         res = results[0]
-        assert res.score == pytest.approx(score, rel=1e-6)
-        assert res.label == expected_label, (  # fmt: skip
-            f"Score {score} should be labeled '{expected_label}'"
+        assert res.metric_name == "hallucination"
+        # Verify score inversion: GEval score 1.0 → final score 0.0
+        assert res.score == pytest.approx(expected_final_score, rel=1e-6), (
+            f"GEval score {geval_score} should invert to final score {expected_final_score}"
         )
+        # Verify original GEval score is stored in attributes
+        assert "deepeval.hallucination.geval_score" in res.attributes
+        assert res.attributes[
+            "deepeval.hallucination.geval_score"
+        ] == pytest.approx(geval_score, rel=1e-6)
+        # Verify label if expected
+        if expected_label is not None:
+            assert res.label == expected_label, (
+                f"Final score {expected_final_score} (from GEval {geval_score}) "
+                f"should be labeled '{expected_label}'"
+            )
+        # Verify threshold is stored
+        assert res.attributes["deepeval.threshold"] == 0.7
+        assert res.attributes["deepeval.success"] == success
+
+
+def test_hallucination_metric_name_variants(monkeypatch):
+    """Test that hallucination post-processing works with different name variants."""
+    invocation = _build_invocation()
+
+    name_variants = [
+        "hallucination",
+        "hallucination [geval]",
+        "hallucination [geval] [GEval]",
+    ]
+
+    for name_variant in name_variants:
+        evaluator = plugin.DeepevalEvaluator(
+            (name_variant,), invocation_type="LLMInvocation"
+        )
+
+        # GEval score 0.9 should invert to final score 0.1
+        fake_result = DeeEvaluationResult(
+            test_results=[
+                FakeTestResult(
+                    name="case",
+                    success=True,
+                    metrics_data=[
+                        MetricData(
+                            name=name_variant,
+                            threshold=0.7,
+                            success=True,
+                            score=0.9,
+                            reason="Test name variant",
+                        )
+                    ],
+                    conversational=False,
+                )
+            ],
+            confident_link=None,
+        )
+
+        monkeypatch.setattr(
+            "opentelemetry.util.evaluator.deepeval._instantiate_metrics",
+            lambda specs, test_case, model: ([object()], []),
+        )
+        monkeypatch.setattr(
+            "opentelemetry.util.evaluator.deepeval._run_deepeval",
+            lambda case, metrics: fake_result,
+        )
+
+        results = evaluator.evaluate(invocation)
+        assert len(results) == 1
+        res = results[0]
+        assert res.metric_name == name_variant
+        # Verify inversion works for all name variants
+        assert res.score == pytest.approx(0.1, rel=1e-6), (
+            f"Name variant '{name_variant}' should invert GEval score 0.9 to final score 0.1"
+        )
+        assert res.attributes[
+            "deepeval.hallucination.geval_score"
+        ] == pytest.approx(0.9, rel=1e-6)

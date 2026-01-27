@@ -52,6 +52,26 @@ returned by Deepeval. Metrics that cannot run because required inputs are missin
 ``label="skipped"`` and carry a ``deepeval.error`` attribute so you can wire the
 necessary data or disable that metric explicitly.
 
+GEval Metric Scoring
+--------------------
+
+The GEval-based metrics use specific scoring conventions:
+
+**Hallucination Metric:**
+
+* Score range: 0.0 to 1.0 (lower is better)
+* 0.0 = No hallucination (output fully grounded in input)
+* 1.0 = Maximum hallucination (fabrications or contradictions)
+* Attribute ``deepeval.hallucination.geval_score`` contains the original GEval score (inverted internally)
+
+**Sentiment Metric:**
+
+* Score range: 0.0 to 1.0
+* 0.0-0.35 = Negative sentiment
+* 0.35-0.65 = Neutral sentiment  
+* 0.65-1.0 = Positive sentiment
+* Attribute ``deepeval.sentiment.compound`` provides a -1 to +1 compound score for backward compatibility
+
 Default OpenAI Usage
 --------------------
 
