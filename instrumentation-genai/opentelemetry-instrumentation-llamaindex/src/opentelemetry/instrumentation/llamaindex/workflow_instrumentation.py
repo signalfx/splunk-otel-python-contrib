@@ -23,10 +23,12 @@ class WorkflowEventInstrumentor:
     def __init__(self, handler: TelemetryHandler):
         self._handler = handler
         self._active_tools = {}  # tool_id -> ToolCall
-        self._root_agent = None  # The agent being tracked by this instrumentor instance
+        self._current_agent = (
+            None  # The agent being tracked by this instrumentor instance
+        )
 
     async def instrument_workflow_handler(
-        self, workflow_handler, initial_message: str, root_agent: AgentInvocation
+        self, workflow_handler, initial_message: str, current_agent: AgentInvocation
     ):
         """
         Instrument a WorkflowHandler by streaming its events and creating telemetry spans.
@@ -34,15 +36,15 @@ class WorkflowEventInstrumentor:
         Args:
             workflow_handler: The WorkflowHandler returned by agent.run()
             initial_message: The user's initial message to the agent
-            root_agent: The AgentInvocation span for the agent being tracked.
-                       Tool calls will be associated with this agent as their parent.
+            current_agent: The AgentInvocation span for the agent being tracked.
+                          Tool calls will be associated with this agent as their parent.
         """
         from llama_index.core.agent.workflow.workflow_events import (
             ToolCall as WorkflowToolCall,
             ToolCallResult,
         )
 
-        self._root_agent = root_agent
+        self._current_agent = current_agent
 
         try:
             async for event in workflow_handler.stream_events():
@@ -59,12 +61,15 @@ class WorkflowEventInstrumentor:
                     # Associate tool call with the agent being tracked by this instrumentor.
                     # In multi-agent scenarios, this ensures each tool call is correctly
                     # linked to its owning agent's span.
-                    if self._root_agent:
-                        tool_call.agent_name = self._root_agent.agent_name
-                        tool_call.agent_id = str(self._root_agent.run_id)
+                    if self._current_agent:
+                        tool_call.agent_name = self._current_agent.agent_name
+                        tool_call.agent_id = str(self._current_agent.run_id)
                         # Set parent_span explicitly - the agent span is the parent of this tool
-                        if hasattr(self._root_agent, "span") and self._root_agent.span:
-                            tool_call.parent_span = self._root_agent.span
+                        if (
+                            hasattr(self._current_agent, "span")
+                            and self._current_agent.span
+                        ):
+                            tool_call.parent_span = self._current_agent.span
 
                     self._handler.start_tool_call(tool_call)
                     self._active_tools[event.tool_id] = tool_call
@@ -123,7 +128,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
 
     # Create workflow and agent spans to establish proper hierarchy
     root_workflow = None
-    root_agent = None
+    current_agent = None
     if telemetry_handler:
         # Check if we're already inside a workflow span (multi-agent orchestration)
         # by examining the current span's attributes for gen_ai.operation.name=workflow
@@ -164,23 +169,23 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         # Level 2: Create agent invocation (nested inside workflow if one exists)
         # The agent span will automatically become a child of the active span
         # (either our workflow or parent workflow) due to OpenTelemetry's context propagation
-        root_agent = AgentInvocation(
+        current_agent = AgentInvocation(
             name=f"agent.{type(instance).__name__}",
             input_context=str(user_msg),
             attributes={},
         )
-        root_agent.framework = "llamaindex"
-        root_agent.agent_name = type(instance).__name__
+        current_agent.framework = "llamaindex"
+        current_agent.agent_name = type(instance).__name__
 
         # Start the agent span (automatically becomes child of active span)
         # This pushes (agent_name, run_id) onto the _agent_context_stack
         # and stores the span in _span_registry[run_id]
-        telemetry_handler.start_agent(root_agent)
+        telemetry_handler.start_agent(current_agent)
 
     # Call the original run() method to get the workflow handler
     handler = wrapped(*args, **kwargs)
 
-    if telemetry_handler and root_agent:
+    if telemetry_handler and current_agent:
         # Create workflow instrumentor for tool tracking
         instrumentor = WorkflowEventInstrumentor(telemetry_handler)
 
@@ -193,7 +198,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
             def __init__(self, original, workflow_span, agent_span):
                 self._original = original
                 self._root_workflow = workflow_span
-                self._root_agent = agent_span
+                self._current_agent = agent_span
                 self._result = None
 
             def __await__(self):
@@ -201,7 +206,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 async def stream_events():
                     try:
                         await instrumentor.instrument_workflow_handler(
-                            self._original, str(user_msg), self._root_agent
+                            self._original, str(user_msg), self._current_agent
                         )
                     except Exception as e:
                         import logging
@@ -219,7 +224,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 """Actual async implementation."""
                 try:
                     self._result = await self._original
-                    self._root_agent.output_result = str(self._result)
+                    self._current_agent.output_result = str(self._result)
                     if self._root_workflow:  # Only set if we created a workflow span
                         self._root_workflow.final_output = str(self._result)
 
@@ -239,7 +244,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                             pass  # Already logged in stream_events()
 
                     # Stop spans in reverse order: agent first, then workflow (if we created it)
-                    telemetry_handler.stop_agent(self._root_agent)
+                    telemetry_handler.stop_agent(self._current_agent)
                     if self._root_workflow:  # Only stop if we created a workflow span
                         telemetry_handler.stop_workflow(self._root_workflow)
                 except Exception as e:
@@ -247,7 +252,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
 
                     error = Error(message=str(e), type=type(e))
                     # Fail spans in reverse order: agent first, then workflow (if we created it)
-                    telemetry_handler.fail_agent(self._root_agent, error)
+                    telemetry_handler.fail_agent(self._current_agent, error)
                     if self._root_workflow:  # Only fail if we created a workflow span
                         telemetry_handler.fail_workflow(self._root_workflow, error)
                     raise
@@ -257,6 +262,6 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 # Delegate all other attributes to the original handler
                 return getattr(self._original, name)
 
-        handler = InstrumentedHandler(original_handler, root_workflow, root_agent)
+        handler = InstrumentedHandler(original_handler, root_workflow, current_agent)
 
     return handler
