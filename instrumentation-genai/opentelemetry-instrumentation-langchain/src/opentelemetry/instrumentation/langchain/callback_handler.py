@@ -205,6 +205,35 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 agent.model = _safe_str(metadata["model_name"])
             if metadata.get("system"):
                 agent.system = _safe_str(metadata["system"])
+            # Also extract ls_* fields from metadata (LangSmith conventions)
+            ls_agent_type = metadata.get("ls_agent_type")
+            if ls_agent_type and not agent.agent_type:
+                agent.agent_type = _safe_str(ls_agent_type)
+            ls_description = metadata.get("ls_description") or metadata.get("description")
+            if ls_description and not agent.description:
+                agent.description = _safe_str(ls_description)
+            # Extract tools from metadata
+            tools = metadata.get("tools") or metadata.get("ls_tools")
+            if tools and isinstance(tools, list):
+                agent.tools = [_safe_str(t) for t in tools]
+        # Also extract from tags (LangGraph dev server preserves tags but may replace metadata)
+        # Supports tags like: "agent_type:react", "agent_description:...", "agent_tools:tool1,tool2"
+        if attrs and attrs.get("tags"):
+            for tag in attrs["tags"]:
+                if not isinstance(tag, str):
+                    continue
+                if tag.startswith("agent_type:") and len(tag) > 11:
+                    if not agent.agent_type:
+                        agent.agent_type = tag[11:]
+                elif tag.startswith("agent_description:") and len(tag) > 18:
+                    if not agent.description:
+                        agent.description = tag[18:]
+                elif tag.startswith("agent_tools:") and len(tag) > 12:
+                    if not agent.tools:
+                        agent.tools = [t.strip() for t in tag[12:].split(",")]
+                elif tag.startswith("agent:") and len(tag) > 6:
+                    # Override agent name from tag if provided
+                    agent.agent_name = tag[6:]
         self._handler.start_agent(agent)
         return agent
 
@@ -242,6 +271,41 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
                 wf.initial_input = _serialize(inputs)
+                # Note: LangGraph dev server replaces custom metadata with its own,
+                # but merges tags. We detect LangGraph from its metadata keys.
+                if metadata:
+                    # workflow_type enables Agent Flow visualization (e.g., "graph", "sequential")
+                    if metadata.get("workflow_type"):
+                        wf.workflow_type = _safe_str(metadata["workflow_type"])
+                    elif metadata.get("langgraph_version") or metadata.get("graph_id"):
+                        # LangGraph detected from its internal metadata - set type to "graph"
+                        wf.workflow_type = "graph"
+                    # ls_description is LangSmith convention, also check description
+                    desc = metadata.get("ls_description") or metadata.get("description")
+                    if desc:
+                        wf.description = _safe_str(desc)
+                    # framework helps identify the orchestration library
+                    if metadata.get("framework"):
+                        wf.framework = _safe_str(metadata["framework"])
+                    elif metadata.get("langgraph_version"):
+                        # LangGraph detected - set framework
+                        wf.framework = "langgraph"
+                # Fallback: detect framework and description from tags
+                if tags:
+                    if not wf.framework and "langgraph" in tags:
+                        wf.framework = "langgraph"
+                        if not wf.workflow_type:
+                            wf.workflow_type = "graph"
+                    # Support description via tag: "description:My workflow description"
+                    if not wf.description:
+                        for tag in tags:
+                            if isinstance(tag, str) and tag.startswith("description:"):
+                                wf.description = tag[len("description:") :]
+                                break
+                # Generate description from graph_id if still not set
+                if not wf.description and metadata and metadata.get("graph_id"):
+                    graph_id = _safe_str(metadata["graph_id"])
+                    wf.description = f"LangGraph workflow: {graph_id}"
                 self._handler.start_workflow(wf)
             return
         else:

@@ -410,3 +410,109 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
+
+
+# =============================================================================
+# PR #5: LangGraph Workflow Detection + Agent Tag Parsing Tests
+# =============================================================================
+
+
+def test_langgraph_workflow_auto_detection_from_metadata(handler_with_stub):
+    """Test auto-detection of LangGraph from internal metadata keys."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "CompiledGraph"},
+        inputs={"input": "test"},
+        run_id=run_id,
+        metadata={
+            "langgraph_version": "0.2.50",
+            "graph_id": "my_graph",
+        },
+    )
+
+    # Should create a workflow (not agent - no "agent" tag)
+    assert stub.started_workflows, "Workflow should be created for LangGraph"
+    wf = stub.started_workflows[-1]
+    assert wf.workflow_type == "graph"
+    assert wf.framework == "langgraph"
+
+
+def test_agent_tag_parsing_name(handler_with_stub):
+    """Test agent name parsed from agent:name tag."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=run_id,
+        tags=[
+            "agent",
+            "agent:healthcare_agent",
+        ],
+    )
+
+    assert stub.started_agents, "Agent should be started"
+    agent = stub.started_agents[-1]
+    assert agent.agent_name == "healthcare_agent"
+
+
+def test_agent_tag_parsing_type_and_description(handler_with_stub):
+    """Test agent_type and agent_description parsed from tags."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=run_id,
+        tags=[
+            "agent",
+            "agent:my_agent",
+            "agent_type:react",
+            "agent_description:Healthcare agent for member inquiries",
+        ],
+    )
+
+    agent = stub.started_agents[-1]
+    assert agent.agent_type == "react"
+    assert agent.description == "Healthcare agent for member inquiries"
+
+
+def test_agent_tag_parsing_tools(handler_with_stub):
+    """Test agent_tools parsed from comma-separated tag."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=run_id,
+        tags=[
+            "agent",
+            "agent:my_agent",
+            "agent_tools:query_member_data,search_knowledge",
+        ],
+    )
+
+    agent = stub.started_agents[-1]
+    assert agent.tools == ["query_member_data", "search_knowledge"]
+
+
+def test_description_tag_for_workflow(handler_with_stub):
+    """Test description:* tag for workflows."""
+    handler, stub = handler_with_stub
+
+    run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "CompiledGraph"},
+        inputs={},
+        run_id=run_id,
+        tags=["langgraph", "description:My custom workflow description"],
+        metadata={"graph_id": "test_graph"},
+    )
+
+    wf = stub.started_workflows[-1]
+    assert wf.description == "My custom workflow description"
