@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#106](https://github.com/signalfx/splunk-otel-python-contrib/pull/106))
 - Migrate embeddings to genai-util TelemetryHandler.
   ([#114](https://github.com/signalfx/splunk-otel-python-contrib/pull/114))
-- Add tool call spans.
+- Update tool call handling.
   ([#135](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
 - Add suppression key handling.
   ([#155](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
