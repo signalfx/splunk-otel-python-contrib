@@ -48,7 +48,7 @@ def main():
         result = llm.invoke(messages).content
         print(f"Call {i}: {question}")
         print(f"Answer: {result}\n")
-    
+
     # Estimate expected evaluation count from evaluator config
     eval_spec = os.getenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "")
     metrics_count = 0
@@ -60,9 +60,7 @@ def main():
 
     # Wait for background evaluations to complete based on rate limit settings
     rps_raw = os.getenv("OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS", "1")
-    burst_raw = os.getenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST", "4"
-    )
+    burst_raw = os.getenv("OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST", "4")
     try:
         rps = float(rps_raw)
     except ValueError:
