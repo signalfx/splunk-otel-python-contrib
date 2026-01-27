@@ -200,7 +200,7 @@ def run_travel_planner(
         name="travel_multi_agent_planner",
         workflow_type="graph",
         description="Multi-agent travel planner workflow",
-        initial_input=user_request,
+        input_messages=[InputMessage(role="user", parts=[Text(content=user_request)])],
     )
     if not handler:
         handler = get_telemetry_handler()
@@ -261,9 +261,11 @@ def run_travel_planner(
         print("\n🎉 Final itinerary\n" + "-" * 40)
         print(final_plan)
 
-    # Set final_output and stop the internally-created workflow (no extra attributes added).
+    # Set output_messages and stop the internally-created workflow (no extra attributes added).
     if final_plan:
-        workflow.final_output = final_plan
+        workflow.output_messages = [
+            OutputMessage(role="assistant", parts=[Text(content=final_plan)])
+        ]
     handler.stop_workflow(workflow)
 
     return {
@@ -559,7 +561,11 @@ def coordinator_node(state: PlannerState) -> PlannerState:
             "You are the lead travel coordinator. Extract key details from the user's request, "
             "outline required specialist agents (flight, hotel, activities, synthesis) and provide planning guidance."
         ),
-        input_context=state.get("user_request"),
+        input_messages=[
+            InputMessage(
+                role="user", parts=[Text(content=state.get("user_request", ""))]
+            )
+        ],
     )
     handler.start_agent(agent)
 
@@ -591,7 +597,9 @@ def coordinator_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(response, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent.output_result = response_text
+    agent.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=response_text)])
+    ]
     state["messages"].append(cast(AnyMessage, response))
     state["current_agent"] = "flight_specialist"
     handler.stop_agent(agent)
@@ -660,7 +668,9 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_result = summary
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=summary)])
+    ]
     state["messages"].append(
         cast(
             AnyMessage,
@@ -670,8 +680,6 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "hotel_specialist"
-    # Attach agent output messages
-    # No direct output messages attribute assignment; output_result contains summary
 
     handler.stop_agent(agent_invocation)
     return state
@@ -739,7 +747,9 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_result = summary
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=summary)])
+    ]
     state["messages"].append(
         cast(
             AnyMessage,
@@ -749,7 +759,6 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "activity_specialist"
-    # No direct output messages attribute assignment; output_result contains summary
     handler.stop_agent(agent_invocation)
     return state
 
@@ -816,7 +825,9 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(final_message, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_result = summary
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=summary)])
+    ]
     state["messages"].append(
         cast(
             AnyMessage,
@@ -826,7 +837,6 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
         )
     )
     state["current_agent"] = "plan_synthesizer"
-    # No direct output messages attribute assignment; output_result contains summary
     handler.stop_agent(agent_invocation)
     return state
 
@@ -896,8 +906,9 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
     _apply_llm_response_metadata(response, llm_invocation)
     handler.stop_llm(llm_invocation)
 
-    agent_invocation.output_result = response_text
-    # No direct output messages attribute assignment; output_result contains summary
+    agent_invocation.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=response_text)])
+    ]
     handler.stop_agent(agent_invocation)
     return state
 

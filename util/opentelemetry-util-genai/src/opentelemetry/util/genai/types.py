@@ -265,7 +265,9 @@ class InputMessage:
 class OutputMessage:
     role: str
     parts: list[MessagePart]
-    finish_reason: Union[str, FinishReason]
+    finish_reason: Optional[Union[str, FinishReason]] = (
+        None  # Only for LLM responses
+    )
 
 
 @dataclass
@@ -497,8 +499,8 @@ class Workflow(GenAI):
         workflow_type: Type of orchestration (e.g., "sequential", "parallel", "graph", "dynamic")
         description: Human-readable description of the workflow's purpose
         framework: Framework implementing the workflow (e.g., "langgraph", "crewai", "autogen")
-        initial_input: User's initial query/request that triggered the workflow
-        final_output: Final response/result produced by the workflow
+        input_messages: Structured input messages for the workflow
+        output_messages: Structured output messages from the workflow
         attributes: Additional custom attributes for workflow-specific metadata
         start_time: Timestamp when workflow started
         end_time: Timestamp when workflow completed
@@ -511,8 +513,12 @@ class Workflow(GenAI):
     name: str
     workflow_type: Optional[str] = None  # sequential, parallel, graph, dynamic
     description: Optional[str] = None
-    initial_input: Optional[str] = None  # User's initial query/request
-    final_output: Optional[str] = None  # Final response/result
+    input_messages: List[InputMessage] = field(
+        default_factory=_new_input_messages
+    )
+    output_messages: List[OutputMessage] = field(
+        default_factory=_new_output_messages
+    )
 
 
 @dataclass
@@ -544,7 +550,9 @@ class AgentCreation(_BaseAgent):
         default="create_agent",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    input_context: Optional[str] = None  # optional initial context
+    input_messages: List[InputMessage] = field(
+        default_factory=_new_input_messages
+    )
 
 
 @dataclass
@@ -556,8 +564,12 @@ class AgentInvocation(_BaseAgent):
         default="invoke_agent",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    input_context: Optional[str] = None  # Input for invoke operations
-    output_result: Optional[str] = None  # Output for invoke operations
+    input_messages: List[InputMessage] = field(
+        default_factory=_new_input_messages
+    )
+    output_messages: List[OutputMessage] = field(
+        default_factory=_new_output_messages
+    )
 
 
 @dataclass
@@ -580,8 +592,6 @@ class Step(GenAI):
     assigned_agent: Optional[str] = None  # for workflow-assigned steps
     status: Optional[str] = None  # pending, in_progress, completed, failed
     description: Optional[str] = None
-    input_data: Optional[str] = None  # Input data/context for the step
-    output_data: Optional[str] = None  # Output data/result from the step
 
 
 __all__ = [
