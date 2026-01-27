@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#4017](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4017))
 - Add support for chat completions choice count and stop sequences span attributes
   ([#4028](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4028))
+- Migrate chat completions to genai-util TelemetryHandler.
+  ([#106](https://github.com/signalfx/splunk-otel-python-contrib/pull/106))
+- Migrate embeddings to genai-util TelemetryHandler.
+  ([#114](https://github.com/signalfx/splunk-otel-python-contrib/pull/114))
+- Add tool call spans.
+  ([#135](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
+- Add suppression key handling.
+  ([#155](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
+- Move events/logs and metrics to handler-based emitters.
+  ([#158](https://github.com/signalfx/splunk-otel-python-contrib/pull/158))
 
 ## Version 2.2b0 (2025-11-25)
 
