@@ -40,14 +40,55 @@ class WorkflowEventInstrumentor:
                           Tool calls will be associated with this agent as their parent.
         """
         from llama_index.core.agent.workflow.workflow_events import (
+            AgentInput,
+            AgentOutput,
             ToolCall as WorkflowToolCall,
             ToolCallResult,
         )
 
         self._current_agent = current_agent
+        self._active_agents = {}
+        self._current_agent_name = None
 
         try:
             async for event in workflow_handler.stream_events():
+                if isinstance(event, AgentInput):
+                    if (
+                        self._current_agent
+                        and self._current_agent.agent_name == "AgentWorkflow"
+                    ):
+                        agent_name = event.current_agent_name
+                        self._current_agent_name = agent_name
+                        agent_invocation = AgentInvocation(
+                            name=f"agent.{agent_name}",
+                            input_context=str(event.input[-1].content)
+                            if event.input
+                            else "",
+                            attributes={},
+                        )
+                        agent_invocation.framework = "llamaindex"
+                        agent_invocation.agent_name = agent_name
+                        if (
+                            hasattr(self._current_agent, "span")
+                            and self._current_agent.span
+                        ):
+                            agent_invocation.parent_span = self._current_agent.span
+                        self._handler.start_agent(agent_invocation)
+                        self._active_agents[agent_name] = agent_invocation
+
+                elif isinstance(event, AgentOutput):
+                    if (
+                        self._current_agent
+                        and self._current_agent.agent_name == "AgentWorkflow"
+                    ):
+                        agent_name = event.current_agent_name
+                        self._current_agent_name = agent_name
+                        agent_invocation = self._active_agents.get(agent_name)
+                        if agent_invocation:
+                            agent_invocation.output_result = str(event.response.content)
+                            self._handler.stop_agent(agent_invocation)
+                            del self._active_agents[agent_name]
+
                 # Tool call start
                 if isinstance(event, WorkflowToolCall):
                     tool_call = ToolCall(
@@ -58,13 +99,17 @@ class WorkflowEventInstrumentor:
                     )
                     tool_call.framework = "llamaindex"
 
-                    # Associate tool call with the agent being tracked by this instrumentor.
-                    # In multi-agent scenarios, this ensures each tool call is correctly
-                    # linked to its owning agent's span.
-                    if self._current_agent:
+                    active_agent = None
+                    if self._current_agent_name:
+                        active_agent = self._active_agents.get(self._current_agent_name)
+                    if active_agent:
+                        tool_call.agent_name = active_agent.agent_name
+                        tool_call.agent_id = str(active_agent.run_id)
+                        if hasattr(active_agent, "span") and active_agent.span:
+                            tool_call.parent_span = active_agent.span
+                    elif self._current_agent:
                         tool_call.agent_name = self._current_agent.agent_name
                         tool_call.agent_id = str(self._current_agent.run_id)
-                        # Set parent_span explicitly - the agent span is the parent of this tool
                         if (
                             hasattr(self._current_agent, "span")
                             and self._current_agent.span
