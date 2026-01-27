@@ -631,6 +631,15 @@ class SpanEmitter(EmitterMeta):
             span, agent.semantic_convention_attributes()
         )
 
+        # Apply supplemental attributes (e.g., workflow_name)
+        supplemental = getattr(agent, "attributes", None)
+        if supplemental:
+            semconv_subset = filter_semconv_gen_ai_attributes(
+                supplemental, extras=_SPAN_ALLOWED_SUPPLEMENTAL_KEYS
+            )
+            if semconv_subset:
+                _apply_gen_ai_semconv_attributes(span, semconv_subset)
+
     def _finish_agent(self, agent: AgentCreation | AgentInvocation) -> None:
         """Finish an agent span."""
         span = agent.span

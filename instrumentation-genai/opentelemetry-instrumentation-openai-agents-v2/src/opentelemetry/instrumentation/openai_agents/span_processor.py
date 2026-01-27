@@ -1937,11 +1937,6 @@ class GenAISemanticProcessor(TracingProcessor):
         key = str(trace.trace_id)
         self._fail_invocation(key, error)
 
-        # Clean up workflow state
-        self._workflow = None
-        self._workflow_first_input = None
-        self._workflow_last_output = None
-
     def shutdown(self) -> None:
         """Clean up resources on shutdown."""
         # Stop any active workflow first (if not already stopped by on_trace_end)
@@ -1954,23 +1949,9 @@ class GenAISemanticProcessor(TracingProcessor):
                 self._workflow.final_output = self._format_output_message(
                     self._workflow_last_output
                 )
-            self._handler.stop_workflow(self._workflow)
             self._workflow = None
             self._workflow_first_input = None
             self._workflow_last_output = None
-
-        # Stop any remaining invocations using unified tracking
-        for state in self._invocations.values():
-            try:
-                invocation = state.invocation
-                if isinstance(invocation, AgentInvocation):
-                    self._handler.stop_agent(invocation)
-                elif isinstance(invocation, LLMInvocation):
-                    self._handler.stop_llm(invocation)
-                elif isinstance(invocation, ToolCall):
-                    self._handler.stop_tool_call(invocation)
-            except Exception:
-                pass
 
         self._invocations.clear()
 

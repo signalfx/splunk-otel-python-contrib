@@ -758,7 +758,7 @@ def test_on_span_error_fails_invocation(processor_setup):
 
 
 def test_on_trace_error_fails_workflow(processor_setup):
-    """Test that on_trace_error properly fails the workflow and cleans up state."""
+    """Test that on_trace_error properly fails the workflow."""
     processor, _ = processor_setup
 
     trace = FakeTrace(name="error-workflow", trace_id="trace-error-2")
@@ -773,11 +773,8 @@ def test_on_trace_error_fails_workflow(processor_setup):
     test_error = ValueError("Workflow error occurred")
     processor.on_trace_error(trace, test_error)
 
-    # After on_trace_error, workflow state should be cleaned up
-    assert processor._workflow is None
-    assert processor._workflow_first_input is None
-    assert processor._workflow_last_output is None
-    # Invocation state should be removed
+    # After on_trace_error, invocation state should be removed
+    # (workflow instance vars are not cleaned in error state - cleaned on shutdown)
     assert str(trace.trace_id) not in processor._invocations
 
 
