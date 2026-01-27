@@ -906,31 +906,9 @@ def _step_to_log_record(
     if step.status:
         attributes["gen_ai.step.status"] = step.status
 
-    # Body contains messages/content only (following semantic conventions pattern)
-    # If capture_content is disabled, emit empty content (like LLM messages do)
+    # Body is empty for steps - they no longer capture input/output data
+    # (input/output is captured at the agent level instead)
     body: Dict[str, Any] = {}
-
-    # Prefer structured input_messages over legacy input_data
-    if step.input_messages:
-        body[GenAI.GEN_AI_INPUT_MESSAGES] = _messages_to_log_format(
-            step.input_messages, capture_content
-        )
-    elif step.input_data:
-        if capture_content:
-            body["input_data"] = step.input_data
-        else:
-            body["input_data"] = ""
-
-    # Prefer structured output_messages over legacy output_data
-    if step.output_messages:
-        body[GenAI.GEN_AI_OUTPUT_MESSAGES] = _messages_to_log_format(
-            step.output_messages, capture_content
-        )
-    elif step.output_data:
-        if capture_content:
-            body["output_data"] = step.output_data
-        else:
-            body["output_data"] = ""
 
     record = SDKLogRecord(
         body=body or None,
