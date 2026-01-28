@@ -40,6 +40,74 @@ def _get_attr(obj: Any, key: str, default: Any = None) -> Any:
         return getattr(obj, key, default)
 
 
+def _make_input_messages(messages: List[Any]) -> List[InputMessage]:
+    input_messages: List[InputMessage] = []
+
+    for msg in messages:
+        # Handle ChatMessage objects (has .content property and .role attribute)
+        if hasattr(msg, "content") and hasattr(msg, "role"):
+            # Extract content - this is a property that pulls from blocks[0].text
+            content = _safe_str(msg.content)
+            if content:
+                # Extract role - could be MessageRole enum
+                role_value = _safe_str(
+                    msg.role.value if hasattr(msg.role, "value") else msg.role
+                )
+                input_messages.append(
+                    InputMessage(role=role_value, parts=[Text(content=content)])
+                )
+        elif isinstance(msg, dict):
+            # Handle serialized messages (dict format)
+            role = msg.get("role", "user")
+            # Try to extract from blocks first (LlamaIndex format)
+            blocks = msg.get("blocks", [])
+            if blocks and isinstance(blocks[0], dict):
+                content = blocks[0].get("text", "")
+            else:
+                # Fallback to direct content field
+                content = msg.get("content", "")
+
+            if content:
+                role_value = _safe_str(role.value if hasattr(role, "value") else role)
+                input_messages.append(
+                    InputMessage(
+                        role=role_value,
+                        parts=[Text(content=_safe_str(content))],
+                    )
+                )
+
+    return input_messages
+
+
+def _make_output_message(response: Any) -> list[OutputMessage]:
+    if not response:
+        return []
+
+    # Get message - works for both dict and object
+    message = _get_attr(response, "message")
+    if not message:
+        return []
+
+    # Try to extract from blocks first (LlamaIndex format)
+    blocks = _get_attr(message, "blocks", [])
+    if blocks and len(blocks) > 0:
+        content = _get_attr(blocks[0], "text", "")
+    else:
+        # Fallback to direct content field
+        content = _get_attr(message, "content", "")
+
+    if content:
+        return [
+            OutputMessage(
+                role="assistant",
+                parts=[Text(content=_safe_str(content))],
+                finish_reason="stop",
+            )
+        ]
+
+    return []
+
+
 class LlamaindexCallbackHandler(BaseCallbackHandler):
     """LlamaIndex callback handler supporting LLM and Embedding instrumentation."""
 
@@ -150,45 +218,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         stop = serialized.get("stop")
         seed = serialized.get("seed")
 
-        # Extract messages from payload
-        # LlamaIndex messages are ChatMessage objects with .content and .role properties
+        # Extract messages from payload using helper function
         messages = payload.get("messages", [])
-        input_messages = []
-
-        for msg in messages:
-            # Handle ChatMessage objects (has .content property and .role attribute)
-            if hasattr(msg, "content") and hasattr(msg, "role"):
-                # Extract content - this is a property that pulls from blocks[0].text
-                content = _safe_str(msg.content)
-                if content:
-                    # Extract role - could be MessageRole enum
-                    role_value = _safe_str(
-                        msg.role.value if hasattr(msg.role, "value") else msg.role
-                    )
-                    input_messages.append(
-                        InputMessage(role=role_value, parts=[Text(content=content)])
-                    )
-            elif isinstance(msg, dict):
-                # Handle serialized messages (dict format)
-                role = msg.get("role", "user")
-                # Try to extract from blocks first (LlamaIndex format)
-                blocks = msg.get("blocks", [])
-                if blocks and isinstance(blocks[0], dict):
-                    content = blocks[0].get("text", "")
-                else:
-                    # Fallback to direct content field
-                    content = msg.get("content", "")
-
-                if content:
-                    role_value = _safe_str(
-                        role.value if hasattr(role, "value") else role
-                    )
-                    input_messages.append(
-                        InputMessage(
-                            role=role_value,
-                            parts=[Text(_safe_str(content))],
-                        )
-                    )
+        input_messages = _make_input_messages(messages)
 
         # Create LLM invocation with all available parameters
         llm_inv = LLMInvocation(
@@ -239,30 +271,13 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
             # Handle both dict and object types for response
             if response:
-                # Get message and raw_response - works for both dict and object
-                message = _get_attr(response, "message")
+                # Extract output messages using helper function
+                output_messages = _make_output_message(response)
+                if output_messages:
+                    llm_inv.output_messages = output_messages
+
+                # Get raw_response for token usage
                 raw_response = _get_attr(response, "raw")
-
-                # Extract content from message
-                if message:
-                    # Try to extract from blocks first (LlamaIndex format)
-                    blocks = _get_attr(message, "blocks", [])
-                    if blocks and len(blocks) > 0:
-                        content = _get_attr(blocks[0], "text", "")
-                    else:
-                        # Fallback to direct content field
-                        content = _get_attr(message, "content", "")
-
-                    # Create output message only if content exists
-                    if content:
-                        llm_inv.output_messages = [
-                            OutputMessage(
-                                role="assistant",
-                                parts=[Text(content=_safe_str(content))],
-                                finish_reason="stop",
-                            )
-                        ]
-
                 # Extract token usage from raw_response
                 if raw_response:
                     usage = _get_attr(raw_response, "usage")
