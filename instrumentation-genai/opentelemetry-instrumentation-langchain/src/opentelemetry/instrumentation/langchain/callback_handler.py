@@ -11,7 +11,7 @@ from typing import Any, Optional, List
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import HumanMessage, BaseMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, BaseMessage, AIMessage
 from langchain_core.outputs import LLMResult
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
