@@ -29,6 +29,7 @@ from ..types import (
     ToolCall,
     Workflow,
 )
+from .admission_controller import EvaluationAdmissionController
 from .base import Evaluator
 from .env import (
     read_aggregation_flag,
@@ -113,6 +114,7 @@ class Manager(CompletionCallback):
             else read_aggregation_flag()
         )
         self._error_tracker = ErrorTracker()
+        self._admission = EvaluationAdmissionController()
         self._plans = self._load_plans()
         self._evaluators = self._instantiate_evaluators(self._plans)
 
@@ -321,7 +323,13 @@ class Manager(CompletionCallback):
 
     def evaluate_now(self, invocation: GenAI) -> list[EvaluationResult]:
         """Synchronously evaluate an invocation."""
-
+        allowed, reason = self._admission.allow()
+        if not allowed:
+            _LOGGER.error(
+                "Evaluation rate limited (%s), dropping invocation.",
+                reason,
+            )
+            return []
         buckets = self._evaluate_invocation(invocation)
         flattened = self._publish_results(invocation, buckets)
         self._flag_invocation(invocation)
@@ -349,33 +357,42 @@ class Manager(CompletionCallback):
             except queue.Empty:
                 continue
             try:
-                self._process_invocation(invocation)
-            except Exception as exc:  # pragma: no cover - defensive
-                invocation_id = getattr(
-                    invocation, "span_id", None
-                ) or getattr(invocation, "trace_id", None)
-                _LOGGER.error(
-                    "Evaluator processing failed",
-                    extra={
-                        "error_type": "processing_error",
-                        "component": "worker",
-                        "worker_name": worker_name,
-                        "invocation_type": type(invocation).__name__,
-                        "invocation_id": invocation_id,
-                        "exception_type": type(exc).__name__,
-                    },
-                    exc_info=True,
-                )
-                self._error_tracker.record_error(
-                    error_type="processing_error",
-                    component="worker",
-                    message="Failed to process invocation",
-                    invocation_id=invocation_id,
-                    exception=exc,
-                    recovery_action="invocation_skipped",
-                    operational_impact="No evaluation results for this invocation",
-                    worker_name=worker_name,
-                )
+                # Apply rate limiting on processing side
+                allowed, reason = self._admission.allow()
+                if not allowed:
+                    _LOGGER.error(
+                        "Evaluation rate limited (%s), dropping invocation.",
+                        reason,
+                    )
+                else:
+                    try:
+                        self._process_invocation(invocation)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        invocation_id = getattr(
+                            invocation, "span_id", None
+                        ) or getattr(invocation, "trace_id", None)
+                        _LOGGER.error(
+                            "Evaluator processing failed",
+                            extra={
+                                "error_type": "processing_error",
+                                "component": "worker",
+                                "worker_name": worker_name,
+                                "invocation_type": type(invocation).__name__,
+                                "invocation_id": invocation_id,
+                                "exception_type": type(exc).__name__,
+                            },
+                            exc_info=True,
+                        )
+                        self._error_tracker.record_error(
+                            error_type="processing_error",
+                            component="worker",
+                            message="Failed to process invocation",
+                            invocation_id=invocation_id,
+                            exception=exc,
+                            recovery_action="invocation_skipped",
+                            operational_impact="No evaluation results for this invocation",
+                            worker_name=worker_name,
+                        )
             finally:
                 self._queue.task_done()
 
@@ -419,10 +436,19 @@ class Manager(CompletionCallback):
                 except queue.Empty:
                     continue
                 try:
-                    # Run async processing in event loop
-                    loop.run_until_complete(
-                        self._process_invocation_async(invocation)
+                    # Apply rate limiting on processing side
+                    allowed, reason = loop.run_until_complete(
+                        self._admission.allow_async()
                     )
+                    if not allowed:
+                        _LOGGER.error(
+                            "Evaluation rate limited (%s), dropping invocation.",
+                            reason,
+                        )
+                    else:
+                        loop.run_until_complete(
+                            self._process_invocation_async(invocation)
+                        )
                 except Exception as exc:  # pragma: no cover - defensive
                     invocation_id = getattr(
                         invocation, "span_id", None

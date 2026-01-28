@@ -1,0 +1,7 @@
+langchain>=1.0.0
+langchain-openai>=1.0.0
+langgraph>=1.0.0
+python-dotenv>=1.0.0
+deepeval
+opentelemetry-distro
+opentelemetry-exporter-otlp
