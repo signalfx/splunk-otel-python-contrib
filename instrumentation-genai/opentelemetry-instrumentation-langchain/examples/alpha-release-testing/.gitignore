@@ -1,0 +1,4 @@
+config/.env
+*.env
+reports/
+docs/
