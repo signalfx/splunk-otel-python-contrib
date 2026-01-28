@@ -46,20 +46,35 @@ def _serialize(obj: Any) -> Optional[str]:
         return None
 
 
-def _make_input_message(data: Any) -> list[InputMessage]:
+def _make_input_message(messages: dict[str, Any]) -> list[InputMessage]:
     """Create structured input message with full data as JSON."""
-    content = _serialize(data)
-    if content is None:
+    input_messages: list[InputMessage] = []
+    if messages is None:
         return []
-    return [InputMessage(role="user", parts=[Text(content=content)])]
+    for key, value in messages.items():
+        if value:
+            if key == "description" or key == "expected_output" or key == "inquiry":
+                input_message = InputMessage(
+                    role="user", parts=[Text(_safe_str(value))]
+                )
+                input_messages.append(input_message)
+
+    return input_messages
 
 
-def _make_output_message(data: Any) -> list[OutputMessage]:
+def _make_output_message(result: Any) -> list[OutputMessage]:
     """Create structured output message with full data as JSON."""
-    content = _serialize(data)
-    if content is None:
-        return []
-    return [OutputMessage(role="assistant", parts=[Text(content=content)])]
+    output_messages: list[OutputMessage] = []
+    output_message = OutputMessage(role="assistant", parts=[Text(_safe_str(result))])
+    output_messages.append(output_message)
+    return output_messages
+
+
+def _safe_str(value: Any) -> str:
+    try:
+        return str(value)
+    except (TypeError, ValueError):
+        return "<unrepr>"
 
 
 class CrewAIInstrumentor(BaseInstrumentor):
@@ -236,8 +251,15 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
         task = kwargs.get("task")
         if task is None and args:
             task = args[0]
-        if task is not None and hasattr(task, "description"):
-            agent_invocation.input_messages = _make_input_message(task.description)
+        if task is not None:
+            messages: dict[str, Any] = {}
+            description = getattr(task, "description", None)
+            if description:
+                messages["description"] = description
+            expected_output = getattr(task, "expected_output", None)
+            if expected_output:
+                messages["expected_output"] = expected_output
+            agent_invocation.input_messages = _make_input_message(messages)
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)
