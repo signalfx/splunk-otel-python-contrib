@@ -253,7 +253,7 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE = (
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE
 
-Enable evaluation rate limiting. Set to 'true' to enable. Default: 'false' (disabled).
+Enable evaluation rate limiting. Set to 'false' to disable. Default: 'true' (enabled).
 """
 
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS = (
@@ -263,7 +263,8 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS = (
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS
 
 Per-process rate limit for evaluation queue admission (invocations per second).
-Set to 0 or negative to disable rate limiting. Default: 0 (disabled).
+
+Integer value. Set to 0 or negative to disable. Default: 0 (disabled).
 """
 
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
