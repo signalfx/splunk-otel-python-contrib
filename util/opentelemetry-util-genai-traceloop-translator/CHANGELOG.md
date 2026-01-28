@@ -7,6 +7,8 @@ All notable changes to this repository are documented in this file.
 ### Changed
 - Updated to use structured `input_messages`/`output_messages` fields for AgentCreation and AgentInvocation types
 - Aligned with `opentelemetry-util-genai` v0.1.8 structured message format
+- Removed redundant legacy string attribute population in favor of structured messages
+- Legacy span attributes are now wrapped in `InputMessage`/`OutputMessage` for backward compatibility
 
 ## Version 0.1.6 - 2026-01-24
 - Fixed issue with missing Agent evaluations in Traceloop Translator.
