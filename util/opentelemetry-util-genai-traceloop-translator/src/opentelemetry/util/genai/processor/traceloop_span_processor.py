@@ -1726,22 +1726,9 @@ class TraceloopSpanProcessor(SpanProcessor):
             invocation.system_instructions = (
                 base_attrs.get("gen_ai.system.instructions") or None
             )
-            # Extract input from reconstructed messages or build from attributes
+            # Extract input from reconstructed messages
             if input_messages:
                 invocation.input_messages = input_messages
-            elif not invocation.input_messages:
-                # Try to extract from attributes and wrap in InputMessage
-                legacy_input = (
-                    base_attrs.get("input_context")
-                    or base_attrs.get("input")
-                    or base_attrs.get("initial_input")
-                )
-                if legacy_input:
-                    invocation.input_messages = [
-                        InputMessage(
-                            role="user", parts=[Text(content=legacy_input)]
-                        )
-                    ]
             return invocation
 
         elif operation_name == "invoke_agent":
@@ -1770,57 +1757,11 @@ class TraceloopSpanProcessor(SpanProcessor):
                 base_attrs.get("gen_ai.system.instructions") or None
             )
 
-            # Extract input from reconstructed messages or build from attributes
+            # Extract input/output from reconstructed messages
             if input_messages:
                 invocation.input_messages = input_messages
-            elif not invocation.input_messages:
-                # Try to extract from attributes and wrap in InputMessage
-                legacy_input = (
-                    base_attrs.get("input_context")
-                    or base_attrs.get("input")
-                    or base_attrs.get("initial_input")
-                    or base_attrs.get("prompt")
-                    or base_attrs.get("query")
-                )
-                # Fallback: use original untransformed data (e.g. traceloop.entity.input)
-                # This is critical when attributes were stripped and message reconstruction failed (no langchain)
-                if not legacy_input and original_input_data:
-                    if isinstance(original_input_data, (dict, list)):
-                        legacy_input = json.dumps(original_input_data)
-                    else:
-                        legacy_input = str(original_input_data)
-                if legacy_input:
-                    invocation.input_messages = [
-                        InputMessage(
-                            role="user", parts=[Text(content=legacy_input)]
-                        )
-                    ]
-
-            # Extract output from reconstructed messages or build from attributes
             if output_messages:
                 invocation.output_messages = output_messages
-            elif not invocation.output_messages:
-                # Try to extract from attributes and wrap in OutputMessage
-                legacy_output = (
-                    base_attrs.get("output_result")
-                    or base_attrs.get("output")
-                    or base_attrs.get("final_output")
-                    or base_attrs.get("response")
-                    or base_attrs.get("answer")
-                )
-                # Fallback: use original untransformed data (e.g. traceloop.entity.output)
-                if not legacy_output and original_output_data:
-                    if isinstance(original_output_data, (dict, list)):
-                        legacy_output = json.dumps(original_output_data)
-                    else:
-                        legacy_output = str(original_output_data)
-                if legacy_output:
-                    invocation.output_messages = [
-                        OutputMessage(
-                            role="assistant",
-                            parts=[Text(content=legacy_output)],
-                        )
-                    ]
 
             # Skip if no input/output available for evaluation
             if (
