@@ -210,6 +210,7 @@ async def trace_query(
 
 if __name__ == "__main__":
     port = int(os.environ.get("MCP_PORT", 8081))
-    print(f"[MCP Server] Starting on port {port}", flush=True)
+    host = os.environ.get("MCP_HOST", "0.0.0.0")
+    print(f"[MCP Server] Starting on {host}:{port}", flush=True)
     # Run with SSE transport for HTTP-based MCP
-    mcp.run(transport="sse", port=port)
+    mcp.run(transport="sse", host=host, port=port)

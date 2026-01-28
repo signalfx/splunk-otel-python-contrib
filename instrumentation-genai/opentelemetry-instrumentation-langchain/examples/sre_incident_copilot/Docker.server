@@ -1,0 +1,38 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /repo
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only what we need for dependency installation first (better layer caching).
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt \
+  /repo/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt
+
+RUN pip install --no-cache-dir -r /repo/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt
+
+# Install local packages in editable mode (mirrors local dev venv usage).
+COPY util /repo/util
+COPY instrumentation-genai /repo/instrumentation-genai
+
+RUN pip install --no-cache-dir -e /repo/util/opentelemetry-util-genai \
+  && pip install --no-cache-dir -e /repo/util/opentelemetry-util-genai-evals \
+  && pip install --no-cache-dir -e /repo/util/opentelemetry-util-genai-evals-deepeval \
+  && pip install --no-cache-dir -e /repo/instrumentation-genai/opentelemetry-instrumentation-langchain
+
+# Copy SRE Copilot app last.
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot \
+  /app
+
+RUN mkdir -p /app/data /app/artifacts && chown -R 1000:1000 /app/data /app/artifacts
+
+WORKDIR /app
+
+EXPOSE 8080
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
