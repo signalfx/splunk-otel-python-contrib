@@ -2,6 +2,18 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.7 - 2026-01-28
+
+### Added
+- **Evaluation Rate Limiting** - New `EvaluationAdmissionController` with token bucket rate limiter for controlling evaluation throughput ([PR #143](https://github.com/signalfx/splunk-otel-python-contrib/pull/143))
+  - `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE` - Enable/disable rate limiting (default: true)
+  - `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS` - Requests per second limit (default: 10)
+  - `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST` - Burst capacity (default: 20)
+  - Thread-safe token bucket implementation prevents evaluation queue overload
+
+### Changed
+- **Rate limit RPS type** - Changed `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS` to integer type for consistency
+
 ## Version 0.1.6 - 2026-01-27
 
 - Release 0.1.6 of splunk-otel-util-genai-evals

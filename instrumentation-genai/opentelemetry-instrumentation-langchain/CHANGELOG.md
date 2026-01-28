@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.6 - 2026-01-28
+
+### Added
+- **Rate limiter test example** - New `rate-limiter-test` example demonstrating evaluation rate limiting configuration and behavior ([PR #143](https://github.com/signalfx/splunk-otel-python-contrib/pull/143))
+
 ## Version 0.1.5 - 2026-01-27
 
 ### Changed
