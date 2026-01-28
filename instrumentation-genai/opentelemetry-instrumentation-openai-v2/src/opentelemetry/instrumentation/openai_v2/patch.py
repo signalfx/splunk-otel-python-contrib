@@ -20,6 +20,7 @@ from typing import Any, Iterable, Optional
 
 from openai import Stream
 
+from opentelemetry import context as context_api
 from opentelemetry._logs import Logger, LogRecord
 from opentelemetry.context import get_current
 from opentelemetry.semconv._incubating.attributes import (
@@ -30,6 +31,9 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.trace import Span
 from opentelemetry.trace.propagation import set_span_in_context
+from opentelemetry.util.genai.attributes import (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
 from opentelemetry.util.genai.handler import (
     Error as InvocationError,
 )
@@ -39,6 +43,9 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
+)
+from opentelemetry.util.genai.types import (
+    ToolCall as GenAIToolCall,
 )
 
 from .instruments import Instruments
@@ -199,10 +206,25 @@ def _build_output_messages_from_response(
     for choice in getattr(result, "choices", []) or []:
         message = getattr(choice, "message", None)
         role = getattr(message, "role", None) if message else None
-        parts: list[Text] = []
+        parts: list[Any] = []
         content = getattr(message, "content", None) if message else None
         if content is not None:
-            parts = _to_text_parts(content, capture_content)
+            parts.extend(_to_text_parts(content, capture_content))
+
+        # Include tool calls in output_messages parts
+        tool_calls = None
+        if isinstance(message, dict):
+            tool_calls = message.get("tool_calls")
+        elif message is not None:
+            tool_calls = getattr(message, "tool_calls", None)
+
+        if tool_calls:
+            for tool_call in tool_calls:
+                genai_tool_call, _ = _build_tool_call_invocation(
+                    tool_call, capture_content
+                )
+                parts.append(genai_tool_call)
+
         finish_reason = getattr(choice, "finish_reason", None) or "error"
         output_messages.append(
             OutputMessage(
@@ -245,6 +267,73 @@ def _parse_response(result: Any) -> Any:
     if hasattr(result, "parse"):
         return result.parse()
     return result
+
+
+def _build_tool_call_invocation(
+    tool_call: Any, capture_content: bool
+) -> tuple[GenAIToolCall, str]:
+    """Normalize to genai-util ToolCall and capture tool type."""
+    tool_type = getattr(tool_call, "type", None)
+    function = getattr(tool_call, "function", None)
+    if isinstance(tool_call, dict):
+        tool_type = tool_call.get("type", tool_type)
+        function = tool_call.get("function", function)
+
+    function_name = None
+    arguments = None
+    description = None
+    if isinstance(function, dict):
+        function_name = function.get("name")
+        arguments = function.get("arguments")
+        description = function.get("description")
+    else:
+        function_name = getattr(function, "name", None)
+        arguments = getattr(function, "arguments", None)
+        description = getattr(function, "description", None)
+
+    if not capture_content:
+        arguments = None
+
+    tool_call_id = getattr(tool_call, "id", None)
+    if isinstance(tool_call, dict):
+        tool_call_id = tool_call.get("id", tool_call_id)
+
+    genai_tool_call = GenAIToolCall(
+        name=function_name or "unnamed_tool_call",
+        id=tool_call_id,
+        arguments=arguments,
+        provider=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
+    )
+    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_NAME] = (
+        function_name or ""
+    )
+    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_TYPE] = tool_type
+    if tool_call_id:
+        genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_CALL_ID] = (
+            tool_call_id
+        )
+    if description:
+        genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_DESCRIPTION] = (
+            description
+        )
+
+    return genai_tool_call, tool_type
+
+
+def _tool_call_body(
+    tool_call: GenAIToolCall, tool_type: str, capture_content: bool
+) -> dict[str, Any]:
+    function: dict[str, Any] = {"name": tool_call.name}
+    if capture_content and tool_call.arguments is not None:
+        function["arguments"] = tool_call.arguments
+
+    body: dict[str, Any] = {
+        "type": tool_type,
+        "function": function,
+    }
+    if tool_call.id is not None:
+        body["id"] = tool_call.id
+    return body
 
 
 def _normalize_input_texts(input_val: Any) -> list[str]:
@@ -318,6 +407,10 @@ def chat_completions_create(
     """Wrap the `create` method of the `ChatCompletion` class to trace it."""
 
     def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return wrapped(*args, **kwargs)
+
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
@@ -346,7 +439,7 @@ def chat_completions_create(
 
             if span and span.is_recording():
                 _set_response_attributes(
-                    span, parsed_result, logger, capture_content
+                    span, parsed_result, capture_content, handler
                 )
             for choice in getattr(parsed_result, "choices", []):
                 logger.emit(choice_to_event(choice, capture_content))
@@ -389,6 +482,10 @@ def async_chat_completions_create(
     """Wrap the `create` method of the `AsyncChatCompletion` class to trace it."""
 
     async def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return await wrapped(*args, **kwargs)
+
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
@@ -417,7 +514,7 @@ def async_chat_completions_create(
 
             if span and span.is_recording():
                 _set_response_attributes(
-                    span, parsed_result, logger, capture_content
+                    span, parsed_result, capture_content, handler
                 )
             for choice in getattr(parsed_result, "choices", []):
                 logger.emit(choice_to_event(choice, capture_content))
@@ -658,7 +755,7 @@ def _record_metrics(
 
 
 def _set_response_attributes(
-    span, result, logger: Logger, capture_content: bool
+    span, result, capture_content: bool, handler=None
 ):
     if getattr(result, "model", None):
         set_span_attribute(
@@ -731,22 +828,57 @@ def _set_embeddings_response_attributes(
 
 
 class ToolCallBuffer:
-    def __init__(self, index, tool_call_id, function_name):
+    """Accumulates streaming tool call chunks without creating spans.
+
+    Tool call spans (execute_tool) should be created by user code or higher-level
+    frameworks (e.g., LangChain) that can observe actual tool execution, not during
+    response parsing.
+    """
+
+    def __init__(
+        self,
+        index: int,
+        tool_call: GenAIToolCall,
+        tool_type: str,
+        capture_content: bool,
+    ):
         self.index = index
-        self.function_name = function_name
-        self.tool_call_id = tool_call_id
-        self.arguments = []
+        self.tool_call = tool_call
+        self.tool_type = tool_type
+        self._capture_content = capture_content
+        self._argument_chunks: list[str] = []
+        self._finalized = False
 
     def append_arguments(self, arguments):
-        self.arguments.append(arguments)
+        if not self._capture_content or arguments is None:
+            return
+        self._argument_chunks.append(arguments)
+
+    def finalize(self) -> tuple[GenAIToolCall, str]:
+        if self._finalized:
+            return self.tool_call, self.tool_type
+
+        if self._capture_content and self._argument_chunks:
+            self.tool_call.arguments = "".join(self._argument_chunks)
+        else:
+            if not self._capture_content:
+                self.tool_call.arguments = None
+
+        self._finalized = True
+        return self.tool_call, self.tool_type
 
 
 class ChoiceBuffer:
-    def __init__(self, index):
+    def __init__(
+        self,
+        index: int,
+        capture_content: bool,
+    ):
         self.index = index
         self.finish_reason = None
         self.text_content = []
         self.tool_calls_buffers = []
+        self._capture_content = capture_content
 
     def append_text_content(self, content):
         self.text_content.append(content)
@@ -758,12 +890,25 @@ class ChoiceBuffer:
             self.tool_calls_buffers.append(None)
 
         if not self.tool_calls_buffers[idx]:
-            self.tool_calls_buffers[idx] = ToolCallBuffer(
-                idx, tool_call.id, tool_call.function.name
+            genai_tool_call, tool_type = _build_tool_call_invocation(
+                tool_call, self._capture_content
             )
-        self.tool_calls_buffers[idx].append_arguments(
-            tool_call.function.arguments
-        )
+            self.tool_calls_buffers[idx] = ToolCallBuffer(
+                idx,
+                genai_tool_call,
+                tool_type,
+                self._capture_content,
+            )
+            # Preserve initial arguments from the first chunk
+            if hasattr(tool_call.function, "arguments"):
+                self.tool_calls_buffers[idx].append_arguments(
+                    tool_call.function.arguments
+                )
+        else:
+            if hasattr(tool_call.function, "arguments"):
+                self.tool_calls_buffers[idx].append_arguments(
+                    tool_call.function.arguments
+                )
 
 
 class StreamWrapper:
@@ -809,6 +954,15 @@ class StreamWrapper:
                 parts.append(
                     Text(content=joined if self.capture_content else "")
                 )
+            if choice.tool_calls_buffers:
+                for tool_call_state in choice.tool_calls_buffers:
+                    if tool_call_state is None:
+                        continue
+                    tool_call, tool_type = tool_call_state.finalize()
+                    tool_call.provider = (
+                        GenAIAttributes.GenAiProviderNameValues.OPENAI.value
+                    )
+                    parts.append(tool_call)
 
             finish_reason = choice.finish_reason or "error"
             output_messages.append(
@@ -887,18 +1041,15 @@ class StreamWrapper:
                     message["content"] = "".join(choice.text_content)
                 if choice.tool_calls_buffers:
                     tool_calls = []
-                    for tool_call in choice.tool_calls_buffers:
-                        function = {"name": tool_call.function_name}
-                        if self.capture_content:
-                            function["arguments"] = "".join(
-                                tool_call.arguments
+                    for tool_call_state in choice.tool_calls_buffers:
+                        if tool_call_state is None:
+                            continue
+                        tool_call, tool_type = tool_call_state.finalize()
+                        tool_calls.append(
+                            _tool_call_body(
+                                tool_call, tool_type, self.capture_content
                             )
-                        tool_call_dict = {
-                            "id": tool_call.tool_call_id,
-                            "type": "function",
-                            "function": function,
-                        }
-                        tool_calls.append(tool_call_dict)
+                        )
                     message["tool_calls"] = tool_calls
 
                 body = {
@@ -1032,7 +1183,9 @@ class StreamWrapper:
 
             # make sure we have enough choice buffers
             for idx in range(len(self.choice_buffers), choice.index + 1):
-                self.choice_buffers.append(ChoiceBuffer(idx))
+                self.choice_buffers.append(
+                    ChoiceBuffer(idx, self.capture_content)
+                )
 
             if choice.finish_reason:
                 self.choice_buffers[

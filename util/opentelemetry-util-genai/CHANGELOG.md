@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.8 - 2026-01-26
+## Version 0.1.8 - 2026-01-27
 
 ### Changed
 - **Structured message fields for agentic types** - Added `input_messages` and `output_messages` fields to `Workflow`, `AgentCreation`, and `AgentInvocation` types for properly structured message capture with valid JSON serialization.

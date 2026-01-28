@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.5 - 2026-01-26
+## Version 0.1.5 - 2026-01-27
 
 ### Changed
 - **Use structured message fields** - Workflow and AgentInvocation now use `input_messages`/`output_messages` structured fields instead of legacy string fields for proper JSON serialization.
