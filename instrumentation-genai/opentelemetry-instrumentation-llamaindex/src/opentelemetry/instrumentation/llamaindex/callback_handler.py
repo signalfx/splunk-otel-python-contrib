@@ -158,15 +158,16 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         for msg in messages:
             # Handle ChatMessage objects (has .content property and .role attribute)
             if hasattr(msg, "content") and hasattr(msg, "role"):
-                # Extract role - could be MessageRole enum
-                role_value = _safe_str(
-                    msg.role.value if hasattr(msg.role, "value") else msg.role
-                )
                 # Extract content - this is a property that pulls from blocks[0].text
                 content = _safe_str(msg.content)
-                input_messages.append(
-                    InputMessage(role=role_value, parts=[Text(content=content)])
-                )
+                if content:
+                    # Extract role - could be MessageRole enum
+                    role_value = _safe_str(
+                        msg.role.value if hasattr(msg.role, "value") else msg.role
+                    )
+                    input_messages.append(
+                        InputMessage(role=role_value, parts=[Text(content=content)])
+                    )
             elif isinstance(msg, dict):
                 # Handle serialized messages (dict format)
                 role = msg.get("role", "user")
@@ -178,13 +179,16 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     # Fallback to direct content field
                     content = msg.get("content", "")
 
-                role_value = _safe_str(role.value if hasattr(role, "value") else role)
-                input_messages.append(
-                    InputMessage(
-                        role=role_value,
-                        parts=[Text(content=_safe_str(content))],
+                if content:
+                    role_value = _safe_str(
+                        role.value if hasattr(role, "value") else role
                     )
-                )
+                    input_messages.append(
+                        InputMessage(
+                            role=role_value,
+                            parts=[Text(_safe_str(content))],
+                        )
+                    )
 
         # Create LLM invocation with all available parameters
         llm_inv = LLMInvocation(
@@ -249,14 +253,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         # Fallback to direct content field
                         content = _get_attr(message, "content", "")
 
-                    # Create output message
-                    llm_inv.output_messages = [
-                        OutputMessage(
-                            role="assistant",
-                            parts=[Text(content=_safe_str(content))],
-                            finish_reason="stop",
-                        )
-                    ]
+                    # Create output message only if content exists
+                    if content:
+                        llm_inv.output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[Text(content=_safe_str(content))],
+                                finish_reason="stop",
+                            )
+                        ]
 
                 # Extract token usage from raw_response
                 if raw_response:
