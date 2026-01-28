@@ -213,7 +213,9 @@ def read_evaluation_rate_limit_enable(
     """
     Enable evaluation rate limiting.
     """
-    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE, env)
+    raw = _get_env(
+        OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE, env
+    )
     if raw is None or raw.strip() == "":
         return default
     return raw.strip().lower() in _TRUTHY
