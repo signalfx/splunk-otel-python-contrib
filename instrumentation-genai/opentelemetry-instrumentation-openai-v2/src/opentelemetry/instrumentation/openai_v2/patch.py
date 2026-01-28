@@ -390,10 +390,18 @@ def chat_completions_create(capture_content: bool, handler):
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
-        result = None
-        parsed_result = None
         try:
             result = wrapped(*args, **kwargs)
+        except Exception as error:
+            handler.fail_llm(
+                invocation,
+                InvocationError(message=str(error), type=type(error)),
+            )
+            if span:
+                handle_span_exception(span, error)
+            raise
+
+        try:
             parsed_result = _parse_response(result)
             if is_streaming(kwargs):
                 return StreamWrapper(
@@ -412,16 +420,10 @@ def chat_completions_create(capture_content: bool, handler):
                 invocation, parsed_result, capture_content
             )
             handler.stop_llm(invocation)
-            return result
+        except Exception:  # pragma: no cover - defensive
+            pass
 
-        except Exception as error:
-            handler.fail_llm(
-                invocation,
-                InvocationError(message=str(error), type=type(error)),
-            )
-            if span:
-                handle_span_exception(span, error)
-            raise
+        return result
 
     return traced_method
 
@@ -441,10 +443,18 @@ def async_chat_completions_create(capture_content: bool, handler):
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
-        result = None
-        parsed_result = None
         try:
             result = await wrapped(*args, **kwargs)
+        except Exception as error:
+            handler.fail_llm(
+                invocation,
+                InvocationError(message=str(error), type=type(error)),
+            )
+            if span:
+                handle_span_exception(span, error)
+            raise
+
+        try:
             parsed_result = _parse_response(result)
             if is_streaming(kwargs):
                 return StreamWrapper(
@@ -463,16 +473,10 @@ def async_chat_completions_create(capture_content: bool, handler):
                 invocation, parsed_result, capture_content
             )
             handler.stop_llm(invocation)
-            return result
+        except Exception:  # pragma: no cover - defensive
+            pass
 
-        except Exception as error:
-            handler.fail_llm(
-                invocation,
-                InvocationError(message=str(error), type=type(error)),
-            )
-            if span:
-                handle_span_exception(span, error)
-            raise
+        return result
 
     return traced_method
 
@@ -494,11 +498,18 @@ def embeddings_create(capture_content: bool, handler):
         handler.start_embedding(invocation)
         span = getattr(invocation, "span", None)
 
-        result = None
-        parsed_result = None
-
         try:
             result = wrapped(*args, **kwargs)
+        except Exception as error:
+            handler.fail_embedding(
+                invocation,
+                InvocationError(message=str(error), type=type(error)),
+            )
+            if span:
+                handle_span_exception(span, error)
+            raise
+
+        try:
             parsed_result = _parse_response(result)
 
             if span and span.is_recording():
@@ -511,16 +522,10 @@ def embeddings_create(capture_content: bool, handler):
 
             _apply_embedding_response_to_invocation(invocation, parsed_result)
             handler.stop_embedding(invocation)
-            return result
+        except Exception:  # pragma: no cover - defensive
+            pass
 
-        except Exception as error:
-            handler.fail_embedding(
-                invocation,
-                InvocationError(message=str(error), type=type(error)),
-            )
-            if span:
-                handle_span_exception(span, error)
-            raise
+        return result
 
     return traced_method
 
@@ -542,11 +547,18 @@ def async_embeddings_create(capture_content: bool, handler):
         handler.start_embedding(invocation)
         span = getattr(invocation, "span", None)
 
-        result = None
-        parsed_result = None
-
         try:
             result = await wrapped(*args, **kwargs)
+        except Exception as error:
+            handler.fail_embedding(
+                invocation,
+                InvocationError(message=str(error), type=type(error)),
+            )
+            if span:
+                handle_span_exception(span, error)
+            raise
+
+        try:
             parsed_result = _parse_response(result)
 
             if span and span.is_recording():
@@ -559,16 +571,10 @@ def async_embeddings_create(capture_content: bool, handler):
 
             _apply_embedding_response_to_invocation(invocation, parsed_result)
             handler.stop_embedding(invocation)
-            return result
+        except Exception:  # pragma: no cover - defensive
+            pass
 
-        except Exception as error:
-            handler.fail_embedding(
-                invocation,
-                InvocationError(message=str(error), type=type(error)),
-            )
-            if span:
-                handle_span_exception(span, error)
-            raise
+        return result
 
     return traced_method
 
