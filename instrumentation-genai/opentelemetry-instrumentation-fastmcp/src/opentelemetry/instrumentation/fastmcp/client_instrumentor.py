@@ -201,12 +201,13 @@ class ClientInstrumentor:
                 tool_call.agent_name = parent_session.name
                 tool_call.agent_id = parent_session.agent_id
 
-            if should_capture_content():
+            # arguments is already set in constructor above
+            # If content capture is enabled and args are complex, serialize them
+            if should_capture_content() and tool_args:
                 try:
-                    input_data = {"tool_name": tool_name, "arguments": tool_args}
-                    serialized = safe_serialize(input_data)
+                    serialized = safe_serialize(tool_args)
                     if serialized:
-                        tool_call.input_data = truncate_if_needed(serialized)
+                        tool_call.arguments = truncate_if_needed(serialized)
                 except Exception:
                     pass
 
@@ -226,7 +227,7 @@ class ClientInstrumentor:
                         if serialized:
                             output_size = len(serialized.encode("utf-8"))
                             if should_capture_content():
-                                tool_call.output_data = truncate_if_needed(serialized)
+                                tool_call.tool_result = truncate_if_needed(serialized)
                     except Exception:
                         pass
 
@@ -271,14 +272,16 @@ class ClientInstrumentor:
                 duration = time.time() - start_time
                 step.attributes["mcp.client.operation.duration_s"] = duration
 
-                # Capture tool list if content capture enabled
-                if should_capture_content() and result:
+                # Capture tool names (metadata, not content - always captured)
+                if result:
                     try:
                         if hasattr(result, "tools"):
                             tool_names = [
                                 t.name for t in result.tools if hasattr(t, "name")
                             ]
-                            step.output_data = safe_serialize({"tools": tool_names})
+                            step.attributes["mcp.tools.discovered"] = safe_serialize(
+                                tool_names
+                            )
                     except Exception:
                         pass
 
