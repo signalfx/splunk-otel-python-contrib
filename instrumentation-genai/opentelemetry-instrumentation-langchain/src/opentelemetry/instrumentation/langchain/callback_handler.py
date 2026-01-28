@@ -35,15 +35,34 @@ def _safe_str(value: Any) -> str:
 
 
 def _serialize(obj: Any) -> Optional[str]:
+    """Serialize object to JSON string.
+
+    Uses default=str to handle non-JSON-serializable objects (like LangChain
+    message objects) by converting them to their string representation while
+    keeping the overall structure as valid JSON.
+    """
     if obj is None:
         return None
     try:
-        return json.dumps(obj, ensure_ascii=False)
+        return json.dumps(obj, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
-        try:
-            return str(obj)
-        except (TypeError, ValueError):
-            return None
+        return None
+
+
+def _make_input_message(data: Any) -> list[InputMessage]:
+    """Create structured input message with full data as JSON."""
+    content = _serialize(data)
+    if content is None:
+        return []
+    return [InputMessage(role="user", parts=[Text(content=content)])]
+
+
+def _make_output_message(data: Any) -> list[OutputMessage]:
+    """Create structured output message with full data as JSON."""
+    content = _serialize(data)
+    if content is None:
+        return []
+    return [OutputMessage(role="assistant", parts=[Text(content=content)])]
 
 
 def _resolve_agent_name(
@@ -194,7 +213,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             run_id=run_id,
             attributes=attrs,
         )
-        agent.input_context = _serialize(inputs)
+        agent.input_messages = _make_input_message(inputs)
         agent.agent_name = _safe_str(agent_name) if agent_name else name
         agent.parent_run_id = parent_run_id
         agent.framework = "langchain"
@@ -241,7 +260,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 )
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
-                wf.initial_input = _serialize(inputs)
+                wf.input_messages = _make_input_message(inputs)
                 self._handler.start_workflow(wf)
             return
         else:
@@ -324,7 +343,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     if context_agent_name is not None:
                         step.agent_name = context_agent_name
                     step.agent_id = str(context_agent.run_id)
-                step.input_data = _serialize(inputs)
                 self._handler.start_step(step)
 
     def on_chain_end(
@@ -339,13 +357,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if entity is None:
             return
         if isinstance(entity, Workflow):
-            entity.final_output = _serialize(outputs)
+            entity.output_messages = _make_output_message(outputs)
             self._handler.stop_workflow(entity)
         elif isinstance(entity, AgentInvocation):
-            entity.output_result = _serialize(outputs)
+            entity.output_messages = _make_output_message(outputs)
             self._handler.stop_agent(entity)
         elif isinstance(entity, Step):
-            entity.output_data = _serialize(outputs)
             self._handler.stop_step(entity)
         elif isinstance(entity, ToolCall):
             serialized = _serialize(outputs)

@@ -124,6 +124,70 @@ build-instrumentation-aidefense:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-weaviate:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-weaviate
+    - mv dist/* ../../dist/instrumentation-weaviate/
+    - cd ../../dist/instrumentation-weaviate
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-weaviate/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-crewai:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-crewai
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-crewai
+    - mv dist/* ../../dist/instrumentation-crewai/
+    - cd ../../dist/instrumentation-crewai
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-crewai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-openai-agents:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-openai-agents
+    - mv dist/* ../../dist/instrumentation-openai-agents/
+    - cd ../../dist/instrumentation-openai-agents
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-openai-agents/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-fastmcp:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-fastmcp
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-fastmcp
+    - mv dist/* ../../dist/instrumentation-fastmcp/
+    - cd ../../dist/instrumentation-fastmcp
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-fastmcp/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -237,6 +301,70 @@ sign-instrumentation-aidefense:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-weaviate:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-weaviate
+  variables:
+    ARTIFACT: dist/instrumentation-weaviate/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-weaviate
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-weaviate/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-crewai:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-crewai
+  variables:
+    ARTIFACT: dist/instrumentation-crewai/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-crewai
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-crewai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-openai-agents:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-openai-agents
+  variables:
+    ARTIFACT: dist/instrumentation-openai-agents/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-openai-agents
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-openai-agents/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-fastmcp:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-fastmcp
+  variables:
+    ARTIFACT: dist/instrumentation-fastmcp/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-fastmcp
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-fastmcp/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -328,3 +456,55 @@ deploy-instrumentation-aidefense:
     - sign-instrumentation-aidefense
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-weaviate:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-weaviate/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-weaviate
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-crewai:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-crewai
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-crewai/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-crewai
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-openai-agents:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-openai-agents/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-openai-agents
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-fastmcp:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-fastmcp
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-fastmcp/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-fastmcp
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'

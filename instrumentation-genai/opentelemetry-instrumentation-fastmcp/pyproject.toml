@@ -5,13 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "splunk-otel-instrumentation-fastmcp"
 dynamic = ["version"]
-description = "OpenTelemetry instrumentation for FastMCP (Model Context Protocol)"
+description = "Splunk OpenTelemetry instrumentation for FastMCP (Model Context Protocol)"
 readme = "README.rst"
 license = "Apache-2.0"
 requires-python = ">=3.10"
-authors = [
-  { name = "OpenTelemetry Authors", email = "cncf-opentelemetry-contributors@lists.cncf.io" },
-]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",

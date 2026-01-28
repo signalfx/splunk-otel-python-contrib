@@ -233,8 +233,17 @@ def test_span_emitter_workflow_captures_content():
     workflow = Workflow(
         name="trip_planner",
         workflow_type="sequential",
-        initial_input="Plan a trip to Rome",
-        final_output="Here is your itinerary",
+        input_messages=[
+            InputMessage(
+                role="user", parts=[Text(content="Plan a trip to Rome")]
+            )
+        ],
+        output_messages=[
+            OutputMessage(
+                role="assistant",
+                parts=[Text(content="Here is your itinerary")],
+            )
+        ],
     )
 
     emitter.on_start(workflow)
@@ -282,6 +291,118 @@ def test_invoke_agent_span_emitter_for_sampled_attribute():
 
     sampled_value = attrs.get("gen_ai.evaluation.sampled")
     assert sampled_value is True
+
+
+def test_agent_invocation_with_structured_messages():
+    """Test AgentInvocation with structured input_messages/output_messages."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=True)
+
+    input_msg = InputMessage(
+        role="user", parts=[Text(content="What's the weather?")]
+    )
+    output_msg = OutputMessage(
+        role="assistant",
+        parts=[Text(content="It's sunny today!")],
+        finish_reason="stop",
+    )
+    agent = AgentInvocation(name="weather_agent")
+    agent.input_messages = [input_msg]
+    agent.output_messages = [output_msg]
+
+    emitter.on_start(agent)
+    emitter.on_end(agent)
+
+    span = agent.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+
+    # Verify structured messages are rendered correctly
+    input_messages_raw = attrs.get(GEN_AI_INPUT_MESSAGES)
+    assert input_messages_raw is not None
+    input_messages = json.loads(input_messages_raw)
+    assert input_messages[0]["parts"][0]["content"] == "What's the weather?"
+
+    output_messages_raw = attrs.get(GEN_AI_OUTPUT_MESSAGES)
+    assert output_messages_raw is not None
+    output_messages = json.loads(output_messages_raw)
+    assert output_messages[0]["parts"][0]["content"] == "It's sunny today!"
+
+
+def test_agent_invocation_prefers_structured_over_legacy():
+    """Test that structured messages are preferred over legacy string fields."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=True)
+
+    input_msg = InputMessage(
+        role="user", parts=[Text(content="Structured input")]
+    )
+    output_msg = OutputMessage(
+        role="assistant",
+        parts=[Text(content="Structured output")],
+        finish_reason="stop",
+    )
+    agent = AgentInvocation(name="test_agent")
+    # Set both structured and legacy fields
+    agent.input_messages = [input_msg]
+    agent.output_messages = [output_msg]
+    agent.input_context = "Legacy input (should be ignored)"
+    agent.output_result = "Legacy output (should be ignored)"
+
+    emitter.on_start(agent)
+    emitter.on_end(agent)
+
+    span = agent.span
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+
+    # Verify structured messages take precedence
+    input_messages = json.loads(attrs.get(GEN_AI_INPUT_MESSAGES))
+    assert input_messages[0]["parts"][0]["content"] == "Structured input"
+
+    output_messages = json.loads(attrs.get(GEN_AI_OUTPUT_MESSAGES))
+    assert output_messages[0]["parts"][0]["content"] == "Structured output"
+
+
+def test_workflow_with_structured_messages():
+    """Test Workflow with structured input_messages/output_messages."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=True)
+
+    input_msg = InputMessage(
+        role="user", parts=[Text(content="Plan a trip to Paris")]
+    )
+    output_msg = OutputMessage(
+        role="assistant",
+        parts=[Text(content="Here is your Paris itinerary")],
+        finish_reason="stop",
+    )
+    workflow = Workflow(name="travel_planner")
+    workflow.input_messages = [input_msg]
+    workflow.output_messages = [output_msg]
+
+    emitter.on_start(workflow)
+    emitter.on_end(workflow)
+
+    span = workflow.span
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+
+    input_messages = json.loads(attrs.get(GEN_AI_INPUT_MESSAGES))
+    assert input_messages[0]["parts"][0]["content"] == "Plan a trip to Paris"
+
+    output_messages = json.loads(attrs.get(GEN_AI_OUTPUT_MESSAGES))
+    assert (
+        output_messages[0]["parts"][0]["content"]
+        == "Here is your Paris itinerary"
+    )
 
 
 def test_llm_span_emitter_for_sampled_attribute():
