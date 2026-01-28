@@ -134,14 +134,24 @@ class WorkflowEventInstrumentor:
                         del self._active_tools[event.tool_id]
 
         except Exception as e:
-            # Clean up any active tool spans on error
-            for tool_call in list(self._active_tools.values()):
-                from opentelemetry.util.genai.types import Error
+            # Try to clean up any active tool spans on error, but don't let
+            # instrumentation failures interfere with the application
+            import logging
 
-                error = Error(message=str(e), type=type(e))
-                self._handler.fail_tool_call(tool_call, error)
-            self._active_tools.clear()
-            raise
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error during workflow event instrumentation: {e}")
+
+            try:
+                for tool_call in list(self._active_tools.values()):
+                    from opentelemetry.util.genai.types import Error
+
+                    error = Error(message=str(e), type=type(e))
+                    self._handler.fail_tool_call(tool_call, error)
+                self._active_tools.clear()
+            except Exception as cleanup_error:
+                logger.warning(
+                    f"Failed to clean up tool spans after error: {cleanup_error}"
+                )
 
 
 def wrap_agent_run(wrapped, instance, args, kwargs):
@@ -293,13 +303,26 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                     if self._root_workflow:  # Only stop if we created a workflow span
                         telemetry_handler.stop_workflow(self._root_workflow)
                 except Exception as e:
-                    from opentelemetry.util.genai.types import Error
+                    # Try to record the failure in telemetry, but don't let instrumentation
+                    # errors interfere with the application's exception handling
+                    try:
+                        from opentelemetry.util.genai.types import Error
 
-                    error = Error(message=str(e), type=type(e))
-                    # Fail spans in reverse order: agent first, then workflow (if we created it)
-                    telemetry_handler.fail_agent(self._current_agent, error)
-                    if self._root_workflow:  # Only fail if we created a workflow span
-                        telemetry_handler.fail_workflow(self._root_workflow, error)
+                        error = Error(message=str(e), type=type(e))
+                        # Fail spans in reverse order: agent first, then workflow (if we created it)
+                        telemetry_handler.fail_agent(self._current_agent, error)
+                        if (
+                            self._root_workflow
+                        ):  # Only fail if we created a workflow span
+                            telemetry_handler.fail_workflow(self._root_workflow, error)
+                    except Exception as telemetry_error:
+                        import logging
+
+                        logger = logging.getLogger(__name__)
+                        logger.warning(
+                            f"Failed to record telemetry error: {telemetry_error}"
+                        )
+                    # Always re-raise the original application exception
                     raise
                 return self._result
 
