@@ -23,6 +23,9 @@ def test_admission_controller_allows_when_disabled(monkeypatch):
 
 def test_admission_controller_rate_limits(monkeypatch):
     monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE", "true"
+    )
+    monkeypatch.setenv(
         "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS", "1"
     )
     monkeypatch.setenv(
@@ -75,6 +78,9 @@ def test_admission_controller_allow_async(monkeypatch):
 
 def test_admission_controller_allow_async_rate_limits(monkeypatch):
     """Test that async rate limiting works correctly."""
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE", "true"
+    )
     monkeypatch.setenv(
         "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS", "1"
     )
