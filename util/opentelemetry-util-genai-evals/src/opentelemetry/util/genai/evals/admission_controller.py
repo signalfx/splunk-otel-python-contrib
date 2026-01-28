@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 from .env import (
     read_evaluation_rate_limit_burst,
+    read_evaluation_rate_limit_enable,
     read_evaluation_rate_limit_rps,
 )
 
@@ -17,28 +18,28 @@ class _TokenBucketLimiter:
     Pure rate limiting primitive, no business semantics.
     """
 
-    def __init__(self, rate_per_sec: float, burst: int):
-        self._rate = float(rate_per_sec)
+    def __init__(self, requests_per_sec: float, burst: int):
+        self._requests_per_sec = float(requests_per_sec)
         self._capacity = float(max(1, burst))
         self._tokens = self._capacity
         self._last = time.monotonic()
         self._lock = threading.Lock()
 
     def allow(self, cost: float = 1.0) -> bool:
-        if self._rate <= 0:
+        if self._requests_per_sec <= 0:
             # Disabled
             return True
 
         with self._lock:
             now = time.monotonic()
             elapsed = now - self._last
-            self._last = now
             self._tokens = min(
                 self._capacity,
-                self._tokens + elapsed * self._rate,
+                self._tokens + elapsed * self._requests_per_sec,
             )
             if self._tokens >= cost:
                 self._tokens -= cost
+                self._last = now
                 return True
             return False
 
@@ -57,13 +58,14 @@ class EvaluationAdmissionController:
     ERROR_CODE_RATE_LIMITED = "client_evaluation_rate_limited"
 
     def __init__(self):
+        enabled = read_evaluation_rate_limit_enable()
         rps = read_evaluation_rate_limit_rps()
         burst = read_evaluation_rate_limit_burst()
 
         self._limiter: Optional[_TokenBucketLimiter] = None
-        if rps > 0:
+        if enabled and rps > 0:
             self._limiter = _TokenBucketLimiter(
-                rate_per_sec=rps,
+                requests_per_sec=rps,
                 burst=burst,
             )
 

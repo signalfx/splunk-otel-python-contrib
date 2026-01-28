@@ -16,6 +16,7 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
     OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE,
     OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST,
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE,
     OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS,
 )
 
@@ -204,6 +205,20 @@ def read_max_concurrent(
         return default
 
 
+def read_evaluation_rate_limit_enable(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: bool = False,
+) -> bool:
+    """
+    Enable evaluation rate limiting.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE, env)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in _TRUTHY
+
+
 def read_evaluation_rate_limit_rps(
     env: Mapping[str, str] | None = None,
     *,
@@ -270,6 +285,7 @@ __all__ = [
     "read_concurrent_flag",
     "read_worker_count",
     "read_max_concurrent",
+    "read_evaluation_rate_limit_enable",
     "read_evaluation_rate_limit_rps",
     "read_evaluation_rate_limit_burst",
 ]

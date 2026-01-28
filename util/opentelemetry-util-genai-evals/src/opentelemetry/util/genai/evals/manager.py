@@ -325,7 +325,7 @@ class Manager(CompletionCallback):
         """Synchronously evaluate an invocation."""
         allowed, reason = self._admission.allow()
         if not allowed:
-            _LOGGER.debug(
+            _LOGGER.error(
                 "Evaluation rate limited (%s), dropping invocation.",
                 reason,
             )
@@ -360,7 +360,7 @@ class Manager(CompletionCallback):
                 # Apply rate limiting on processing side
                 allowed, reason = self._admission.allow()
                 if not allowed:
-                    _LOGGER.debug(
+                    _LOGGER.error(
                         "Evaluation rate limited (%s), dropping invocation.",
                         reason,
                     )
@@ -441,7 +441,7 @@ class Manager(CompletionCallback):
                         self._admission.allow_async()
                     )
                     if not allowed:
-                        _LOGGER.debug(
+                        _LOGGER.error(
                             "Evaluation rate limited (%s), dropping invocation.",
                             reason,
                         )
