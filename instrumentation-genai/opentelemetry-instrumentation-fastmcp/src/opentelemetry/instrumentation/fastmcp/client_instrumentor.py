@@ -272,8 +272,8 @@ class ClientInstrumentor:
                 duration = time.time() - start_time
                 step.attributes["mcp.client.operation.duration_s"] = duration
 
-                # Capture tool list if content capture enabled (use attributes since Step no longer has I/O fields)
-                if should_capture_content() and result:
+                # Capture tool names (metadata, not content - always captured)
+                if result:
                     try:
                         if hasattr(result, "tools"):
                             tool_names = [
