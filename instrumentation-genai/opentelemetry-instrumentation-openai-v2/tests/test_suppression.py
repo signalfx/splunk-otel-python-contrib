@@ -77,6 +77,57 @@ async def test_async_chat_completion_suppressed(
 
 
 @pytest.mark.vcr()
+def test_embeddings_suppressed(
+    span_exporter, openai_client, instrument_with_content
+):
+    """Test that embeddings are not instrumented when suppression key is set."""
+    # Set suppression key in context
+    token = context_api.attach(
+        context_api.set_value(
+            SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+        )
+    )
+    try:
+        response = openai_client.embeddings.create(
+            model="text-embedding-3-small",
+            input="This is a test for embeddings",
+        )
+        assert response is not None
+    finally:
+        context_api.detach(token)
+
+    # Verify no spans were created
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 0
+
+
+@pytest.mark.vcr()
+@pytest.mark.asyncio
+async def test_async_embeddings_suppressed(
+    span_exporter, async_openai_client, instrument_with_content
+):
+    """Test that async embeddings are not instrumented when suppression key is set."""
+    # Set suppression key in context
+    token = context_api.attach(
+        context_api.set_value(
+            SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+        )
+    )
+    try:
+        response = await async_openai_client.embeddings.create(
+            model="text-embedding-3-small",
+            input="This is a test for async embeddings",
+        )
+        assert response is not None
+    finally:
+        context_api.detach(token)
+
+    # Verify no spans were created
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 0
+
+
+@pytest.mark.vcr()
 def test_chat_completion_not_suppressed_by_default(
     span_exporter, openai_client, instrument_with_content
 ):

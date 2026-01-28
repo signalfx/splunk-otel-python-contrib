@@ -13,6 +13,9 @@ from opentelemetry.instrumentation.openai_v2.utils import (
 )
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.util.genai import handler as genai_handler
+from opentelemetry.util.genai.environment_variables import (
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS,
+)
 
 # Backward compatibility for InMemoryLogExporter -> InMemoryLogRecordExporter rename
 try:
@@ -118,6 +121,9 @@ def instrument_no_content(tracer_provider, logger_provider, meter_provider):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "False"}
     )
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
     if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
@@ -132,6 +138,7 @@ def instrument_no_content(tracer_provider, logger_provider, meter_provider):
 
     yield instrumentor
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
     instrumentor.uninstrument()
 
 
@@ -140,6 +147,9 @@ def instrument_with_content(tracer_provider, logger_provider, meter_provider):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True"}
     )
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
     if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
@@ -154,6 +164,7 @@ def instrument_with_content(tracer_provider, logger_provider, meter_provider):
 
     yield instrumentor
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
     instrumentor.uninstrument()
 
 
@@ -163,6 +174,9 @@ def instrument_with_content_unsampled(
 ):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True"}
+    )
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
     )
 
     tracer_provider = TracerProvider(sampler=ALWAYS_OFF)
@@ -181,6 +195,7 @@ def instrument_with_content_unsampled(
 
     yield instrumentor
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
     instrumentor.uninstrument()
 
 
