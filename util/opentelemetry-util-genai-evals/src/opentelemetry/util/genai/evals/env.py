@@ -208,7 +208,7 @@ def read_max_concurrent(
 def read_evaluation_rate_limit_enable(
     env: Mapping[str, str] | None = None,
     *,
-    default: bool = False,
+    default: bool = True,
 ) -> bool:
     """
     Enable evaluation rate limiting.
@@ -224,8 +224,8 @@ def read_evaluation_rate_limit_enable(
 def read_evaluation_rate_limit_rps(
     env: Mapping[str, str] | None = None,
     *,
-    default: float = 0.0,
-) -> float:
+    default: int = 0,
+) -> int:
     """
     Per-process proactive admission rate (invocations per second) for evaluation queue.
     Set to <= 0 to disable rate limiting.
@@ -234,10 +234,10 @@ def read_evaluation_rate_limit_rps(
     if raw is None or raw.strip() == "":
         return default
     try:
-        return float(raw)
+        return int(raw)
     except ValueError as e:
         _LOGGER.warning(
-            "Failed to parse %s: %s (error: %s), using default %f",
+            "Failed to parse %s: %s (error: %s), using default %d",
             OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS,
             raw,
             e,
