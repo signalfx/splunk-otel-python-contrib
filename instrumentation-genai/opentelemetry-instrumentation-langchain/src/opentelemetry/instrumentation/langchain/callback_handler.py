@@ -11,7 +11,7 @@ from typing import Any, Optional, List
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import HumanMessage, BaseMessage
+from langchain_core.messages import HumanMessage, BaseMessage, SystemMessage, AIMessage
 from langchain_core.outputs import LLMResult
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
@@ -49,20 +49,33 @@ def _serialize(obj: Any) -> Optional[str]:
         return None
 
 
-def _make_input_message(data: Any) -> list[InputMessage]:
+def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
     """Create structured input message with full data as JSON."""
-    content = _serialize(data)
-    if content is None:
+    input_messages: list[InputMessage] = []
+    messages = data.get("messages")
+    if messages is None:
         return []
-    return [InputMessage(role="user", parts=[Text(content=content)])]
+    for msg in messages:
+        content = getattr(msg, "content", "")
+        if content:
+            # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
+            input_message = InputMessage(role="user", parts=[Text(_safe_str(msg.content))])
+            input_messages.append(input_message)
+    return input_messages
 
-
-def _make_output_message(data: Any) -> list[OutputMessage]:
+def _make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
     """Create structured output message with full data as JSON."""
-    content = _serialize(data)
-    if content is None:
+    output_messages: list[OutputMessage] = []
+    messages = data.get("messages")
+    if messages is None:
         return []
-    return [OutputMessage(role="assistant", parts=[Text(content=content)])]
+    for msg in messages:
+        content = getattr(msg, "content", "")
+        if content:
+            if isinstance(msg, AIMessage):
+                output_message = OutputMessage(role="assistant", parts=[Text(_safe_str(msg.content))])
+                output_messages.append(output_message)
+    return output_messages
 
 
 def _resolve_agent_name(
