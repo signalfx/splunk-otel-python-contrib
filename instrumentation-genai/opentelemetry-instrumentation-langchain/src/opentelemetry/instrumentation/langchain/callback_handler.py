@@ -59,9 +59,12 @@ def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
         content = getattr(msg, "content", "")
         if content:
             # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
-            input_message = InputMessage(role="user", parts=[Text(_safe_str(msg.content))])
+            input_message = InputMessage(
+                role="user", parts=[Text(_safe_str(msg.content))]
+            )
             input_messages.append(input_message)
     return input_messages
+
 
 def _make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
     """Create structured output message with full data as JSON."""
@@ -73,7 +76,9 @@ def _make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
         content = getattr(msg, "content", "")
         if content:
             if isinstance(msg, AIMessage):
-                output_message = OutputMessage(role="assistant", parts=[Text(_safe_str(msg.content))])
+                output_message = OutputMessage(
+                    role="assistant", parts=[Text(_safe_str(msg.content))]
+                )
                 output_messages.append(output_message)
     return output_messages
 
