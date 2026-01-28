@@ -616,12 +616,10 @@ def _set_response_attributes(
         )
 
     if handler:
-        _emit_tool_call_spans_from_response(
-            handler, span, result, capture_content
-        )
+        _emit_tool_calls_from_response(handler, span, result, capture_content)
 
 
-def _emit_tool_call_spans_from_response(
+def _emit_tool_calls_from_response(
     handler,
     parent_span: Span,
     result: Any,
