@@ -59,9 +59,7 @@ def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
         content = getattr(msg, "content", "")
         if content:
             # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
-            input_message = InputMessage(
-                role="user", parts=[Text(_safe_str(content))]
-            )
+            input_message = InputMessage(role="user", parts=[Text(_safe_str(content))])
             input_messages.append(input_message)
     return input_messages
 

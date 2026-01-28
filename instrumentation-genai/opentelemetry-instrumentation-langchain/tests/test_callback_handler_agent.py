@@ -147,11 +147,7 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
             "name": "AgentExecutor",
             "id": ["langchain", "agents", "AgentExecutor"],
         },
-        inputs={
-            "messages": [
-                HumanMessage(content="plan my trip")
-            ]
-        },
+        inputs={"messages": [HumanMessage(content="plan my trip")]},
         run_id=agent_run_id,
         tags=["agent"],
         metadata={"ls_agent_type": "react", "ls_model_name": "gpt-5-nano"},
@@ -180,7 +176,9 @@ def test_agent_invocation_links_util_handler(handler_with_stub):
     assert llm_invocation.agent_name == agent.name
     assert llm_invocation.agent_id == str(agent.run_id)
 
-    handler.on_chain_end(outputs={"messages": [AIMessage(content="done")]}, run_id=agent_run_id)
+    handler.on_chain_end(
+        outputs={"messages": [AIMessage(content="done")]}, run_id=agent_run_id
+    )
 
     assert stub.stopped_agents, "Agent stop was not forwarded to util handler"
     stopped_agent = stub.stopped_agents[-1]
