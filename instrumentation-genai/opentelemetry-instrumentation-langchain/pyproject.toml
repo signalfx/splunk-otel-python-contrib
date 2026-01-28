@@ -31,9 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-instruments = [
-  "langchain >= 0.3.21",
-]
+instruments = ["langchain >= 0.3.21"]
 test = [
   "langchain-core >= 1.0.0",
   "langchain-openai >= 1.0.0",
@@ -54,15 +52,10 @@ Repository = "https://github.com/open-telemetry/opentelemetry-python-contrib"
 path = "src/opentelemetry/instrumentation/langchain/version.py"
 
 [tool.hatch.build.targets.sdist]
-include = [
-  "/src",
-  "/tests",
-]
+include = ["/src", "/tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/opentelemetry"]
 
 [tool.ruff]
-exclude = [
-    "./", 
-]
+exclude = ["./"]
