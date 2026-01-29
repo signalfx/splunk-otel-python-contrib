@@ -1,0 +1,9 @@
+langchain>=1.2.3
+langsmith >= 0.6.2
+langchain-core >= 1.2.7
+langchain_openai >= 1.1.7
+opentelemetry-exporter-otlp == 1.38.0
+requests >= 2.32.5
+opentelemetry-sdk>=1.31.1
+python-dotenv>=1.0.0
+opentelemetry-exporter-otlp
