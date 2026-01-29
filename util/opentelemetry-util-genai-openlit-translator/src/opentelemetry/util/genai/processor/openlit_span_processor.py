@@ -1356,7 +1356,7 @@ class OpenlitSpanProcessor(SpanProcessor):
         name_transformations: Optional[Dict[str, str]] = None,
         openlit_attributes: Optional[Dict[str, Any]] = None,
     ) -> Optional[AgentCreation | AgentInvocation | Workflow | LLMInvocation]:
-        # CRITICAL: Read from _attributes (the live/mutated dict), NOT from .attributes
+        # Read from _attributes (the live/mutated dict), NOT from .attributes
         # The .attributes property returns a frozen/cached snapshot that doesn't reflect mutations.
         # This is important because _mutate_span_if_needed() modifies _attributes directly.
         if hasattr(existing_span, "_attributes") and existing_span._attributes:  # type: ignore[attr-defined]
@@ -1374,11 +1374,6 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         # BEFORE transforming attributes, extract original message data
         # for message reconstruction (needed for evaluations)
-        # Try multiple attribute names from different instrumentation sources:
-        # 1. gen_ai.* (OTel GenAI format)
-        # 2. openlit.entity.* (OpenLit SDK)
-        # 3. llm.* (older OpenAI instrumentation)
-        # 4. gen_ai.content.* (another format variant)
         original_input_data = (
             base_attrs.get("gen_ai.input.messages")
             or base_attrs.get("gen_ai.input.message")
@@ -1573,39 +1568,42 @@ class OpenlitSpanProcessor(SpanProcessor):
                 framework=base_attrs.get("gen_ai.framework"),
                 attributes=base_attrs,
             )
-            # Extract initial input from messages or attributes
+            # Extract input from reconstructed messages or build from attributes
             if input_messages:
-                invocation.initial_input = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.initial_input:
-                # Try to extract from attributes
-                invocation.initial_input = (
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("initial_input")
                     or base_attrs.get("input")
                     or base_attrs.get("input_context")
                     or base_attrs.get("query")
                 )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
 
-            # Extract final output from messages or attributes
+            # Extract output from reconstructed messages or build from attributes
             if output_messages:
-                invocation.final_output = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.final_output:
-                # Try to extract from attributes
-                invocation.final_output = (
+                invocation.output_messages = output_messages
+            elif not invocation.output_messages:
+                # Fallback: try to extract from span attributes and wrap in OutputMessage
+                fallback_output = (
                     base_attrs.get("final_output")
                     or base_attrs.get("output")
                     or base_attrs.get("output_result")
                     or base_attrs.get("response")
                 )
+                if fallback_output:
+                    invocation.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=fallback_output)],
+                        )
+                    ]
             return invocation
 
         elif operation_name == "create_agent":
@@ -1633,21 +1631,22 @@ class OpenlitSpanProcessor(SpanProcessor):
             invocation.system_instructions = (
                 base_attrs.get("gen_ai.system.instructions") or None
             )
-            # Extract input context from messages or attributes
+            # Extract input from reconstructed messages or build from attributes
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                # Try to extract from attributes
-                invocation.input_context = (
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("input_context")
                     or base_attrs.get("input")
                     or base_attrs.get("initial_input")
                 )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
             return invocation
 
         elif operation_name == "invoke_agent":
@@ -1676,44 +1675,50 @@ class OpenlitSpanProcessor(SpanProcessor):
                 base_attrs.get("gen_ai.system.instructions") or None
             )
 
-            # Extract input from messages or attributes
+            # Extract input from reconstructed messages or build from attributes
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                # Try to extract from attributes
-                invocation.input_context = (
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("input_context")
                     or base_attrs.get("input")
                     or base_attrs.get("initial_input")
                     or base_attrs.get("prompt")
                     or base_attrs.get("query")
                 )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
 
-            # Extract output from messages or attributes
+            # Extract output from reconstructed messages or build from attributes
             if output_messages:
-                invocation.output_result = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.output_result:
-                # Try to extract from attributes
-                invocation.output_result = (
+                invocation.output_messages = output_messages
+            elif not invocation.output_messages:
+                # Fallback: try to extract from span attributes and wrap in OutputMessage
+                fallback_output = (
                     base_attrs.get("output_result")
                     or base_attrs.get("output")
                     or base_attrs.get("final_output")
                     or base_attrs.get("response")
                     or base_attrs.get("answer")
                 )
+                if fallback_output:
+                    invocation.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=fallback_output)],
+                        )
+                    ]
 
             # Skip if no input/output available for evaluation
-            if not invocation.input_context and not invocation.output_result:
+            if (
+                not invocation.input_messages
+                and not invocation.output_messages
+            ):
                 _logger.warning(
                     "[OPENLIT_PROCESSOR] Skipping AgentInvocation - no input/output available! "
                     "span=%s, span_id=%s",
@@ -1721,7 +1726,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                     span_id,
                 )
                 return None
-            return None
+            return invocation
         else:
             # Create LLMInvocation (default for chat, completion, embedding)
             # CRITICAL: LLM invocations require messages for evaluation
