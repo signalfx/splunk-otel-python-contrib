@@ -14,6 +14,10 @@ Usage:
     python invocation_example.py llm --exporter otlp
     python invocation_example.py eval 10 --exporter otlp
 
+    # Set session context for telemetry correlation:
+    python invocation_example.py llm --session-id my-session-123
+    python invocation_example.py all --session-id conv-456 --exporter otlp
+
 This example shows:
 1. Simple LLM invocation with input/output messages
 2. Agent invocation with steps and tool calls
@@ -25,6 +29,7 @@ import json
 import os
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +88,10 @@ try:
 except ImportError:
     OTLP_AVAILABLE = False
 
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    get_telemetry_handler,
+    session_context,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     InputMessage,
@@ -851,9 +859,7 @@ def main():
         idx = args.index("--exporter")
         if idx + 1 < len(args):
             exporter = args[idx + 1].lower()
-            args = (
-                args[:idx] + args[idx + 2 :]
-            )  # Remove --exporter and its value
+            args = args[:idx] + args[idx + 2 :]  # Remove --exporter and value
         else:
             print("Error: --exporter requires a value (console or otlp)")
             sys.exit(1)
@@ -863,6 +869,19 @@ def main():
             f"Error: Invalid exporter '{exporter}'. Use 'console' or 'otlp'."
         )
         sys.exit(1)
+
+    # Extract --session-id option
+    session_id = None
+    if "--session-id" in args:
+        idx = args.index("--session-id")
+        if idx + 1 < len(args):
+            session_id = args[idx + 1]
+            args = (
+                args[:idx] + args[idx + 2 :]
+            )  # Remove --session-id and value
+        else:
+            print("Error: --session-id requires a value")
+            sys.exit(1)
 
     # Parse invocation type
     if len(args) > 0:
@@ -904,19 +923,27 @@ def main():
     # Set up telemetry
     setup_telemetry(exporter=exporter)
 
-    # Run the requested example(s)
-    if invocation_type == "llm":
-        run_llm_invocation()
-    elif invocation_type == "agent":
-        run_agent_invocation()
-    elif invocation_type == "workflow":
-        run_workflow_invocation()
-    elif invocation_type == "eval":
-        run_evaluation_tests(limit=eval_limit)
-    else:  # all
-        run_llm_invocation()
-        run_agent_invocation()
-        run_workflow_invocation()
+    # Print session info if provided
+    if session_id:
+        print(f"Using session context: session_id={session_id}")
+
+    # Run the requested example(s) with optional session context
+    ctx = (
+        session_context(session_id=session_id) if session_id else nullcontext()
+    )
+    with ctx:
+        if invocation_type == "llm":
+            run_llm_invocation()
+        elif invocation_type == "agent":
+            run_agent_invocation()
+        elif invocation_type == "workflow":
+            run_workflow_invocation()
+        elif invocation_type == "eval":
+            run_evaluation_tests(limit=eval_limit)
+        else:  # all
+            run_llm_invocation()
+            run_agent_invocation()
+            run_workflow_invocation()
 
     # Wait for metrics to be exported
     print("Waiting for metrics export...")
