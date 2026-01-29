@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0] - 2025-01-XX
+## [0.1.0] - 2025-01-29
 
 ### Added
 - Initial release of Langsmith to GenAI semantic convention translator
