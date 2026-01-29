@@ -88,61 +88,69 @@ def runbook_search(query: str, k: int = 3) -> str:
 async def _call_mcp_tool_sse(
     tool_name: str, params: Dict[str, Any], server_url: str
 ) -> Dict[str, Any]:
-    """Call an MCP tool via SSE (MCP over HTTP, production/K8s mode)."""
-    from mcp import ClientSession
-    from mcp.client.sse import sse_client
+    """Call an MCP tool via SSE (MCP over HTTP, production/K8s mode).
+    
+    Uses fastmcp.Client for proper instrumentation support.
+    """
+    from fastmcp import Client
     
     # SSE endpoint URL (fastmcp serves at /sse)
     sse_url = f"{server_url}/sse"
     
-    async with sse_client(sse_url) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, params)
-            
-            if result.content:
+    async with Client(sse_url) as client:
+        result = await client.call_tool(tool_name, params)
+        
+        if result:
+            # fastmcp.Client.call_tool returns the result directly
+            if isinstance(result, list) and len(result) > 0:
+                content = result[0]
+                if hasattr(content, "text"):
+                    return json.loads(content.text)
+                return {"status": "success", "data": str(content)}
+            elif hasattr(result, "content") and result.content:
                 content = result.content[0]
                 if hasattr(content, "text"):
                     return json.loads(content.text)
                 return {"status": "success", "data": str(content)}
-            return {"status": "error", "message": "No content returned"}
+            # Result might be directly usable
+            if isinstance(result, dict):
+                return result
+            return {"status": "success", "data": str(result)}
+        return {"status": "error", "message": "No content returned"}
 
 
 async def _call_mcp_tool_stdio(
     tool_name: str, params: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Call an MCP tool via stdio (local development mode)."""
-    from mcp import ClientSession
-    from mcp.client.stdio import stdio_client, StdioServerParameters
+    """Call an MCP tool via stdio (local development mode).
     
-    mcp_script_path = os.path.join(
-        os.path.dirname(__file__), "mcp_tools", "observability_tools.py"
-    )
+    Uses fastmcp.Client for proper instrumentation support.
+    """
+    from pathlib import Path
+    from fastmcp import Client
+    
+    mcp_script_path = Path(__file__).parent / "mcp_tools" / "observability_tools.py"
 
-    if not os.path.isabs(mcp_script_path):
-        mcp_script_path = os.path.abspath(mcp_script_path)
+    async with Client(mcp_script_path) as client:
+        result = await client.call_tool(tool_name, params)
 
-    env = os.environ.copy()
-    env.setdefault("FASTMCP_QUIET", "1")
-    env.setdefault("PYTHONUNBUFFERED", "1")
-
-    server_params = StdioServerParameters(
-        command="python",
-        args=[mcp_script_path],
-        env=env,
-    )
-
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, params)
-
-            if result.content:
+        if result:
+            # Handle different result formats from fastmcp.Client
+            if isinstance(result, list) and len(result) > 0:
+                content = result[0]
+                if hasattr(content, "text"):
+                    return json.loads(content.text)
+                return {"status": "success", "data": str(content)}
+            elif hasattr(result, "content") and result.content:
                 content = result.content[0]
                 if hasattr(content, "text"):
                     return json.loads(content.text)
                 return {"status": "success", "data": str(content)}
-            return {"status": "error", "message": "No content returned"}
+            # Result might be directly usable
+            if isinstance(result, dict):
+                return result
+            return {"status": "success", "data": str(result)}
+        return {"status": "error", "message": "No content returned"}
 
 
 async def _call_mcp_tool(
@@ -427,6 +435,7 @@ def investigation_agent_mcp(
     """Call the Investigation Agent as an MCP tool.
 
     This tool allows other agents to invoke the Investigation Agent as a service.
+    Uses fastmcp.Client for proper instrumentation support.
 
     Args:
         service_id: The service identifier to investigate
@@ -436,23 +445,10 @@ def investigation_agent_mcp(
     Returns:
         JSON string with investigation results
     """
-    from mcp import ClientSession
-    from mcp.client.stdio import stdio_client, StdioServerParameters
+    from pathlib import Path
+    from fastmcp import Client
 
-    mcp_script_path = os.path.join(
-        os.path.dirname(__file__), "mcp_tools", "investigation_agent_mcp.py"
-    )
-
-    # Pass environment variables to suppress MCP server logs
-    env = os.environ.copy()
-    env.setdefault("FASTMCP_QUIET", "1")
-    env.setdefault("PYTHONUNBUFFERED", "1")
-
-    server_params = StdioServerParameters(
-        command="python",
-        args=[mcp_script_path],
-        env=env,
-    )
+    mcp_script_path = Path(__file__).parent / "mcp_tools" / "investigation_agent_mcp.py"
 
     params = {
         "service_id": service_id,
@@ -462,18 +458,27 @@ def investigation_agent_mcp(
         params["scenario_id"] = scenario_id
 
     try:
-
         async def _call():
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    result = await session.call_tool("investigate_incident", params)
-                    if result.content:
+            async with Client(mcp_script_path) as client:
+                result = await client.call_tool("investigate_incident", params)
+                
+                if result:
+                    # Handle different result formats from fastmcp.Client
+                    if isinstance(result, list) and len(result) > 0:
+                        content = result[0]
+                        if hasattr(content, "text"):
+                            return json.loads(content.text)
+                        return {"status": "success", "data": str(content)}
+                    elif hasattr(result, "content") and result.content:
                         content = result.content[0]
                         if hasattr(content, "text"):
                             return json.loads(content.text)
-                        return {"status": "error", "message": "Invalid response format"}
-                    return {"status": "error", "message": "No content returned"}
+                        return {"status": "success", "data": str(content)}
+                    # Result might be directly usable
+                    if isinstance(result, dict):
+                        return result
+                    return {"status": "success", "data": str(result)}
+                return {"status": "error", "message": "No content returned"}
 
         result = asyncio.run(_call())
         return json.dumps(result, indent=2)

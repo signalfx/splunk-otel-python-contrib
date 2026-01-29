@@ -154,7 +154,9 @@ async def lifespan(app: FastAPI):
         print("[SRE Copilot] Using manual instrumentation", flush=True)
         _configure_manual_instrumentation()
     else:
-        _setup_instrumentation()
+        # Zero-code instrumentation: opentelemetry-instrument handles everything
+        # (OTEL providers + auto-instrumentation of LangChain)
+        print("[SRE Copilot] Using zero-code instrumentation", flush=True)
     print("[SRE Copilot] Server started", flush=True)
     yield
     # Shutdown - wait for any pending evaluations

@@ -1,9 +1,31 @@
 """MCP server exposing Investigation Agent as a tool."""
 
-# Suppress MCP server startup logs - must be done FIRST, before any imports
-import logging
+# Load environment variables from .env file FIRST
+# This is needed because this script runs as a subprocess and doesn't inherit
+# environment variables loaded by 'dotenv run' in the parent process
 import os
 import sys
+from pathlib import Path
+
+# Find and load .env file from the sre_incident_copilot directory
+_env_file = Path(__file__).parent.parent / ".env"
+if _env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file)
+    except ImportError:
+        # Manual .env loading fallback if python-dotenv not installed
+        with open(_env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    # Remove quotes from value
+                    value = value.strip().strip('"').strip("'")
+                    os.environ.setdefault(key.strip(), value)
+
+# Suppress MCP server startup logs - must be done FIRST, before any imports
+import logging
 
 # Set environment variable to suppress FastMCP logs
 os.environ.setdefault("FASTMCP_QUIET", "1")
@@ -30,7 +52,6 @@ for logger_name in [
 
 import asyncio  # noqa: E402
 import json  # noqa: E402
-from pathlib import Path  # noqa: E402
 
 from fastmcp import FastMCP  # noqa: E402
 
@@ -144,8 +165,8 @@ async def investigate_incident(
         # Run investigation agent
         updated_state = investigation_agent(state, config)
 
-        # Flush telemetry before returning
-        _flush_telemetry()
+        # Flush telemetry before returning (commented out with manual instrumentation)
+        # _flush_telemetry()
 
         # Extract results
         investigation_result = updated_state.get("investigation_result", {})
@@ -161,7 +182,7 @@ async def investigate_incident(
             "evidence_count": sum(len(h.get("evidence", [])) for h in hypotheses),
         }
     except Exception as e:
-        _flush_telemetry()
+        # _flush_telemetry()
         return {
             "status": "error",
             "error": str(e),
