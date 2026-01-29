@@ -5,6 +5,9 @@ from opentelemetry.instrumentation.llamaindex.callback_handler import (
     LlamaindexCallbackHandler,
 )
 from opentelemetry.instrumentation.utils import unwrap
+from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
+    wrap_agent_run,
+)
 from wrapt import wrap_function_wrapper
 
 _instruments = ("llama-index-core >= 0.14.0",)
@@ -46,6 +49,44 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             name="CallbackManager.__init__",
             wrapper=_BaseCallbackManagerInitWrapper(llamaindexCallBackHandler),
         )
+
+        # Instrument workflow-based agents by wrapping BaseWorkflowAgent (and async variant).
+        # This covers ReActAgent, FunctionAgent, CodeActAgent, and subclasses.
+        for method_name in ["run", "arun"]:
+            try:
+                wrap_function_wrapper(
+                    module="llama_index.core.agent.workflow.base_agent",
+                    name=f"BaseWorkflowAgent.{method_name}",
+                    wrapper=wrap_agent_run,
+                )
+            except Exception:
+                # Module/class/method might not be available in some versions.
+                pass
+
+        # Instrument MultiAgentWorkflow explicitly (sync/async), which does not inherit
+        # from BaseWorkflowAgent in all versions.
+        for method_name in ["run", "arun"]:
+            try:
+                wrap_function_wrapper(
+                    module="llama_index.core.agent.workflow.multi_agent_workflow",
+                    name=f"MultiAgentWorkflow.{method_name}",
+                    wrapper=wrap_agent_run,
+                )
+            except Exception:
+                # MultiAgentWorkflow might not be available or importable.
+                pass
+
+        # Instrument AgentWorkflow (sync/async) for workflow-level orchestration spans.
+        for method_name in ["run", "arun"]:
+            try:
+                wrap_function_wrapper(
+                    module="llama_index.core.agent.workflow.multi_agent_workflow",
+                    name=f"AgentWorkflow.{method_name}",
+                    wrapper=wrap_agent_run,
+                )
+            except Exception:
+                # AgentWorkflow might not be available or importable.
+                pass
 
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
