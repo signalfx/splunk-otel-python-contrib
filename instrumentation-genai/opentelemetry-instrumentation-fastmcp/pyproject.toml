@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "splunk-otel-instrumentation-fastmcp"
+dynamic = ["version"]
+description = "Splunk OpenTelemetry instrumentation for FastMCP (Model Context Protocol)"
+readme = "README.rst"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "opentelemetry-api ~= 1.38.0.dev0",
+  "opentelemetry-instrumentation ~= 0.59b0.dev0",
+  "opentelemetry-semantic-conventions ~= 0.59b0.dev0",
+  "splunk-otel-util-genai>=0.1.4",
+  "wrapt>=1.0.0",
+]
+
+[project.optional-dependencies]
+instruments = [
+  "fastmcp >= 2.0.0",
+]
+test = [
+  "fastmcp >= 2.0.0",
+  "pytest >= 7.0.0",
+  "pytest-asyncio >= 0.21.0",
+]
+
+[project.entry-points.opentelemetry_instrumentor]
+fastmcp = "opentelemetry.instrumentation.fastmcp:FastMCPInstrumentor"
+
+[project.urls]
+Homepage = "https://github.com/signalfx/splunk-otel-python-contrib"
+Repository = "https://github.com/signalfx/splunk-otel-python-contrib"
+
+[tool.hatch.version]
+path = "src/opentelemetry/instrumentation/fastmcp/version.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opentelemetry"]
+
+[tool.ruff]
+exclude = [
+    "./",
+]

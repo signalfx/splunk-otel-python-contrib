@@ -121,8 +121,11 @@ def _collect_agent_inputs(agent: AgentInvocation) -> list[str]:
     chunks: list[str] = []
     if agent.system_instructions:
         chunks.extend(flatten_to_strings(agent.system_instructions))
-    if agent.input_context:
-        chunks.extend(flatten_to_strings(agent.input_context))
+    # Extract text from structured input_messages
+    for msg in getattr(agent, "input_messages", []) or []:
+        for part in getattr(msg, "parts", []) or []:
+            if isinstance(part, Text) and part.content:
+                chunks.extend(flatten_to_strings(part.content))
     attrs = agent.attributes or {}
     prompt_capture = (
         attrs.get("prompt_capture") if isinstance(attrs, Mapping) else None
@@ -145,8 +148,11 @@ def _collect_agent_inputs(agent: AgentInvocation) -> list[str]:
 
 def _collect_agent_outputs(agent: AgentInvocation) -> list[str]:
     chunks: list[str] = []
-    if agent.output_result:
-        chunks.extend(flatten_to_strings(agent.output_result))
+    # Extract text from structured output_messages
+    for msg in getattr(agent, "output_messages", []) or []:
+        for part in getattr(msg, "parts", []) or []:
+            if isinstance(part, Text) and part.content:
+                chunks.extend(flatten_to_strings(part.content))
     attrs = agent.attributes or {}
     prompt_capture = (
         attrs.get("prompt_capture") if isinstance(attrs, Mapping) else None

@@ -124,12 +124,114 @@ class GenAI:
 
 @dataclass()
 class ToolCall(GenAI):
-    """Represents a single tool call invocation (Phase 4)."""
+    """Represents a tool call invocation per execute_tool semantic conventions.
 
-    arguments: Any
-    name: str
-    id: Optional[str]
+    See: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span
+
+    Required attributes:
+    - gen_ai.operation.name: Should be "execute_tool"
+
+    Conditionally required:
+    - error.type: If operation ended in error
+
+    Recommended:
+    - gen_ai.tool.name: Name of the tool
+    - gen_ai.tool.call.id: Tool call identifier
+    - gen_ai.tool.type: Type (function, extension, datastore)
+    - gen_ai.tool.description: Tool description
+
+    Opt-In:
+    - gen_ai.tool.call.arguments: Parameters passed to tool
+    - gen_ai.tool.call.result: Result returned by tool
+    """
+
+    # Required: gen_ai.tool.name
+    name: str = field(metadata={"semconv": "gen_ai.tool.name"})
+    # Opt-In: gen_ai.tool.call.arguments (set on start if content capture enabled)
+    arguments: Any = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.arguments"},
+    )
+    # Recommended: gen_ai.tool.call.id
+    id: Optional[str] = field(
+        default=None, metadata={"semconv": "gen_ai.tool.call.id"}
+    )
     type: Literal["tool_call"] = "tool_call"
+
+    # Recommended: gen_ai.tool.type ("function", "extension", or "datastore")
+    tool_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.type"},
+    )
+    # Recommended: gen_ai.tool.description
+    tool_description: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.tool.description"},
+    )
+    # Opt-In: gen_ai.tool.call.result (set on finish if content capture enabled)
+    tool_result: Optional[Any] = field(
+        default=None,
+        metadata={"semconv_content": "gen_ai.tool.call.result"},
+    )
+    # Conditionally Required: error.type (set if error occurred)
+    error_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "error.type"},
+    )
+
+
+@dataclass()
+class MCPToolCall(ToolCall):
+    """Represents an MCP (Model Context Protocol) tool call invocation.
+
+    Extends ToolCall with MCP-specific semantic conventions:
+    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+
+    MCP Semantic Convention Attributes:
+    - mcp.method.name: The name of the request or notification method
+    - mcp.session.id: Session identifier for the MCP connection
+    - mcp.protocol.version: MCP protocol version
+    - mcp.server.name: Name of the MCP server
+    - network.transport: Transport type ("pipe" for stdio, "tcp" for HTTP)
+
+    Metrics-only fields (not span attributes):
+    - output_size_bytes: Output size for metrics tracking
+    - output_size_tokens: Token count for metrics tracking
+    - duration_s: Duration for standalone metrics emission
+    """
+
+    # mcp.method.name: The name of the request or notification method
+    mcp_method_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.method.name"},
+    )
+    # network.transport: "pipe" for stdio, "tcp" for HTTP
+    network_transport: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.transport"},
+    )
+    # mcp.session.id: Session identifier
+    mcp_session_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.session.id"},
+    )
+    # mcp.protocol.version: MCP protocol version
+    mcp_protocol_version: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.protocol.version"},
+    )
+    # mcp.server.name: Name of the MCP server
+    mcp_server_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "mcp.server.name"},
+    )
+    # Metrics-only fields (no semconv metadata - not span attributes)
+    output_size_bytes: Optional[int] = None
+    output_size_tokens: Optional[int] = None
+    duration_s: Optional[float] = None
+    # Internal state tracking (no semconv)
+    is_client: bool = True
+    is_error: bool = False
 
 
 @dataclass()
@@ -163,7 +265,9 @@ class InputMessage:
 class OutputMessage:
     role: str
     parts: list[MessagePart]
-    finish_reason: Union[str, FinishReason]
+    finish_reason: Optional[Union[str, FinishReason]] = (
+        None  # Only for LLM responses
+    )
 
 
 @dataclass
@@ -338,6 +442,51 @@ class EmbeddingInvocation(GenAI):
 
 
 @dataclass
+class RetrievalInvocation(GenAI):
+    """Represents a single retrieval/search invocation."""
+
+    # Required attribute
+    operation_name: str = field(
+        default="retrieval",
+        metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
+    )
+
+    # Recommended attributes
+    retriever_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.type"},
+    )
+    request_model: Optional[str] = field(
+        default=None,
+        metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_MODEL},
+    )
+    query: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.query.text"},
+    )
+    top_k: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.top_k"},
+    )
+    documents_retrieved: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.retrieval.documents_retrieved"},
+    )
+
+    # Opt-in attribute
+    results: list[dict[str, Any]] = field(
+        default_factory=list,
+        metadata={"semconv": "gen_ai.retrieval.documents"},
+    )
+
+    # Additional utility fields (not in semantic conventions)
+    query_vector: Optional[list[float]] = None
+    server_port: Optional[int] = None
+    server_address: Optional[str] = None
+    error_type: Optional[str] = None
+
+
+@dataclass
 class Workflow(GenAI):
     """Represents a workflow orchestrating multiple agents and steps.
 
@@ -350,8 +499,8 @@ class Workflow(GenAI):
         workflow_type: Type of orchestration (e.g., "sequential", "parallel", "graph", "dynamic")
         description: Human-readable description of the workflow's purpose
         framework: Framework implementing the workflow (e.g., "langgraph", "crewai", "autogen")
-        initial_input: User's initial query/request that triggered the workflow
-        final_output: Final response/result produced by the workflow
+        input_messages: Structured input messages for the workflow
+        output_messages: Structured output messages from the workflow
         attributes: Additional custom attributes for workflow-specific metadata
         start_time: Timestamp when workflow started
         end_time: Timestamp when workflow completed
@@ -364,8 +513,12 @@ class Workflow(GenAI):
     name: str
     workflow_type: Optional[str] = None  # sequential, parallel, graph, dynamic
     description: Optional[str] = None
-    initial_input: Optional[str] = None  # User's initial query/request
-    final_output: Optional[str] = None  # Final response/result
+    input_messages: List[InputMessage] = field(
+        default_factory=_new_input_messages
+    )
+    output_messages: List[OutputMessage] = field(
+        default_factory=_new_output_messages
+    )
 
 
 @dataclass
@@ -397,7 +550,9 @@ class AgentCreation(_BaseAgent):
         default="create_agent",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    input_context: Optional[str] = None  # optional initial context
+    input_messages: List[InputMessage] = field(
+        default_factory=_new_input_messages
+    )
 
 
 @dataclass
@@ -409,8 +564,12 @@ class AgentInvocation(_BaseAgent):
         default="invoke_agent",
         metadata={"semconv": GenAIAttributes.GEN_AI_OPERATION_NAME},
     )
-    input_context: Optional[str] = None  # Input for invoke operations
-    output_result: Optional[str] = None  # Output for invoke operations
+    input_messages: List[InputMessage] = field(
+        default_factory=_new_input_messages
+    )
+    output_messages: List[OutputMessage] = field(
+        default_factory=_new_output_messages
+    )
 
 
 @dataclass
@@ -433,8 +592,6 @@ class Step(GenAI):
     assigned_agent: Optional[str] = None  # for workflow-assigned steps
     status: Optional[str] = None  # pending, in_progress, completed, failed
     description: Optional[str] = None
-    input_data: Optional[str] = None  # Input data/context for the step
-    output_data: Optional[str] = None  # Output data/result from the step
 
 
 __all__ = [
@@ -448,6 +605,7 @@ __all__ = [
     "GenAI",
     "LLMInvocation",
     "EmbeddingInvocation",
+    "RetrievalInvocation",
     "Error",
     "EvaluationResult",
     # agentic AI types

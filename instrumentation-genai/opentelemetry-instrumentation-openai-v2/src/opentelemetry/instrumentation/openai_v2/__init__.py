@@ -44,16 +44,12 @@ from typing import Collection
 
 from wrapt import wrap_function_wrapper
 
-from opentelemetry._logs import get_logger
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.openai_v2.package import _instruments
 from opentelemetry.instrumentation.openai_v2.utils import is_content_enabled
 from opentelemetry.instrumentation.utils import unwrap
-from opentelemetry.metrics import get_meter
-from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.util.genai.handler import get_telemetry_handler
 
-from .instruments import Instruments
 from .patch import (
     async_chat_completions_create,
     async_embeddings_create,
@@ -73,21 +69,7 @@ class OpenAIInstrumentor(BaseInstrumentor):
         """Enable OpenAI instrumentation."""
         tracer_provider = kwargs.get("tracer_provider")
         logger_provider = kwargs.get("logger_provider")
-        logger = get_logger(
-            __name__,
-            "",
-            schema_url=Schemas.V1_28_0.value,
-            logger_provider=logger_provider,
-        )
         meter_provider = kwargs.get("meter_provider")
-        self._meter = get_meter(
-            __name__,
-            "",
-            meter_provider,
-            schema_url=Schemas.V1_28_0.value,
-        )
-
-        instruments = Instruments(self._meter)
 
         # Create telemetry handler with the user's providers
         handler = get_telemetry_handler(
@@ -99,16 +81,14 @@ class OpenAIInstrumentor(BaseInstrumentor):
         wrap_function_wrapper(
             module="openai.resources.chat.completions",
             name="Completions.create",
-            wrapper=chat_completions_create(
-                logger, instruments, is_content_enabled(), handler
-            ),
+            wrapper=chat_completions_create(is_content_enabled(), handler),
         )
 
         wrap_function_wrapper(
             module="openai.resources.chat.completions",
             name="AsyncCompletions.create",
             wrapper=async_chat_completions_create(
-                logger, instruments, is_content_enabled(), handler
+                is_content_enabled(), handler
             ),
         )
 
@@ -116,17 +96,13 @@ class OpenAIInstrumentor(BaseInstrumentor):
         wrap_function_wrapper(
             module="openai.resources.embeddings",
             name="Embeddings.create",
-            wrapper=embeddings_create(
-                instruments, is_content_enabled(), handler
-            ),
+            wrapper=embeddings_create(is_content_enabled(), handler),
         )
 
         wrap_function_wrapper(
             module="openai.resources.embeddings",
             name="AsyncEmbeddings.create",
-            wrapper=async_embeddings_create(
-                instruments, is_content_enabled(), handler
-            ),
+            wrapper=async_embeddings_create(is_content_enabled(), handler),
         )
 
     def _uninstrument(self, **kwargs):

@@ -52,6 +52,26 @@ returned by Deepeval. Metrics that cannot run because required inputs are missin
 ``label="skipped"`` and carry a ``deepeval.error`` attribute so you can wire the
 necessary data or disable that metric explicitly.
 
+GEval Metric Scoring
+--------------------
+
+The GEval-based metrics use specific scoring conventions:
+
+**Hallucination Metric:**
+
+* Score range: 0.0 to 1.0 (lower is better)
+* 0.0 = No hallucination (output fully grounded in input)
+* 1.0 = Maximum hallucination (fabrications or contradictions)
+* Attribute ``deepeval.hallucination.geval_score`` contains the original GEval score (inverted internally)
+
+**Sentiment Metric:**
+
+* Score range: 0.0 to 1.0
+* 0.0-0.35 = Negative sentiment
+* 0.35-0.65 = Neutral sentiment  
+* 0.65-1.0 = Positive sentiment
+* Attribute ``deepeval.sentiment.compound`` provides a -1 to +1 compound score for backward compatibility
+
 Default OpenAI Usage
 --------------------
 
@@ -184,3 +204,44 @@ variables (it must be passed programmatically). We provide ``DEEPEVAL_LLM_EXTRA_
 to bridge this gap for DeepEval users who need custom headers without code changes.
 See `LiteLLM SDK Header Support <https://docs.litellm.ai/docs/sdk/headers>`_ for more details
 on how headers work in LiteLLM.
+
+Concurrent Evaluation Mode
+--------------------------
+
+For high-throughput evaluation scenarios, enable concurrent processing:
+
+.. code-block:: bash
+
+    # Enable concurrent evaluation
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS=4
+    
+    # Optional: Bounded queue for backpressure
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE=100
+
+When concurrent mode is enabled:
+
+* Multiple worker threads process evaluations in parallel
+* DeepEval's internal async mode is enabled (``run_async=True``)
+* Metrics within each invocation are evaluated concurrently (up to 10 parallel)
+* Significant throughput improvement for LLM-as-a-Judge evaluations
+
+**Important:** When using concurrent mode, add a buffer wait time after your
+application's main work completes to allow all evaluations to finish:
+
+.. code-block:: python
+
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+    
+    # ... your application code ...
+    
+    handler = get_telemetry_handler()
+    handler.wait_for_evaluations(timeout=60)  # Wait up to 60 seconds
+
+Performance Considerations
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Sequential Mode (default)**: Safe, ordered evaluation. Best for low-volume scenarios.
+* **Concurrent Mode**: 2-4x throughput improvement. Best for batch processing or high-volume scenarios.
+* **Worker Count**: Start with 4 workers, adjust based on LLM API rate limits.
+* **Queue Size**: Use bounded queue (e.g., 100-1000) to prevent memory exhaustion under load.

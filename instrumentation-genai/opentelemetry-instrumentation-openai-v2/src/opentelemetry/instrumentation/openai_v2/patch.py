@@ -15,13 +15,11 @@
 
 import asyncio
 import inspect
-from timeit import default_timer
 from typing import Any, Iterable, Optional
 
 from openai import Stream
 
-from opentelemetry._logs import Logger, LogRecord
-from opentelemetry.context import get_current
+from opentelemetry import context as context_api
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
 )
@@ -29,7 +27,9 @@ from opentelemetry.semconv._incubating.attributes import (
     server_attributes as ServerAttributes,
 )
 from opentelemetry.trace import Span
-from opentelemetry.trace.propagation import set_span_in_context
+from opentelemetry.util.genai.attributes import (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
 from opentelemetry.util.genai.handler import (
     Error as InvocationError,
 )
@@ -37,17 +37,18 @@ from opentelemetry.util.genai.types import (
     EmbeddingInvocation,
     InputMessage,
     LLMInvocation,
+    MessagePart,
     OutputMessage,
     Text,
 )
+from opentelemetry.util.genai.types import (
+    ToolCall as GenAIToolCall,
+)
 
-from .instruments import Instruments
 from .utils import (
-    choice_to_event,
     get_llm_request_attributes,
     handle_span_exception,
     is_streaming,
-    message_to_event,
     set_span_attribute,
     value_is_set,
 )
@@ -84,7 +85,7 @@ def _to_text_parts(content: Any, capture_content: bool) -> list[Text]:
     if isinstance(content, str):
         return [Text(content=content if capture_content else "")]
     if isinstance(content, Iterable) and not isinstance(content, dict):
-        parts: list[Text] = []
+        parts: list[MessagePart] = []
         for item in content:
             text_value = _text_value(item)
             if text_value is None:
@@ -199,10 +200,20 @@ def _build_output_messages_from_response(
     for choice in getattr(result, "choices", []) or []:
         message = getattr(choice, "message", None)
         role = getattr(message, "role", None) if message else None
-        parts: list[Text] = []
+        parts: list[MessagePart] = []
         content = getattr(message, "content", None) if message else None
         if content is not None:
             parts = _to_text_parts(content, capture_content)
+        tool_calls = getattr(message, "tool_calls", None) if message else None
+        if tool_calls:
+            for tool_call in tool_calls:
+                genai_tool_call, _ = _build_tool_call_invocation(
+                    tool_call, capture_content
+                )
+                genai_tool_call.provider = (
+                    GenAIAttributes.GenAiProviderNameValues.OPENAI.value
+                )
+                parts.append(genai_tool_call)
         finish_reason = getattr(choice, "finish_reason", None) or "error"
         output_messages.append(
             OutputMessage(
@@ -245,6 +256,61 @@ def _parse_response(result: Any) -> Any:
     if hasattr(result, "parse"):
         return result.parse()
     return result
+
+
+def _build_tool_call_invocation(
+    tool_call: Any, capture_content: bool
+) -> tuple[GenAIToolCall, str]:
+    """Normalize to genai-util ToolCall and capture tool type."""
+    tool_type = getattr(tool_call, "type", None)
+    function = getattr(tool_call, "function", None)
+    if isinstance(tool_call, dict):
+        tool_type = tool_call.get("type", tool_type)
+        function = tool_call.get("function", function)
+
+    function_name = None
+    arguments = None
+    description = None
+    if isinstance(function, dict):
+        function_name = function.get("name")
+        arguments = function.get("arguments")
+        description = function.get("description")
+    else:
+        function_name = getattr(function, "name", None)
+        arguments = getattr(function, "arguments", None)
+        description = getattr(function, "description", None)
+
+    if not capture_content:
+        arguments = None
+
+    tool_call_id = getattr(tool_call, "id", None)
+    if isinstance(tool_call, dict):
+        tool_call_id = tool_call.get("id", tool_call_id)
+
+    tool_call_type = tool_type or "function"
+
+    genai_tool_call = GenAIToolCall(
+        name=function_name or "unnamed_tool_call",
+        id=tool_call_id,
+        arguments=arguments,
+        provider=GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
+    )
+    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_NAME] = (
+        function_name or ""
+    )
+    genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_TYPE] = (
+        tool_call_type
+    )
+    if tool_call_id:
+        genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_CALL_ID] = (
+            tool_call_id
+        )
+    if description:
+        genai_tool_call.attributes[GenAIAttributes.GEN_AI_TOOL_DESCRIPTION] = (
+            description
+        )
+
+    return genai_tool_call, tool_call_type
 
 
 def _normalize_input_texts(input_val: Any) -> list[str]:
@@ -309,15 +375,14 @@ def _apply_embedding_response_to_invocation(
             pass
 
 
-def chat_completions_create(
-    logger: Logger,
-    instruments: Instruments,
-    capture_content: bool,
-    handler,
-):
+def chat_completions_create(capture_content: bool, handler):
     """Wrap the `create` method of the `ChatCompletion` class to trace it."""
 
     def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return wrapped(*args, **kwargs)
+
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
@@ -325,13 +390,8 @@ def chat_completions_create(
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
-        for message in kwargs.get("messages", []):
-            logger.emit(message_to_event(message, capture_content))
-
-        start = default_timer()
         result = None
         parsed_result = None
-        error_type = None
         try:
             result = wrapped(*args, **kwargs)
             parsed_result = _parse_response(result)
@@ -339,17 +399,14 @@ def chat_completions_create(
                 return StreamWrapper(
                     parsed_result,
                     invocation,
-                    logger,
                     capture_content,
                     handler,
                 )
 
             if span and span.is_recording():
                 _set_response_attributes(
-                    span, parsed_result, logger, capture_content
+                    span, parsed_result, capture_content, handler
                 )
-            for choice in getattr(parsed_result, "choices", []):
-                logger.emit(choice_to_event(choice, capture_content))
 
             _apply_chat_response_to_invocation(
                 invocation, parsed_result, capture_content
@@ -358,7 +415,6 @@ def chat_completions_create(
             return result
 
         except Exception as error:
-            error_type = type(error).__qualname__
             handler.fail_llm(
                 invocation,
                 InvocationError(message=str(error), type=type(error)),
@@ -366,29 +422,18 @@ def chat_completions_create(
             if span:
                 handle_span_exception(span, error)
             raise
-        finally:
-            duration = max((default_timer() - start), 0)
-            _record_metrics(
-                instruments,
-                duration,
-                parsed_result or result,
-                span_attributes,
-                error_type,
-                GenAIAttributes.GenAiOperationNameValues.CHAT.value,
-            )
 
     return traced_method
 
 
-def async_chat_completions_create(
-    logger: Logger,
-    instruments: Instruments,
-    capture_content: bool,
-    handler,
-):
+def async_chat_completions_create(capture_content: bool, handler):
     """Wrap the `create` method of the `AsyncChatCompletion` class to trace it."""
 
     async def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return await wrapped(*args, **kwargs)
+
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
@@ -396,13 +441,8 @@ def async_chat_completions_create(
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
-        for message in kwargs.get("messages", []):
-            logger.emit(message_to_event(message, capture_content))
-
-        start = default_timer()
         result = None
         parsed_result = None
-        error_type = None
         try:
             result = await wrapped(*args, **kwargs)
             parsed_result = _parse_response(result)
@@ -410,17 +450,14 @@ def async_chat_completions_create(
                 return StreamWrapper(
                     parsed_result,
                     invocation,
-                    logger,
                     capture_content,
                     handler,
                 )
 
             if span and span.is_recording():
                 _set_response_attributes(
-                    span, parsed_result, logger, capture_content
+                    span, parsed_result, capture_content, handler
                 )
-            for choice in getattr(parsed_result, "choices", []):
-                logger.emit(choice_to_event(choice, capture_content))
 
             _apply_chat_response_to_invocation(
                 invocation, parsed_result, capture_content
@@ -429,7 +466,6 @@ def async_chat_completions_create(
             return result
 
         except Exception as error:
-            error_type = type(error).__qualname__
             handler.fail_llm(
                 invocation,
                 InvocationError(message=str(error), type=type(error)),
@@ -437,28 +473,18 @@ def async_chat_completions_create(
             if span:
                 handle_span_exception(span, error)
             raise
-        finally:
-            duration = max((default_timer() - start), 0)
-            _record_metrics(
-                instruments,
-                duration,
-                parsed_result or result,
-                span_attributes,
-                error_type,
-                GenAIAttributes.GenAiOperationNameValues.CHAT.value,
-            )
 
     return traced_method
 
 
-def embeddings_create(
-    instruments: Instruments,
-    capture_content: bool,
-    handler,
-):
+def embeddings_create(capture_content: bool, handler):
     """Wrap the `create` method of the `Embeddings` class to trace it."""
 
     def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return wrapped(*args, **kwargs)
+
         span_attributes = get_llm_request_attributes(
             kwargs,
             instance,
@@ -468,10 +494,8 @@ def embeddings_create(
         handler.start_embedding(invocation)
         span = getattr(invocation, "span", None)
 
-        start = default_timer()
         result = None
         parsed_result = None
-        error_type = None
 
         try:
             result = wrapped(*args, **kwargs)
@@ -490,7 +514,6 @@ def embeddings_create(
             return result
 
         except Exception as error:
-            error_type = type(error).__qualname__
             handler.fail_embedding(
                 invocation,
                 InvocationError(message=str(error), type=type(error)),
@@ -499,28 +522,17 @@ def embeddings_create(
                 handle_span_exception(span, error)
             raise
 
-        finally:
-            duration = max((default_timer() - start), 0)
-            _record_metrics(
-                instruments,
-                duration,
-                parsed_result or result,
-                span_attributes,
-                error_type,
-                GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
-            )
-
     return traced_method
 
 
-def async_embeddings_create(
-    instruments: Instruments,
-    capture_content: bool,
-    handler,
-):
+def async_embeddings_create(capture_content: bool, handler):
     """Wrap the `create` method of the `AsyncEmbeddings` class to trace it."""
 
     async def traced_method(wrapped, instance, args, kwargs):
+        # Check if instrumentation is suppressed (e.g., by LangChain)
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return await wrapped(*args, **kwargs)
+
         span_attributes = get_llm_request_attributes(
             kwargs,
             instance,
@@ -530,10 +542,8 @@ def async_embeddings_create(
         handler.start_embedding(invocation)
         span = getattr(invocation, "span", None)
 
-        start = default_timer()
         result = None
         parsed_result = None
-        error_type = None
 
         try:
             result = await wrapped(*args, **kwargs)
@@ -552,7 +562,6 @@ def async_embeddings_create(
             return result
 
         except Exception as error:
-            error_type = type(error).__qualname__
             handler.fail_embedding(
                 invocation,
                 InvocationError(message=str(error), type=type(error)),
@@ -561,104 +570,11 @@ def async_embeddings_create(
                 handle_span_exception(span, error)
             raise
 
-        finally:
-            duration = max((default_timer() - start), 0)
-            _record_metrics(
-                instruments,
-                duration,
-                parsed_result or result,
-                span_attributes,
-                error_type,
-                GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value,
-            )
-
     return traced_method
 
 
-def _get_embeddings_span_name(span_attributes):
-    """Get span name for embeddings operations."""
-    return f"{span_attributes[GenAIAttributes.GEN_AI_OPERATION_NAME]} {span_attributes[GenAIAttributes.GEN_AI_REQUEST_MODEL]}"
-
-
-def _record_metrics(
-    instruments: Instruments,
-    duration: float,
-    result,
-    request_attributes: dict,
-    error_type: Optional[str],
-    operation_name: str,
-):
-    common_attributes = {
-        GenAIAttributes.GEN_AI_OPERATION_NAME: operation_name,
-        GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value,
-        GenAIAttributes.GEN_AI_REQUEST_MODEL: request_attributes[
-            GenAIAttributes.GEN_AI_REQUEST_MODEL
-        ],
-    }
-
-    if "gen_ai.embeddings.dimension.count" in request_attributes:
-        common_attributes["gen_ai.embeddings.dimension.count"] = (
-            request_attributes["gen_ai.embeddings.dimension.count"]
-        )
-
-    if error_type:
-        common_attributes["error.type"] = error_type
-
-    if result and getattr(result, "model", None):
-        common_attributes[GenAIAttributes.GEN_AI_RESPONSE_MODEL] = result.model
-
-    if result and getattr(result, "service_tier", None):
-        common_attributes[
-            GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SERVICE_TIER
-        ] = result.service_tier
-
-    if result and getattr(result, "system_fingerprint", None):
-        common_attributes["gen_ai.openai.response.system_fingerprint"] = (
-            result.system_fingerprint
-        )
-
-    if ServerAttributes.SERVER_ADDRESS in request_attributes:
-        common_attributes[ServerAttributes.SERVER_ADDRESS] = (
-            request_attributes[ServerAttributes.SERVER_ADDRESS]
-        )
-
-    if ServerAttributes.SERVER_PORT in request_attributes:
-        common_attributes[ServerAttributes.SERVER_PORT] = request_attributes[
-            ServerAttributes.SERVER_PORT
-        ]
-
-    instruments.operation_duration_histogram.record(
-        duration,
-        attributes=common_attributes,
-    )
-
-    if result and getattr(result, "usage", None):
-        # Always record input tokens
-        input_attributes = {
-            **common_attributes,
-            GenAIAttributes.GEN_AI_TOKEN_TYPE: GenAIAttributes.GenAiTokenTypeValues.INPUT.value,
-        }
-        instruments.token_usage_histogram.record(
-            result.usage.prompt_tokens,
-            attributes=input_attributes,
-        )
-
-        # For embeddings, don't record output tokens as all tokens are input tokens
-        if (
-            operation_name
-            != GenAIAttributes.GenAiOperationNameValues.EMBEDDINGS.value
-        ):
-            output_attributes = {
-                **common_attributes,
-                GenAIAttributes.GEN_AI_TOKEN_TYPE: GenAIAttributes.GenAiTokenTypeValues.COMPLETION.value,
-            }
-            instruments.token_usage_histogram.record(
-                result.usage.completion_tokens, attributes=output_attributes
-            )
-
-
 def _set_response_attributes(
-    span, result, logger: Logger, capture_content: bool
+    span, result, capture_content: bool, handler=None
 ):
     if getattr(result, "model", None):
         set_span_attribute(
@@ -699,6 +615,36 @@ def _set_response_attributes(
             result.usage.completion_tokens,
         )
 
+    if handler:
+        _emit_tool_calls_from_response(handler, span, result, capture_content)
+
+
+def _emit_tool_calls_from_response(
+    handler,
+    parent_span: Span,
+    result: Any,
+    capture_content: bool,
+) -> None:
+    for choice in getattr(result, "choices", []):
+        message = getattr(choice, "message", None)
+
+        tool_calls = None
+        if isinstance(message, dict):
+            tool_calls = message.get("tool_calls")
+        elif message is not None:
+            tool_calls = getattr(message, "tool_calls", None)
+
+        if not tool_calls:
+            continue
+
+        for tool_call in tool_calls:
+            genai_tool_call, _ = _build_tool_call_invocation(
+                tool_call, capture_content
+            )
+            genai_tool_call.parent_span = parent_span
+            handler.start_tool_call(genai_tool_call)
+            handler.stop_tool_call(genai_tool_call)
+
 
 def _set_embeddings_response_attributes(
     span: Span,
@@ -731,22 +677,61 @@ def _set_embeddings_response_attributes(
 
 
 class ToolCallBuffer:
-    def __init__(self, index, tool_call_id, function_name):
+    def __init__(
+        self,
+        index: int,
+        tool_call: GenAIToolCall,
+        tool_type: str,
+        handler,
+        parent_span: Span,
+        capture_content: bool,
+    ):
         self.index = index
-        self.function_name = function_name
-        self.tool_call_id = tool_call_id
-        self.arguments = []
+        self.tool_call = tool_call
+        self.tool_type = tool_type
+        self._capture_content = capture_content
+        self._argument_chunks: list[str] = []
+        self.handler = handler
+        self.tool_call.parent_span = parent_span
+        self.handler.start_tool_call(self.tool_call)
+        self._ended = False
 
     def append_arguments(self, arguments):
-        self.arguments.append(arguments)
+        if not self._capture_content or arguments is None:
+            return
+        self._argument_chunks.append(arguments)
+
+    def finalize(self) -> tuple[GenAIToolCall, str]:
+        if self._ended:
+            return self.tool_call, self.tool_type
+
+        if self._capture_content and self._argument_chunks:
+            self.tool_call.arguments = "".join(self._argument_chunks)
+        else:
+            if not self._capture_content:
+                self.tool_call.arguments = None
+
+        self.handler.stop_tool_call(self.tool_call)
+        self._ended = True
+
+        return self.tool_call, self.tool_type
 
 
 class ChoiceBuffer:
-    def __init__(self, index):
+    def __init__(
+        self,
+        index: int,
+        handler,
+        parent_span: Span,
+        capture_content: bool,
+    ):
         self.index = index
         self.finish_reason = None
         self.text_content = []
         self.tool_calls_buffers = []
+        self._handler = handler
+        self._parent_span = parent_span
+        self._capture_content = capture_content
 
     def append_text_content(self, content):
         self.text_content.append(content)
@@ -758,12 +743,21 @@ class ChoiceBuffer:
             self.tool_calls_buffers.append(None)
 
         if not self.tool_calls_buffers[idx]:
-            self.tool_calls_buffers[idx] = ToolCallBuffer(
-                idx, tool_call.id, tool_call.function.name
+            genai_tool_call, tool_type = _build_tool_call_invocation(
+                tool_call, self._capture_content
             )
-        self.tool_calls_buffers[idx].append_arguments(
-            tool_call.function.arguments
-        )
+            self.tool_calls_buffers[idx] = ToolCallBuffer(
+                idx,
+                genai_tool_call,
+                tool_type,
+                self._handler,
+                self._parent_span,
+                self._capture_content,
+            )
+        else:
+            self.tool_calls_buffers[idx].append_arguments(
+                tool_call.function.arguments
+            )
 
 
 class StreamWrapper:
@@ -778,7 +772,6 @@ class StreamWrapper:
         self,
         stream: Stream,
         invocation: LLMInvocation,
-        logger: Logger,
         capture_content: bool,
         handler,
     ):
@@ -792,8 +785,6 @@ class StreamWrapper:
         self.capture_content = capture_content
         self._telemetry_stopped = False
         self._error: Optional[Exception] = None
-
-        self.logger = logger
         self.setup()
 
     def setup(self):
@@ -809,6 +800,15 @@ class StreamWrapper:
                 parts.append(
                     Text(content=joined if self.capture_content else "")
                 )
+            if choice.tool_calls_buffers:
+                for tool_call_state in choice.tool_calls_buffers:
+                    if tool_call_state is None:
+                        continue
+                    tool_call, tool_type = tool_call_state.finalize()
+                    tool_call.provider = (
+                        GenAIAttributes.GenAiProviderNameValues.OPENAI.value
+                    )
+                    parts.append(tool_call)
 
             finish_reason = choice.finish_reason or "error"
             output_messages.append(
@@ -837,14 +837,12 @@ class StreamWrapper:
                         GenAIAttributes.GEN_AI_RESPONSE_MODEL,
                         self.response_model,
                     )
-
                 if self.response_id:
                     set_span_attribute(
                         self.span,
                         GenAIAttributes.GEN_AI_RESPONSE_ID,
                         self.response_id,
                     )
-
                 set_span_attribute(
                     self.span,
                     GenAIAttributes.GEN_AI_USAGE_INPUT_TOKENS,
@@ -855,13 +853,11 @@ class StreamWrapper:
                     GenAIAttributes.GEN_AI_USAGE_OUTPUT_TOKENS,
                     self.completion_tokens,
                 )
-
                 set_span_attribute(
                     self.span,
                     GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SERVICE_TIER,
                     self.service_tier,
                 )
-
                 set_span_attribute(
                     self.span,
                     GenAIAttributes.GEN_AI_RESPONSE_FINISH_REASONS,
@@ -880,49 +876,6 @@ class StreamWrapper:
                 else:
                     self.handler.stop_llm(self.invocation)
                 self._telemetry_stopped = True
-
-            for idx, choice in enumerate(self.choice_buffers):
-                message = {"role": "assistant"}
-                if self.capture_content and choice.text_content:
-                    message["content"] = "".join(choice.text_content)
-                if choice.tool_calls_buffers:
-                    tool_calls = []
-                    for tool_call in choice.tool_calls_buffers:
-                        function = {"name": tool_call.function_name}
-                        if self.capture_content:
-                            function["arguments"] = "".join(
-                                tool_call.arguments
-                            )
-                        tool_call_dict = {
-                            "id": tool_call.tool_call_id,
-                            "type": "function",
-                            "function": function,
-                        }
-                        tool_calls.append(tool_call_dict)
-                    message["tool_calls"] = tool_calls
-
-                body = {
-                    "index": idx,
-                    "finish_reason": choice.finish_reason or "error",
-                    "message": message,
-                }
-
-                event_attributes = {
-                    GenAIAttributes.GEN_AI_SYSTEM: GenAIAttributes.GenAiProviderNameValues.OPENAI.value
-                }
-                context = (
-                    set_span_in_context(self.span, get_current())
-                    if self.span
-                    else get_current()
-                )
-                self.logger.emit(
-                    LogRecord(
-                        event_name="gen_ai.choice",
-                        attributes=event_attributes,
-                        body=body,
-                        context=context,
-                    )
-                )
 
             self._span_started = False
 
@@ -1032,7 +985,11 @@ class StreamWrapper:
 
             # make sure we have enough choice buffers
             for idx in range(len(self.choice_buffers), choice.index + 1):
-                self.choice_buffers.append(ChoiceBuffer(idx))
+                self.choice_buffers.append(
+                    ChoiceBuffer(
+                        idx, self.handler, self.span, self.capture_content
+                    )
+                )
 
             if choice.finish_reason:
                 self.choice_buffers[

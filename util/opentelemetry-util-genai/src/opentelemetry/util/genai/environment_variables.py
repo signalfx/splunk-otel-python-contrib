@@ -111,6 +111,55 @@ OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL = (
 Polling interval (seconds) for the evaluation worker loop. Defaults to ``5.0`` seconds.
 """
 
+OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE
+
+Maximum size of the evaluation queue. When set to a positive integer, the queue
+becomes bounded and will apply backpressure when full (new items are dropped with
+a warning). When unset or set to ``0``, the queue is unbounded (default behavior).
+Recommended values: ``100`` to ``1000`` depending on memory constraints and evaluation
+throughput requirements.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT
+
+Enable concurrent evaluation processing. When set to a truthy value (``true``,
+``1``, ``yes``, ``on``), evaluations are processed concurrently using multiple
+worker threads and async LLM calls. When unset or falsey, evaluations are
+processed sequentially (legacy behavior). Concurrent mode significantly improves
+throughput for LLM-as-a-judge evaluations.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS
+
+Number of concurrent worker threads for evaluation processing. Only effective
+when ``OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT`` is enabled. Defaults to ``4``.
+Recommended values: ``2`` to ``8`` depending on LLM API rate limits and system
+resources.
+"""
+
+DEEPEVAL_MAX_CONCURRENT = "DEEPEVAL_MAX_CONCURRENT"
+"""
+.. envvar:: DEEPEVAL_MAX_CONCURRENT
+
+Maximum number of concurrent metric evaluations within a single test case.
+This controls DeepEval's internal parallelism when processing multiple metrics.
+Only effective when ``OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT`` is enabled.
+Defaults to ``10``. Higher values may improve throughput but increase LLM API
+rate limit pressure.
+"""
+
 OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS = (
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS"
 )
@@ -181,10 +230,15 @@ OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC = (
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC
 
-When set to a truthy value (``true``, ``1``, ``yes``, ``on``), evaluation metrics
-are emitted to a single histogram ``gen_ai.evaluation.score`` with the evaluation
-type distinguished by the ``gen_ai.evaluation.name`` attribute. When unset or falsey,
-evaluation metrics are emitted to separate histograms per evaluation type:
+Controls whether evaluation metrics are emitted to a single histogram or separate
+histograms per evaluation type. Default: ``true``.
+
+When ``true`` (default) or unset, evaluation metrics are emitted to a single histogram
+``gen_ai.evaluation.score`` with the evaluation type distinguished by the
+``gen_ai.evaluation.name`` attribute.
+
+When set to a falsey value (``false``, ``0``, ``no``, ``off``), evaluation metrics
+are emitted to separate histograms per evaluation type:
 ``gen_ai.evaluation.bias``, ``gen_ai.evaluation.toxicity``, etc.
 """
 OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
@@ -192,6 +246,36 @@ OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE = (
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE"
 )
+
+OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE
+
+Enable evaluation rate limiting. Set to 'false' to disable. Default: 'true' (enabled).
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS
+
+Per-process rate limit for evaluation queue admission (invocations per second).
+
+Integer value. Set to 0 or negative to disable. Default: 0 (disabled).
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST
+
+Burst capacity for evaluation rate limiting token bucket. Default: 4.
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -202,6 +286,10 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS",
+    "DEEPEVAL_MAX_CONCURRENT",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE",
     # generator selection
@@ -210,6 +298,9 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION",
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE",
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS",
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC",
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",

@@ -35,13 +35,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import argparse  # noqa: E402
+import os  # noqa: E402
 import random  # noqa: E402
 import time  # noqa: E402
 from datetime import datetime, timedelta  # noqa: E402
+from typing import Any  # noqa: E402
 
-from agents import Agent, Runner, function_tool  # noqa: E402
+from agents import (  # noqa: E402
+    Agent,
+    Runner,
+    function_tool,
+    set_default_openai_client,
+    trace,
+)
+from openai import AsyncOpenAI  # noqa: E402
 
-from opentelemetry import _events, _logs, metrics, trace  # noqa: E402
+from opentelemetry import _events, _logs, metrics  # noqa: E402
+from opentelemetry import trace as otel_trace  # noqa: E402
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # noqa: E402
     OTLPLogExporter,
 )
@@ -53,9 +63,6 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E40
 )
 from opentelemetry.instrumentation.openai_agents import (  # noqa: E402
     OpenAIAgentsInstrumentor,
-)
-from opentelemetry.instrumentation.openai_agents.span_processor import (  # noqa: E402
-    stop_workflow,
 )
 from opentelemetry.sdk._events import EventLoggerProvider  # noqa: E402
 from opentelemetry.sdk._logs import LoggerProvider  # noqa: E402
@@ -69,6 +76,49 @@ from opentelemetry.sdk.metrics.export import (  # noqa: E402
 from opentelemetry.sdk.resources import Resource  # noqa: E402
 from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: E402
+from util import OAuth2TokenManager  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# LLM Configuration - OAuth2 Provider
+# ---------------------------------------------------------------------------
+
+# Optional app key for request tracking
+LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
+
+# Check if we should use OAuth2 or standard OpenAI
+USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
+
+# Initialize token manager if OAuth2 credentials are present
+token_manager: OAuth2TokenManager | None = None
+if USE_OAUTH2:
+    token_manager = OAuth2TokenManager()
+    print("[AUTH] Using OAuth2 authentication")
+else:
+    print("[AUTH] Using standard OpenAI API key")
+
+
+def get_openai_client() -> AsyncOpenAI:
+    """Create OpenAI client with fresh OAuth2 token or standard API key."""
+    if USE_OAUTH2 and token_manager:
+        token = token_manager.get_token()
+        base_url = OAuth2TokenManager.get_llm_base_url(
+            os.environ.get("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        )
+
+        # Build extra headers
+        extra_headers: dict[str, str] = {"api-key": token}
+        if LLM_APP_KEY:
+            extra_headers["x-app-key"] = LLM_APP_KEY
+
+        return AsyncOpenAI(
+            api_key="placeholder",
+            base_url=base_url,
+            default_headers=extra_headers,
+        )
+    else:
+        # Standard OpenAI client using OPENAI_API_KEY
+        return AsyncOpenAI()
+
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -151,7 +201,7 @@ def configure_otel() -> None:
     # Traces
     trace_provider = TracerProvider(resource=resource)
     trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    trace.set_tracer_provider(trace_provider)
+    otel_trace.set_tracer_provider(trace_provider)
 
     # Metrics
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
@@ -169,6 +219,10 @@ def configure_otel() -> None:
     # OpenAI Agents instrumentation
     OpenAIAgentsInstrumentor().instrument(tracer_provider=trace_provider)
 
+    # Set default OpenAI client for agents
+    client = get_openai_client()
+    set_default_openai_client(client)  # type: ignore[arg-type]
+
 
 # ---------------------------------------------------------------------------
 # Agent creation
@@ -179,6 +233,7 @@ def create_flight_agent() -> Agent:
     """Create the flight specialist agent."""
     return Agent(
         name="Flight Specialist",
+        model="gpt-5-nano",
         instructions=(
             "You are a flight specialist. Search for the best flight options "
             "using the search_flights tool. Provide clear recommendations including "
@@ -192,6 +247,7 @@ def create_hotel_agent() -> Agent:
     """Create the hotel specialist agent."""
     return Agent(
         name="Hotel Specialist",
+        model="gpt-5-nano",
         instructions=(
             "You are a hotel specialist. Find the best accommodation using the "
             "search_hotels tool. Provide detailed recommendations including "
@@ -205,6 +261,7 @@ def create_activity_agent() -> Agent:
     """Create the activity specialist agent."""
     return Agent(
         name="Activity Specialist",
+        model="gpt-5-nano",
         instructions=(
             "You are an activities specialist. Curate memorable experiences using "
             "the search_activities tool. Provide detailed activity recommendations "
@@ -218,6 +275,7 @@ def create_coordinator_agent() -> Agent:
     """Create the travel coordinator agent that synthesizes the final itinerary."""
     return Agent(
         name="Travel Coordinator",
+        model="gpt-5-nano",
         instructions=(
             "You are a travel coordinator. Synthesize flight, hotel, and activity information "
             "into a comprehensive, well-organized travel itinerary with clear sections."
@@ -253,39 +311,43 @@ def run_travel_planner() -> None:
 
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
     print(f"\nRequest: {initial_request}\n")
+    metadata: dict[str, Any] = {
+        "initial_request": initial_request,
+    }
 
     final_output = None
     try:
-        # Step 1: Flight Specialist
-        print("\n✈️  Flight Specialist - Searching for flights...")
-        flight_result = Runner.run_sync(
-            flight_agent,
-            f"Find flights from {origin} to {destination} departing {departure}",
-        )
-        flight_info = flight_result.final_output
-        print(f"Result: {flight_info[:200]}...\n")
+        with trace("Travel planner workflow", metadata=metadata):
+            # Step 1: Flight Specialist
+            print("\n✈️  Flight Specialist - Searching for flights...")
+            flight_result = Runner.run_sync(
+                flight_agent,
+                f"Find flights from {origin} to {destination} departing {departure}",
+            )
+            flight_info = flight_result.final_output
+            print(f"Result: {flight_info[:200]}...\n")
 
-        # Step 2: Hotel Specialist
-        print("🏨 Hotel Specialist - Searching for hotels...")
-        hotel_result = Runner.run_sync(
-            hotel_agent,
-            f"Find a boutique hotel in {destination}, check-in {departure}, check-out {return_date}",
-        )
-        hotel_info = hotel_result.final_output
-        print(f"Result: {hotel_info[:200]}...\n")
+            # Step 2: Hotel Specialist
+            print("🏨 Hotel Specialist - Searching for hotels...")
+            hotel_result = Runner.run_sync(
+                hotel_agent,
+                f"Find a boutique hotel in {destination}, check-in {departure}, check-out {return_date}",
+            )
+            hotel_info = hotel_result.final_output
+            print(f"Result: {hotel_info[:200]}...\n")
 
-        # Step 3: Activity Specialist
-        print("🎭 Activity Specialist - Curating activities...")
-        activity_result = Runner.run_sync(
-            activity_agent,
-            f"Find unique activities and experiences in {destination}",
-        )
-        activity_info = activity_result.final_output
-        print(f"Result: {activity_info[:200]}...\n")
+            # Step 3: Activity Specialist
+            print("🎭 Activity Specialist - Curating activities...")
+            activity_result = Runner.run_sync(
+                activity_agent,
+                f"Find unique activities and experiences in {destination}",
+            )
+            activity_info = activity_result.final_output
+            print(f"Result: {activity_info[:200]}...\n")
 
-        # Step 4: Coordinator - Synthesize final itinerary
-        print("📝 Coordinator - Creating final itinerary...")
-        synthesis_prompt = f"""
+            # Step 4: Coordinator - Synthesize final itinerary
+            print("📝 Coordinator - Creating final itinerary...")
+            synthesis_prompt = f"""
 Create a comprehensive travel itinerary with the following information:
 
 FLIGHTS:
@@ -300,25 +362,52 @@ ACTIVITIES:
 Please organize this into a clear, well-formatted itinerary for a romantic week-long trip.
 """
 
-        final_result = Runner.run_sync(coordinator, synthesis_prompt)
-        final_output = final_result.final_output
+            final_result = Runner.run_sync(coordinator, synthesis_prompt)
+            final_output = final_result.final_output
 
-        print("\n" + "=" * 60)
-        print("✅ Travel Itinerary Complete!")
-        print("=" * 60)
-        print(f"\n{final_output}\n")
+            print("\n" + "=" * 60)
+            print("✅ Travel Itinerary Complete!")
+            print("=" * 60)
+            print(f"\n{final_output}\n")
 
     finally:
-        # Stop the workflow to finalize it with all agent steps
-        stop_workflow(final_output=final_output)
-
-        # Allow time for telemetry to flush
-        time.sleep(2)
+        # Flush telemetry
+        flush_telemetry()
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+
+def flush_telemetry() -> None:
+    """Force flush all telemetry providers before exit."""
+    print("\n" + "=" * 80)
+    print("TELEMETRY OUTPUT BELOW")
+    print("=" * 80)
+    print("\n[FLUSH] Starting telemetry flush")
+
+    # Flush traces
+    tracer_provider = otel_trace.get_tracer_provider()
+    if hasattr(tracer_provider, "force_flush"):
+        print("[FLUSH] Flushing traces (timeout=30s)")
+        tracer_provider.force_flush(timeout_millis=30000)
+
+    # Flush metrics
+    meter_provider = metrics.get_meter_provider()
+    if hasattr(meter_provider, "force_flush"):
+        print("[FLUSH] Flushing metrics (timeout=30s)")
+        meter_provider.force_flush(timeout_millis=30000)
+
+    # Flush logs
+    logger_provider = _logs.get_logger_provider()
+    if hasattr(logger_provider, "force_flush"):
+        print("[FLUSH] Flushing logs (timeout=30s)")
+        logger_provider.force_flush(timeout_millis=30000)
+
+    # Small delay for network buffers
+    time.sleep(2)
+    print("[FLUSH] Telemetry flush complete")
 
 
 def main(manual_instrumentation: bool = False) -> None:

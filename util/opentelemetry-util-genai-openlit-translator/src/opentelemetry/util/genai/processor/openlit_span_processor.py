@@ -26,14 +26,28 @@ from typing import Any, Callable, Dict, List, Optional
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
-from opentelemetry.trace import Span
+from opentelemetry.trace import Span, set_span_in_context
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
     get_telemetry_handler,
 )
-from opentelemetry.util.genai.types import LLMInvocation
+from opentelemetry.util.genai.span_context import extract_span_context
+from opentelemetry.util.genai.types import (
+    AgentCreation,
+    AgentInvocation,
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+    Workflow,
+)
 
 from .message_reconstructor import reconstruct_messages_from_openlit
+
+try:
+    from opentelemetry.util.genai.version import __version__
+except ImportError:
+    __version__ = "0.0.0"
 
 _ENV_RULES = "OTEL_GENAI_SPAN_TRANSFORM_RULES"
 
@@ -366,8 +380,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                         and hasattr(translated_parent_span, "is_recording")
                         and translated_parent_span.is_recording()
                     ):
-                        from opentelemetry.trace import set_span_in_context
-
                         parent_context = set_span_in_context(
                             translated_parent_span
                         )
@@ -377,7 +389,7 @@ class OpenlitSpanProcessor(SpanProcessor):
             )
 
             invocation.parent_context = parent_context
-            handler.start_llm(invocation)
+            handler.start(invocation)
 
             # CRITICAL: Track synthetic span ID IMMEDIATELY after creation to prevent recursion
             # We use a set instead of span attributes because ReadableSpan is immutable
@@ -397,10 +409,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                 if not synthetic_span_id:
                     # Try alternative way to get span ID
                     try:
-                        from opentelemetry.util.genai.span_context import (
-                            extract_span_context,
-                        )
-
                         span_ctx = extract_span_context(synthetic_span)
                         synthetic_span_id = (
                             span_ctx.span_id if span_ctx else None
@@ -534,13 +542,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                     "[OPENLIT_PROCESSOR] LLM span detected: %s, running evaluations on mutated span",
                     span.name,
                 )
-                # MUTATION-ONLY MODE with EVALUATIONS using handler.stop_llm():
-                # We've already mutated the original span's attributes and instrumentation scope.
-                # Now we use handler.stop_llm() to get full functionality:
-                # - Sets end_time
-                # - Sets sample_for_evaluation
-                # - Calls _emitter.on_end() (sets gen_ai.evaluation.sampled)
-                # - Calls _notify_completion() (triggers evaluation callbacks)
                 #
                 # The emitter's on_end() has been modified to handle ReadableSpan gracefully
                 # by checking is_recording() before trying to set attributes or end the span.
@@ -576,23 +577,44 @@ class OpenlitSpanProcessor(SpanProcessor):
                             span._start_time / 1e9
                         )  # Convert ns to seconds  # type: ignore[attr-defined]
 
-                    # Use handler.stop_llm() for full functionality
+                    # Use handler.finish() for full functionality
                     # This will:
                     # 1. Set end_time if not set
                     # 2. Determine sample_for_evaluation
                     # 3. Call _emitter.on_end() - which handles ReadableSpan gracefully
                     # 4. Call _notify_completion() - triggers evaluation callbacks
                     try:
-                        handler.stop_llm(invocation)
+                        handler.finish(invocation)
                         _logger.debug(
-                            "[OPENLIT_PROCESSOR] stop_llm completed for span: %s, sampled=%s, trace_id=%s",
+                            "[OPENLIT_PROCESSOR] finish completed for span: %s, sampled=%s, trace_id=%s",
                             span.name,
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
+
+                        # If this invocation is an AgentInvocation (for example,
+                        # an OpenLit span representing an agent call), explicitly
+                        # trigger agent-level evaluations so that
+                        # gen_ai.evaluation.result events can be attached to the
+                        # agent span itself, mirroring the Traceloop behavior.
+                        if isinstance(invocation, AgentInvocation):  # type: ignore[attr-defined]
+                            try:
+                                handler.evaluate_agent(invocation)
+                                _logger.debug(
+                                    "[OPENLIT_PROCESSOR] Agent invocation evaluated: %s",
+                                    span.name,
+                                )
+                            except (
+                                Exception
+                            ) as eval_err:  # pragma: no cover - defensive
+                                _logger.warning(
+                                    "[OPENLIT_PROCESSOR] Failed to evaluate AgentInvocation: %s",
+                                    eval_err,
+                                )
+
                     except Exception as stop_err:
                         _logger.warning(
-                            "[OPENLIT_PROCESSOR] handler.stop_llm failed: %s",
+                            "[OPENLIT_PROCESSOR] handler.finish failed: %s",
                             stop_err,
                         )
                 else:
@@ -621,7 +643,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                             self._span_buffer
                         )
 
-                        invocations_to_close = []
                         for buffered_span in spans_to_process:
                             # Skip spans that should not be processed
                             buffered_span_id = getattr(
@@ -634,22 +655,12 @@ class OpenlitSpanProcessor(SpanProcessor):
                             ):
                                 continue
 
-                            result_invocation = self._process_span_translation(
-                                buffered_span
+                            # Non-LLM spans (workflows, tasks, tools) don't need synthetic spans
+                            # They're already mutated and will be exported as-is
+                            _logger.debug(
+                                "[OPENLIT_PROCESSOR] Buffered span processed (mutation only): %s",
+                                buffered_span.name,
                             )
-                            if result_invocation:
-                                invocations_to_close.append(result_invocation)
-
-                        handler = (
-                            self.telemetry_handler or get_telemetry_handler()
-                        )
-                        for invocation in reversed(invocations_to_close):
-                            try:
-                                handler.stop_llm(invocation)
-                            except Exception as stop_err:
-                                _logger.warning(
-                                    "Failed to stop invocation: %s", stop_err
-                                )
 
                         self._span_buffer.clear()
                         self._original_to_translated_invocation.clear()
@@ -793,14 +804,36 @@ class OpenlitSpanProcessor(SpanProcessor):
         """
         _logger = logging.getLogger(__name__)
 
-        original_input_data = mutated_attrs.get("gen_ai.input.messages")
-        original_output_data = mutated_attrs.get("gen_ai.output.messages")
+        # Extract message data from various sources
+        # 1. Already transformed: gen_ai.input.messages/output.messages
+        # 2. OpenLit SDK format: openlit.entity.input/output
+        # 3. OpenAI instrumentation: gen_ai.prompt/gen_ai.completion (older format)
+        # 4. LLM attributes: llm.prompts/llm.completions
+        original_input_data = (
+            mutated_attrs.get("gen_ai.input.messages")
+            or original_attrs.get("openlit.entity.input")
+            or original_attrs.get("gen_ai.prompt")
+            or original_attrs.get("llm.prompts")
+            or original_attrs.get("gen_ai.content.prompt")
+        )
+        original_output_data = (
+            mutated_attrs.get("gen_ai.output.messages")
+            or original_attrs.get("openlit.entity.output")
+            or original_attrs.get("gen_ai.completion")
+            or original_attrs.get("llm.completions")
+            or original_attrs.get("gen_ai.content.completion")
+        )
 
         if not original_input_data and not original_output_data:
+            _logger.debug(
+                "[OPENLIT_PROCESSOR] No message data found in span attrs for reconstruction, "
+                "available keys: %s",
+                list(original_attrs.keys())[:15],
+            )
             return None  # Nothing to reconstruct
 
         try:
-            # Reconstruct LangChain messages from openlit JSON
+            # First, try to reconstruct LangChain messages from OpenLit JSON format
             lc_input, lc_output = reconstruct_messages_from_openlit(
                 original_input_data, original_output_data
             )
@@ -813,6 +846,112 @@ class OpenlitSpanProcessor(SpanProcessor):
             output_messages = self._convert_langchain_to_genai_messages(
                 lc_output, "output"
             )
+
+            # FALLBACK: If LangChain reconstruction failed but we have plain string data,
+            # create simple message objects directly. This handles OpenAI instrumentation
+            # spans that have plain text in gen_ai.input.messages / gen_ai.output.messages
+            if not input_messages and original_input_data:
+                if isinstance(original_input_data, str):
+                    # Check if it's a JSON array (already formatted)
+                    try:
+                        parsed = json.loads(original_input_data)
+                        if isinstance(parsed, list) and parsed:
+                            # Already a JSON array - convert to InputMessage objects
+                            input_messages = []
+                            for msg in parsed:
+                                if isinstance(msg, dict):
+                                    role = msg.get("role", "user")
+                                    parts = msg.get("parts", [])
+                                    if parts and isinstance(parts, list):
+                                        content = (
+                                            parts[0].get("content", "")
+                                            if isinstance(parts[0], dict)
+                                            else str(parts[0])
+                                        )
+                                    else:
+                                        content = msg.get("content", str(msg))
+                                    input_messages.append(
+                                        InputMessage(
+                                            role=role,
+                                            parts=[
+                                                Text(
+                                                    content=content,
+                                                    type="text",
+                                                )
+                                            ],
+                                        )
+                                    )
+                    except json.JSONDecodeError:
+                        # Plain text string - create single InputMessage
+                        input_messages = [
+                            InputMessage(
+                                role="user",
+                                parts=[
+                                    Text(
+                                        content=original_input_data,
+                                        type="text",
+                                    )
+                                ],
+                            )
+                        ]
+                        _logger.debug(
+                            "[OPENLIT_PROCESSOR] Created InputMessage from plain string: %s...",
+                            original_input_data[:50],
+                        )
+
+            if not output_messages and original_output_data:
+                if isinstance(original_output_data, str):
+                    # Check if it's a JSON array (already formatted)
+                    try:
+                        parsed = json.loads(original_output_data)
+                        if isinstance(parsed, list) and parsed:
+                            # Already a JSON array - convert to OutputMessage objects
+                            output_messages = []
+                            for msg in parsed:
+                                if isinstance(msg, dict):
+                                    role = msg.get("role", "assistant")
+                                    parts = msg.get("parts", [])
+                                    if parts and isinstance(parts, list):
+                                        content = (
+                                            parts[0].get("content", "")
+                                            if isinstance(parts[0], dict)
+                                            else str(parts[0])
+                                        )
+                                    else:
+                                        content = msg.get("content", str(msg))
+                                    finish_reason = msg.get(
+                                        "finish_reason", "stop"
+                                    )
+                                    output_messages.append(
+                                        OutputMessage(
+                                            role=role,
+                                            parts=[
+                                                Text(
+                                                    content=content,
+                                                    type="text",
+                                                )
+                                            ],
+                                            finish_reason=finish_reason,
+                                        )
+                                    )
+                    except json.JSONDecodeError:
+                        # Plain text string - create single OutputMessage
+                        output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[
+                                    Text(
+                                        content=original_output_data,
+                                        type="text",
+                                    )
+                                ],
+                                finish_reason="stop",
+                            )
+                        ]
+                        _logger.debug(
+                            "[OPENLIT_PROCESSOR] Created OutputMessage from plain string: %s...",
+                            original_output_data[:50],
+                        )
 
             # Serialize to JSON and store as gen_ai.* attributes (for span export)
             if input_messages:
@@ -1022,10 +1161,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                     # This ensures the span appears as if it came from our GenAI handler
                     # instead of the original OpenLit tracer
                     try:
-                        from opentelemetry.util.genai.version import (
-                            __version__,
-                        )
-
                         new_scope = InstrumentationScope(
                             name="opentelemetry.util.genai.handler",
                             version=__version__,
@@ -1102,7 +1237,6 @@ class OpenlitSpanProcessor(SpanProcessor):
     ) -> Optional[str]:
         if not name_transformations:
             return None
-        import fnmatch
 
         for pattern, new_name in name_transformations.items():
             try:
@@ -1121,12 +1255,6 @@ class OpenlitSpanProcessor(SpanProcessor):
         LangChain messages have .content directly, but GenAI SDK expects
         messages with .parts containing Text/ToolCall objects.
         """
-        from opentelemetry.util.genai.types import (
-            InputMessage,
-            OutputMessage,
-            Text,
-        )
-
         if not langchain_messages:
             return []
 
@@ -1227,8 +1355,8 @@ class OpenlitSpanProcessor(SpanProcessor):
         attribute_transformations: Optional[Dict[str, Any]] = None,
         name_transformations: Optional[Dict[str, str]] = None,
         openlit_attributes: Optional[Dict[str, Any]] = None,
-    ) -> LLMInvocation:
-        # CRITICAL: Read from _attributes (the live/mutated dict), NOT from .attributes
+    ) -> Optional[AgentCreation | AgentInvocation | Workflow | LLMInvocation]:
+        # Read from _attributes (the live/mutated dict), NOT from .attributes
         # The .attributes property returns a frozen/cached snapshot that doesn't reflect mutations.
         # This is important because _mutate_span_if_needed() modifies _attributes directly.
         if hasattr(existing_span, "_attributes") and existing_span._attributes:  # type: ignore[attr-defined]
@@ -1246,12 +1374,22 @@ class OpenlitSpanProcessor(SpanProcessor):
 
         # BEFORE transforming attributes, extract original message data
         # for message reconstruction (needed for evaluations)
-        original_input_data = base_attrs.get(
-            "gen_ai.input.messages"
-        ) or base_attrs.get("gen_ai.input.message")
-        original_output_data = base_attrs.get(
-            "gen_ai.output.messages"
-        ) or base_attrs.get("gen_ai.output.message")
+        original_input_data = (
+            base_attrs.get("gen_ai.input.messages")
+            or base_attrs.get("gen_ai.input.message")
+            or base_attrs.get("openlit.entity.input")
+            or base_attrs.get("gen_ai.prompt")
+            or base_attrs.get("llm.prompts")
+            or base_attrs.get("gen_ai.content.prompt")
+        )
+        original_output_data = (
+            base_attrs.get("gen_ai.output.messages")
+            or base_attrs.get("gen_ai.output.message")
+            or base_attrs.get("openlit.entity.output")
+            or base_attrs.get("gen_ai.completion")
+            or base_attrs.get("llm.completions")
+            or base_attrs.get("gen_ai.content.completion")
+        )
 
         # Only apply attribute transformations if span was NOT already mutated
         # This prevents double-transformation which would fail to find already-renamed keys
@@ -1417,43 +1555,221 @@ class OpenlitSpanProcessor(SpanProcessor):
             span_id,
         )
 
-        # CRITICAL: Don't create invocation if we don't have messages
-        # Without messages, we can't run evaluations, so there's no point in creating a synthetic span
-        if not input_messages or not output_messages:
-            _logger.warning(
-                "[OPENLIT_PROCESSOR] Skipping invocation creation - no messages available! "
-                "span=%s, span_id=%s, is_llm=%s, is_agent=%s, is_task=%s",
-                existing_span.name,
-                span_id,
-                "llm"
-                in str(base_attrs.get("gen_ai.operation.name", "")).lower(),
-                "agent" in str(base_attrs.get("gen_ai.span.kind", "")).lower(),
-                "task" in str(base_attrs.get("gen_ai.span.kind", "")).lower(),
-            )
-            return None
+        # Determine invocation type based on operation name
+        operation_name = base_attrs.get("gen_ai.operation.name", "")
 
-        # Check if output messages have empty parts
-        # Example: [OutputMessage(role='assistant', parts=[], finish_reason='stop')]
-        if output_messages and all(not msg.parts for msg in output_messages):
-            _logger.warning(
-                "[OPENLIT_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
-                "span=%s, span_id=%s, output_messages=%s",
-                existing_span.name,
-                span_id,
-                output_messages,
+        if operation_name == "invoke_workflow":
+            # Create Workflow invocation
+            invocation = Workflow(
+                name=base_attrs.get("gen_ai.workflow.name")
+                or existing_span.name,
+                workflow_type=base_attrs.get("gen_ai.workflow.type") or None,
+                description=base_attrs.get("gen_ai.workflow.description"),
+                framework=base_attrs.get("gen_ai.framework"),
+                attributes=base_attrs,
             )
-            return None
+            # Extract input from reconstructed messages or build from attributes
+            if input_messages:
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
+                    base_attrs.get("initial_input")
+                    or base_attrs.get("input")
+                    or base_attrs.get("input_context")
+                    or base_attrs.get("query")
+                )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
 
-        invocation = LLMInvocation(
-            request_model=str(request_model),
-            attributes=base_attrs,
-            input_messages=input_messages or [],
-            output_messages=output_messages or [],
-        )
-        # Mark operation heuristically from original span name
-        lowered = existing_span.name.lower()
-        if lowered.startswith("embed"):
-            invocation.operation = "embedding"  # type: ignore[attr-defined]
-        elif lowered.startswith("chat"):
-            invocation.operation = "chat"  # type: ignore[attr-defined]
-        return invocation
+            # Extract output from reconstructed messages or build from attributes
+            if output_messages:
+                invocation.output_messages = output_messages
+            elif not invocation.output_messages:
+                # Fallback: try to extract from span attributes and wrap in OutputMessage
+                fallback_output = (
+                    base_attrs.get("final_output")
+                    or base_attrs.get("output")
+                    or base_attrs.get("output_result")
+                    or base_attrs.get("response")
+                )
+                if fallback_output:
+                    invocation.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=fallback_output)],
+                        )
+                    ]
+            return invocation
+
+        elif operation_name == "create_agent":
+            # Create AgentCreation invocation
+            invocation = AgentCreation(
+                name=base_attrs.get("gen_ai.agent.name") or existing_span.name,
+                agent_type=base_attrs.get("gen_ai.agent.type") or None,
+                description=base_attrs.get("gen_ai.agent.description"),
+                model=request_model,
+                framework=base_attrs.get("gen_ai.framework"),
+                attributes=base_attrs,
+            )
+            # Extract tools if available
+            tools_str = base_attrs.get("gen_ai.agent.tools")
+            if tools_str:
+                try:
+                    invocation.tools = (
+                        json.loads(tools_str)
+                        if isinstance(tools_str, str)
+                        else tools_str
+                    )
+                except Exception:
+                    pass
+            # Extract system instructions
+            invocation.system_instructions = (
+                base_attrs.get("gen_ai.system.instructions") or None
+            )
+            # Extract input from reconstructed messages or build from attributes
+            if input_messages:
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
+                    base_attrs.get("input_context")
+                    or base_attrs.get("input")
+                    or base_attrs.get("initial_input")
+                )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
+            return invocation
+
+        elif operation_name == "invoke_agent":
+            # Create AgentInvocation
+            invocation = AgentInvocation(
+                name=base_attrs.get("gen_ai.agent.name") or existing_span.name,
+                agent_type=base_attrs.get("gen_ai.agent.type"),
+                description=base_attrs.get("gen_ai.agent.description"),
+                model=request_model,
+                framework=base_attrs.get("gen_ai.framework"),
+                attributes=base_attrs,
+            )
+            # Extract tools if available
+            tools_str = base_attrs.get("gen_ai.agent.tools")
+            if tools_str:
+                try:
+                    invocation.tools = (
+                        json.loads(tools_str)
+                        if isinstance(tools_str, str)
+                        else tools_str
+                    )
+                except Exception:
+                    pass
+            # Extract system instructions
+            invocation.system_instructions = (
+                base_attrs.get("gen_ai.system.instructions") or None
+            )
+
+            # Extract input from reconstructed messages or build from attributes
+            if input_messages:
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
+                    base_attrs.get("input_context")
+                    or base_attrs.get("input")
+                    or base_attrs.get("initial_input")
+                    or base_attrs.get("prompt")
+                    or base_attrs.get("query")
+                )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
+
+            # Extract output from reconstructed messages or build from attributes
+            if output_messages:
+                invocation.output_messages = output_messages
+            elif not invocation.output_messages:
+                # Fallback: try to extract from span attributes and wrap in OutputMessage
+                fallback_output = (
+                    base_attrs.get("output_result")
+                    or base_attrs.get("output")
+                    or base_attrs.get("final_output")
+                    or base_attrs.get("response")
+                    or base_attrs.get("answer")
+                )
+                if fallback_output:
+                    invocation.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=fallback_output)],
+                        )
+                    ]
+
+            # Skip if no input/output available for evaluation
+            if (
+                not invocation.input_messages
+                and not invocation.output_messages
+            ):
+                _logger.warning(
+                    "[OPENLIT_PROCESSOR] Skipping AgentInvocation - no input/output available! "
+                    "span=%s, span_id=%s",
+                    existing_span.name,
+                    span_id,
+                )
+                return None
+            return invocation
+        else:
+            # Create LLMInvocation (default for chat, completion, embedding)
+            # CRITICAL: LLM invocations require messages for evaluation
+            if not input_messages or not output_messages:
+                _logger.warning(
+                    "[OPENLIT_PROCESSOR] Skipping LLM invocation creation - no messages available! "
+                    "span=%s, span_id=%s",
+                    existing_span.name,
+                    span_id,
+                )
+                return None
+
+            if output_messages and all(
+                not msg.parts for msg in output_messages
+            ):
+                _logger.warning(
+                    "[OPENLIT_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
+                    "span=%s, span_id=%s, output_messages=%s",
+                    existing_span.name,
+                    span_id,
+                    output_messages,
+                )
+                return None
+
+            invocation = LLMInvocation(
+                request_model=str(request_model),
+                attributes=base_attrs,
+                input_messages=input_messages or [],
+                output_messages=output_messages or [],
+            )
+            # Mark operation heuristically from original span name or operation attribute
+            if operation_name:
+                if "embed" in operation_name.lower():
+                    invocation.operation = "embedding"  # type: ignore[attr-defined]
+                elif "chat" in operation_name.lower():
+                    invocation.operation = "chat"  # type: ignore[attr-defined]
+                elif "completion" in operation_name.lower():
+                    invocation.operation = "completion"  # type: ignore[attr-defined]
+            else:
+                # Fallback to inferring from span name
+                lowered = existing_span.name.lower()
+                if lowered.startswith("embed"):
+                    invocation.operation = "embedding"  # type: ignore[attr-defined]
+                elif lowered.startswith("chat"):
+                    invocation.operation = "chat"  # type: ignore[attr-defined]
+            return invocation

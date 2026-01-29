@@ -2,6 +2,52 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.11 - 2026-01-27
+
+- Release 0.1.11 of splunk-otel-genai-evals-deepeval
+
+## Version 0.1.10 - 2026-01-26
+
+### Changed
+- **Hallucination GEval Metric** - Improved accuracy and industry-standard scoring
+  - Score inversion: GEval outputs higher=better (1.0=no hallucination), now inverted to lower=better (0.0=no hallucination) to match DeepEval's HallucinationMetric convention
+  - Enhanced criteria with explicit guidance to distinguish logical inference from fabrication
+  - Updated evaluation steps with self-verification and conservative flagging to reduce false positives
+  - New attribute `deepeval.hallucination.geval_score` preserves the original GEval score for debugging
+  
+- **Sentiment GEval Metric** - Clearer scoring scale and thresholds
+  - Updated to use 0-1 scale: 0=negative, 0.5=neutral, 1=positive (instead of -1 to +1)
+  - Clear threshold boundaries: 0.0-0.35=Negative, 0.35-0.65=Neutral, 0.65-1.0=Positive
+  - Improved criteria and steps for better intensity and mixed sentiment handling
+  - Backward-compatible `deepeval.sentiment.compound` attribute still available
+
+## Version 0.1.9 - 2026-01-17
+
+### Added
+- **Async Evaluation Support** - Native async methods for concurrent evaluation processing
+  - `evaluate_async()` - Async entry point supporting concurrent mode
+  - `evaluate_llm_async()` - Async LLM invocation evaluation
+  - `evaluate_agent_async()` - Async agent invocation evaluation
+  - `supports_async` property returns `True` for concurrent processing
+  
+- **Async DeepEval Runner** - New `run_evaluation_async()` function in `deepeval_runner.py`
+  - Executes DeepEval in thread pool to avoid blocking event loop
+  - Automatically enables DeepEval's internal `AsyncConfig(run_async=True)` in concurrent mode
+  - Configurable `max_concurrent=10` for parallel metric evaluation
+
+### Changed
+- `DeepevalEvaluator` now implements native async evaluation methods
+- DeepEval's internal async mode controlled by `OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT` flag
+- When concurrent mode is enabled:
+  - Multiple workers process invocations in parallel
+  - DeepEval runs metrics concurrently within each invocation
+  - Significant throughput improvement for LLM-as-a-Judge evaluations
+
+### Notes
+- Requires `splunk-otel-util-genai-evals>=0.1.5` for async evaluation support
+- DeepEval's `run_async=True` spawns internal threads; callers should add buffer wait time
+  after queue completion for complete metric results
+
 ## Version 0.1.8 - 2025-12-22
 
 ### Added
