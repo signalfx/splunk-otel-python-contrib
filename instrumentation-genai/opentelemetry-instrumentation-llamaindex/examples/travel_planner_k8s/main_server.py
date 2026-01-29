@@ -44,8 +44,11 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 
 
@@ -180,13 +183,32 @@ def get_llm():
 
 # Setup Telemetry
 def setup_telemetry():
+    # Setup trace provider
     trace.set_tracer_provider(TracerProvider())
     trace.get_tracer_provider().add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter())
     )
 
+    # Setup metrics provider
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
+    
+    # Setup logs provider for content events
+    from opentelemetry import _logs
+    logger_provider = LoggerProvider()
+    
+    # Add OTLP exporter for sending to collector
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter())
+    )
+    
+    # Add Console exporter for debugging (prints to terminal)
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(ConsoleLogExporter())
+    )
+    
+    _logs.set_logger_provider(logger_provider)
+    print("✓ Logs provider configured for content events (OTLP + Console)\n")
 
 
 # Define Travel Planning Tools
@@ -515,6 +537,20 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
 
 def main():
     """Start the travel planner server."""
+    # Set default emitters if not configured - enable span, metrics, and content events
+    if not os.getenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS"):
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric_event"
+        print("⚠️  OTEL_INSTRUMENTATION_GENAI_EMITTERS not set, defaulting to 'span_metric_event' (includes parsable events)\n")
+    
+    # Enable content capture for both spans and events
+    if not os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"):
+        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
+        print("⚠️  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT not set, defaulting to 'true'\n")
+    
+    if not os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"):
+        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"] = "SPAN_AND_EVENT"
+        print("⚠️  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE not set, defaulting to 'SPAN_AND_EVENT' (enables parsable events)\n")
+    
     # Setup telemetry first
     setup_telemetry()
 
