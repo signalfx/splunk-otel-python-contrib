@@ -310,10 +310,13 @@ def run_travel_planner() -> None:
 
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
     print(f"\nRequest: {initial_request}\n")
+    metadata: dict[str, Any] = {
+        "initial_request" : initial_request,
+    }
 
     final_output = None
     try:
-        with trace("Travel planner workflow"):
+        with trace("Travel planner workflow", metadata=metadata):
             # Step 1: Flight Specialist
             print("\n✈️  Flight Specialist - Searching for flights...")
             flight_result = Runner.run_sync(
