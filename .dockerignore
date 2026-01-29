@@ -1,0 +1,47 @@
+.git
+.gitignore
+
+# Python virtualenvs
+.venv
+.venv/
+venv
+venv/
+
+# Environment files (use K8s ConfigMap instead)
+.env
+.env.*
+**/.env
+**/.env.*
+ENV
+ENV/
+
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Local runtime artifacts
+**/artifacts/
+**/output/
+**/chroma_db/
+**/*.db
+**/*.log
+
+# Kubernetes manifests (keep in repo but exclude from Docker build context)
+**/k8s*.yaml
+**/k8s*.yml
+**/*cronjob*.yaml
+**/*cronjob*.yml

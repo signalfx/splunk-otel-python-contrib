@@ -1,0 +1,37 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /repo
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only what we need for dependency installation first (better layer caching).
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt \
+  /repo/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt
+
+RUN pip install --no-cache-dir -r /repo/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt
+
+# Install splunk-otel packages from PyPI.
+RUN pip install --no-cache-dir \
+  splunk-otel-util-genai==0.1.8 \
+  splunk-otel-util-genai-evals==0.1.6 \
+  splunk-otel-genai-evals-deepeval==0.1.11 \
+  splunk-otel-genai-emitters-splunk==0.1.5 \
+  splunk-otel-instrumentation-langchain==0.1.5
+
+# Copy SRE Copilot app last.
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot \
+  /app
+
+RUN mkdir -p /app/data /app/artifacts && chown -R 1000:1000 /app/data /app/artifacts
+
+WORKDIR /app
+
+EXPOSE 8080
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]

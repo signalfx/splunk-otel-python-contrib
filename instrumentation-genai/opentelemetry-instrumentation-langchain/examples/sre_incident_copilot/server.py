@@ -75,7 +75,7 @@ def _configure_manual_instrumentation():
     
     Set MANUAL_INSTRUMENTATION=true to enable.
     """
-    from opentelemetry import trace, metrics
+    from opentelemetry import trace, metrics, _events, _logs
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.metrics import MeterProvider
@@ -83,7 +83,7 @@ def _configure_manual_instrumentation():
     from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
     from opentelemetry.sdk._logs import LoggerProvider
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-    from opentelemetry import _logs
+    from opentelemetry.sdk._events import EventLoggerProvider
     
     config = Config.from_env()
     protocol = config.otel_exporter_otlp_protocol
@@ -114,10 +114,14 @@ def _configure_manual_instrumentation():
         meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
         metrics.set_meter_provider(meter_provider)
         
-        # Setup LoggerProvider
+        # Setup LoggerProvider (for logs)
         logger_provider = LoggerProvider(resource=resource)
         logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
         _logs.set_logger_provider(logger_provider)
+        
+        # Setup EventLoggerProvider (required for GenAI events like gen_ai.client.inference.operation.details)
+        event_logger_provider = EventLoggerProvider(logger_provider)
+        _events.set_event_logger_provider(event_logger_provider)
         
     except Exception as e:
         print(f"Warning: Failed to configure OTEL providers: {e}", file=sys.stderr)
