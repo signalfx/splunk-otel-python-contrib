@@ -108,7 +108,7 @@ class TestCrewKickoffMapping:
         assert workflow.system == "crewai"
 
     def test_workflow_captures_inputs(self, stub_handler):
-        """Workflow should capture input data."""
+        """Workflow should capture input data in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -124,11 +124,13 @@ class TestCrewKickoffMapping:
         )
 
         workflow = stub_handler.started_workflows[0]
-        assert "topic" in workflow.initial_input
-        assert "AI" in workflow.initial_input
+        assert workflow.input_messages and len(workflow.input_messages) > 0
+        content = workflow.input_messages[0].parts[0].content
+        assert "topic" in content
+        assert "AI" in content
 
     def test_workflow_captures_inputs_from_args(self, stub_handler):
-        """Workflow should capture inputs passed positionally."""
+        """Workflow should capture inputs passed positionally in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -143,10 +145,11 @@ class TestCrewKickoffMapping:
         )
 
         workflow = stub_handler.started_workflows[0]
-        assert "topic" in workflow.initial_input
+        assert workflow.input_messages and len(workflow.input_messages) > 0
+        assert "topic" in workflow.input_messages[0].parts[0].content
 
     def test_workflow_captures_output(self, stub_handler):
-        """Workflow should capture result output."""
+        """Workflow should capture result output in output_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -159,10 +162,11 @@ class TestCrewKickoffMapping:
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
         workflow = stub_handler.stopped_workflows[0]
-        assert "artificial intelligence" in workflow.final_output
+        assert workflow.output_messages and len(workflow.output_messages) > 0
+        assert "artificial intelligence" in workflow.output_messages[0].parts[0].content
 
     def test_workflow_captures_empty_output(self, stub_handler):
-        """Workflow should capture empty output without dropping it."""
+        """Workflow should capture empty output in output_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -175,7 +179,8 @@ class TestCrewKickoffMapping:
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
         workflow = stub_handler.stopped_workflows[0]
-        assert workflow.final_output == ""
+        assert workflow.output_messages and len(workflow.output_messages) > 0
+        assert workflow.output_messages[0].parts[0].content == '""'
 
     def test_workflow_error_handling(self, stub_handler):
         """Workflow should capture errors on failure."""
@@ -199,7 +204,7 @@ class TestCrewKickoffMapping:
         assert "Crew execution failed" in error.message
 
     def test_kickoff_long_inputs(self, stub_handler):
-        """Long inputs should be truncated to 500 characters."""
+        """Long inputs should be captured in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -216,7 +221,9 @@ class TestCrewKickoffMapping:
         )
 
         workflow = stub_handler.started_workflows[0]
-        assert len(workflow.initial_input) == 1012
+        assert workflow.input_messages and len(workflow.input_messages) > 0
+        # Long input should be captured in full (no truncation in structured messages)
+        assert long_input in workflow.input_messages[0].parts[0].content
 
 
 class TestAgentExecuteTaskMapping:
@@ -280,7 +287,7 @@ class TestAgentExecuteTaskMapping:
         assert agent.name == "Unknown Agent"
 
     def test_agent_captures_task_description(self, stub_handler):
-        """AgentInvocation should capture task description as input_context."""
+        """AgentInvocation should capture task description in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_agent = mock.MagicMock()
@@ -296,10 +303,11 @@ class TestAgentExecuteTaskMapping:
         )
 
         agent = stub_handler.started_agents[0]
-        assert "Python best practices" in agent.input_context
+        assert agent.input_messages and len(agent.input_messages) > 0
+        assert "Python best practices" in agent.input_messages[0].parts[0].content
 
     def test_agent_captures_task_from_args(self, stub_handler):
-        """AgentInvocation should capture task passed positionally."""
+        """AgentInvocation should capture task passed positionally in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_agent = mock.MagicMock()
@@ -315,10 +323,11 @@ class TestAgentExecuteTaskMapping:
         )
 
         agent = stub_handler.started_agents[0]
-        assert "Positional task" in agent.input_context
+        assert agent.input_messages and len(agent.input_messages) > 0
+        assert "Positional task" in agent.input_messages[0].parts[0].content
 
     def test_agent_captures_result(self, stub_handler):
-        """AgentInvocation should capture execution result."""
+        """AgentInvocation should capture execution result in output_messages."""
         crewai_module._handler = stub_handler
 
         mock_agent = mock.MagicMock()
@@ -334,10 +343,11 @@ class TestAgentExecuteTaskMapping:
         )
 
         agent = stub_handler.stopped_agents[0]
-        assert "20% growth" in agent.output_result
+        assert agent.output_messages and len(agent.output_messages) > 0
+        assert "20% growth" in agent.output_messages[0].parts[0].content
 
     def test_agent_captures_empty_result(self, stub_handler):
-        """AgentInvocation should capture empty output without dropping it."""
+        """AgentInvocation should capture empty output in output_messages."""
         crewai_module._handler = stub_handler
 
         mock_agent = mock.MagicMock()
@@ -353,7 +363,8 @@ class TestAgentExecuteTaskMapping:
         )
 
         agent = stub_handler.stopped_agents[0]
-        assert agent.output_result == ""
+        assert agent.output_messages and len(agent.output_messages) > 0
+        assert agent.output_messages[0].parts[0].content == '""'
 
     def test_agent_error_handling(self, stub_handler):
         """AgentInvocation should capture errors on failure."""
@@ -468,40 +479,6 @@ class TestTaskExecuteMapping:
 
         step = stub_handler.started_steps[0]
         assert step.assigned_agent == "Senior Developer"
-
-    def test_step_captures_output(self, stub_handler):
-        """Step should capture task output."""
-        crewai_module._handler = stub_handler
-
-        mock_task = mock.MagicMock()
-        mock_task.description = "Calculate metrics"
-        mock_task.expected_output = "Metrics report"
-        mock_task.agent = mock.MagicMock()
-        mock_task.agent.role = "Analyst"
-
-        mock_wrapped = mock.MagicMock(return_value="Revenue: $1M, Growth: 15%")
-
-        crewai_module._wrap_task_execute(mock_wrapped, mock_task, (), {})
-
-        step = stub_handler.stopped_steps[0]
-        assert "Revenue: $1M" in step.output_data
-
-    def test_step_captures_empty_output(self, stub_handler):
-        """Step should capture empty output without dropping it."""
-        crewai_module._handler = stub_handler
-
-        mock_task = mock.MagicMock()
-        mock_task.description = "Calculate metrics"
-        mock_task.expected_output = "Metrics report"
-        mock_task.agent = mock.MagicMock()
-        mock_task.agent.role = "Analyst"
-
-        mock_wrapped = mock.MagicMock(return_value="")
-
-        crewai_module._wrap_task_execute(mock_wrapped, mock_task, (), {})
-
-        step = stub_handler.stopped_steps[0]
-        assert step.output_data == ""
 
     def test_step_error_handling(self, stub_handler):
         """Step should capture errors on failure."""

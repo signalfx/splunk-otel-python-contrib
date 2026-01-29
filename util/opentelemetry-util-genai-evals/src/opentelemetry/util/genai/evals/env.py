@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Mapping
 
@@ -14,9 +15,13 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION,
     OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
     OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE,
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST,
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE,
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS,
 )
 
 _TRUTHY = {"1", "true", "yes", "on"}
+_LOGGER = logging.getLogger(__name__)
 
 
 def _get_env(name: str, source: Mapping[str, str] | None = None) -> str | None:
@@ -42,7 +47,14 @@ def read_interval(
         return default
     try:
         return float(raw)
-    except ValueError:
+    except ValueError as e:
+        _LOGGER.warning(
+            "Failed to parse %s: %s (error: %s), using default %s",
+            OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL,
+            raw,
+            e,
+            default,
+        )
         return default
 
 
@@ -91,8 +103,21 @@ def read_worker_count(
         return default
     try:
         count = int(raw.strip())
+        if count < 1 or count > 16:
+            _LOGGER.warning(
+                "Value for %s: %s is outside valid range [1, 16], clamping to range",
+                OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
+                raw,
+            )
         return max(1, min(16, count))  # Clamp between 1 and 16
-    except ValueError:
+    except ValueError as e:
+        _LOGGER.warning(
+            "Failed to parse %s: %s (error: %s), using default %d",
+            OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS,
+            raw,
+            e,
+            default,
+        )
         return default
 
 
@@ -123,8 +148,21 @@ def read_queue_size(
         return default
     try:
         size = int(raw.strip())
-        return size if size > 0 else default
-    except ValueError:
+        if size <= 0:
+            _LOGGER.warning(
+                "Invalid value for queue size: %s (must be positive integer), using default %d",
+                raw,
+                default,
+            )
+            return default
+        return size
+    except ValueError as e:
+        _LOGGER.warning(
+            "Failed to parse queue size: %s (error: %s), using default %d",
+            raw,
+            e,
+            default,
+        )
         return default
 
 
@@ -149,8 +187,95 @@ def read_max_concurrent(
         return default
     try:
         value = int(raw.strip())
+        if value < 1 or value > 50:
+            _LOGGER.warning(
+                "Value for %s: %s is outside valid range [1, 50], clamping to range",
+                DEEPEVAL_MAX_CONCURRENT,
+                raw,
+            )
         return max(1, min(50, value))  # Clamp between 1 and 50
-    except ValueError:
+    except ValueError as e:
+        _LOGGER.warning(
+            "Failed to parse %s: %s (error: %s), using default %d",
+            DEEPEVAL_MAX_CONCURRENT,
+            raw,
+            e,
+            default,
+        )
+        return default
+
+
+def read_evaluation_rate_limit_enable(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: bool = True,
+) -> bool:
+    """
+    Enable evaluation rate limiting.
+    """
+    raw = _get_env(
+        OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE, env
+    )
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in _TRUTHY
+
+
+def read_evaluation_rate_limit_rps(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: int = 0,
+) -> int:
+    """
+    Per-process proactive admission rate (invocations per second) for evaluation queue.
+    Set to <= 0 to disable rate limiting.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS, env)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError as e:
+        _LOGGER.warning(
+            "Failed to parse %s: %s (error: %s), using default %d",
+            OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS,
+            raw,
+            e,
+            default,
+        )
+        return default
+
+
+def read_evaluation_rate_limit_burst(
+    env: Mapping[str, str] | None = None,
+    *,
+    default: int = 4,
+) -> int:
+    """
+    Burst capacity for token bucket limiter.
+    """
+    raw = _get_env(OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST, env)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+        if value <= 0:
+            _LOGGER.warning(
+                "Invalid value for %s: %s (must be positive integer), using default %d",
+                OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST,
+                raw,
+                default,
+            )
+            return default
+        return value
+    except (ValueError, TypeError) as e:
+        _LOGGER.warning(
+            "Failed to parse %s: %s (error: %s), using default %d",
+            OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST,
+            raw,
+            e,
+            default,
+        )
         return default
 
 
@@ -162,4 +287,7 @@ __all__ = [
     "read_concurrent_flag",
     "read_worker_count",
     "read_max_concurrent",
+    "read_evaluation_rate_limit_enable",
+    "read_evaluation_rate_limit_rps",
+    "read_evaluation_rate_limit_burst",
 ]

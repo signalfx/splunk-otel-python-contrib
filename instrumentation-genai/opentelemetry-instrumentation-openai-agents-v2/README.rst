@@ -38,7 +38,7 @@ Usage
 -----
 
 Instrumentation automatically wires the Agents tracing processor into the SDK.
-Configure OpenTelemetry as usual, then call :class:`OpenAIAgentsInstrumentor`.
+Configure OpenTelemetry as usual, then call ``OpenAIAgentsInstrumentor``.
 
 .. code-block:: python
 
@@ -81,7 +81,7 @@ variables:
 * ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` or
   ``OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_CONTENT`` – controls how much
   message content is captured. Valid values map to
-  :class:`opentelemetry.instrumentation.openai_agents.ContentCaptureMode`
+  ``opentelemetry.instrumentation.openai_agents.ContentCaptureMode``
   (``span_only``, ``event_only``, ``span_and_event``, ``no_content``).
 * ``OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_METRICS`` – set to ``false`` to
   disable duration/token metrics.
@@ -95,7 +95,7 @@ You can also override agent metadata directly when calling
 Examples
 --------
 
-The :mod:`examples` directory contains runnable scenarios, including:
+The ``examples`` directory contains runnable scenarios, including:
 
 * ``examples/manual`` – manual OpenTelemetry configuration for a single agent run.
 * ``examples/content-capture`` – demonstrates span and event content capture.

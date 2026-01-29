@@ -13,18 +13,69 @@ References:
 """
 
 # pylint: disable=too-many-lines,invalid-name,too-many-locals,too-many-branches,too-many-statements,too-many-return-statements,too-many-nested-blocks,too-many-arguments,too-many-instance-attributes,broad-exception-caught,no-self-use,consider-iterating-dictionary,unused-variable,unnecessary-pass
+# ruff: noqa: I001
 
 from __future__ import annotations
 
 import importlib
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
+
+from opentelemetry.trace import Status, StatusCode
 from urllib.parse import urlparse
 
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAIAttributes,
+)
+from opentelemetry.semconv._incubating.attributes import (
+    server_attributes as ServerAttributes,
+)
+from opentelemetry.util.genai.attributes import GEN_AI_WORKFLOW_NAME
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+)
+from opentelemetry.util.genai.types import (
+    AgentCreation,
+    AgentInvocation,
+    Error,
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+    ToolCall,
+    Workflow,
+)
 from opentelemetry.util.genai.utils import gen_ai_json_dumps
+from opentelemetry.util.types import AttributeValue
+from opentelemetry.metrics import get_meter
+from opentelemetry.trace import Span as OtelSpan
+from opentelemetry.util.genai.instruments import Instruments
+
+
+# Invocation State Management
+
+
+@dataclass
+class _InvocationState:
+    """Tracks invocation state and parent-child relationships."""
+
+    invocation: Optional[
+        Union[
+            AgentCreation, AgentInvocation, LLMInvocation, ToolCall, Workflow
+        ]
+    ] = None
+    parent_span_id: Optional[str] = None
+    children: List[str] = field(default_factory=list)
+    # Accumulated content during span lifetime
+    input_messages: List[Any] = field(default_factory=list)
+    output_messages: List[Any] = field(default_factory=list)
+    system_instructions: List[Any] = field(default_factory=list)
+    request_model: Optional[str] = None
+
 
 try:
     from agents.tracing import Span, Trace, TracingProcessor
@@ -53,25 +104,6 @@ except ModuleNotFoundError:  # pragma: no cover - test stubs
     TranscriptionSpanData = getattr(
         tracing_module, "TranscriptionSpanData", Any
     )  # type: ignore[assignment]
-
-from opentelemetry.context import attach, detach
-from opentelemetry.metrics import Histogram, get_meter
-from opentelemetry.semconv._incubating.attributes import (
-    gen_ai_attributes as GenAIAttributes,
-)
-from opentelemetry.semconv._incubating.attributes import (
-    server_attributes as ServerAttributes,
-)
-from opentelemetry.trace import Span as OtelSpan
-from opentelemetry.trace import (
-    SpanKind,
-    Status,
-    StatusCode,
-    Tracer,
-    set_span_in_context,
-)
-from opentelemetry.util.genai.instruments import Instruments
-from opentelemetry.util.types import AttributeValue
 
 # Import all semantic convention constants
 # ---- GenAI semantic convention helpers (embedded from constants.py) ----
@@ -222,8 +254,7 @@ GEN_AI_OUTPUT_MESSAGES = _attr(
 )
 GEN_AI_DATA_SOURCE_ID = _attr("GEN_AI_DATA_SOURCE_ID", "gen_ai.data_source.id")
 
-# The semantic conventions currently expose multiple usage token attributes; we retain the
-# completion/prompt aliases for backwards compatibility where used.
+# Token usage aliases for backwards compatibility
 GEN_AI_USAGE_PROMPT_TOKENS = _attr(
     "GEN_AI_USAGE_PROMPT_TOKENS", "gen_ai.usage.prompt_tokens"
 )
@@ -231,7 +262,7 @@ GEN_AI_USAGE_COMPLETION_TOKENS = _attr(
     "GEN_AI_USAGE_COMPLETION_TOKENS", "gen_ai.usage.completion_tokens"
 )
 
-# Attributes not (yet) defined in the spec retain their literal values.
+# Non-spec attributes
 GEN_AI_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments"
 GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
 GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
@@ -243,7 +274,7 @@ GEN_AI_HANDOFF_TO_AGENT = "gen_ai.handoff.to_agent"
 GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"
 GEN_AI_TOKEN_TYPE = _attr("GEN_AI_TOKEN_TYPE", "gen_ai.token.type")
 
-# ---- Normalization utilities (embedded from utils.py) ----
+# Normalization utilities
 
 
 def normalize_provider(provider: Optional[str]) -> Optional[str]:
@@ -294,11 +325,6 @@ def normalize_output_type(output_type: Optional[str]) -> str:
         return normalized
     return GenAIOutputType.TEXT  # default for unknown
 
-
-if TYPE_CHECKING:
-    pass
-
-# Legacy attributes removed
 
 logger = logging.getLogger(__name__)
 
@@ -376,12 +402,21 @@ def safe_json_dumps(obj: Any) -> str:
         return str(obj)
 
 
+def _serialize_tool_value(value: Any) -> Optional[str]:
+    """Serialize tool input/output value to string."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return safe_json_dumps(value)
+    return str(value)
+
+
 def _as_utc_nano(dt: datetime) -> int:
     """Convert datetime to UTC nanoseconds timestamp."""
     return int(dt.astimezone(timezone.utc).timestamp() * 1_000_000_000)
 
 
-def _get_span_status(span: Span[Any]) -> Status:
+def _get_span_status(span: Any) -> Status:
     """Get OpenTelemetry span status from agent span."""
     if error := getattr(span, "error", None):
         return Status(
@@ -429,17 +464,13 @@ class GenAISemanticProcessor(TracingProcessor):
 
     def __init__(
         self,
-        tracer: Optional[Tracer] = None,
+        handler: TelemetryHandler,
         system_name: str = "openai",
         include_sensitive_data: bool = True,
         content_mode: ContentCaptureMode = ContentCaptureMode.SPAN_AND_EVENT,
         base_url: Optional[str] = None,
-        agent_name: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        agent_description: Optional[str] = None,
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
-        metrics_enabled: bool = True,
         agent_name_default: Optional[str] = None,
         agent_id_default: Optional[str] = None,
         agent_description_default: Optional[str] = None,
@@ -447,20 +478,16 @@ class GenAISemanticProcessor(TracingProcessor):
         server_address_default: Optional[str] = None,
         server_port_default: Optional[int] = None,
     ):
-        """Initialize processor with metrics support.
+        """Initialize processor.
 
         Args:
-            tracer: Optional OpenTelemetry tracer
+            handler: TelemetryHandler for creating spans via utils
             system_name: Provider name (openai/azure.ai.inference/etc.)
             include_sensitive_data: Include model/tool IO when True
             base_url: API endpoint for server.address/port
-            agent_name: Name of the agent (can be overridden by env var)
-            agent_id: ID of the agent (can be overridden by env var)
-            agent_description: Description of the agent (can be overridden by env var)
             server_address: Server address (can be overridden by env var or base_url)
             server_port: Server port (can be overridden by env var or base_url)
         """
-        self._tracer = tracer
         self.system_name = normalize_provider(system_name) or system_name
         self._content_mode = content_mode
         self.include_sensitive_data = include_sensitive_data and (
@@ -469,22 +496,19 @@ class GenAISemanticProcessor(TracingProcessor):
         effective_base_url = base_url or base_url_default
         self.base_url = effective_base_url
 
-        # Agent information - prefer explicit overrides; otherwise defer to span data
-        self.agent_name = agent_name
-        self.agent_id = agent_id
-        self.agent_description = agent_description
+        # Agent defaults
         self._agent_name_default = agent_name_default
         self._agent_id_default = agent_id_default
         self._agent_description_default = agent_description_default
 
-        # Server information - use init parameters, then base_url inference
+        # Server info
         self.server_address = server_address or server_address_default
         resolved_port = (
             server_port if server_port is not None else server_port_default
         )
         self.server_port = resolved_port
 
-        # If server info not provided, try to extract from base_url
+        # Infer from base_url if missing
         if (
             not self.server_address or not self.server_port
         ) and effective_base_url:
@@ -498,27 +522,19 @@ class GenAISemanticProcessor(TracingProcessor):
                     ServerAttributes.SERVER_PORT
                 )
 
-        # Content capture configuration
+        # Content capture
         self._capture_messages = (
             content_mode.capture_in_span or content_mode.capture_in_event
         )
         self._capture_system_instructions = True
         self._capture_tool_definitions = True
 
-        # Span tracking
-        self._root_spans: dict[str, OtelSpan] = {}
-        self._otel_spans: dict[str, OtelSpan] = {}
-        self._tokens: dict[str, object] = {}
-        self._span_parents: dict[str, Optional[str]] = {}
-        self._agent_content: dict[str, Dict[str, list[Any]]] = {}
-
-        # Metrics configuration
-        self._metrics_enabled = metrics_enabled
-        self._meter = None
-        self._duration_histogram: Optional[Histogram] = None
-        self._token_usage_histogram: Optional[Histogram] = None
-        if self._metrics_enabled:
-            self._init_metrics()
+        # Tracking
+        self._invocations: Dict[str, _InvocationState] = {}
+        self._handler = handler
+        self._workflow: Workflow | None = None
+        self._workflow_first_input: Optional[str] = None
+        self._workflow_last_output: Optional[str] = None
 
     def _get_server_attributes(self) -> dict[str, Any]:
         """Get server attributes from configured values."""
@@ -639,12 +655,7 @@ class GenAISemanticProcessor(TracingProcessor):
     def _collect_system_instructions(
         self, messages: Sequence[Any] | None
     ) -> list[dict[str, str]]:
-        """Return system/ai role instructions as typed text objects.
-
-        Enforces format: [{"type": "text", "content": "..."}].
-        Handles message content that may be a string, list of parts,
-        or a dict with text/content fields.
-        """
+        """Extract system/ai instructions as [{"type": "text", "content": "..."}]."""
         if not messages:
             return []
         out: list[dict[str, str]] = []
@@ -658,13 +669,7 @@ class GenAISemanticProcessor(TracingProcessor):
         return out
 
     def _normalize_to_text_parts(self, content: Any) -> list[dict[str, str]]:
-        """Normalize arbitrary content into typed text parts.
-
-        - String -> [{type: text, content: <string>}]
-        - List/Tuple -> map each item to a text part (string/dict supported)
-        - Dict -> use 'text' or 'content' field when available; else str(dict)
-        - Other -> str(value)
-        """
+        """Convert content to [{"type": "text", "content": ...}] format."""
         parts: list[dict[str, str]] = []
         if content is None:
             return parts
@@ -691,23 +696,17 @@ class GenAISemanticProcessor(TracingProcessor):
             else:
                 parts.append({"type": "text", "content": str(content)})
             return parts
-        # Fallback for other types
         parts.append({"type": "text", "content": str(content)})
         return parts
 
     def _redacted_text_parts(self) -> list[dict[str, str]]:
-        """Return a single redacted text part for system instructions."""
+        """Return redacted text part."""
         return [{"type": "text", "content": "readacted"}]
 
     def _normalize_messages_to_role_parts(
         self, messages: Sequence[Any] | None
     ) -> list[dict[str, Any]]:
-        """Normalize input messages to enforced role+parts schema.
-
-        Each message becomes: {"role": <role>, "parts": [ {"type": ..., ...} ]}
-        Redaction: when include_sensitive_data is False, replace text content,
-        tool_call arguments, and tool_call_response result with "readacted".
-        """
+        """Normalize messages to {"role": ..., "parts": [...]} format."""
         if not messages:
             return []
         normalized: list[dict[str, Any]] = []
@@ -720,9 +719,11 @@ class GenAISemanticProcessor(TracingProcessor):
                         "parts": [
                             {
                                 "type": "text",
-                                "content": "readacted"
-                                if not self.include_sensitive_data
-                                else str(m),
+                                "content": (
+                                    "readacted"
+                                    if not self.include_sensitive_data
+                                    else str(m)
+                                ),
                             }
                         ],
                     }
@@ -773,9 +774,11 @@ class GenAISemanticProcessor(TracingProcessor):
                         parts.append(
                             {
                                 "type": "text",
-                                "content": "readacted"
-                                if not self.include_sensitive_data
-                                else str(p),
+                                "content": (
+                                    "readacted"
+                                    if not self.include_sensitive_data
+                                    else str(p)
+                                ),
                             }
                         )
 
@@ -785,9 +788,11 @@ class GenAISemanticProcessor(TracingProcessor):
                 parts.append(
                     {
                         "type": "text",
-                        "content": "readacted"
-                        if not self.include_sensitive_data
-                        else content,
+                        "content": (
+                            "readacted"
+                            if not self.include_sensitive_data
+                            else content
+                        ),
                     }
                 )
             elif isinstance(content, (list, tuple)):
@@ -799,12 +804,14 @@ class GenAISemanticProcessor(TracingProcessor):
                             parts.append(
                                 {
                                     "type": "text",
-                                    "content": "readacted"
-                                    if not self.include_sensitive_data
-                                    else (
-                                        txt
-                                        if isinstance(txt, str)
-                                        else str(item)
+                                    "content": (
+                                        "readacted"
+                                        if not self.include_sensitive_data
+                                        else (
+                                            txt
+                                            if isinstance(txt, str)
+                                            else str(item)
+                                        )
                                     ),
                                 }
                             )
@@ -813,18 +820,22 @@ class GenAISemanticProcessor(TracingProcessor):
                             parts.append(
                                 {
                                     "type": "text",
-                                    "content": "readacted"
-                                    if not self.include_sensitive_data
-                                    else str(item),
+                                    "content": (
+                                        "readacted"
+                                        if not self.include_sensitive_data
+                                        else str(item)
+                                    ),
                                 }
                             )
                     else:
                         parts.append(
                             {
                                 "type": "text",
-                                "content": "readacted"
-                                if not self.include_sensitive_data
-                                else str(item),
+                                "content": (
+                                    "readacted"
+                                    if not self.include_sensitive_data
+                                    else str(item)
+                                ),
                             }
                         )
 
@@ -867,6 +878,82 @@ class GenAISemanticProcessor(TracingProcessor):
 
         return normalized
 
+    def _format_output_item(self, item: Any) -> Optional[dict[str, Any]]:
+        """Format a single output item into a proper part structure.
+
+        Handles ResponseFunctionToolCall, ResponseReasoningItem, and other output types.
+        """
+        if not self.include_sensitive_data:
+            return {"type": "text", "content": "redacted"}
+
+        # Check for type attribute to identify special response items
+        item_type = getattr(item, "type", None)
+
+        # Handle function_call (ResponseFunctionToolCall)
+        if item_type == "function_call":
+            tool_name = getattr(item, "name", "unknown_tool")
+            arguments = getattr(item, "arguments", "{}")
+            call_id = getattr(item, "call_id", "")
+            return {
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "tool_call_id": call_id,
+                "arguments": arguments,
+            }
+
+        # Handle reasoning (ResponseReasoningItem) - skip or summarize
+        if item_type == "reasoning":
+            # Reasoning items typically don't have user-visible content
+            # Return None to skip, or include a marker if needed
+            return None
+
+        # Handle text content
+        txt = getattr(item, "content", None)
+        if isinstance(txt, str) and txt:
+            return {"type": "text", "content": txt}
+
+        # Handle message type (ResponseOutputMessage)
+        if item_type == "message":
+            msg_content = getattr(item, "content", None)
+            if isinstance(msg_content, list):
+                # Extract text from content parts
+                texts = []
+                for part in msg_content:
+                    part_type = getattr(part, "type", None)
+                    if part_type == "output_text":
+                        text = getattr(part, "text", "")
+                        if text:
+                            texts.append(text)
+                if texts:
+                    return {"type": "text", "content": "\n".join(texts)}
+            elif isinstance(msg_content, str) and msg_content:
+                return {"type": "text", "content": msg_content}
+
+        # Fallback: try to extract meaningful data or skip
+        # Don't stringify complex objects - return None to skip
+        if hasattr(item, "model_dump"):
+            # Pydantic model - dump to dict for cleaner output
+            try:
+                data = item.model_dump(exclude_none=True)
+                if "content" in data and data["content"]:
+                    return {"type": "text", "content": str(data["content"])}
+                # For tool calls without proper type detection
+                if "arguments" in data and "name" in data:
+                    return {
+                        "type": "tool_call",
+                        "tool_name": data.get("name", "unknown"),
+                        "tool_call_id": data.get("call_id", ""),
+                        "arguments": data.get("arguments", "{}"),
+                    }
+            except Exception:
+                pass
+
+        # Last resort: stringify if it's a simple type
+        if isinstance(item, str):
+            return {"type": "text", "content": item}
+
+        return None
+
     def _normalize_output_messages_to_role_parts(
         self, span_data: Any
     ) -> list[dict[str, Any]]:
@@ -899,31 +986,9 @@ class GenAISemanticProcessor(TracingProcessor):
                 output = getattr(response, "output", None)
                 if isinstance(output, Sequence):
                     for item in output:
-                        # ResponseOutputMessage may have a string representation
-                        txt = getattr(item, "content", None)
-                        if isinstance(txt, str) and txt:
-                            parts.append(
-                                {
-                                    "type": "text",
-                                    "content": (
-                                        "readacted"
-                                        if not self.include_sensitive_data
-                                        else txt
-                                    ),
-                                }
-                            )
-                        else:
-                            # Fallback: stringified
-                            parts.append(
-                                {
-                                    "type": "text",
-                                    "content": (
-                                        "readacted"
-                                        if not self.include_sensitive_data
-                                        else str(item)
-                                    ),
-                                }
-                            )
+                        part = self._format_output_item(item)
+                        if part:
+                            parts.append(part)
                         # Capture finish_reason from parts when present
                         fr = getattr(item, "finish_reason", None)
                         if isinstance(fr, str) and not finish_reason:
@@ -935,6 +1000,7 @@ class GenAISemanticProcessor(TracingProcessor):
             if isinstance(output, Sequence):
                 for item in output:
                     if isinstance(item, dict):
+                        # Handle dict items (text, tool_call, etc.)
                         if item.get("type") == "text":
                             txt = item.get("content") or item.get("text")
                             if isinstance(txt, str) and txt:
@@ -942,12 +1008,22 @@ class GenAISemanticProcessor(TracingProcessor):
                                     {
                                         "type": "text",
                                         "content": (
-                                            "readacted"
+                                            "redacted"
                                             if not self.include_sensitive_data
                                             else txt
                                         ),
                                     }
                                 )
+                        elif item.get("type") == "function_call":
+                            # Tool call in dict format
+                            parts.append(
+                                {
+                                    "type": "tool_call",
+                                    "tool_name": item.get("name", "unknown"),
+                                    "tool_call_id": item.get("call_id", ""),
+                                    "arguments": item.get("arguments", "{}"),
+                                }
+                            )
                         elif "content" in item and isinstance(
                             item["content"], str
                         ):
@@ -955,20 +1031,9 @@ class GenAISemanticProcessor(TracingProcessor):
                                 {
                                     "type": "text",
                                     "content": (
-                                        "readacted"
+                                        "redacted"
                                         if not self.include_sensitive_data
                                         else item["content"]
-                                    ),
-                                }
-                            )
-                        else:
-                            parts.append(
-                                {
-                                    "type": "text",
-                                    "content": (
-                                        "readacted"
-                                        if not self.include_sensitive_data
-                                        else str(item)
                                     ),
                                 }
                             )
@@ -976,28 +1041,15 @@ class GenAISemanticProcessor(TracingProcessor):
                             item.get("finish_reason"), str
                         ):
                             finish_reason = item.get("finish_reason")
-                    elif isinstance(item, str):
-                        parts.append(
-                            {
-                                "type": "text",
-                                "content": (
-                                    "readacted"
-                                    if not self.include_sensitive_data
-                                    else item
-                                ),
-                            }
-                        )
                     else:
-                        parts.append(
-                            {
-                                "type": "text",
-                                "content": (
-                                    "readacted"
-                                    if not self.include_sensitive_data
-                                    else str(item)
-                                ),
-                            }
-                        )
+                        # Use helper for non-dict items (Pydantic models, etc.)
+                        part = self._format_output_item(item)
+                        if part:
+                            parts.append(part)
+                        # Extract finish_reason if present
+                        fr = getattr(item, "finish_reason", None)
+                        if isinstance(fr, str) and not finish_reason:
+                            finish_reason = fr
 
         # Build assistant message
         msg: dict[str, Any] = {"role": "assistant", "parts": parts}
@@ -1066,14 +1118,6 @@ class GenAISemanticProcessor(TracingProcessor):
                     payload.output_messages = normalized_out
 
         elif _is_instance_of(span_data, FunctionSpanData) and capture_tools:
-
-            def _serialize_tool_value(value: Any) -> Optional[str]:
-                if value is None:
-                    return None
-                if isinstance(value, (dict, list)):
-                    return safe_json_dumps(value)
-                return str(value)
-
             payload.tool_arguments = _serialize_tool_value(
                 getattr(span_data, "input", None)
             )
@@ -1082,6 +1126,75 @@ class GenAISemanticProcessor(TracingProcessor):
             )
 
         return payload
+
+    def _add_invocation_state(
+        self,
+        span_id: str,
+        parent_span_id: Optional[str],
+        invocation: Optional[
+            Union[
+                AgentCreation,
+                AgentInvocation,
+                LLMInvocation,
+                ToolCall,
+                Workflow,
+            ]
+        ] = None,
+    ) -> _InvocationState:
+        """Add state to tracking dict with parent-child relationship."""
+        state = _InvocationState(
+            invocation=invocation, parent_span_id=parent_span_id
+        )
+        self._invocations[span_id] = state
+
+        # Establish parent-child relationship
+        if parent_span_id is not None and parent_span_id in self._invocations:
+            parent_state = self._invocations[parent_span_id]
+            parent_state.children.append(span_id)
+
+        return state
+
+    def _set_invocation(
+        self,
+        span_id: str,
+        invocation: Union[AgentInvocation, LLMInvocation, ToolCall],
+    ) -> None:
+        """Set invocation on existing state entry."""
+        state = self._invocations.get(span_id)
+        if state:
+            state.invocation = invocation
+
+    def _get_invocation_state(
+        self, span_id: str
+    ) -> Optional[_InvocationState]:
+        """Get invocation state by span_id."""
+        return self._invocations.get(span_id)
+
+    def _delete_invocation_state(
+        self, span_id: str
+    ) -> Optional[_InvocationState]:
+        """Delete an invocation state and return it."""
+        return self._invocations.pop(span_id, None)
+
+    def _fail_invocation(self, key: str, error: BaseException) -> None:
+        """Fail an invocation with an error."""
+        state = self._get_invocation_state(key)
+        if state is None:
+            return
+
+        invocation = state.invocation
+        gen_ai_error = Error(message=str(error), type=type(error))
+
+        if isinstance(invocation, AgentInvocation):
+            self._handler.fail_agent(invocation, gen_ai_error)
+        elif isinstance(invocation, LLMInvocation):
+            self._handler.fail_llm(invocation, gen_ai_error)
+        elif isinstance(invocation, ToolCall):
+            self._handler.fail_tool_call(invocation, gen_ai_error)
+        elif isinstance(invocation, Workflow):
+            self._handler.fail_workflow(invocation, gen_ai_error)
+
+        self._delete_invocation_state(key)
 
     def _find_agent_parent_span_id(
         self, span_id: Optional[str]
@@ -1093,9 +1206,22 @@ class GenAISemanticProcessor(TracingProcessor):
             if current in visited:
                 break
             visited.add(current)
-            if current in self._agent_content:
-                return current
-            current = self._span_parents.get(current)
+            state = self._invocations.get(current)
+            if state:
+                if isinstance(state.invocation, AgentInvocation):
+                    return current
+                current = state.parent_span_id
+            else:
+                break
+        return None
+
+    def _find_parent_agent_state(
+        self, span_id: Optional[str]
+    ) -> Optional[_InvocationState]:
+        """Return the _InvocationState for the nearest agent ancestor."""
+        agent_id = self._find_agent_parent_span_id(span_id)
+        if agent_id:
+            return self._invocations.get(agent_id)
         return None
 
     def _update_agent_aggregate(
@@ -1105,35 +1231,30 @@ class GenAISemanticProcessor(TracingProcessor):
         agent_id = self._find_agent_parent_span_id(span.parent_id)
         if not agent_id:
             return
-        entry = self._agent_content.setdefault(
-            agent_id,
-            {
-                "input_messages": [],
-                "output_messages": [],
-                "system_instructions": [],
-                "request_model": None,
-            },
-        )
+        state = self._invocations.get(agent_id)
+        if not state:
+            return
+
         if payload.input_messages:
-            entry["input_messages"] = self._merge_content_sequence(
-                entry["input_messages"], payload.input_messages
+            state.input_messages = self._merge_content_sequence(
+                state.input_messages, payload.input_messages
             )
         if payload.output_messages:
-            entry["output_messages"] = self._merge_content_sequence(
-                entry["output_messages"], payload.output_messages
+            state.output_messages = self._merge_content_sequence(
+                state.output_messages, payload.output_messages
             )
         if payload.system_instructions:
-            entry["system_instructions"] = self._merge_content_sequence(
-                entry["system_instructions"], payload.system_instructions
+            state.system_instructions = self._merge_content_sequence(
+                state.system_instructions, payload.system_instructions
             )
 
-        if not entry.get("request_model"):
+        if not state.request_model:
             model = getattr(span.span_data, "model", None)
             if not model:
                 response_obj = getattr(span.span_data, "response", None)
                 model = getattr(response_obj, "model", None)
             if model:
-                entry["request_model"] = model
+                state.request_model = model
 
     def _infer_output_type(self, span_data: Any) -> str:
         """Infer gen_ai.output.type for multiple span kinds."""
@@ -1250,94 +1371,410 @@ class GenAISemanticProcessor(TracingProcessor):
                 except Exception:  # pragma: no cover - defensive
                     pass
 
-    def _get_span_kind(self, span_data: Any) -> SpanKind:
-        """Determine appropriate span kind based on span data type."""
-        if _is_instance_of(span_data, FunctionSpanData):
-            return SpanKind.INTERNAL  # Tool execution is internal
-        if _is_instance_of(
-            span_data,
-            (
-                GenerationSpanData,
-                ResponseSpanData,
-                TranscriptionSpanData,
-                SpeechSpanData,
-            ),
-        ):
-            return SpanKind.CLIENT  # API calls to model providers
-        if _is_instance_of(span_data, AgentSpanData):
-            return SpanKind.CLIENT
-        if _is_instance_of(span_data, (GuardrailSpanData, HandoffSpanData)):
-            return SpanKind.INTERNAL  # Agent operations are internal
-        return SpanKind.INTERNAL
+    def _format_input_message(self, content: str) -> str:
+        """Format input content as GenAI semantic convention message JSON."""
+        # Check if already JSON formatted
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return content  # Already in correct format
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Wrap in standard format
+        input_msg = {
+            "role": "user",
+            "parts": [{"type": "text", "content": content}],
+        }
+        return json.dumps([input_msg])
+
+    def _format_output_message(self, content: str) -> str:
+        """Format output content as GenAI semantic convention message JSON."""
+        # Check if already JSON formatted
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return content  # Already in correct format
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Wrap in standard format
+        output_msg = {
+            "role": "assistant",
+            "parts": [{"type": "text", "content": content}],
+            "finish_reason": "stop",
+        }
+        return json.dumps([output_msg])
+
+    def _make_input_messages(self, messages: list[Any]) -> list[InputMessage]:
+        """Create InputMessage objects from message dicts (LangChain pattern)."""
+        result: list[InputMessage] = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = str(msg.get("role", "user"))
+                parts_data = msg.get("parts", [])
+                parts: list[Any] = []
+                for p in parts_data:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        parts.append(Text(content=str(p.get("content", ""))))
+                    else:
+                        parts.append(p)
+                if parts:
+                    result.append(InputMessage(role=role, parts=parts))
+        return result
+
+    def _make_output_messages(
+        self, messages: list[Any]
+    ) -> list[OutputMessage]:
+        """Create OutputMessage objects from message dicts (LangChain pattern)."""
+        result: list[OutputMessage] = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = str(msg.get("role", "assistant"))
+                parts_data = msg.get("parts", [])
+                finish_reason = msg.get("finish_reason")
+                parts: list[Any] = []
+                for p in parts_data:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        parts.append(Text(content=str(p.get("content", ""))))
+                    else:
+                        parts.append(p)
+                if parts:
+                    result.append(
+                        OutputMessage(
+                            role=role,
+                            parts=parts,
+                            finish_reason=finish_reason,
+                        )
+                    )
+        return result
 
     def on_trace_start(self, trace: Trace) -> None:
-        """Create root span when trace starts."""
-        if self._tracer:
-            attributes = {
-                GEN_AI_PROVIDER_NAME: self.system_name,
-                GEN_AI_SYSTEM_KEY: self.system_name,
-                GEN_AI_OPERATION_NAME: GenAIOperationName.INVOKE_AGENT,
-            }
-            # Legacy emission removed
+        """Create workflow span when trace starts."""
+        try:
+            if self._workflow is None:
+                self._workflow_first_input = None
+                self._workflow_last_output = None
+                metadata = getattr(trace, "metadata", None) or {}
+                workflow_name = getattr(trace, "name", None) or "OpenAIAgents"
 
-            # Add configured agent and server attributes
-            if self.agent_name:
-                attributes[GEN_AI_AGENT_NAME] = self.agent_name
-            if self.agent_id:
-                attributes[GEN_AI_AGENT_ID] = self.agent_id
-            if self.agent_description:
-                attributes[GEN_AI_AGENT_DESCRIPTION] = self.agent_description
-            attributes.update(self._get_server_attributes())
+                # Check for initial_request in metadata to set workflow input
+                initial_request = metadata.get("initial_request")
+                input_messages: list[InputMessage] = []
+                if initial_request:
+                    input_messages = [
+                        InputMessage(
+                            role="user",
+                            parts=[Text(content=str(initial_request))],
+                        )
+                    ]
 
-            otel_span = self._tracer.start_span(
-                name=trace.name,
-                attributes=attributes,
-                kind=SpanKind.SERVER,  # Root span is typically server
+                self._workflow = Workflow(
+                    name=workflow_name,
+                    workflow_type=metadata.get("workflow_type"),
+                    description=metadata.get("description"),
+                    input_messages=input_messages if input_messages else None,
+                    attributes={},
+                )
+                invocation = self._handler.start_workflow(self._workflow)
+                self._add_invocation_state(trace.trace_id, None, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create workflow for trace %s: %s",
+                getattr(trace, "trace_id", "<unknown>"),
+                e,
+                exc_info=True,
             )
-            self._root_spans[trace.trace_id] = otel_span
 
     def on_trace_end(self, trace: Trace) -> None:
-        """End root span when trace ends."""
-        if root_span := self._root_spans.pop(trace.trace_id, None):
-            if root_span.is_recording():
-                root_span.set_status(Status(StatusCode.OK))
-            root_span.end()
-        self._cleanup_spans_for_trace(trace.trace_id)
-
-    def on_span_start(self, span: Span[Any]) -> None:
-        """Start child span for agent span."""
-        if not self._tracer or not span.started_at:
+        """Stop workflow when trace ends."""
+        key = str(trace.trace_id)
+        state = self._get_invocation_state(key)
+        if state is None:
             return
 
-        self._span_parents[span.span_id] = span.parent_id
-        if (
-            _is_instance_of(span.span_data, AgentSpanData)
-            and span.span_id not in self._agent_content
-        ):
-            self._agent_content[span.span_id] = {
-                "input_messages": [],
-                "output_messages": [],
-                "system_instructions": [],
-                "request_model": None,
-            }
+        workflow = state.invocation
+        if isinstance(workflow, Workflow):
+            # Parse and set input_messages from first agent's input (JSON string)
+            if self._workflow_first_input and not workflow.input_messages:
+                try:
+                    parsed = json.loads(self._workflow_first_input)
+                    if isinstance(parsed, list):
+                        workflow.input_messages = self._make_input_messages(
+                            parsed
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Parse and set output_messages from last agent's output (JSON string)
+            if self._workflow_last_output:
+                try:
+                    parsed = json.loads(self._workflow_last_output)
+                    if isinstance(parsed, list):
+                        workflow.output_messages = self._make_output_messages(
+                            parsed
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            self._handler.stop_workflow(workflow)
 
-        parent_span = (
-            self._otel_spans.get(span.parent_id)
-            if span.parent_id
-            else self._root_spans.get(span.trace_id)
+        self._workflow = None
+        self._workflow_first_input = None
+        self._workflow_last_output = None
+        self._delete_invocation_state(key)
+
+    def _handle_agent_span_start(
+        self,
+        span: Span[Any],
+        key: str,
+        parent_key: str,
+        span_name: str,
+        attributes: dict[str, Any],
+        agent_name: Optional[str],
+    ) -> None:
+        """Handle AgentSpanData - create AgentInvocation."""
+        try:
+            agent_attrs: dict[str, Any] = dict(attributes)
+
+            # Add workflow name to attributes before creating invocation
+            if self._workflow is not None:
+                if hasattr(self._workflow, "name") and self._workflow.name:
+                    agent_attrs[GEN_AI_WORKFLOW_NAME] = self._workflow.name
+
+            agent_invocation = AgentInvocation(
+                name=agent_name or span_name,
+                attributes=agent_attrs,
+            )
+
+            if self._workflow is not None:
+                if hasattr(self._workflow, "span") and self._workflow.span:
+                    agent_invocation.parent_span = self._workflow.span
+
+            if agent_name:
+                agent_invocation.agent_name = agent_name
+
+            # Use span_id from the framework as agent_id
+            agent_invocation.agent_id = str(span.span_id)
+
+            agent_invocation.framework = "openai_agents"
+
+            invocation = self._handler.start_agent(agent_invocation)
+            self._add_invocation_state(key, parent_key, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create AgentInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_llm_span_start(
+        self,
+        span: Span[Any],
+        key: str,
+        parent_key: str,
+        span_name: str,
+        model: Optional[str],
+    ) -> None:
+        """Handle GenerationSpanData/ResponseSpanData - create LLMInvocation."""
+        try:
+            # Get parent state for context
+            parent_state = self._get_invocation_state(parent_key)
+            parent_agent = (
+                parent_state.invocation
+                if parent_state
+                and isinstance(parent_state.invocation, AgentInvocation)
+                else None
+            )
+
+            # Get model - use from span or fallback to parent's stored model
+            request_model: str = model if model else ""
+            if not request_model and parent_state:
+                request_model = parent_state.request_model or ""
+            if not request_model:
+                request_model = "unknown_model"
+
+            # Build input messages from span data
+            span_input = getattr(span.span_data, "input", None)
+            input_messages: list[InputMessage] = []
+            if span_input and isinstance(span_input, (list, tuple)):
+                for msg in span_input:
+                    if isinstance(msg, dict):
+                        role = msg.get("role", "user")
+                        content = msg.get("content", "")
+                        parts: list[Any] = []
+                        # Handle different content formats
+                        if isinstance(content, str):
+                            parts.append(Text(content=content))
+                        elif isinstance(content, list):
+                            # Content is a list of parts
+                            for part in content:
+                                if isinstance(part, dict):
+                                    part_type = part.get("type", "text")
+                                    if part_type == "text":
+                                        parts.append(
+                                            Text(content=part.get("text", ""))
+                                        )
+                                    elif part_type == "input_text":
+                                        parts.append(
+                                            Text(content=part.get("text", ""))
+                                        )
+                                    else:
+                                        # Keep other part types as-is
+                                        parts.append(part)
+                                elif isinstance(part, str):
+                                    parts.append(Text(content=part))
+                        if parts:
+                            input_messages.append(
+                                InputMessage(role=role, parts=parts)
+                            )
+
+            llm_invocation = LLMInvocation(
+                request_model=request_model,
+                input_messages=input_messages if input_messages else [],
+            )
+
+            # Set parent relationship - in agentic frameworks there's always a parent agent
+            if parent_agent is not None:
+                if hasattr(parent_agent, "span") and parent_agent.span:
+                    llm_invocation.parent_span = parent_agent.span
+                if (
+                    hasattr(parent_agent, "agent_name")
+                    and parent_agent.agent_name
+                ):
+                    llm_invocation.agent_name = parent_agent.agent_name
+                # Use span_id from the framework as agent_id
+                llm_invocation.agent_id = (
+                    parent_agent.agent_id
+                    if hasattr(parent_agent, "agent_id")
+                    and parent_agent.agent_id
+                    else None
+                )
+
+            llm_invocation.framework = "openai_agents"
+
+            # Pass workflow name to LLM invocation
+            if self._workflow is not None:
+                if hasattr(self._workflow, "name") and self._workflow.name:
+                    llm_invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                        self._workflow.name
+                    )
+
+            # Start LLM span immediately for correct duration
+            invocation = self._handler.start_llm(llm_invocation)
+            self._add_invocation_state(key, parent_key, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create LLMInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_tool_span_start(
+        self,
+        span: Span[Any],
+        key: str,
+        parent_key: str,
+        span_name: str,
+        attributes: dict[str, Any],
+    ) -> None:
+        """Handle FunctionSpanData - create ToolCall."""
+        try:
+            tool_attrs: dict[str, Any] = dict(attributes)
+
+            # Add workflow name to attributes before creating invocation
+            if self._workflow is not None:
+                if hasattr(self._workflow, "name") and self._workflow.name:
+                    tool_attrs[GEN_AI_WORKFLOW_NAME] = self._workflow.name
+
+            # Get tool arguments from span data
+            tool_args = getattr(span.span_data, "input", None)
+
+            # Get parent state for context
+            parent_state = self._get_invocation_state(parent_key)
+            parent_agent = (
+                parent_state.invocation
+                if parent_state
+                and isinstance(parent_state.invocation, AgentInvocation)
+                else None
+            )
+
+            # Get agent_id from parent agent (uses span_id from framework)
+            actual_agent_id: Optional[str] = None
+            if parent_agent is not None:
+                if (
+                    hasattr(parent_agent, "agent_name")
+                    and parent_agent.agent_name
+                ):
+                    tool_attrs[GEN_AI_AGENT_NAME] = parent_agent.agent_name
+                # Use agent_id (span_id from framework)
+                actual_agent_id = (
+                    parent_agent.agent_id
+                    if hasattr(parent_agent, "agent_id")
+                    and parent_agent.agent_id
+                    else None
+                )
+                if actual_agent_id:
+                    tool_attrs[GEN_AI_AGENT_ID] = actual_agent_id
+                if GEN_AI_AGENT_DESCRIPTION in tool_attrs:
+                    del tool_attrs[GEN_AI_AGENT_DESCRIPTION]
+
+            tool_entity = ToolCall(
+                name=getattr(span.span_data, "name", span_name),
+                id=getattr(span.span_data, "call_id", None),
+                arguments=tool_args,
+                attributes=tool_attrs,
+            )
+
+            # Set parent relationship - in agentic frameworks there's always a parent agent
+            if parent_agent is not None:
+                tool_entity.agent_name = parent_agent.agent_name
+                tool_entity.agent_id = actual_agent_id
+                if hasattr(parent_agent, "span") and parent_agent.span:
+                    tool_entity.parent_span = parent_agent.span
+
+            tool_entity.framework = "openai_agents"
+
+            invocation = self._handler.start_tool_call(tool_entity)
+            self._add_invocation_state(key, parent_key, invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to create ToolCall for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def on_span_start(self, span: Span[Any]) -> None:
+        """Start invocation tracking for a span."""
+        if not span.started_at:
+            return
+
+        key = str(span.span_id)
+        parent_key = (
+            str(span.parent_id) if span.parent_id else str(span.trace_id)
         )
-        context = set_span_in_context(parent_span) if parent_span else None
 
-        # Get operation details for span naming
         operation_name = self._get_operation_name(span.span_data)
         model = getattr(span.span_data, "model", None)
         if model is None:
             response_obj = getattr(span.span_data, "response", None)
             model = getattr(response_obj, "model", None)
+        # Try model_config if model still not found
+        if model is None:
+            model_config = getattr(span.span_data, "model_config", None)
+            if model_config and isinstance(model_config, dict):
+                model = model_config.get("model")
 
-        # Use configured agent name or get from span data
-        agent_name = self.agent_name
-        if not agent_name and _is_instance_of(span.span_data, AgentSpanData):
+        # Store model in parent agent's state for subsequent spans to use
+        if model and _is_instance_of(
+            span.span_data, (GenerationSpanData, ResponseSpanData)
+        ):
+            parent_agent_state = self._find_parent_agent_state(span.parent_id)
+            if parent_agent_state and not parent_agent_state.request_model:
+                parent_agent_state.request_model = model
+
+        # Get agent name from span data or use default
+        agent_name = None
+        if _is_instance_of(span.span_data, AgentSpanData):
             agent_name = getattr(span.span_data, "name", None)
         if not agent_name:
             agent_name = self._agent_name_default
@@ -1351,150 +1788,259 @@ class GenAISemanticProcessor(TracingProcessor):
         # Generate spec-compliant span name
         span_name = get_span_name(operation_name, model, agent_name, tool_name)
 
-        attributes = {
+        attributes: dict[str, Any] = {
             GEN_AI_PROVIDER_NAME: self.system_name,
             GEN_AI_SYSTEM_KEY: self.system_name,
             GEN_AI_OPERATION_NAME: operation_name,
         }
-        # Legacy emission removed
 
-        # Add configured agent and server attributes
-        agent_name_override = self.agent_name or self._agent_name_default
-        agent_id_override = self.agent_id or self._agent_id_default
-        agent_desc_override = (
-            self.agent_description or self._agent_description_default
-        )
-        if agent_name_override:
-            attributes[GEN_AI_AGENT_NAME] = agent_name_override
-        if agent_id_override:
-            attributes[GEN_AI_AGENT_ID] = agent_id_override
-        if agent_desc_override:
-            attributes[GEN_AI_AGENT_DESCRIPTION] = agent_desc_override
         attributes.update(self._get_server_attributes())
 
-        otel_span = self._tracer.start_span(
-            name=span_name,
-            context=context,
-            attributes=attributes,
-            kind=self._get_span_kind(span.span_data),
-        )
-        self._otel_spans[span.span_id] = otel_span
-        self._tokens[span.span_id] = attach(set_span_in_context(otel_span))
+        # Dispatch to type-specific handlers
+        if _is_instance_of(span.span_data, AgentSpanData):
+            self._handle_agent_span_start(
+                span, key, parent_key, span_name, attributes, agent_name
+            )
+        elif _is_instance_of(
+            span.span_data, (GenerationSpanData, ResponseSpanData)
+        ):
+            self._handle_llm_span_start(
+                span, key, parent_key, span_name, model
+            )
+        elif _is_instance_of(span.span_data, FunctionSpanData):
+            self._handle_tool_span_start(
+                span, key, parent_key, span_name, attributes
+            )
+
+    def _handle_agent_span_end(
+        self,
+        key: str,
+        invocation: AgentInvocation,
+        state: _InvocationState,
+    ) -> None:
+        """Handle AgentInvocation end - finalize agent span."""
+        try:
+            # Populate input_messages from accumulated state (LangChain pattern)
+            if state.input_messages and not invocation.input_messages:
+                invocation.input_messages = self._make_input_messages(
+                    state.input_messages
+                )
+
+            # Populate output_messages from accumulated state (LangChain pattern)
+            if state.output_messages:
+                invocation.output_messages = self._make_output_messages(
+                    state.output_messages
+                )
+
+            self._handler.stop_agent(invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to stop AgentInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_llm_span_end(
+        self,
+        span: Span[Any],
+        key: str,
+        invocation: LLMInvocation,
+        payload: ContentPayload,
+    ) -> None:
+        """Handle LLMInvocation end - finalize LLM span with response data."""
+        try:
+            # Update model from response if available
+            response_obj = getattr(span.span_data, "response", None)
+            if response_obj is not None:
+                response_model = getattr(response_obj, "model", None)
+                if response_model:
+                    invocation.response_model_name = response_model
+                    # Update request_model and span name if it was unknown
+                    if invocation.request_model == "unknown_model":
+                        invocation.request_model = response_model
+                        # Update span name with actual model
+                        if invocation.span is not None and hasattr(
+                            invocation.span, "update_name"
+                        ):
+                            operation = getattr(
+                                invocation, "operation", "chat"
+                            )
+                            invocation.span.update_name(
+                                f"{operation} {response_model}"
+                            )
+
+            # Add input messages from payload (if not already set at start)
+            if payload.input_messages and not invocation.input_messages:
+                input_msgs: list[InputMessage] = []
+                for msg in payload.input_messages:
+                    if isinstance(msg, dict):
+                        role = msg.get("role", "user")
+                        parts_data = msg.get("parts", [])
+                        parts: list[Any] = []
+                        for p in parts_data:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                parts.append(
+                                    Text(content=p.get("content", ""))
+                                )
+                            else:
+                                parts.append(p)
+                        input_msgs.append(InputMessage(role=role, parts=parts))
+                if input_msgs:
+                    invocation.input_messages = input_msgs
+
+            # Add output messages from payload
+            if payload.output_messages:
+                output_msgs: list[OutputMessage] = []
+                for msg in payload.output_messages:
+                    if isinstance(msg, dict):
+                        role = msg.get("role", "assistant")
+                        parts_data = msg.get("parts", [])
+                        parts: list[Any] = []
+                        for p in parts_data:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                parts.append(
+                                    Text(content=p.get("content", ""))
+                                )
+                            else:
+                                parts.append(p)
+                        finish_reason = msg.get("finish_reason", "stop")
+                        output_msgs.append(
+                            OutputMessage(
+                                role=role,
+                                parts=parts,
+                                finish_reason=finish_reason,
+                            )
+                        )
+                if output_msgs:
+                    invocation.output_messages = output_msgs
+
+            # Add token usage from response
+            if response_obj is not None:
+                usage = getattr(response_obj, "usage", None)
+                if usage is not None:
+                    input_tokens = getattr(usage, "input_tokens", None)
+                    if input_tokens is None:
+                        input_tokens = getattr(usage, "prompt_tokens", None)
+                    if input_tokens is not None:
+                        invocation.input_tokens = input_tokens
+
+                    output_tokens = getattr(usage, "output_tokens", None)
+                    if output_tokens is None:
+                        output_tokens = getattr(
+                            usage, "completion_tokens", None
+                        )
+                    if output_tokens is not None:
+                        invocation.output_tokens = output_tokens
+
+            self._handler.stop_llm(invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to stop LLMInvocation for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
+
+    def _handle_tool_span_end(
+        self,
+        key: str,
+        invocation: ToolCall,
+        payload: ContentPayload,
+    ) -> None:
+        """Handle ToolCall end - finalize tool span with result."""
+        try:
+            # Add tool result from payload
+            if payload.tool_result is not None:
+                invocation.attributes.setdefault(
+                    "tool.response",
+                    safe_json_dumps(payload.tool_result),
+                )
+            self._handler.stop_tool_call(invocation)
+        except Exception as e:
+            logger.debug(
+                "Failed to stop ToolCall for span %s: %s",
+                key,
+                e,
+                exc_info=True,
+            )
 
     def on_span_end(self, span: Span[Any]) -> None:
-        """Finalize span with attributes, events, and metrics."""
-        if token := self._tokens.pop(span.span_id, None):
-            detach(token)
+        """Finalize span with attributes, events, and metrics.
+
+        Uses unified _invocations dict for all entity tracking.
+        """
+        key = str(span.span_id)
+        state = self._get_invocation_state(key)
+        if state is None:
+            return
 
         payload = self._build_content_payload(span)
         self._update_agent_aggregate(span, payload)
-        agent_content = (
-            self._agent_content.get(span.span_id)
-            if _is_instance_of(span.span_data, AgentSpanData)
-            else None
-        )
 
-        if not (otel_span := self._otel_spans.pop(span.span_id, None)):
-            # Log attributes even without OTel span
-            try:
-                attributes = dict(
-                    self._extract_genai_attributes(
-                        span, payload, agent_content
-                    )
+        # Track workflow input/output from agent spans
+        if isinstance(state.invocation, AgentInvocation):
+            if state.input_messages:
+                input_data = safe_json_dumps(state.input_messages)
+                if self._workflow_first_input is None:
+                    self._workflow_first_input = input_data
+            if state.output_messages:
+                self._workflow_last_output = safe_json_dumps(
+                    state.output_messages
                 )
-                for key, value in attributes.items():
-                    logger.debug(
-                        "GenAI attr span %s: %s=%s", span.span_id, key, value
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Failed to extract attributes for span %s: %s",
-                    span.span_id,
-                    e,
-                )
-            if _is_instance_of(span.span_data, AgentSpanData):
-                self._agent_content.pop(span.span_id, None)
-            self._span_parents.pop(span.span_id, None)
-            return
 
-        try:
-            # Extract and set attributes
-            attributes: dict[str, AttributeValue] = {}
-            # Optimize for non-sampled spans to avoid heavy work
-            if not otel_span.is_recording():
-                otel_span.end()
-                return
-            for key, value in self._extract_genai_attributes(
-                span, payload, agent_content
-            ):
-                otel_span.set_attribute(key, value)
-                attributes[key] = value
+        # Dispatch to type-specific handlers
+        invocation = state.invocation
+        if isinstance(invocation, AgentInvocation):
+            self._handle_agent_span_end(key, invocation, state)
+        elif isinstance(invocation, LLMInvocation):
+            self._handle_llm_span_end(span, key, invocation, payload)
+        elif isinstance(invocation, ToolCall):
+            self._handle_tool_span_end(key, invocation, payload)
 
-            if _is_instance_of(
-                span.span_data, (GenerationSpanData, ResponseSpanData)
-            ):
-                operation_name = attributes.get(GEN_AI_OPERATION_NAME)
-                model_for_name = attributes.get(GEN_AI_REQUEST_MODEL) or (
-                    attributes.get(GEN_AI_RESPONSE_MODEL)
-                )
-                if operation_name and model_for_name:
-                    agent_name_for_name = attributes.get(GEN_AI_AGENT_NAME)
-                    tool_name_for_name = attributes.get(GEN_AI_TOOL_NAME)
-                    new_name = get_span_name(
-                        operation_name,
-                        model_for_name,
-                        agent_name_for_name,
-                        tool_name_for_name,
-                    )
-                    if new_name != otel_span.name:
-                        otel_span.update_name(new_name)
+        # Remove from invocations
+        self._delete_invocation_state(key)
 
-            # Emit span events for captured content when configured
-            self._emit_content_events(span, otel_span, payload, agent_content)
+    def on_span_error(self, span: Span[Any], error: BaseException) -> None:
+        """Handle span error by failing the invocation."""
+        key = str(span.span_id)
+        self._fail_invocation(key, error)
 
-            # Emit operation details event if configured
-            # Set error status if applicable
-            otel_span.set_status(status=_get_span_status(span))
-            if getattr(span, "error", None):
-                err_obj = span.error
-                err_type = err_obj.get("type") or err_obj.get("name")
-                if err_type:
-                    otel_span.set_attribute("error.type", err_type)
-
-            # Record metrics before ending span
-            self._record_metrics(span, attributes)
-
-            # End the span
-            otel_span.end()
-
-        except Exception as e:
-            logger.warning("Failed to enrich span %s: %s", span.span_id, e)
-            otel_span.set_status(Status(StatusCode.ERROR, str(e)))
-            otel_span.end()
-        finally:
-            if _is_instance_of(span.span_data, AgentSpanData):
-                self._agent_content.pop(span.span_id, None)
-            self._span_parents.pop(span.span_id, None)
+    def on_trace_error(self, trace: Trace, error: BaseException) -> None:
+        """Handle trace error by failing the workflow."""
+        key = str(trace.trace_id)
+        self._fail_invocation(key, error)
 
     def shutdown(self) -> None:
         """Clean up resources on shutdown."""
-        for span_id, otel_span in list(self._otel_spans.items()):
-            otel_span.set_status(
-                Status(StatusCode.ERROR, "Application shutdown")
-            )
-            otel_span.end()
+        # Stop any active workflow first (if not already stopped by on_trace_end)
+        if self._workflow is not None:
+            if (
+                self._workflow_first_input
+                and not self._workflow.input_messages
+            ):
+                try:
+                    parsed = json.loads(self._workflow_first_input)
+                    if isinstance(parsed, list):
+                        self._workflow.input_messages = (
+                            self._make_input_messages(parsed)
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if self._workflow_last_output:
+                try:
+                    parsed = json.loads(self._workflow_last_output)
+                    if isinstance(parsed, list):
+                        self._workflow.output_messages = (
+                            self._make_output_messages(parsed)
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            self._workflow = None
+            self._workflow_first_input = None
+            self._workflow_last_output = None
 
-        for trace_id, root_span in list(self._root_spans.items()):
-            root_span.set_status(
-                Status(StatusCode.ERROR, "Application shutdown")
-            )
-            root_span.end()
-
-        self._otel_spans.clear()
-        self._root_spans.clear()
-        self._tokens.clear()
-        self._span_parents.clear()
-        self._agent_content.clear()
+        self._invocations.clear()
 
     def force_flush(self) -> None:
         """Force flush (no-op for this processor)."""
@@ -1551,20 +2097,6 @@ class GenAISemanticProcessor(TracingProcessor):
         # Base attributes
         yield GEN_AI_PROVIDER_NAME, self.system_name
         yield GEN_AI_SYSTEM_KEY, self.system_name
-        # Legacy emission removed
-
-        # Add configured agent attributes (always include when set)
-        agent_name_override = self.agent_name or self._agent_name_default
-        agent_id_override = self.agent_id or self._agent_id_default
-        agent_desc_override = (
-            self.agent_description or self._agent_description_default
-        )
-        if agent_name_override:
-            yield GEN_AI_AGENT_NAME, agent_name_override
-        if agent_id_override:
-            yield GEN_AI_AGENT_ID, agent_id_override
-        if agent_desc_override:
-            yield GEN_AI_AGENT_DESCRIPTION, agent_desc_override
 
         # Server attributes
         for key, value in self._get_server_attributes().items():
@@ -1785,9 +2317,11 @@ class GenAISemanticProcessor(TracingProcessor):
     def _clone_message(self, message: Any) -> Any:
         if isinstance(message, dict):
             return {
-                key: self._clone_message(value)
-                if isinstance(value, (dict, list))
-                else value
+                key: (
+                    self._clone_message(value)
+                    if isinstance(value, (dict, list))
+                    else value
+                )
                 for key, value in message.items()
             }
         if isinstance(message, list):
@@ -1817,25 +2351,18 @@ class GenAISemanticProcessor(TracingProcessor):
         """Extract attributes from agent span."""
         yield GEN_AI_OPERATION_NAME, self._get_operation_name(span_data)
 
-        name = (
-            self.agent_name
-            or getattr(span_data, "name", None)
-            or self._agent_name_default
-        )
+        name = getattr(span_data, "name", None) or self._agent_name_default
         if name:
             yield GEN_AI_AGENT_NAME, name
 
         agent_id = (
-            self.agent_id
-            or getattr(span_data, "agent_id", None)
-            or self._agent_id_default
+            getattr(span_data, "agent_id", None) or self._agent_id_default
         )
         if agent_id:
             yield GEN_AI_AGENT_ID, agent_id
 
         description = (
-            self.agent_description
-            or getattr(span_data, "description", None)
+            getattr(span_data, "description", None)
             or self._agent_description_default
         )
         if description:
@@ -2151,21 +2678,11 @@ class GenAISemanticProcessor(TracingProcessor):
         )
 
     def _cleanup_spans_for_trace(self, trace_id: str) -> None:
-        """Clean up spans for a trace to prevent memory leaks."""
-        spans_to_remove = [
-            span_id
-            for span_id in self._otel_spans.keys()
-            if span_id.startswith(trace_id)
-        ]
-        for span_id in spans_to_remove:
-            if otel_span := self._otel_spans.pop(span_id, None):
-                otel_span.set_status(
-                    Status(
-                        StatusCode.ERROR, "Trace ended before span completion"
-                    )
-                )
-                otel_span.end()
-            self._tokens.pop(span_id, None)
+        """Clean up entities for a trace to prevent memory leaks."""
+        # Trace cleanup is a no-op since span_ids are UUIDs unrelated to trace_id.
+        # Invocations are already cleaned up in on_span_end via _delete_invocation_state.
+        # This method is kept for interface consistency but does nothing.
+        pass
 
 
 __all__ = [

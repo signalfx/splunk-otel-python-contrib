@@ -68,8 +68,8 @@ Bucket boundaries: ``[1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 10485
 
 **Evaluation Metrics** (unit: score 0-1)
 
-- ``gen_ai.evaluation.score`` - GenAI evaluation score (when ``OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC=true``)
-- ``gen_ai.evaluation.<name>`` - Individual evaluation metrics
+- ``gen_ai.evaluation.score`` - GenAI evaluation score (default, when ``OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC`` is unset or ``true``)
+- ``gen_ai.evaluation.<name>`` - Individual evaluation metrics (when ``OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC=false``)
 
 Bucket boundaries: ``[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]``
 

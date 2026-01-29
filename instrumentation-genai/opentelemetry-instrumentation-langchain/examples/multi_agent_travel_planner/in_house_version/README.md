@@ -35,11 +35,12 @@ from openai import OpenAI
 
 handler = get_telemetry_handler()
 
+user_input = "Hello, can you summarise OpenTelemetry?"
 workflow = Workflow(
     name="demo_workflow",
     workflow_type="single_call",
     description="One-off chat completion",
-    initial_input="Hello, can you summarise OpenTelemetry?",
+    input_messages=[InputMessage(role="user", parts=[Text(content=user_input)])],
 )
 handler.start_workflow(workflow)
 
@@ -48,7 +49,7 @@ llm_invocation = LLMInvocation(
     operation="chat",
     input_messages=[
         InputMessage(role="system", parts=[Text(content="You are a concise assistant.")]),
-        InputMessage(role="user", parts=[Text(content=workflow.initial_input or "")]),
+        InputMessage(role="user", parts=[Text(content=user_input)]),
     ],
 )
 llm_invocation.provider = "openai"
@@ -83,7 +84,7 @@ if response.usage:
 
 handler.stop_llm(llm_invocation)
 
-workflow.final_output = assistant_text
+workflow.output_messages = [OutputMessage(role="assistant", parts=[Text(content=assistant_text)])]
 handler.stop_workflow(workflow)
 ```
 
@@ -112,7 +113,12 @@ from opentelemetry.util.genai.handler import get_telemetry_handler
 from openai import OpenAI
 
 handler = get_telemetry_handler()
-workflow = Workflow(name="agent_demo", workflow_type="planner", initial_input="Plan a 2-day trip to Rome")
+user_input = "Plan a 2-day trip to Rome"
+workflow = Workflow(
+    name="agent_demo",
+    workflow_type="planner",
+    input_messages=[InputMessage(role="user", parts=[Text(content=user_input)])],
+)
 handler.start_workflow(workflow)
 
 agent = AgentInvocation(
@@ -120,7 +126,7 @@ agent = AgentInvocation(
     agent_type="planner",
     model="gpt-4o-mini",
     system_instructions="You plan concise city itineraries",
-    input_context=workflow.initial_input,
+    input_messages=[InputMessage(role="user", parts=[Text(content=user_input)])],
 )
 handler.start_agent(agent)
 
@@ -156,10 +162,10 @@ if response.usage:
     llm_call.input_tokens = response.usage.prompt_tokens
     llm_call.output_tokens = response.usage.completion_tokens
 
-agent.output_result = assistant_text
+agent.output_messages = [OutputMessage(role="assistant", parts=[Text(content=assistant_text)])]
 handler.stop_llm(llm_call)
 handler.stop_agent(agent)
-workflow.final_output = assistant_text
+workflow.output_messages = [OutputMessage(role="assistant", parts=[Text(content=assistant_text)])]
 handler.stop_workflow(workflow)
 ```
 
