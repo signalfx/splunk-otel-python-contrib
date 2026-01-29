@@ -102,6 +102,19 @@ class GenAI:
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},
     )
+    # Session/User Context (association properties for session tracking)
+    session_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "session.id"},
+    )
+    user_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "user.id"},
+    )
+    customer_id: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "customer.id"},
+    )
     sample_for_evaluation: Optional[bool] = field(default=True)
     evaluation_error: Optional[str] = None
 

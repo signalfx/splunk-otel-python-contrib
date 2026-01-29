@@ -51,7 +51,10 @@ Usage:
 import logging
 import os
 import time
-from typing import Any, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Any, Iterator, Optional
 
 try:
     from opentelemetry.util.genai.debug import genai_debug_log
@@ -116,6 +119,185 @@ from .environment_variables import (
 _LOGGER = logging.getLogger(__name__)
 
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+@dataclass
+class SessionContext:
+    """Holds session/user context for propagation to GenAI operations.
+
+    This dataclass stores session-related identifiers that are automatically
+    propagated to all nested GenAI operations (LLM calls, agent invocations, etc.)
+    when using the TelemetryHandler's session context management.
+
+    Attributes:
+        session_id: Unique identifier for the session/conversation.
+        user_id: Identifier for the user making the request.
+        customer_id: Identifier for the customer/tenant.
+    """
+
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    customer_id: Optional[str] = None
+
+    def is_empty(self) -> bool:
+        """Return True if no context values are set."""
+        return (
+            self.session_id is None
+            and self.user_id is None
+            and self.customer_id is None
+        )
+
+
+# Module-level context variable for session context propagation
+_session_context: ContextVar[SessionContext] = ContextVar(
+    "genai_session_context", default=SessionContext()
+)
+
+
+def set_session_context(
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    customer_id: Optional[str] = None,
+) -> None:
+    """Set session context that propagates to all nested GenAI operations.
+
+    This function sets session/user context that will be automatically applied
+    to all GenAI invocations (LLM calls, agent invocations, tool calls, etc.)
+    started within the current context. The context is thread-safe and async-safe
+    using Python's contextvars.
+
+    Args:
+        session_id: Unique identifier for the session/conversation.
+        user_id: Identifier for the user making the request.
+        customer_id: Identifier for the customer/tenant.
+
+    Example:
+        >>> from opentelemetry.util.genai import set_session_context
+        >>> set_session_context(session_id="conv-123", user_id="user-456")
+        >>> # All subsequent GenAI operations will have these attributes
+        >>> result = chain.invoke({"input": "Hello"})
+    """
+    ctx = SessionContext(
+        session_id=session_id,
+        user_id=user_id,
+        customer_id=customer_id,
+    )
+    _session_context.set(ctx)
+
+
+def get_session_context() -> SessionContext:
+    """Get the current session context.
+
+    Returns:
+        The current SessionContext, or an empty SessionContext if none is set.
+
+    Example:
+        >>> ctx = get_session_context()
+        >>> print(f"Session: {ctx.session_id}, User: {ctx.user_id}")
+    """
+    return _session_context.get()
+
+
+def clear_session_context() -> None:
+    """Clear the current session context.
+
+    Resets the session context to an empty state. Useful for cleanup
+    after processing a request.
+
+    Example:
+        >>> set_session_context(session_id="conv-123")
+        >>> # ... process request ...
+        >>> clear_session_context()
+    """
+    _session_context.set(SessionContext())
+
+
+@contextmanager
+def session_context(
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    customer_id: Optional[str] = None,
+) -> Iterator[SessionContext]:
+    """Context manager for session context that auto-clears on exit.
+
+    This is the recommended way to set session context for a request or
+    operation, as it automatically restores the previous context on exit.
+
+    Args:
+        session_id: Unique identifier for the session/conversation.
+        user_id: Identifier for the user making the request.
+        customer_id: Identifier for the customer/tenant.
+
+    Yields:
+        The SessionContext object for the duration of the context.
+
+    Example:
+        >>> from opentelemetry.util.genai import session_context
+        >>> with session_context(session_id="conv-123", user_id="user-456"):
+        ...     # All GenAI operations here will have session attributes
+        ...     result = chain.invoke({"input": "Hello"})
+        >>> # Context is automatically cleared after exiting
+    """
+    ctx = SessionContext(
+        session_id=session_id,
+        user_id=user_id,
+        customer_id=customer_id,
+    )
+    token = _session_context.set(ctx)
+    try:
+        yield ctx
+    finally:
+        _session_context.reset(token)
+
+
+def _apply_session_context(invocation: GenAI) -> None:
+    """Apply session context to an invocation if not already set.
+
+    Internal helper that applies the current session context to a GenAI
+    invocation object. Priority order for each field:
+    1. Explicit value set on invocation object
+    2. Value from contextvars session context
+    3. Value from environment variable
+
+    Args:
+        invocation: The GenAI invocation to apply context to.
+    """
+    from .environment_variables import (
+        OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID,
+        OTEL_INSTRUMENTATION_GENAI_SESSION_ID,
+        OTEL_INSTRUMENTATION_GENAI_USER_ID,
+    )
+
+    ctx = _session_context.get()
+
+    # Apply session_id: invocation > contextvars > env
+    if not invocation.session_id:
+        if ctx.session_id:
+            invocation.session_id = ctx.session_id
+        else:
+            env_session = os.environ.get(OTEL_INSTRUMENTATION_GENAI_SESSION_ID)
+            if env_session:
+                invocation.session_id = env_session
+
+    # Apply user_id: invocation > contextvars > env
+    if not invocation.user_id:
+        if ctx.user_id:
+            invocation.user_id = ctx.user_id
+        else:
+            env_user = os.environ.get(OTEL_INSTRUMENTATION_GENAI_USER_ID)
+            if env_user:
+                invocation.user_id = env_user
+
+    # Apply customer_id: invocation > contextvars > env
+    if not invocation.customer_id:
+        if ctx.customer_id:
+            invocation.customer_id = ctx.customer_id
+        else:
+            env_customer = os.environ.get(
+                OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID
+            )
+            if env_customer:
+                invocation.customer_id = env_customer
 
 
 class TelemetryHandler:
@@ -348,6 +530,8 @@ class TelemetryHandler:
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
+        # Apply session context from contextvars if not already set
+        _apply_session_context(invocation)
         # Implicit agent inheritance
         if (
             not invocation.agent_name or not invocation.agent_id
@@ -467,6 +651,8 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Start an embedding invocation and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply session context from contextvars if not already set
+        _apply_session_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -533,6 +719,8 @@ class TelemetryHandler:
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply session context from contextvars if not already set
+        _apply_session_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -595,6 +783,8 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
+        # Apply session context from contextvars if not already set
+        _apply_session_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -638,6 +828,8 @@ class TelemetryHandler:
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply session context from contextvars if not already set
+        _apply_session_context(workflow)
         self._emitter.on_start(workflow)
         span = getattr(workflow, "span", None)
         if span is not None:
@@ -808,6 +1000,8 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply session context from contextvars if not already set
+        _apply_session_context(agent)
         self._emitter.on_start(agent)
         span = getattr(agent, "span", None)
         if span is not None:
@@ -890,6 +1084,8 @@ class TelemetryHandler:
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply session context from contextvars if not already set
+        _apply_session_context(step)
         self._emitter.on_start(step)
         span = getattr(step, "span", None)
         if span is not None:

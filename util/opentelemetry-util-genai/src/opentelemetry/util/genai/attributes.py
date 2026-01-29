@@ -68,6 +68,11 @@ GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
 
+# Session/User attributes (for multi-turn tracking)
+SESSION_ID = "session.id"
+USER_ID = "user.id"
+CUSTOMER_ID = "customer.id"
+
 # Security attributes (Cisco AI Defense)
 GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
 
