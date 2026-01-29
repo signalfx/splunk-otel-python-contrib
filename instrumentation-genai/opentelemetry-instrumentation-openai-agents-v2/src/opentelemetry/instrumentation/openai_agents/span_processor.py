@@ -1404,9 +1404,7 @@ class GenAISemanticProcessor(TracingProcessor):
         }
         return json.dumps([output_msg])
 
-    def _make_input_messages(
-        self, messages: list[Any]
-    ) -> list[InputMessage]:
+    def _make_input_messages(self, messages: list[Any]) -> list[InputMessage]:
         """Create InputMessage objects from message dicts (LangChain pattern)."""
         result: list[InputMessage] = []
         for msg in messages:
@@ -1464,7 +1462,8 @@ class GenAISemanticProcessor(TracingProcessor):
                 if initial_request:
                     input_messages = [
                         InputMessage(
-                            role="user", parts=[Text(content=str(initial_request))]
+                            role="user",
+                            parts=[Text(content=str(initial_request))],
                         )
                     ]
 
@@ -1499,7 +1498,9 @@ class GenAISemanticProcessor(TracingProcessor):
                 try:
                     parsed = json.loads(self._workflow_first_input)
                     if isinstance(parsed, list):
-                        workflow.input_messages = self._make_input_messages(parsed)
+                        workflow.input_messages = self._make_input_messages(
+                            parsed
+                        )
                 except (json.JSONDecodeError, TypeError):
                     pass
             # Parse and set output_messages from last agent's output (JSON string)
@@ -1507,7 +1508,9 @@ class GenAISemanticProcessor(TracingProcessor):
                 try:
                     parsed = json.loads(self._workflow_last_output)
                     if isinstance(parsed, list):
-                        workflow.output_messages = self._make_output_messages(parsed)
+                        workflow.output_messages = self._make_output_messages(
+                            parsed
+                        )
                 except (json.JSONDecodeError, TypeError):
                     pass
             self._handler.stop_workflow(workflow)
@@ -2012,12 +2015,15 @@ class GenAISemanticProcessor(TracingProcessor):
         """Clean up resources on shutdown."""
         # Stop any active workflow first (if not already stopped by on_trace_end)
         if self._workflow is not None:
-            if self._workflow_first_input and not self._workflow.input_messages:
+            if (
+                self._workflow_first_input
+                and not self._workflow.input_messages
+            ):
                 try:
                     parsed = json.loads(self._workflow_first_input)
                     if isinstance(parsed, list):
-                        self._workflow.input_messages = self._make_input_messages(
-                            parsed
+                        self._workflow.input_messages = (
+                            self._make_input_messages(parsed)
                         )
                 except (json.JSONDecodeError, TypeError):
                     pass
@@ -2025,8 +2031,8 @@ class GenAISemanticProcessor(TracingProcessor):
                 try:
                     parsed = json.loads(self._workflow_last_output)
                     if isinstance(parsed, list):
-                        self._workflow.output_messages = self._make_output_messages(
-                            parsed
+                        self._workflow.output_messages = (
+                            self._make_output_messages(parsed)
                         )
                 except (json.JSONDecodeError, TypeError):
                     pass
