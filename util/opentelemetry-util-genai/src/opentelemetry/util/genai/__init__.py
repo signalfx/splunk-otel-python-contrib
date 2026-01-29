@@ -15,3 +15,24 @@
 from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
+
+# Public API exports for session context management
+from opentelemetry.util.genai.handler import (
+    SessionContext,
+    clear_session_context,
+    get_session_context,
+    get_telemetry_handler,
+    session_context,
+    set_session_context,
+)
+
+__all__ = [
+    # Session context management
+    "SessionContext",
+    "session_context",
+    "set_session_context",
+    "get_session_context",
+    "clear_session_context",
+    # Handler
+    "get_telemetry_handler",
+]
