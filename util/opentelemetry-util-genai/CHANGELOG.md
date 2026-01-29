@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.9 - 2026-01-29
+
+- Release 0.1.9
+
 ## Version 0.1.8 - 2026-01-27
 
 ### Changed
