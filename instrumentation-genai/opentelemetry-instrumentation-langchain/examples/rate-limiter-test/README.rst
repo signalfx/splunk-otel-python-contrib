@@ -14,6 +14,8 @@ Environment variables:
 - ``OTEL_INSTRUMENTATION_LANGCHAIN_CAPTURE_MESSAGE_CONTENT=true`` can be used
   to capture full prompt/response content.
 - ``OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS`` controls which evaluators run.
+- ``OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE`` enables/disables
+  rate limiting (default: true).
 - ``OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS`` and
   ``OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST`` control rate limiting.
 
@@ -60,7 +62,13 @@ Edit :code:`.env <.env>` and choose one scenario by uncommenting it.
 - **Scenario B (moderate)**: :code:`RPS=0.2, BURST=2`
 - **Scenario C (strict)**: :code:`RPS=0.05, BURST=1` (slowest)
 
-To disable the rate limiter entirely:
+To disable the rate limiter entirely, either set:
+
+.. code-block:: console
+
+    OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE=false
+
+Or set RPS to 0:
 
 .. code-block:: console
 
