@@ -1381,7 +1381,7 @@ class TraceloopSpanProcessor(SpanProcessor):
 
                         # Note: Agent operations use structured input_messages/output_messages
                         # from the message cache directly in _build_invocation,
-                        # so we don't need to populate legacy string attributes here.
+                        # so we don't need to populate additional string attributes here.
 
                         _logger.debug(
                             "[TL_PROCESSOR] Messages reconstructed for LLM span: operation=%s, span=%s, span_id=%s",
@@ -1638,7 +1638,7 @@ class TraceloopSpanProcessor(SpanProcessor):
             base_attrs, attribute_transformations
         )
         if traceloop_attributes:
-            # Transform traceloop_attributes before adding them to avoid re-introducing legacy keys
+            # Transform traceloop_attributes before adding them to avoid re-introducing removed keys
             transformed_tl_attrs = self._apply_attribute_transformations(
                 traceloop_attributes.copy(), attribute_transformations
             )
@@ -1851,16 +1851,16 @@ class TraceloopSpanProcessor(SpanProcessor):
             if input_messages:
                 invocation.input_messages = input_messages
             elif not invocation.input_messages:
-                # Try to extract from attributes and wrap in InputMessage
-                legacy_input = (
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("input_context")
                     or base_attrs.get("input")
                     or base_attrs.get("initial_input")
                 )
-                if legacy_input:
+                if fallback_input:
                     invocation.input_messages = [
                         InputMessage(
-                            role="user", parts=[Text(content=legacy_input)]
+                            role="user", parts=[Text(content=fallback_input)]
                         )
                     ]
             return invocation
@@ -1895,25 +1895,25 @@ class TraceloopSpanProcessor(SpanProcessor):
             if input_messages:
                 invocation.input_messages = input_messages
             elif not invocation.input_messages:
-                # Try to extract from attributes and wrap in InputMessage
-                legacy_input = (
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("input_context")
                     or base_attrs.get("input")
                     or base_attrs.get("initial_input")
                     or base_attrs.get("prompt")
                     or base_attrs.get("query")
                 )
-                # Fallback: use original untransformed data (e.g. traceloop.entity.input)
-                # This is critical when attributes were stripped and message reconstruction failed (no langchain)
-                if not legacy_input and original_input_data:
+                # Secondary fallback: use original untransformed data (e.g. traceloop.entity.input)
+                # This is critical when attributes were stripped and message reconstruction failed
+                if not fallback_input and original_input_data:
                     if isinstance(original_input_data, (dict, list)):
-                        legacy_input = json.dumps(original_input_data)
+                        fallback_input = json.dumps(original_input_data)
                     else:
-                        legacy_input = str(original_input_data)
-                if legacy_input:
+                        fallback_input = str(original_input_data)
+                if fallback_input:
                     invocation.input_messages = [
                         InputMessage(
-                            role="user", parts=[Text(content=legacy_input)]
+                            role="user", parts=[Text(content=fallback_input)]
                         )
                     ]
 
@@ -1921,25 +1921,25 @@ class TraceloopSpanProcessor(SpanProcessor):
             if output_messages:
                 invocation.output_messages = output_messages
             elif not invocation.output_messages:
-                # Try to extract from attributes and wrap in OutputMessage
-                legacy_output = (
+                # Fallback: try to extract from span attributes and wrap in OutputMessage
+                fallback_output = (
                     base_attrs.get("output_result")
                     or base_attrs.get("output")
                     or base_attrs.get("final_output")
                     or base_attrs.get("response")
                     or base_attrs.get("answer")
                 )
-                # Fallback: use original untransformed data (e.g. traceloop.entity.output)
-                if not legacy_output and original_output_data:
+                # Secondary fallback: use original untransformed data (e.g. traceloop.entity.output)
+                if not fallback_output and original_output_data:
                     if isinstance(original_output_data, (dict, list)):
-                        legacy_output = json.dumps(original_output_data)
+                        fallback_output = json.dumps(original_output_data)
                     else:
-                        legacy_output = str(original_output_data)
-                if legacy_output:
+                        fallback_output = str(original_output_data)
+                if fallback_output:
                     invocation.output_messages = [
                         OutputMessage(
                             role="assistant",
-                            parts=[Text(content=legacy_output)],
+                            parts=[Text(content=fallback_output)],
                         )
                     ]
 
