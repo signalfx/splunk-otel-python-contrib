@@ -1458,10 +1458,21 @@ class GenAISemanticProcessor(TracingProcessor):
                 metadata = getattr(trace, "metadata", None) or {}
                 workflow_name = getattr(trace, "name", None) or "OpenAIAgents"
 
+                # Check for initial_request in metadata to set workflow input
+                initial_request = metadata.get("initial_request")
+                input_messages: list[InputMessage] = []
+                if initial_request:
+                    input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=str(initial_request))]
+                        )
+                    ]
+
                 self._workflow = Workflow(
                     name=workflow_name,
                     workflow_type=metadata.get("workflow_type"),
                     description=metadata.get("description"),
+                    input_messages=input_messages if input_messages else None,
                     attributes={},
                 )
                 invocation = self._handler.start_workflow(self._workflow)
