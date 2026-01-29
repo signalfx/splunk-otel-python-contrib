@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-01-29
+
+### Added
+- Support for `initial_request` in trace metadata to populate workflow `gen_ai.input.messages` attribute.
+
+### Fixed
+- Workflow's input messages are now populated from trace metadata `initial_request` when available.
+
 ## [0.1.0] - 2026-01-26
 
 ### Added
