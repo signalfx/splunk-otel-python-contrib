@@ -18,8 +18,8 @@ class _TokenBucketLimiter:
     Pure rate limiting primitive, no business semantics.
     """
 
-    def __init__(self, requests_per_sec: float, burst: int):
-        self._requests_per_sec = float(requests_per_sec)
+    def __init__(self, requests_per_sec: int, burst: int):
+        self._requests_per_sec = int(requests_per_sec)
         self._capacity = float(max(1, burst))
         self._tokens = self._capacity
         self._last = time.monotonic()

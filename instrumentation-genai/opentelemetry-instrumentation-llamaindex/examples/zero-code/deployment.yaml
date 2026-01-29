@@ -1,0 +1,149 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llamaindex-server-config
+  namespace: llamaindex-zero-code
+data:
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "DELTA"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_AND_EVENT"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"
+  OTEL_INSTRUMENTATION_GENAI_DEBUG: "false"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llamaindex-zero-code-server
+  namespace: llamaindex-zero-code
+  labels:
+    app: llamaindex-zero-code-server
+    component: deployment
+    instrumentation: zero-code-auto
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llamaindex-zero-code-server
+  template:
+    metadata:
+      labels:
+        app: llamaindex-zero-code-server
+        component: pod
+        instrumentation: zero-code-auto
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+        - name: server
+          image: shuniche855/llamaindex-zero-code-server:latest
+          imagePullPolicy: Always
+
+          args:
+            - "opentelemetry-instrument"
+            - "python"
+            - "server.py"
+
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: llamaindex-server-config
+
+          env:
+            - name: CIRCUIT_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: base-url
+            - name: CIRCUIT_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: token-url
+            - name: CIRCUIT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: client-id
+            - name: CIRCUIT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: client-secret
+            - name: CIRCUIT_APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: app-key
+            - name: OTEL_SERVICE_NAME
+              value: "llamaindex-zero-code-server"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=production"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamaindex-zero-code-service
+  namespace: llamaindex-zero-code
+  labels:
+    app: llamaindex-zero-code-server
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: llamaindex-zero-code-server

@@ -16,10 +16,12 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
 from opentelemetry.util.genai.types import (
+    AgentInvocation,
     EmbeddingInvocation,
     LLMInvocation,
     RetrievalInvocation,
     Workflow,
+    ToolCall,
 )
 
 __all__ = ["_InvocationManager"]
@@ -27,7 +29,14 @@ __all__ = ["_InvocationManager"]
 
 @dataclass
 class _InvocationState:
-    invocation: Union[LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow]
+    invocation: Union[
+        LLMInvocation,
+        EmbeddingInvocation,
+        RetrievalInvocation,
+        Workflow,
+        AgentInvocation,
+        ToolCall,
+    ]
     children: List[str] = field(default_factory=lambda: list())
 
 
@@ -43,18 +52,25 @@ class _InvocationManager:
         # Map from event_id -> _InvocationState, to keep track of invocations and parent/child relationships
         # TODO: TTL cache to avoid memory leaks in long-running processes.
         self._invocations: Dict[str, _InvocationState] = {}
+        self._parents: Dict[str, Optional[str]] = {}
 
     def add_invocation_state(
         self,
         event_id: str,
         parent_id: Optional[str],
         invocation: Union[
-            LLMInvocation, EmbeddingInvocation, RetrievalInvocation, Workflow
+            LLMInvocation,
+            EmbeddingInvocation,
+            RetrievalInvocation,
+            Workflow,
+            AgentInvocation,
+            ToolCall,
         ],
     ) -> None:
         """Add an invocation to the manager."""
         invocation_state = _InvocationState(invocation=invocation)
         self._invocations[event_id] = invocation_state
+        self._parents[event_id] = parent_id
 
         if parent_id is not None and parent_id in self._invocations:
             parent_invocation_state = self._invocations[parent_id]
@@ -69,11 +85,21 @@ class _InvocationManager:
         invocation_state = self._invocations.get(event_id)
         return invocation_state.invocation if invocation_state else None
 
+    def get_parent_id(self, event_id: str) -> Optional[str]:
+        """Get the parent event_id for a given invocation."""
+        return self._parents.get(event_id)
+
     def delete_invocation_state(self, event_id: str) -> None:
         """Delete an invocation and all its children from the manager."""
-        invocation_state = self._invocations.get(event_id)
-        if not invocation_state:
-            return
-        for child_id in list(invocation_state.children):
-            self._invocations.pop(child_id, None)
-        self._invocations.pop(event_id, None)
+        to_visit = [event_id]
+        to_delete = []
+        while to_visit:
+            current_id = to_visit.pop()
+            invocation_state = self._invocations.get(current_id)
+            if not invocation_state:
+                continue
+            to_delete.append(current_id)
+            to_visit.extend(invocation_state.children)
+        for current_id in to_delete:
+            self._invocations.pop(current_id, None)
+            self._parents.pop(current_id, None)

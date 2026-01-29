@@ -1,0 +1,68 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: llamaindex-zero-code-client
+  namespace: llamaindex-zero-code
+  labels:
+    app: llamaindex-zero-code-client
+    component: cronjob
+spec:
+  schedule: "*/30 8-17 * * 1-5"
+  timeZone: "America/Los_Angeles"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: llamaindex-zero-code-client
+        component: job
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      
+      template:
+        metadata:
+          labels:
+            app: llamaindex-zero-code-client
+            component: pod
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+          
+          containers:
+          - name: client
+            image: curlimages/curl:latest
+            imagePullPolicy: IfNotPresent
+            
+            command:
+            - "sh"
+            - "-c"
+            - |
+              echo "Sending request to llamaindex-zero-code-service:8080/chat..."
+              curl -X POST http://llamaindex-zero-code-service:8080/chat \
+                -H "Content-Type: application/json" \
+                -d '{"message": "What is the capital of France?", "system_prompt": "You are a helpful assistant!"}' \
+                -w "\nHTTP Status: %{http_code}\n"
+            
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
+            
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 100
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+

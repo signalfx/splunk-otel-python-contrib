@@ -1404,6 +1404,49 @@ class GenAISemanticProcessor(TracingProcessor):
         }
         return json.dumps([output_msg])
 
+    def _make_input_messages(self, messages: list[Any]) -> list[InputMessage]:
+        """Create InputMessage objects from message dicts (LangChain pattern)."""
+        result: list[InputMessage] = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = str(msg.get("role", "user"))
+                parts_data = msg.get("parts", [])
+                parts: list[Any] = []
+                for p in parts_data:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        parts.append(Text(content=str(p.get("content", ""))))
+                    else:
+                        parts.append(p)
+                if parts:
+                    result.append(InputMessage(role=role, parts=parts))
+        return result
+
+    def _make_output_messages(
+        self, messages: list[Any]
+    ) -> list[OutputMessage]:
+        """Create OutputMessage objects from message dicts (LangChain pattern)."""
+        result: list[OutputMessage] = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = str(msg.get("role", "assistant"))
+                parts_data = msg.get("parts", [])
+                finish_reason = msg.get("finish_reason")
+                parts: list[Any] = []
+                for p in parts_data:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        parts.append(Text(content=str(p.get("content", ""))))
+                    else:
+                        parts.append(p)
+                if parts:
+                    result.append(
+                        OutputMessage(
+                            role=role,
+                            parts=parts,
+                            finish_reason=finish_reason,
+                        )
+                    )
+        return result
+
     def on_trace_start(self, trace: Trace) -> None:
         """Create workflow span when trace starts."""
         try:
@@ -1413,11 +1456,22 @@ class GenAISemanticProcessor(TracingProcessor):
                 metadata = getattr(trace, "metadata", None) or {}
                 workflow_name = getattr(trace, "name", None) or "OpenAIAgents"
 
+                # Check for initial_request in metadata to set workflow input
+                initial_request = metadata.get("initial_request")
+                input_messages: list[InputMessage] = []
+                if initial_request:
+                    input_messages = [
+                        InputMessage(
+                            role="user",
+                            parts=[Text(content=str(initial_request))],
+                        )
+                    ]
+
                 self._workflow = Workflow(
                     name=workflow_name,
                     workflow_type=metadata.get("workflow_type"),
                     description=metadata.get("description"),
-                    initial_input=metadata.get("initial_input"),
+                    input_messages=input_messages if input_messages else None,
                     attributes={},
                 )
                 invocation = self._handler.start_workflow(self._workflow)
@@ -1439,14 +1493,26 @@ class GenAISemanticProcessor(TracingProcessor):
 
         workflow = state.invocation
         if isinstance(workflow, Workflow):
-            if self._workflow_first_input and not workflow.initial_input:
-                workflow.initial_input = self._format_input_message(
-                    self._workflow_first_input
-                )
+            # Parse and set input_messages from first agent's input (JSON string)
+            if self._workflow_first_input and not workflow.input_messages:
+                try:
+                    parsed = json.loads(self._workflow_first_input)
+                    if isinstance(parsed, list):
+                        workflow.input_messages = self._make_input_messages(
+                            parsed
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Parse and set output_messages from last agent's output (JSON string)
             if self._workflow_last_output:
-                workflow.final_output = self._format_output_message(
-                    self._workflow_last_output
-                )
+                try:
+                    parsed = json.loads(self._workflow_last_output)
+                    if isinstance(parsed, list):
+                        workflow.output_messages = self._make_output_messages(
+                            parsed
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
             self._handler.stop_workflow(workflow)
 
         self._workflow = None
@@ -1754,10 +1820,18 @@ class GenAISemanticProcessor(TracingProcessor):
     ) -> None:
         """Handle AgentInvocation end - finalize agent span."""
         try:
+            # Populate input_messages from accumulated state (LangChain pattern)
+            if state.input_messages and not invocation.input_messages:
+                invocation.input_messages = self._make_input_messages(
+                    state.input_messages
+                )
+
+            # Populate output_messages from accumulated state (LangChain pattern)
             if state.output_messages:
-                invocation.output_context = safe_json_dumps(
+                invocation.output_messages = self._make_output_messages(
                     state.output_messages
                 )
+
             self._handler.stop_agent(invocation)
         except Exception as e:
             logger.debug(
@@ -1941,14 +2015,27 @@ class GenAISemanticProcessor(TracingProcessor):
         """Clean up resources on shutdown."""
         # Stop any active workflow first (if not already stopped by on_trace_end)
         if self._workflow is not None:
-            if self._workflow_first_input and not self._workflow.initial_input:
-                self._workflow.initial_input = self._format_input_message(
-                    self._workflow_first_input
-                )
+            if (
+                self._workflow_first_input
+                and not self._workflow.input_messages
+            ):
+                try:
+                    parsed = json.loads(self._workflow_first_input)
+                    if isinstance(parsed, list):
+                        self._workflow.input_messages = (
+                            self._make_input_messages(parsed)
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
             if self._workflow_last_output:
-                self._workflow.final_output = self._format_output_message(
-                    self._workflow_last_output
-                )
+                try:
+                    parsed = json.loads(self._workflow_last_output)
+                    if isinstance(parsed, list):
+                        self._workflow.output_messages = (
+                            self._make_output_messages(parsed)
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
             self._workflow = None
             self._workflow_first_input = None
             self._workflow_last_output = None
