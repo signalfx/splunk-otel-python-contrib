@@ -9,7 +9,6 @@ metadata:
   name: sre-copilot-config
   namespace: sre-copilot
 data:
-  MANUAL_INSTRUMENTATION: "true"
   MCP_SERVER_URL: "http://sre-copilot-mcp:8081"
   OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
   OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "DELTA"
@@ -214,7 +213,7 @@ metadata:
   name: sre-copilot-run-scenario-001
   namespace: sre-copilot
 spec:
-  schedule: "*/10 8-17 * * 1-5"
+  schedule: "*/10 * * * *"
   timeZone: "America/Los_Angeles"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
