@@ -2,6 +2,19 @@
 
 All notable changes to this repository are documented in this file.
 
+## Unreleased
+
+### Fixed
+- **Hallucination Post-Processing** - Score inversion now correctly applied
+  - Changed metric name to `"hallucination [geval]"` to match post-processing name check when GEval appends `[GEval]` suffix
+
+- **Sentiment `passed` Value** - Now correctly reflects actual sentiment
+  - Modified `_derive_passed` to check sentiment labels first: `Positive`/`Neutral` → `true`, `Negative` → `false`
+
+- **Relevance Label** - Now shows "Relevant"/"Irrelevant" instead of "Pass"/"Fail"
+
+- **Toxicity Label** - Standardized to "Non Toxic"
+
 ## Version 0.1.11 - 2026-01-27
 
 - Release 0.1.11 of splunk-otel-genai-evals-deepeval
