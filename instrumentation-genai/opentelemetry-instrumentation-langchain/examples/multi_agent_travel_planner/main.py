@@ -171,7 +171,6 @@ class PlannerState(TypedDict):
     current_agent: str
     poison_events: List[str]
     last_agent: Optional[str]
-    final_output: Optional[str]
 
 
 def _model_name() -> str:
@@ -582,7 +581,6 @@ def main(manual_instrumentation: bool = False) -> None:
         "current_agent": "start",
         "poison_events": [],
         "last_agent": "plan_synthesizer",
-        "final_output": None,
     }
 
     workflow = build_workflow()
