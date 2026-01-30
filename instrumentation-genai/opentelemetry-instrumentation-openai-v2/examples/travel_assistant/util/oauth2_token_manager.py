@@ -62,9 +62,13 @@ class OAuth2TokenManager:
             token_refresh_buffer_seconds: Refresh token this many seconds before expiry
         """
         self.client_id = client_id or os.environ.get("LLM_CLIENT_ID")
-        self.client_secret = client_secret or os.environ.get("LLM_CLIENT_SECRET")
+        self.client_secret = client_secret or os.environ.get(
+            "LLM_CLIENT_SECRET"
+        )
         self.token_url = (
-            token_url or os.environ.get("LLM_TOKEN_URL") or self.DEFAULT_TOKEN_URL
+            token_url
+            or os.environ.get("LLM_TOKEN_URL")
+            or self.DEFAULT_TOKEN_URL
         )
         self.token_refresh_buffer = token_refresh_buffer_seconds
 

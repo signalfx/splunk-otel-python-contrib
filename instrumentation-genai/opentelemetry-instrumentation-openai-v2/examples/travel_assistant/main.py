@@ -68,7 +68,9 @@ from opentelemetry.sdk.trace.export import (  # noqa: E402
 )
 from opentelemetry.trace import SpanKind  # noqa: E402
 
-OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+OTLP_ENDPOINT = os.environ.get(
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
+)
 
 resource = Resource.create(
     {
@@ -147,7 +149,9 @@ def create_azure_embedding_client() -> AzureOpenAI | None:
     if not has_azure:
         return None
 
-    print(f"🔑 Using Azure OpenAI for embeddings: {os.environ.get('AZURE_OPENAI_ENDPOINT')}")
+    print(
+        f"🔑 Using Azure OpenAI for embeddings: {os.environ.get('AZURE_OPENAI_ENDPOINT')}"
+    )
     return AzureOpenAI(
         azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
         api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
@@ -169,7 +173,9 @@ def search_flights(origin: str, destination: str, date: str) -> str:
     for airline, price, time in zip(airlines, prices, times):
         results.append(f"  - {airline}: ${price}, departs {time}")
 
-    return f"Flights from {origin} to {destination} on {date}:\n" + "\n".join(results)
+    return f"Flights from {origin} to {destination} on {date}:\n" + "\n".join(
+        results
+    )
 
 
 def search_hotels(city: str, check_in: str, check_out: str) -> str:
@@ -186,7 +192,9 @@ def search_hotels(city: str, check_in: str, check_out: str) -> str:
     for name, price, rating in hotels:
         results.append(f"  - {name}: ${price}/night, {rating}★")
 
-    return f"Hotels in {city} ({check_in} to {check_out}):\n" + "\n".join(results)
+    return f"Hotels in {city} ({check_in} to {check_out}):\n" + "\n".join(
+        results
+    )
 
 
 def search_activities(city: str) -> str:
@@ -222,14 +230,18 @@ def search_activities(city: str) -> str:
             "🎭 Cultural Show - $45",
         ]
 
-    return f"Activities in {city}:\n" + "\n".join(f"  - {a}" for a in activities)
+    return f"Activities in {city}:\n" + "\n".join(
+        f"  - {a}" for a in activities
+    )
 
 
 def get_weather(city: str, date: str) -> str:
     """Get weather forecast for a city."""
     random.seed(hash((city, date)) % (2**32))
     temp = random.randint(15, 30)
-    conditions = random.choice(["Sunny", "Partly Cloudy", "Cloudy", "Light Rain"])
+    conditions = random.choice(
+        ["Sunny", "Partly Cloudy", "Cloudy", "Light Rain"]
+    )
     return f"Weather in {city} on {date}: {temp}°C, {conditions}"
 
 
@@ -251,9 +263,18 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "origin": {"type": "string", "description": "Departure city"},
-                    "destination": {"type": "string", "description": "Arrival city"},
-                    "date": {"type": "string", "description": "Travel date (YYYY-MM-DD)"},
+                    "origin": {
+                        "type": "string",
+                        "description": "Departure city",
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "Arrival city",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Travel date (YYYY-MM-DD)",
+                    },
                 },
                 "required": ["origin", "destination", "date"],
             },
@@ -268,8 +289,14 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "city": {"type": "string", "description": "City name"},
-                    "check_in": {"type": "string", "description": "Check-in date (YYYY-MM-DD)"},
-                    "check_out": {"type": "string", "description": "Check-out date (YYYY-MM-DD)"},
+                    "check_in": {
+                        "type": "string",
+                        "description": "Check-in date (YYYY-MM-DD)",
+                    },
+                    "check_out": {
+                        "type": "string",
+                        "description": "Check-out date (YYYY-MM-DD)",
+                    },
                 },
                 "required": ["city", "check_in", "check_out"],
             },
@@ -298,7 +325,10 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "city": {"type": "string", "description": "City name"},
-                    "date": {"type": "string", "description": "Date (YYYY-MM-DD)"},
+                    "date": {
+                        "type": "string",
+                        "description": "Date (YYYY-MM-DD)",
+                    },
                 },
                 "required": ["city", "date"],
             },
@@ -329,12 +359,14 @@ def execute_tool_calls(tool_calls: list) -> list[dict]:
         else:
             result = f"Unknown tool: {func_name}"
 
-        results.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "name": func_name,
-            "content": result,
-        })
+        results.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": func_name,
+                "content": result,
+            }
+        )
         print(f"   📋 Result: {result[:100]}...")
 
     return results
@@ -446,7 +478,10 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
 
 
 def search_destinations_with_embeddings(
-    client: OpenAI | AzureOpenAI, query: str, embedding_model: str, top_k: int = 3
+    client: OpenAI | AzureOpenAI,
+    query: str,
+    embedding_model: str,
+    top_k: int = 3,
 ) -> list[dict]:
     """
     Search destinations using semantic similarity with embeddings.
@@ -476,7 +511,9 @@ def search_destinations_with_embeddings(
         for d in DESTINATIONS_DB
     ]
 
-    print(f"   📊 Generating embeddings for {len(descriptions)} destinations...")
+    print(
+        f"   📊 Generating embeddings for {len(descriptions)} destinations..."
+    )
     dest_response = client.embeddings.create(
         model=embedding_model,
         input=descriptions,
@@ -488,10 +525,12 @@ def search_destinations_with_embeddings(
     for i, dest in enumerate(DESTINATIONS_DB):
         dest_embedding = dest_response.data[i].embedding
         similarity = cosine_similarity(query_embedding, dest_embedding)
-        similarities.append({
-            "destination": dest,
-            "similarity": similarity,
-        })
+        similarities.append(
+            {
+                "destination": dest,
+                "similarity": similarity,
+            }
+        )
 
     # Sort by similarity and return top results
     similarities.sort(key=lambda x: x["similarity"], reverse=True)
@@ -533,7 +572,9 @@ def main():
 
     # For embeddings: Azure is required (Circuit chat endpoint doesn't support embeddings)
     embedding_client = create_azure_embedding_client()
-    embedding_model = os.environ.get("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
+    embedding_model = os.environ.get(
+        "AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"
+    )
 
     # =========================================================================
     # Part 1: Semantic Destination Search with Embeddings (requires Azure)
@@ -558,7 +599,9 @@ def main():
             },
         ):
             for query in search_queries:
-                search_destinations_with_embeddings(embedding_client, query, embedding_model)
+                search_destinations_with_embeddings(
+                    embedding_client, query, embedding_model
+                )
     else:
         print("\n" + "=" * 70)
         print("⏭️  SKIPPING: Semantic Destination Search (Embeddings)")
