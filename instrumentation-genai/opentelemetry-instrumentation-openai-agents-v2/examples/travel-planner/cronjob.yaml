@@ -1,51 +1,54 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: travel-planner-openai-agents
-  namespace: travel-planner
+  name: openai-agents-travel-planner
   labels:
-    app: travel-planner-openai-agents
+    app: openai-agents-travel-planner
     component: telemetry
   annotations:
     description: "Multi-agent travel planner with OpenAI Agents SDK and OpenTelemetry instrumentation"
 spec:
-  schedule: "*/40 9-17 * * 1-5"
+  # Run every 4 hours from 8 AM to 4 PM PST on weekdays (Monday-Friday)
+  schedule: "0 8,12,16 * * 1-5"
   timeZone: "America/Los_Angeles"
   suspend: false
-  concurrencyPolicy: Forbid
-  startingDeadlineSeconds: 600
+  
+  # Keep last 3 successful and 1 failed job for debugging
   successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
   
   jobTemplate:
     metadata:
       labels:
-        app: travel-planner-openai-agents
-        component: job
+        app: openai-agents-travel-planner
+        component: telemetry
     spec:
-      activeDeadlineSeconds: 900
-      backoffLimit: 2
       template:
         metadata:
-          annotations:
-            sidecar.istio.io/inject: "false"
           labels:
-            app: travel-planner-openai-agents
-            component: pod
+            app: openai-agents-travel-planner
+            component: telemetry
         spec:
-          restartPolicy: Never
+          restartPolicy: OnFailure
           
           containers:
-            - name: travel-planner-openai-agents
-              image: ertserendavga918/travel-planner-openai-agents:v0.7
+            - name: openai-agents-travel-planner
+              image: your-registry/openai-agents-travel-planner:latest
               imagePullPolicy: Always
               
-              # Inject all non-sensitive config from ConfigMap
-              envFrom:
-                - configMapRef:
-                    name: travel-planner-openai-agents-config
-              
               env:
+                # === GenAI Semantic Conventions (REQUIRED) ===
+                - name: OTEL_SEMCONV_STABILITY_OPT_IN
+                  value: "gen_ai_latest_experimental"
+                
+                # === OpenTelemetry Resource Attributes ===
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=dev"
+                    
+                # === Service name for telemetry ===
+                - name: OTEL_SERVICE_NAME
+                  value: "openai-agents-travel-planner"
+                
                 # === Option 1: Standard OpenAI API Key ===
                 # Uncomment if using standard OpenAI API
                 # - name: OPENAI_API_KEY
@@ -54,65 +57,102 @@ spec:
                 #       name: openai-credentials
                 #       key: api-key
                 
-                # === OAuth2 LLM Provider ===
+                # === Option 2: OAuth2 LLM Provider ===
+                # LLM OAuth2 Credentials
                 - name: LLM_CLIENT_ID
                   valueFrom:
                     secretKeyRef:
-                      name: langgraph-travel-agent-langchain-secrets
-                      key: llm-client-id
+                      name: llm-credentials
+                      key: client-id
                 
                 - name: LLM_CLIENT_SECRET
                   valueFrom:
                     secretKeyRef:
-                      name: langgraph-travel-agent-langchain-secrets
-                      key: llm-client-secret
+                      name: llm-credentials
+                      key: client-secret
                 
-                # === Home directory for non-root user ===
-                - name: HOME
-                  value: /tmp
-                
-                # === DeepEval LLM Credentials ===
-                - name: DEEPEVAL_LLM_CLIENT_ID
+                - name: LLM_TOKEN_URL
                   valueFrom:
                     secretKeyRef:
-                      name: langgraph-travel-agent-langchain-secrets
-                      key: llm-client-id
+                      name: llm-credentials
+                      key: token-url
                 
-                - name: DEEPEVAL_LLM_CLIENT_SECRET
+                - name: LLM_BASE_URL
                   valueFrom:
                     secretKeyRef:
-                      name: langgraph-travel-agent-langchain-secrets
-                      key: llm-client-secret
+                      name: llm-credentials
+                      key: base-url
                 
-                # === OpenTelemetry Resource Attributes ===
-                - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=o11y-inframon-ai"
+                - name: LLM_APP_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-credentials
+                      key: app-key
+                      optional: true
                 
-                # === Dynamic: Get host IP for Splunk OTEL agent ===
+                # === OpenAI Model Name ===
+                - name: OPENAI_MODEL_NAME
+                  value: "gpt-4o-mini"
+                
+                # === GenAI Content Capture ===
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                
+                # === OpenTelemetry Logs Exporter ===
+                - name: OTEL_LOGS_EXPORTER
+                  value: "otlp"
+                
+                # === Get the host IP for Splunk OTEL agent ===
                 - name: SPLUNK_OTEL_AGENT
                   valueFrom:
                     fieldRef:
                       fieldPath: status.hostIP
                 
-                # === Dynamic: OTLP endpoint (uses SPLUNK_OTEL_AGENT) ===
+                # === OpenTelemetry OTLP endpoint using Splunk agent ===
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://$(SPLUNK_OTEL_AGENT):4317"
-              
-              # === Security context ===
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                    - ALL
-                readOnlyRootFilesystem: false
-                runAsNonRoot: true
-                runAsUser: 1000
+                
+                # === OTLP Protocol (grpc) ===
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "grpc"
+                
+                # === Explicit Exporter Configuration ===
+                - name: OTEL_TRACES_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_METRICS_EXPORTER
+                  value: "otlp"
+                
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                
+                - name: OTEL_LOG_LEVEL
+                  value: "info"
+                
+                # === Traces Sampler Configuration ===
+                - name: OTEL_TRACES_SAMPLER
+                  value: "parentbased_traceidratio"
+                
+                - name: OTEL_TRACES_SAMPLER_ARG
+                  value: "1.0"
+                
+                # === Enable Python logging auto instrumentation ===
+                - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+                  value: "true"
+                
+                # === Enable log correlation ===
+                - name: OTEL_PYTHON_LOG_CORRELATION
+                  value: "true"
+                
+                # === Unbuffered Python output ===
+                - name: PYTHONUNBUFFERED
+                  value: "1"
               
               # === Resource limits ===
               resources:
                 requests:
-                  memory: "512Mi"
+                  memory: "256Mi"
                   cpu: "250m"
                 limits:
-                  memory: "2Gi"
-                  cpu: "1"
+                  memory: "512Mi"
+                  cpu: "500m"
