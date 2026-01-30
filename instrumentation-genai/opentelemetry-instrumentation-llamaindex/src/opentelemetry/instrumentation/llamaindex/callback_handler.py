@@ -440,7 +440,11 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Create AgentInvocation for the agent execution
         agent_invocation = AgentInvocation(
             name=f"agent.task.{task_id}" if task_id else "agent.invoke",
-            input_context=input_text if input_text else "",
+            input_messages=[
+                InputMessage(
+                    role="user", parts=[Text(content=input_text if input_text else "")]
+                )
+            ],
             attributes={},
         )
         agent_invocation.framework = "llamaindex"
@@ -610,10 +614,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # If no parent, this is the root workflow
         if not parent_id:
+            input_messages = (
+                [InputMessage(role="user", parts=[Text(content=_safe_str(query_str))])]
+                if query_str
+                else []
+            )
             workflow = Workflow(
                 name="llama_index_query_pipeline",
                 workflow_type="workflow",
-                initial_input=_safe_str(query_str),
+                input_messages=input_messages,
                 attributes={},
             )
             workflow.framework = "llamaindex"
@@ -677,10 +686,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not parent_entity:
             # No valid parent - create auto-workflow
             workflow_id = f"{event_id}_workflow"
+            input_messages = (
+                [InputMessage(role="user", parts=[Text(content=_safe_str(query_str))])]
+                if query_str
+                else []
+            )
             workflow = Workflow(
                 name="llama_index_rag",
                 workflow_type="rag",
-                initial_input=_safe_str(query_str),
+                input_messages=input_messages,
                 attributes={},
             )
             workflow.framework = "llamaindex"
