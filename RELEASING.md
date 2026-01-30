@@ -69,7 +69,7 @@ How to release a new version of the GenAI packages:
 
 ### Additional Steps for GA Releases Only
 
-**Note**: Steps 14 and onward are only required for GA (Generally Available) releases. For alpha/beta releases (version 0.x.x), stop at step 13.
+**Note**: Steps 14 and onward are only required for GA (Generally Available) releases. For alpha/beta releases, stop at step 13.
 
 14) Navigate to Pipelines in the GitLab repo, click the download button for the build job that just ran,
     and select the package-specific build job artifact (e.g., `build-util-genai`)
