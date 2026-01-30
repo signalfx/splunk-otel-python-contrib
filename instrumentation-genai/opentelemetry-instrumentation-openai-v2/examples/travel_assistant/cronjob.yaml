@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: otel-openai-sdk-travel-assistant
+  namespace: openai-agent
+  labels:
+    app: otel-openai-sdk-travel-assistant
+    component: genai-instrumentation
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: otel-openai-sdk-travel-assistant
+        spec:
+          containers:
+            - name: otel-openai-sdk-travel-assistant
+              image: shuwpan/otel-openai-sdk-travel-assistant:v1.0.0
+              imagePullPolicy: Always
+              env:
+                # OpenTelemetry configuration
+                - name: OTEL_SERVICE_NAME
+                  value: "otel-openai-sdk-travel-assistant"
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=o11y-inframon-ai"
+                # OTLP exporter configuration
+                - name: SPLUNK_OTEL_AGENT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://$(SPLUNK_OTEL_AGENT):4317"
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "grpc"
+                - name: OTEL_LOGS_EXPORTER
+                  value: "otlp"
+                # Python instrumentation settings
+                - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+                  value: "true"
+                - name: OTEL_PYTHON_LOG_CORRELATION
+                  value: "true"
+                # OpenAI model configuration
+                - name: LLM_MODEL
+                  value: "gpt-4o-mini"
+                # Metrics configuration
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                # GenAI instrumentation settings
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+                  value: "SPAN_AND_EVENT"
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+                  value: "span_metric_event,splunk"
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
+                  value: "true"
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
+                  value: "replace-category:SplunkEvaluationResults"
+                - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
+                  value: "true"
+                # DeepEval configuration
+                - name: DEEPEVAL_FILE_SYSTEM
+                  value: "READ_ONLY"
+                # OpenAI API key from secret
+                - name: OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openai-secrets
+                      key: api-key
+                # Runtime settings
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+          restartPolicy: OnFailure
