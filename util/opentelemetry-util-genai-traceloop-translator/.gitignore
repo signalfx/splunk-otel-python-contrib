@@ -6,3 +6,5 @@ __pycache__/
 .DS_Store
 
 # Ignore example output files
+
+.deepeval/

@@ -42,7 +42,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from agents import (  # noqa: E402, I001
+import argparse  # noqa: E402
+import os  # noqa: E402
+import random  # noqa: E402
+import time  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
+from typing import Any  # noqa: E402
+
+from agents import (  # noqa: E402
     Agent,
     Runner,
     function_tool,
@@ -359,11 +366,13 @@ def run_travel_planner() -> None:
 
     initial_request = f"Plan a romantic week-long trip from {origin} to {destination}, departing {departure} and returning {return_date}"
     print(f"\nRequest: {initial_request}\n")
-    trace_metadata: dict[str, Any] = {"initial_request": initial_request}
+    metadata: dict[str, Any] = {
+        "initial_request": initial_request,
+    }
 
     final_output = None
     try:
-        with trace("Travel planner workflow", metadata=trace_metadata):
+        with trace("Travel planner workflow", metadata=metadata):
             # Step 1: Flight Specialist
             print("\n✈️  Flight Specialist - Searching for flights...")
             flight_result = Runner.run_sync(

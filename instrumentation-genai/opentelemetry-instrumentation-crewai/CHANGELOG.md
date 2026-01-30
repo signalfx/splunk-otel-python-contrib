@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Version 0.1.2 - 2026-01-28
+
+### Changed
+- **Fixed input and output messages** - Workflow and AgentInvocation's input and output messages are serialized per item.
+
+## [0.1.1] - 2026-01-26
+
+### Changed
+- **Use structured message fields** - Workflow and AgentInvocation now use `input_messages`/`output_messages` structured fields instead of legacy string fields for proper JSON serialization.
+- **Added JSON serialization helper** - Added `_serialize()` helper using `json.dumps(obj, default=str)` for reliable JSON output.
+- **Removed input/output from Step** - Step spans no longer capture redundant input/output data.
+
+### Fixed
+- **Agent/workflow message rendering** - Fixed issue where agent and workflow `gen_ai.input.messages` were rendered as Python repr strings instead of valid JSON.
+
 ## [0.1.0] - 2025-11-25
 
 ### Added

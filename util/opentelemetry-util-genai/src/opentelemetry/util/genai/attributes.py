@@ -30,15 +30,11 @@ GEN_AI_AGENT_DESCRIPTION = "gen_ai.agent.description"
 GEN_AI_AGENT_TOOLS = "gen_ai.agent.tools"
 GEN_AI_AGENT_TYPE = "gen_ai.agent.type"
 GEN_AI_AGENT_SYSTEM_INSTRUCTIONS = "gen_ai.agent.system_instructions"
-GEN_AI_AGENT_INPUT_CONTEXT = "gen_ai.agent.input_context"
-GEN_AI_AGENT_OUTPUT_RESULT = "gen_ai.agent.output_result"
 
 # Workflow attributes (not in semantic conventions)
 GEN_AI_WORKFLOW_NAME = "gen_ai.workflow.name"
 GEN_AI_WORKFLOW_TYPE = "gen_ai.workflow.type"
 GEN_AI_WORKFLOW_DESCRIPTION = "gen_ai.workflow.description"
-GEN_AI_WORKFLOW_INITIAL_INPUT = "gen_ai.workflow.initial_input"
-GEN_AI_WORKFLOW_FINAL_OUTPUT = "gen_ai.workflow.final_output"
 
 # Step attributes (not in semantic conventions)
 GEN_AI_STEP_NAME = "gen_ai.step.name"
@@ -47,8 +43,6 @@ GEN_AI_STEP_OBJECTIVE = "gen_ai.step.objective"
 GEN_AI_STEP_SOURCE = "gen_ai.step.source"
 GEN_AI_STEP_ASSIGNED_AGENT = "gen_ai.step.assigned_agent"
 GEN_AI_STEP_STATUS = "gen_ai.step.status"
-GEN_AI_STEP_INPUT_DATA = "gen_ai.step.input_data"
-GEN_AI_STEP_OUTPUT_DATA = "gen_ai.step.output_data"
 
 # Embedding attributes
 GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"

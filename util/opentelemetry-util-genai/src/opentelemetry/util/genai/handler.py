@@ -160,10 +160,14 @@ class TelemetryHandler:
         evaluation_sample_rate = settings.evaluation_sample_rate
         self._sampler = TraceIdRatioBased(evaluation_sample_rate)
 
-        # Check if single metric mode is enabled
-        use_single_metric = is_truthy_env(
-            os.getenv(OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC)
+        # Check if single metric mode is enabled (default: True)
+        env_value = os.getenv(
+            OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC
         )
+        if env_value is None:
+            use_single_metric = True  # Default to single metric mode
+        else:
+            use_single_metric = is_truthy_env(env_value)
 
         _CANONICAL_METRICS = {
             "relevance",

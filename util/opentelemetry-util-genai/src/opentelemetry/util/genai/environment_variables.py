@@ -230,10 +230,15 @@ OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC = (
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC
 
-When set to a truthy value (``true``, ``1``, ``yes``, ``on``), evaluation metrics
-are emitted to a single histogram ``gen_ai.evaluation.score`` with the evaluation
-type distinguished by the ``gen_ai.evaluation.name`` attribute. When unset or falsey,
-evaluation metrics are emitted to separate histograms per evaluation type:
+Controls whether evaluation metrics are emitted to a single histogram or separate
+histograms per evaluation type. Default: ``true``.
+
+When ``true`` (default) or unset, evaluation metrics are emitted to a single histogram
+``gen_ai.evaluation.score`` with the evaluation type distinguished by the
+``gen_ai.evaluation.name`` attribute.
+
+When set to a falsey value (``false``, ``0``, ``no``, ``off``), evaluation metrics
+are emitted to separate histograms per evaluation type:
 ``gen_ai.evaluation.bias``, ``gen_ai.evaluation.toxicity``, etc.
 """
 OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
@@ -241,6 +246,36 @@ OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE = (
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE"
 )
+
+OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE
+
+Enable evaluation rate limiting. Set to 'false' to disable. Default: 'true' (enabled).
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS
+
+Per-process rate limit for evaluation queue admission (invocations per second).
+
+Integer value. Set to 0 or negative to disable. Default: 0 (disabled).
+"""
+
+OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST
+
+Burst capacity for evaluation rate limiting token bucket. Default: 4.
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -263,6 +298,9 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS",
     "OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION",
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE",
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS",
+    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC",
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",

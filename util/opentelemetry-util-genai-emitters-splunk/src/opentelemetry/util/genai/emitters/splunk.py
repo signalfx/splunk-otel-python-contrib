@@ -25,6 +25,7 @@ from opentelemetry.util.genai.emitters.utils import (
     _agent_to_log_record,
     _evaluation_to_log_record,
     _llm_invocation_to_log_record,
+    _workflow_to_log_record,
 )
 from opentelemetry.util.genai.interfaces import EmitterMeta
 from opentelemetry.util.genai.types import (
@@ -32,6 +33,7 @@ from opentelemetry.util.genai.types import (
     EvaluationResult,
     GenAI,
     LLMInvocation,
+    Workflow,
 )
 
 try:  # optional debug logging
@@ -176,8 +178,22 @@ class SplunkConversationEventsEmitter(EmitterMeta):
     def on_end(self, obj: Any) -> None:
         if self._event_logger is None:
             return
-        # Emit semantic convention-aligned events for LLM & Agent invocations.
-        if isinstance(obj, LLMInvocation):
+        # Emit semantic convention-aligned events for Workflow, LLM & Agent invocations.
+        if isinstance(obj, Workflow):
+            try:
+                genai_debug_log(
+                    "emitter.splunk.conversation.on_end.workflow",
+                    obj,
+                )
+            except Exception:  # pragma: no cover
+                pass
+            try:
+                rec = _workflow_to_log_record(obj, self._capture_content)
+                if rec:
+                    self._event_logger.emit(rec)
+            except Exception:  # pragma: no cover - defensive
+                pass
+        elif isinstance(obj, LLMInvocation):
             try:
                 genai_debug_log(
                     "emitter.splunk.conversation.on_end",
@@ -240,7 +256,7 @@ class SplunkEvaluationResultsEmitter(EmitterMeta):
         self._capture_content = capture_content
 
     def handles(self, obj: Any) -> bool:
-        return isinstance(obj, (LLMInvocation, AgentInvocation))
+        return isinstance(obj, (Workflow, LLMInvocation, AgentInvocation))
 
     # Explicit no-op implementations to satisfy emitter protocol expectations
     def on_start(self, obj: Any) -> None:  # pragma: no cover - no-op

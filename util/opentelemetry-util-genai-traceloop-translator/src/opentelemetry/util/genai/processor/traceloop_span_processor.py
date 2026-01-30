@@ -823,6 +823,53 @@ class TraceloopSpanProcessor(SpanProcessor):
         )
         return False
 
+    def _extract_indexed_messages(
+        self, attrs: dict, prefix: str, direction: str
+    ) -> list:
+        """
+        Extract messages from indexed attributes like gen_ai.prompt.0.content, gen_ai.prompt.0.role.
+
+        Returns list of InputMessage or OutputMessage objects.
+        """
+        messages = []
+        idx = 0
+
+        while True:
+            role_key = f"{prefix}.{idx}.role"
+            content_key = f"{prefix}.{idx}.content"
+
+            role = attrs.get(role_key)
+            content = attrs.get(content_key)
+
+            if content is None:
+                break  # No more messages at this index
+
+            role = role or ("user" if direction == "input" else "assistant")
+
+            if direction == "input":
+                messages.append(
+                    InputMessage(
+                        role=role,
+                        parts=[Text(content=str(content), type="text")],
+                    )
+                )
+            else:
+                # For output, also get finish_reason if available
+                finish_reason = attrs.get(
+                    f"{prefix}.{idx}.finish_reason", "stop"
+                )
+                messages.append(
+                    OutputMessage(
+                        role=role,
+                        parts=[Text(content=str(content), type="text")],
+                        finish_reason=finish_reason,
+                    )
+                )
+
+            idx += 1
+
+        return messages
+
     def _reconstruct_and_set_messages(
         self,
         original_attrs: dict,
@@ -841,16 +888,57 @@ class TraceloopSpanProcessor(SpanProcessor):
         _logger = logging.getLogger(__name__)
 
         # Extract message data from various sources
-        # 1. Traceloop SDK format: traceloop.entity.input/output
-        # 2. Already transformed: gen_ai.input.messages/output.messages
-        original_input_data = original_attrs.get(
-            "traceloop.entity.input"
-        ) or mutated_attrs.get("gen_ai.input.messages")
-        original_output_data = original_attrs.get(
-            "traceloop.entity.output"
-        ) or mutated_attrs.get("gen_ai.output.messages")
+        # Try multiple attribute names from different instrumentation sources:
+        # 1. gen_ai.* (OTel GenAI format - already transformed or from OTel instrumentation)
+        # 2. traceloop.entity.* (Traceloop SDK for LangChain/workflows)
+        # 3. gen_ai.prompt/completion (OpenLLMetry OpenAI instrumentation)
+        # 4. llm.prompts/completions (older OpenAI instrumentation format)
+        # 5. gen_ai.content.* (another format variant)
+        original_input_data = (
+            mutated_attrs.get("gen_ai.input.messages")
+            or original_attrs.get("gen_ai.input.messages")
+            or original_attrs.get("gen_ai.input.message")
+            or original_attrs.get("traceloop.entity.input")
+            or original_attrs.get("gen_ai.prompt")
+            or original_attrs.get("llm.prompts")
+            or original_attrs.get("gen_ai.content.prompt")
+        )
+        original_output_data = (
+            mutated_attrs.get("gen_ai.output.messages")
+            or original_attrs.get("gen_ai.output.messages")
+            or original_attrs.get("gen_ai.output.message")
+            or original_attrs.get("traceloop.entity.output")
+            or original_attrs.get("gen_ai.completion")
+            or original_attrs.get("llm.completions")
+            or original_attrs.get("gen_ai.content.completion")
+        )
 
-        if not original_input_data and not original_output_data:
+        # Check for indexed format (OpenLLMetry/Traceloop OpenAI format):
+        # gen_ai.prompt.0.role, gen_ai.prompt.0.content, gen_ai.completion.0.role, etc.
+        has_indexed_prompt = "gen_ai.prompt.0.content" in original_attrs
+        has_indexed_completion = (
+            "gen_ai.completion.0.content" in original_attrs
+        )
+
+        # Debug: log what we found
+        _logger.debug(
+            "[TL_PROCESSOR] _reconstruct_and_set_messages: span=%s, span_id=%s, "
+            "has_input=%s, has_output=%s, has_indexed_prompt=%s, has_indexed_completion=%s",
+            span_name,
+            span_id,
+            original_input_data is not None,
+            original_output_data is not None,
+            has_indexed_prompt,
+            has_indexed_completion,
+        )
+
+        # If no scalar data but we have indexed format, we can still process
+        if (
+            not original_input_data
+            and not original_output_data
+            and not has_indexed_prompt
+            and not has_indexed_completion
+        ):
             _logger.debug(
                 "[TL_PROCESSOR] No message data found in span attrs for reconstruction, "
                 "available keys: %s",
@@ -859,19 +947,48 @@ class TraceloopSpanProcessor(SpanProcessor):
             return None  # Nothing to reconstruct
 
         try:
-            # First, try to reconstruct LangChain messages from Traceloop JSON format
-            lc_input, lc_output = reconstruct_messages_from_traceloop(
-                original_input_data, original_output_data
-            )
+            input_messages = None
+            output_messages = None
 
-            # Convert to GenAI SDK format (with .parts containing Text objects)
-            # This is the format DeepEval expects: InputMessage/OutputMessage with Text objects
-            input_messages = self._convert_langchain_to_genai_messages(
-                lc_input, "input"
-            )
-            output_messages = self._convert_langchain_to_genai_messages(
-                lc_output, "output"
-            )
+            # FIRST: Try indexed format (OpenLLMetry/Traceloop OpenAI format)
+            # This is the most common format for OpenAI spans from Traceloop
+            if has_indexed_prompt:
+                input_messages = self._extract_indexed_messages(
+                    original_attrs, "gen_ai.prompt", "input"
+                )
+                _logger.debug(
+                    "[TL_PROCESSOR] Extracted %d input messages from indexed format",
+                    len(input_messages) if input_messages else 0,
+                )
+
+            if has_indexed_completion:
+                output_messages = self._extract_indexed_messages(
+                    original_attrs, "gen_ai.completion", "output"
+                )
+                _logger.debug(
+                    "[TL_PROCESSOR] Extracted %d output messages from indexed format",
+                    len(output_messages) if output_messages else 0,
+                )
+
+            # SECOND: If no indexed messages, try reconstructing from scalar data
+            if (
+                not input_messages
+                and not output_messages
+                and (original_input_data or original_output_data)
+            ):
+                # Try to reconstruct LangChain messages from Traceloop JSON format
+                lc_input, lc_output = reconstruct_messages_from_traceloop(
+                    original_input_data, original_output_data
+                )
+
+                # Convert to GenAI SDK format (with .parts containing Text objects)
+                # This is the format DeepEval expects: InputMessage/OutputMessage with Text objects
+                input_messages = self._convert_langchain_to_genai_messages(
+                    lc_input, "input"
+                )
+                output_messages = self._convert_langchain_to_genai_messages(
+                    lc_output, "output"
+                )
 
             if not input_messages and original_input_data:
                 if isinstance(original_input_data, str):
@@ -1224,8 +1341,9 @@ class TraceloopSpanProcessor(SpanProcessor):
                                 operation_name,
                             )
                         else:
-                            print(
-                                f"DEBUG: Not setting invoke_agent because operation_name is already {operation_name}"
+                            _logger.debug(
+                                "[TL_PROCESSOR] Not setting invoke_agent because operation_name is already %s",
+                                operation_name,
                             )
 
                     is_llm_operation = any(
@@ -1256,29 +1374,14 @@ class TraceloopSpanProcessor(SpanProcessor):
                         span_id = getattr(
                             getattr(span, "context", None), "span_id", None
                         )
+
                         self._reconstruct_and_set_messages(
                             original, mutated, span.name, span_id
                         )
 
-                        # Populate input_context and output_result for agent operations from reconstructed messages
-                        if is_agent_operation:
-                            cached_msgs = self._message_cache.get(span_id)
-                            if cached_msgs:
-                                input_messages, output_messages = cached_msgs
-                                if input_messages:
-                                    mutated["input_context"] = " ".join(
-                                        part.content
-                                        for msg in input_messages
-                                        for part in msg.parts
-                                        if hasattr(part, "content")
-                                    )
-                                if output_messages:
-                                    mutated["output_result"] = " ".join(
-                                        part.content
-                                        for msg in output_messages
-                                        for part in msg.parts
-                                        if hasattr(part, "content")
-                                    )
+                        # Note: Agent operations use structured input_messages/output_messages
+                        # from the message cache directly in _build_invocation,
+                        # so we don't need to populate additional string attributes here.
 
                         _logger.debug(
                             "[TL_PROCESSOR] Messages reconstructed for LLM span: operation=%s, span=%s, span_id=%s",
@@ -1535,7 +1638,7 @@ class TraceloopSpanProcessor(SpanProcessor):
             base_attrs, attribute_transformations
         )
         if traceloop_attributes:
-            # Transform traceloop_attributes before adding them to avoid re-introducing legacy keys
+            # Transform traceloop_attributes before adding them to avoid re-introducing removed keys
             transformed_tl_attrs = self._apply_attribute_transformations(
                 traceloop_attributes.copy(), attribute_transformations
             )
@@ -1636,11 +1739,13 @@ class TraceloopSpanProcessor(SpanProcessor):
             output_messages = None
 
             _logger.warning(
-                "[TL_PROCESSOR] Messages NOT in cache! span_id=%s, span=%s, has_input_data=%s, has_output_data=%s",
+                "[TL_PROCESSOR] Messages NOT in cache! span_id=%s, span=%s, "
+                "has_input_data=%s, has_output_data=%s, attr_keys=%s",
                 span_id,
                 existing_span.name,
                 original_input_data is not None,
                 original_output_data is not None,
+                list(base_attrs.keys())[:25],
             )
 
             if original_input_data or original_output_data:
@@ -1742,21 +1847,22 @@ class TraceloopSpanProcessor(SpanProcessor):
             invocation.system_instructions = (
                 base_attrs.get("gen_ai.system.instructions") or None
             )
-            # Extract input context from messages or attributes
+            # Extract input from reconstructed messages or build from attributes
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                # Try to extract from attributes
-                invocation.input_context = (
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("input_context")
                     or base_attrs.get("input")
                     or base_attrs.get("initial_input")
                 )
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
             return invocation
 
         elif operation_name == "invoke_agent":
@@ -1785,61 +1891,63 @@ class TraceloopSpanProcessor(SpanProcessor):
                 base_attrs.get("gen_ai.system.instructions") or None
             )
 
-            # Extract input from messages or attributes
+            # Extract input from reconstructed messages or build from attributes
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                # Try to extract from attributes
-                invocation.input_context = (
+                invocation.input_messages = input_messages
+            elif not invocation.input_messages:
+                # Fallback: try to extract from span attributes and wrap in InputMessage
+                fallback_input = (
                     base_attrs.get("input_context")
                     or base_attrs.get("input")
                     or base_attrs.get("initial_input")
                     or base_attrs.get("prompt")
                     or base_attrs.get("query")
                 )
-                # Fallback: use original untransformed data (e.g. traceloop.entity.input)
-                # This is critical when attributes were stripped and message reconstruction failed (no langchain)
-                if not invocation.input_context and original_input_data:
+                # Secondary fallback: use original untransformed data (e.g. traceloop.entity.input)
+                # This is critical when attributes were stripped and message reconstruction failed
+                if not fallback_input and original_input_data:
                     if isinstance(original_input_data, (dict, list)):
-                        invocation.input_context = json.dumps(
-                            original_input_data
-                        )
+                        fallback_input = json.dumps(original_input_data)
                     else:
-                        invocation.input_context = str(original_input_data)
+                        fallback_input = str(original_input_data)
+                if fallback_input:
+                    invocation.input_messages = [
+                        InputMessage(
+                            role="user", parts=[Text(content=fallback_input)]
+                        )
+                    ]
 
-            # Extract output from messages or attributes
+            # Extract output from reconstructed messages or build from attributes
             if output_messages:
-                invocation.output_result = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.output_result:
-                # Try to extract from attributes
-                invocation.output_result = (
+                invocation.output_messages = output_messages
+            elif not invocation.output_messages:
+                # Fallback: try to extract from span attributes and wrap in OutputMessage
+                fallback_output = (
                     base_attrs.get("output_result")
                     or base_attrs.get("output")
                     or base_attrs.get("final_output")
                     or base_attrs.get("response")
                     or base_attrs.get("answer")
                 )
-                # Fallback: use original untransformed data (e.g. traceloop.entity.output)
-                if not invocation.output_result and original_output_data:
+                # Secondary fallback: use original untransformed data (e.g. traceloop.entity.output)
+                if not fallback_output and original_output_data:
                     if isinstance(original_output_data, (dict, list)):
-                        invocation.output_result = json.dumps(
-                            original_output_data
-                        )
+                        fallback_output = json.dumps(original_output_data)
                     else:
-                        invocation.output_result = str(original_output_data)
+                        fallback_output = str(original_output_data)
+                if fallback_output:
+                    invocation.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=fallback_output)],
+                        )
+                    ]
 
             # Skip if no input/output available for evaluation
-            if not invocation.input_context and not invocation.output_result:
+            if (
+                not invocation.input_messages
+                and not invocation.output_messages
+            ):
                 _logger.warning(
                     "[TL_PROCESSOR] Skipping AgentInvocation - no input/output available! "
                     "span=%s, span_id=%s",

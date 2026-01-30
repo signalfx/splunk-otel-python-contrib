@@ -108,6 +108,54 @@ build-genai-translator-traceloop:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v0\.[0-9]+\.[0-9]+.*/'
 
+build-genai-translator-langsmith:
+  stage: build
+  script:
+    - pip install hatch
+    - cd util/opentelemetry-util-genai-langsmith-translator
+    - hatch build
+    - mkdir -p ../../dist/genai-translator-langsmith
+    - mv dist/* ../../dist/genai-translator-langsmith/
+    - cd ../../dist/genai-translator-langsmith
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/genai-translator-langsmith/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-langsmith-v0\.[0-9]+\.[0-9]+.*/'
+
+build-genai-translator-openlit:
+  stage: build
+  script:
+    - pip install hatch
+    - cd util/opentelemetry-util-genai-openlit-translator
+    - hatch build
+    - mkdir -p ../../dist/genai-translator-openlit
+    - mv dist/* ../../dist/genai-translator-openlit/
+    - cd ../../dist/genai-translator-openlit
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/genai-translator-openlit/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-openlit-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-llamaindex:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-llamaindex
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-llamaindex
+    - mv dist/* ../../dist/instrumentation-llamaindex/
+    - cd ../../dist/instrumentation-llamaindex
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-llamaindex/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-llamaindex-v0\.[0-9]+\.[0-9]+.*/'
+
 build-instrumentation-aidefense:
   stage: build
   script:
@@ -123,6 +171,70 @@ build-instrumentation-aidefense:
       - dist/instrumentation-aidefense/
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-weaviate:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-weaviate
+    - mv dist/* ../../dist/instrumentation-weaviate/
+    - cd ../../dist/instrumentation-weaviate
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-weaviate/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-crewai:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-crewai
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-crewai
+    - mv dist/* ../../dist/instrumentation-crewai/
+    - cd ../../dist/instrumentation-crewai
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-crewai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-openai-agents:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-openai-agents
+    - mv dist/* ../../dist/instrumentation-openai-agents/
+    - cd ../../dist/instrumentation-openai-agents
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-openai-agents/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-fastmcp:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-fastmcp
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-fastmcp
+    - mv dist/* ../../dist/instrumentation-fastmcp/
+    - cd ../../dist/instrumentation-fastmcp
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-fastmcp/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
 
 # Signing jobs for each package
 sign-util-genai:
@@ -221,6 +333,54 @@ sign-genai-translator-traceloop:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-genai-translator-langsmith:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-genai-translator-langsmith
+  variables:
+    ARTIFACT: dist/genai-translator-langsmith/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/genai-translator-langsmith
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/genai-translator-langsmith/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-langsmith-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-genai-translator-openlit:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-genai-translator-openlit
+  variables:
+    ARTIFACT: dist/genai-translator-openlit/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/genai-translator-openlit
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/genai-translator-openlit/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-openlit-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-llamaindex:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-llamaindex
+  variables:
+    ARTIFACT: dist/instrumentation-llamaindex/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-llamaindex
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-llamaindex/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-llamaindex-v0\.[0-9]+\.[0-9]+.*/'
+
 sign-instrumentation-aidefense:
   stage: sign
   extends: .submit-signing-request
@@ -236,6 +396,70 @@ sign-instrumentation-aidefense:
       - dist/instrumentation-aidefense/
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-weaviate:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-weaviate
+  variables:
+    ARTIFACT: dist/instrumentation-weaviate/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-weaviate
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-weaviate/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-crewai:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-crewai
+  variables:
+    ARTIFACT: dist/instrumentation-crewai/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-crewai
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-crewai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-openai-agents:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-openai-agents
+  variables:
+    ARTIFACT: dist/instrumentation-openai-agents/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-openai-agents
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-openai-agents/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-fastmcp:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-fastmcp
+  variables:
+    ARTIFACT: dist/instrumentation-fastmcp/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-fastmcp
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-fastmcp/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
 
 # Deploy jobs for each package
 deploy-util-genai:
@@ -316,6 +540,45 @@ deploy-genai-translator-traceloop:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^genai-translator-traceloop-v0\.[0-9]+\.[0-9]+.*/'
 
+deploy-genai-translator-langsmith:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd util/opentelemetry-util-genai-langsmith-translator
+    - mkdir -p dist
+    - cp ../../dist/genai-translator-langsmith/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-genai-translator-langsmith
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-langsmith-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-genai-translator-openlit:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd util/opentelemetry-util-genai-openlit-translator
+    - mkdir -p dist
+    - cp ../../dist/genai-translator-openlit/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-genai-translator-openlit
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^genai-translator-openlit-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-llamaindex:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-llamaindex
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-llamaindex/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-llamaindex
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-llamaindex-v0\.[0-9]+\.[0-9]+.*/'
+
 deploy-instrumentation-aidefense:
   stage: deploy
   script:
@@ -328,3 +591,55 @@ deploy-instrumentation-aidefense:
     - sign-instrumentation-aidefense
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-aidefense-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-weaviate:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-weaviate
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-weaviate/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-weaviate
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-weaviate-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-crewai:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-crewai
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-crewai/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-crewai
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-openai-agents:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-openai-agents/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-openai-agents
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-agents-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-fastmcp:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-fastmcp
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-fastmcp/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-fastmcp
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'

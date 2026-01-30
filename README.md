@@ -34,7 +34,7 @@ Base dataclass:  – fields include timing (`start_time`, `end_time`), identity 
 
 Semantic attributes: fields tagged with `metadata={"semconv": <attr name>}` feed `semantic_convention_attributes()` which returns only populated values; emitters rely on this reflective approach (no hard‑coded attribute lists).
 
-Messages: `InputMessage` / `OutputMessage` each hold `role` and `parts` (which may be `Text`, `ToolCall`, `ToolCallResponse`, or arbitrary parts). Output messages include `finish_reason`.
+Messages: `InputMessage` / `OutputMessage` each hold `role` and `parts` (which may be `Text`, `ToolCall`, `ToolCallResponse`, or arbitrary parts). Output messages have an optional `finish_reason` (meaningful for LLM responses, omitted for agent/workflow outputs).
 
 `EvaluationResult` fields: `metric_name`, optional `score` (float), `label` (categorical outcome), `explanation`, `error` (contains `type`, `message`), `attributes` (additional evaluator-specific key/values). No aggregate wrapper class yet.
 
@@ -129,8 +129,8 @@ Emits **one** structured log record summarizing an entire LLM invocation (inputs
 Always present:
 
 - `EvaluationMetricsEmitter` – emits evaluation scores to histograms. Behavior depends on `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC`:
-  - **Single metric mode** (when `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC=true`): All evaluation scores are emitted to a single histogram `gen_ai.evaluation.score` with the evaluation type distinguished by the `gen_ai.evaluation.name` attribute.
-  - **Multiple metric mode** (default, when unset or false): Separate histograms per evaluation type:
+  - **Single metric mode** (default, when unset or `true`): All evaluation scores are emitted to a single histogram `gen_ai.evaluation.score` with the evaluation type distinguished by the `gen_ai.evaluation.name` attribute.
+  - **Multiple metric mode** (when `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC=false`): Separate histograms per evaluation type:
     - `gen_ai.evaluation.relevance`
     - `gen_ai.evaluation.hallucination`
     - `gen_ai.evaluation.sentiment`
@@ -171,8 +171,11 @@ An example of the third-party emitter:
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION` | Aggregate vs per-evaluator emission                                                     | Boolean                                                                       |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL` | Eval worker poll interval                                                               | Default 5.0 seconds                                                           |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE` | Trace-id ratio sampling                                                                 | Float (0–1], default 1.0                                                      |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE` | Enable evaluation rate limiting                                                        | Boolean (default: true). Set to 'false' to disable rate limiting             |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS` | Evaluation request rate limit (requests per second)                                      | int (default: 0, disabled). Example: 1 = 1 request per second                 |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST` | Maximum burst size for rate limiting                                                  | int (default: 4). Allows short bursts beyond the base rate                   |
 | `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape                                                      | Adds second event per result                                                  |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: false)                                                      |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: true)                                                       |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` | Evaluation queue size                                                              | int (default: 100)                                                            |
 
 ## 7. Extensibility Mechanics

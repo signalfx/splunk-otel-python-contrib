@@ -510,15 +510,10 @@ class SpanEmitter(EmitterMeta):
             )
         if workflow.framework:
             span.set_attribute("gen_ai.framework", workflow.framework)
-        if workflow.initial_input and self._capture_content:
-            # Format as a message with text content
-            input_msg = {
-                "role": "user",
-                "parts": [{"type": "text", "content": workflow.initial_input}],
-            }
-            span.set_attribute(
-                "gen_ai.input.messages", json.dumps([input_msg])
-            )
+        if self._capture_content and workflow.input_messages:
+            serialized = _serialize_messages(workflow.input_messages)
+            if serialized is not None:
+                span.set_attribute("gen_ai.input.messages", serialized)
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
@@ -528,16 +523,11 @@ class SpanEmitter(EmitterMeta):
         span = workflow.span
         if span is None:
             return
-        # Set final output if capture_content enabled
-        if workflow.final_output and self._capture_content:
-            output_msg = {
-                "role": "assistant",
-                "parts": [{"type": "text", "content": workflow.final_output}],
-                "finish_reason": "stop",
-            }
-            span.set_attribute(
-                "gen_ai.output.messages", json.dumps([output_msg])
-            )
+        # Set output if capture_content enabled
+        if self._capture_content and workflow.output_messages:
+            serialized = _serialize_messages(workflow.output_messages)
+            if serialized is not None:
+                span.set_attribute("gen_ai.output.messages", serialized)
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
@@ -615,18 +605,12 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 GenAI.GEN_AI_SYSTEM_INSTRUCTIONS, json.dumps(system_parts)
             )
-        if (
-            isinstance(agent, AgentInvocation)
-            and agent.input_context
-            and self._capture_content
-        ):
-            input_msg = {
-                "role": "user",
-                "parts": [{"type": "text", "content": agent.input_context}],
-            }
-            span.set_attribute(
-                "gen_ai.input.messages", json.dumps([input_msg])
-            )
+        if self._capture_content:
+            input_messages = getattr(agent, "input_messages", None)
+            if input_messages:
+                serialized = _serialize_messages(input_messages)
+                if serialized is not None:
+                    span.set_attribute("gen_ai.input.messages", serialized)
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
@@ -645,20 +629,12 @@ class SpanEmitter(EmitterMeta):
         span = agent.span
         if span is None:
             return
-        # Set output result if capture_content enabled
-        if (
-            isinstance(agent, AgentInvocation)
-            and agent.output_result
-            and self._capture_content
-        ):
-            output_msg = {
-                "role": "assistant",
-                "parts": [{"type": "text", "content": agent.output_result}],
-                "finish_reason": "stop",
-            }
-            span.set_attribute(
-                "gen_ai.output.messages", json.dumps([output_msg])
-            )
+        # Set output if capture_content enabled
+        if self._capture_content and isinstance(agent, AgentInvocation):
+            if agent.output_messages:
+                serialized = _serialize_messages(agent.output_messages)
+                if serialized is not None:
+                    span.set_attribute("gen_ai.output.messages", serialized)
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
@@ -724,14 +700,6 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(GEN_AI_STEP_ASSIGNED_AGENT, step.assigned_agent)
         if step.status:
             span.set_attribute(GEN_AI_STEP_STATUS, step.status)
-        if step.input_data and self._capture_content:
-            input_msg = {
-                "role": "user",
-                "parts": [{"type": "text", "content": step.input_data}],
-            }
-            span.set_attribute(
-                "gen_ai.input.messages", json.dumps([input_msg])
-            )
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
@@ -741,16 +709,6 @@ class SpanEmitter(EmitterMeta):
         span = step.span
         if span is None:
             return
-        # Set output data if capture_content enabled
-        if step.output_data and self._capture_content:
-            output_msg = {
-                "role": "assistant",
-                "parts": [{"type": "text", "content": step.output_data}],
-                "finish_reason": "stop",
-            }
-            span.set_attribute(
-                "gen_ai.output.messages", json.dumps([output_msg])
-            )
         # Update status if changed
         if step.status:
             span.set_attribute(GEN_AI_STEP_STATUS, step.status)
