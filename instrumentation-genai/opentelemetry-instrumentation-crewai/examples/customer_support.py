@@ -32,7 +32,7 @@ from typing import Callable
 # =============================================================================
 
 os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
-os.environ.setdefault("OPENAI_MODEL_NAME", "gpt-4o-mini")
+os.environ.setdefault("OPENAI_MODEL_NAME", "gpt-4.1")
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric_event,splunk")
 
 # =============================================================================
@@ -47,7 +47,7 @@ MANUAL_INSTRUMENTATION = (
 # Constants
 # =============================================================================
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-4.1"
 FLUSH_TIMEOUT_MS = 30000
 COMPANY_URL = "https://crewai.com"
 DOCS_URL = "https://docs.crewai.com/"
@@ -325,7 +325,7 @@ def create_crew(agents: list, tasks: list):
     """Create the crew with agents and tasks."""
     from crewai import Crew
 
-    return Crew(agents=agents, tasks=tasks, verbose=False, memory=False)
+    return Crew(name="customer_support_crew", agents=agents, tasks=tasks, verbose=False, memory=False)
 
 
 def create_tools():
