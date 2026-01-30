@@ -390,6 +390,7 @@ class LLMInvocation(GenAI):
         default=None,
         metadata={"semconv": GEN_AI_SECURITY_EVENT_ID},
     )
+    name: Optional[str] = None
 
 
 @dataclass
@@ -519,6 +520,8 @@ class Workflow(GenAI):
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
     )
+    last_agent_name: Optional[str] = None
+    final_output: Optional[str] = None  # summary or final result
 
 
 @dataclass
