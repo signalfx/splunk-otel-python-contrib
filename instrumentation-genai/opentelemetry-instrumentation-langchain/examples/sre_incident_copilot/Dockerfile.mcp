@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r /repo/instrumentation-genai/opentelemetry-inst
 RUN pip install --no-cache-dir \
   splunk-otel-util-genai==0.1.9 \
   splunk-otel-util-genai-evals==0.1.7 \
-  splunk-otel-genai-evals-deepeval==0.1.11 \
+  splunk-otel-genai-evals-deepeval==0.1.12 \
   splunk-otel-genai-emitters-splunk==0.1.6 \
   splunk-otel-instrumentation-langchain==0.1.7 \
   splunk-otel-instrumentation-fastmcp==0.1.1
