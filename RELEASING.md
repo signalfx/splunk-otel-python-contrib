@@ -76,7 +76,7 @@ How to release a new version of the GenAI packages:
     - this will download a tarball of the package files
 
 15) Navigate to the Splunk OTel Python repo and create a New Release
-    - create a new tag on publish with the tag name you created in step 10 (e.g., `util-genai-v1.0.0`)
+    - create a new tag on publish with the tag name you created in step 10 (e.g., `util-genai-v0.1.0`)
     - set the title to that tag name
     - unpack the tarball from step 14 and drag its contents onto the attachments section of the New Release page
     - Leave the defaults selected and click Publish
