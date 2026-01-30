@@ -8,17 +8,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only the OpenAI Agents instrumentation package and travel-planner example
-COPY instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2 /app/opentelemetry-instrumentation-openai-agents-v2
+# Copy only the travel-planner example
+COPY instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/examples/travel-planner /app/travel-planner
 
 # Set working directory to travel-planner example
-WORKDIR /app/opentelemetry-instrumentation-openai-agents-v2/examples/travel-planner
+WORKDIR /app/travel-planner
 
-# Install Python dependencies
+# Upgrade pip
+RUN python -m pip install --upgrade pip
+
+# Install Python dependencies from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install local OpenAI Agents instrumentation package
-RUN pip install --no-cache-dir /app/opentelemetry-instrumentation-openai-agents-v2
+# Install Splunk OpenTelemetry GenAI packages from PyPI
+RUN pip install --no-cache-dir \
+    splunk-otel-util-genai==0.1.9 \
+    splunk-otel-util-genai-evals==0.1.7 \
+    splunk-otel-genai-evals-deepeval==0.1.12 \
+    splunk-otel-genai-emitters-splunk==0.1.6 \
+    splunk-otel-instrumentation-openai-agents==0.1.2
+
+# Pre-create .deepeval directory to avoid permission errors
+RUN mkdir -p .deepeval && \
+    chmod 777 .deepeval && \
+    python -c "import deepeval" || true
 
 # Verify packages are installed correctly
 RUN python3 -c "from opentelemetry.instrumentation.openai_agents import OpenAIAgentsInstrumentor; print('✓ OpenAI Agents instrumentation available')" && \
