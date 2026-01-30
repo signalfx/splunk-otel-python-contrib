@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented in this file.
 
-## Unreleased
+## Version 0.1.12 - 2026-01-30
 
 ### Fixed
 - **Hallucination Post-Processing** - Score inversion now correctly applied
