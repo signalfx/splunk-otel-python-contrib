@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-01-30
+
+### Fixed
+- Changed dependency from `opentelemetry-util-genai` to `splunk-otel-util-genai >= 0.1.9` to fix missing `AgentCreation` type issue.
+
 ## [0.1.1] - 2026-01-29
 
 ### Added
