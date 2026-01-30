@@ -132,7 +132,9 @@ def _safe_float(value: Any) -> float | None:
 
 def _build_metric_context(metric: Any, test: Any) -> _MetricContext:
     name = getattr(metric, "name", "deepeval")
-    key = str(name).lower()
+    # Normalize key: lowercase and replace non-alphanumeric chars with underscores
+    # This ensures "Answer Relevancy" -> "answer_relevancy" to match label checks
+    key = _re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")
     raw_score = getattr(metric, "score", None)
     score = _safe_float(raw_score)
     raw_threshold = getattr(metric, "threshold", None)
@@ -195,15 +197,11 @@ def _determine_label(ctx: _MetricContext) -> str | None:
         return "Irrelevant"
 
     if key.startswith("hallucination") or key == "faithfulness":
-        if success is True:
-            return "Not Hallucinated"
-        if success is False:
-            return "Hallucinated"
-        return None
+        return None  # handled in hallucination post-processing
 
     if key == "toxicity":
         if success is True:
-            return "Not Toxic"
+            return "Non Toxic"
         if success is False:
             return "Toxic"
         return None
@@ -229,10 +227,22 @@ def _determine_label(ctx: _MetricContext) -> str | None:
 
 
 def _derive_passed(label: str | None, success: Any) -> bool | None:
+    # Check sentiment labels first - sentiment GEval uses threshold=0, so success
+    # is always True regardless of actual sentiment. Derive from label instead.
+    if label:
+        normalized = label.strip()
+        if normalized in {"Positive", "Neutral"}:
+            return True
+        if normalized == "Negative":
+            return False
+
+    # For other metrics, use success flag if available
     if isinstance(success, bool):
         return success
     if not label:
         return None
+
+    # Fallback: derive from label for other metric types
     normalized = label.strip()
     if normalized in {
         "Relevant",
@@ -283,6 +293,14 @@ def _apply_hallucination_postprocessing(
         )
     except Exception:
         return ctx.score, label
+
+    # Determine label based on success flag (computed by GEval using configured threshold)
+    if label is None:
+        if ctx.success is True:
+            label = "Not Hallucinated"
+        elif ctx.success is False:
+            label = "Hallucinated"
+
     return inverted_score, label
 
 

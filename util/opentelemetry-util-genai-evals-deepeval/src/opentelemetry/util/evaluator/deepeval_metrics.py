@@ -117,7 +117,7 @@ def build_hallucination_metric(
     model_override = options.get("model") if options else None
     strict_mode = options.get("strict_mode") if options else None
     kwargs: dict[str, Any] = {
-        "name": "hallucination",
+        "name": "hallucination [geval]",
         "criteria": criteria,
         "evaluation_params": params,
         "threshold": threshold if isinstance(threshold, (int, float)) else 0.7,
