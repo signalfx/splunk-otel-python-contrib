@@ -55,12 +55,16 @@ from langgraph.graph.message import AnyMessage, add_messages
 class TokenManager:
     """Manages OAuth2 tokens for Cisco chat-ai API."""
 
-    def __init__(self, client_id, client_secret, app_key, cache_file="/tmp/.token.json"):
+    def __init__(
+        self, client_id, client_secret, app_key, cache_file="/tmp/.token.json"
+    ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.app_key = app_key
         self.cache_file = cache_file
-        self.token_url = os.getenv("LLM_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token")
+        self.token_url = os.getenv(
+            "LLM_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token"
+        )
 
     def _get_cached_token(self):
         if not os.path.exists(self.cache_file):
@@ -259,7 +263,9 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
     # Check if using Cisco OAuth (LLM_CLIENT_ID set) or standard OpenAI API key
     if _token_manager is not None:
         api_key = _token_manager.get_token()
-        base_url = os.getenv("LLM_BASE_URL", "https://chat-ai.cisco.com/openai/deployments")
+        base_url = os.getenv(
+            "LLM_BASE_URL", "https://chat-ai.cisco.com/openai/deployments"
+        )
         app_key = os.getenv("LLM_APP_KEY", "")
         user_md = {"appkey": app_key} if app_key else {}
         return ChatOpenAI(

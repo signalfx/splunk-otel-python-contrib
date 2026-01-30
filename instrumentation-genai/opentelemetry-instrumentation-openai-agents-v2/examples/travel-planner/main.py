@@ -129,10 +129,16 @@ def get_openai_client() -> AsyncOpenAI:
 class CiscoChatCompletionsModel(OpenAIChatCompletionsModel):
     """Custom ChatCompletions model that adds required 'user' field for Cisco API."""
 
-    def __init__(self, model: str, openai_client: AsyncOpenAI, app_key: str | None = None):
+    def __init__(
+        self,
+        model: str,
+        openai_client: AsyncOpenAI,
+        app_key: str | None = None,
+    ):
         super().__init__(model=model, openai_client=openai_client)
         # Cisco API requires user field as JSON: {"appkey": "<value>"}
         import json
+
         self._user = json.dumps({"appkey": app_key or ""})
 
     async def _fetch_response(self, *args, **kwargs):
