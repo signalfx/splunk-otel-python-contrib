@@ -42,12 +42,12 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import sys
 from datetime import datetime, timedelta
 from typing import Any
-import math
 
 from dotenv import load_dotenv
 
@@ -56,12 +56,17 @@ load_dotenv()
 # ============================================================================
 # OpenTelemetry Setup - Console + OTLP Exporters
 # ============================================================================
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.trace import SpanKind
+from opentelemetry import trace  # noqa: E402
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E402
+    OTLPSpanExporter,
+)
+from opentelemetry.sdk.resources import Resource  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import (  # noqa: E402
+    BatchSpanProcessor,
+    ConsoleSpanExporter,
+)
+from opentelemetry.trace import SpanKind  # noqa: E402
 
 OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
 
@@ -87,7 +92,9 @@ print(f"📡 Exporting to Console + OTLP ({OTLP_ENDPOINT})")
 # ============================================================================
 # Instrument OpenAI
 # ============================================================================
-from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor  # noqa: E402
+from opentelemetry.instrumentation.openai_v2 import (  # noqa: E402
+    OpenAIInstrumentor,
+)
 
 OpenAIInstrumentor().instrument()
 print("✅ OpenAI instrumentation enabled")
@@ -100,7 +107,7 @@ from openai import AzureOpenAI, OpenAI  # noqa: E402
 
 def create_openai_client() -> OpenAI:
     """Create OpenAI client for chat completions.
-    
+
     Auto-detects authentication method:
     - If LLM_CLIENT_ID is set: Uses OAuth2 (Circuit internal LLM gateway)
     - Otherwise: Uses standard OpenAI API with OPENAI_API_KEY
@@ -210,9 +217,9 @@ def search_activities(city: str) -> str:
         activities = activities_db[city_lower]
     else:
         activities = [
-            f"🏛️ City Tour - $35",
-            f"🍴 Local Food Experience - $50",
-            f"🎭 Cultural Show - $45",
+            "🏛️ City Tour - $35",
+            "🍴 Local Food Experience - $50",
+            "🎭 Cultural Show - $45",
         ]
 
     return f"Activities in {city}:\n" + "\n".join(f"  - {a}" for a in activities)
@@ -474,7 +481,7 @@ def search_destinations_with_embeddings(
         model=embedding_model,
         input=descriptions,
     )
-    print(f"   ✅ Destination embeddings generated")
+    print("   ✅ Destination embeddings generated")
 
     # Calculate similarities
     similarities = []

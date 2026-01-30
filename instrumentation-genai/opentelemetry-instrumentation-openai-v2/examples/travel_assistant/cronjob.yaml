@@ -74,6 +74,18 @@ spec:
                     secretKeyRef:
                       name: openai-secrets
                       key: api-key
+                # Azure OpenAI for Embeddings (Part 1: Semantic Destination Search)
+                - name: AZURE_OPENAI_ENDPOINT
+                  value: "https://etser-mf7gfr7m-eastus2.openai.azure.com/"
+                - name: AZURE_OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: azure-openai-secrets
+                      key: api-key
+                - name: AZURE_OPENAI_API_VERSION
+                  value: "2024-12-01-preview"
+                - name: AZURE_EMBEDDING_DEPLOYMENT
+                  value: "text-embedding-3-large"
                 # Runtime settings
                 - name: PYTHONUNBUFFERED
                   value: "1"
