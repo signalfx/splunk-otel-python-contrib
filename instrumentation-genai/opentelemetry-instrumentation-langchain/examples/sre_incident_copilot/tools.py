@@ -435,7 +435,7 @@ def investigation_agent_mcp(
     """Call the Investigation Agent as an MCP tool.
 
     This tool allows other agents to invoke the Investigation Agent as a service.
-    Uses fastmcp.Client for proper instrumentation support.
+    Uses fastmcp.Client with StdioTransport to pass environment variables.
 
     Args:
         service_id: The service identifier to investigate
@@ -447,8 +447,16 @@ def investigation_agent_mcp(
     """
     from pathlib import Path
     from fastmcp import Client
+    from fastmcp.client.transports import StdioTransport
 
     mcp_script_path = Path(__file__).parent / "mcp_tools" / "investigation_agent_mcp.py"
+
+    # Use StdioTransport with env vars - STDIO doesn't inherit env by default
+    transport = StdioTransport(
+        command="python",
+        args=[str(mcp_script_path)],
+        env=os.environ.copy(),
+    )
 
     params = {
         "service_id": service_id,
@@ -459,7 +467,7 @@ def investigation_agent_mcp(
 
     try:
         async def _call():
-            async with Client(mcp_script_path) as client:
+            async with Client(transport) as client:
                 result = await client.call_tool("investigate_incident", params)
                 
                 if result:

@@ -8,21 +8,21 @@ import sys
 from pathlib import Path
 
 # Find and load .env file from the sre_incident_copilot directory
-_env_file = Path(__file__).parent.parent / ".env"
-if _env_file.exists():
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env_file)
-    except ImportError:
-        # Manual .env loading fallback if python-dotenv not installed
-        with open(_env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, _, value = line.partition("=")
-                    # Remove quotes from value
-                    value = value.strip().strip('"').strip("'")
-                    os.environ.setdefault(key.strip(), value)
+# _env_file = Path(__file__).parent.parent / ".env"
+# if _env_file.exists():
+#     try:
+#         from dotenv import load_dotenv
+#         load_dotenv(_env_file)
+#     except ImportError:
+#         # Manual .env loading fallback if python-dotenv not installed
+#         with open(_env_file) as f:
+#             for line in f:
+#                 line = line.strip()
+#                 if line and not line.startswith("#") and "=" in line:
+#                     key, _, value = line.partition("=")
+#                     # Remove quotes from value
+#                     value = value.strip().strip('"').strip("'")
+#                     os.environ.setdefault(key.strip(), value)
 
 # Suppress MCP server startup logs - must be done FIRST, before any imports
 import logging
