@@ -400,8 +400,7 @@ class TestTestData:
             assert sample.category is not None
             assert sample.input_prompt is not None
             assert sample.response is not None
-            assert sample.context is not None
-            assert sample.expected_evaluation is not None
+            assert sample.expected_metrics is not None
 
 
 class TestLoadEmitters:
