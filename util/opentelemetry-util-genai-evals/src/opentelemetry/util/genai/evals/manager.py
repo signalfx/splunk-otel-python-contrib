@@ -35,6 +35,7 @@ from .env import (
     read_aggregation_flag,
     read_concurrent_flag,
     read_interval,
+    read_monitoring_flag,
     read_queue_size,
     read_raw_evaluators,
     read_worker_count,
@@ -45,6 +46,7 @@ from .registry import get_default_metrics, get_evaluator, list_evaluators
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..handler import TelemetryHandler
+    from .monitoring import EvaluationMonitor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -137,6 +139,15 @@ class Manager(CompletionCallback):
             worker_count if worker_count is not None else read_worker_count()
         )
 
+        # Monitoring configuration
+        self._monitoring_enabled = read_monitoring_flag()
+        self._monitor: "EvaluationMonitor | None" = None
+        if self._monitoring_enabled:
+            from .monitoring import EvaluationMonitor
+
+            self._monitor = EvaluationMonitor(evaluation_queue=self._queue)
+            _LOGGER.debug("Evaluation monitoring enabled")
+
         self._shutdown = threading.Event()
         self._workers: list[threading.Thread] = []
 
@@ -172,6 +183,16 @@ class Manager(CompletionCallback):
     def concurrent_mode(self) -> bool:
         """Whether concurrent evaluation mode is enabled."""
         return self._concurrent_mode
+
+    @property
+    def monitoring_enabled(self) -> bool:
+        """Whether evaluation monitoring is enabled."""
+        return self._monitoring_enabled
+
+    @property
+    def monitor(self) -> "EvaluationMonitor | None":
+        """Return the evaluation monitor if monitoring is enabled."""
+        return self._monitor
 
     # CompletionCallback -------------------------------------------------
     def on_completion(self, invocation: GenAI) -> None:
@@ -240,6 +261,9 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
+            # Record successful enqueue for monitoring
+            if self._monitor:
+                self._monitor.on_enqueue()
         except queue.Full:
             # Bounded queue is full - apply backpressure by dropping
             invocation.evaluation_error = "client_evaluation_queue_full"
@@ -274,6 +298,9 @@ class Manager(CompletionCallback):
                     "queue_depth": self._queue.qsize(),
                 },
             )
+            # Record enqueue error for monitoring
+            if self._monitor:
+                self._monitor.on_enqueue_error(error_type="queue_full")
         except Exception as exc:  # pragma: no cover - defensive
             invocation_id = getattr(invocation, "span_id", None) or getattr(
                 invocation, "trace_id", None
