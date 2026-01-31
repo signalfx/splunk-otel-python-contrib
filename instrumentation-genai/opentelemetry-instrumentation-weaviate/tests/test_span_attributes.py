@@ -71,16 +71,16 @@ class TestSpanAttributes:
     def test_span_names_are_unique_v3(self):
         """Test that v3 span names are unique."""
         span_names = [m["span_name"] for m in MAPPING_V3]
-        assert len(span_names) == len(
-            set(span_names)
-        ), "Duplicate span names found in v3 mappings"
+        assert len(span_names) == len(set(span_names)), (
+            "Duplicate span names found in v3 mappings"
+        )
 
     def test_span_names_are_unique_v4(self):
         """Test that v4 span names are unique."""
         span_names = [m["span_name"] for m in MAPPING_V4]
-        assert len(span_names) == len(
-            set(span_names)
-        ), "Duplicate span names found in v4 mappings"
+        assert len(span_names) == len(set(span_names)), (
+            "Duplicate span names found in v4 mappings"
+        )
 
     def test_v3_operation_categories(self):
         """Test that v3 operations are properly categorized."""
@@ -125,9 +125,9 @@ class TestSpanAttributes:
         for mapping in all_mappings:
             module = mapping["module"]
             # Should be valid Python module path
-            assert (
-                module.replace(".", "").replace("_", "").isalnum()
-            ), f"Invalid module path: {module}"
+            assert module.replace(".", "").replace("_", "").isalnum(), (
+                f"Invalid module path: {module}"
+            )
             # Should not start or end with dot
             assert not module.startswith("."), f"Module starts with dot: {module}"
             assert not module.endswith("."), f"Module ends with dot: {module}"

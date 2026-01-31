@@ -129,9 +129,9 @@ class _StubTelemetryHandler:
 
 
 @pytest.fixture(name="handler_with_stub")
-def _handler_with_stub_fixture() -> (
-    Tuple[LangchainCallbackHandler, _StubTelemetryHandler]
-):
+def _handler_with_stub_fixture() -> Tuple[
+    LangchainCallbackHandler, _StubTelemetryHandler
+]:
     stub = _StubTelemetryHandler()
     handler = LangchainCallbackHandler(telemetry_handler=stub)
     return handler, stub
@@ -390,9 +390,9 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     invocation_default = _invoke_with_env(None)
     invocation_traceloop = _invoke_with_env("traceloop_compat")
 
-    assert (
-        invocation_default.attributes == invocation_traceloop.attributes
-    ), "Emitter env toggle should not change recorded attributes"
+    assert invocation_default.attributes == invocation_traceloop.attributes, (
+        "Emitter env toggle should not change recorded attributes"
+    )
 
     attrs = invocation_default.attributes
     assert invocation_default.request_model == "gpt-5-nano"

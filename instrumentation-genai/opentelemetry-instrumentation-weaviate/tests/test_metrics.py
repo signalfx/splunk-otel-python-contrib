@@ -72,9 +72,9 @@ class TestWeaviateMetrics:
         if len(duration_metrics) > 0:
             duration_metric = duration_metrics[0]
             assert hasattr(duration_metric, "data")
-            assert (
-                len(duration_metric.data.data_points) > 0
-            ), "Metric should have data points"
+            assert len(duration_metric.data.data_points) > 0, (
+                "Metric should have data points"
+            )
 
             # Verify basic attributes
             data_point = duration_metric.data.data_points[0]
