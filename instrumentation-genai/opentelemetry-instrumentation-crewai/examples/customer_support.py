@@ -325,7 +325,13 @@ def create_crew(agents: list, tasks: list):
     """Create the crew with agents and tasks."""
     from crewai import Crew
 
-    return Crew(name="customer_support_crew", agents=agents, tasks=tasks, verbose=False, memory=False)
+    return Crew(
+        name="customer_support_crew",
+        agents=agents,
+        tasks=tasks,
+        verbose=False,
+        memory=False,
+    )
 
 
 def create_tools():
