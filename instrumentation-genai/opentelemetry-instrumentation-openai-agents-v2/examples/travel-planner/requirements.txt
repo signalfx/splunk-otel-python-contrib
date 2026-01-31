@@ -13,6 +13,9 @@ opentelemetry-exporter-otlp-proto-grpc>=1.38.0
 opentelemetry-instrumentation>=0.59b0
 opentelemetry-semantic-conventions>=0.59b0
 
-# OpenAI Agents v2 instrumentation (install from local editable)
-# Use: pip install -e ../../
-# opentelemetry-instrumentation-openai-agents-v2~=0.1.0.dev
+# Splunk OpenTelemetry GenAI packages
+splunk-otel-util-genai==0.1.9
+splunk-otel-util-genai-evals==0.1.7
+splunk-otel-genai-evals-deepeval==0.1.12
+splunk-otel-genai-emitters-splunk==0.1.6
+splunk-otel-instrumentation-openai-agents==0.1.2

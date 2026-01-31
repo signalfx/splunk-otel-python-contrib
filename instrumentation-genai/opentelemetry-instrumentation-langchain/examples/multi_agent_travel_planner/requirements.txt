@@ -3,3 +3,11 @@ langchain-openai>=1.0.0
 langgraph>=1.0.0
 python-dotenv>=1.0.0
 deepeval
+litellm
+
+# Splunk OpenTelemetry GenAI packages
+splunk-otel-util-genai==0.1.9
+splunk-otel-util-genai-evals==0.1.7
+splunk-otel-genai-evals-deepeval==0.1.12
+splunk-otel-genai-emitters-splunk==0.1.6
+splunk-otel-instrumentation-langchain==0.1.7

@@ -48,6 +48,9 @@ from agents import (  # noqa: E402
     set_default_openai_client,
     trace,
 )
+from agents.models.openai_chatcompletions import (  # noqa: E402
+    OpenAIChatCompletionsModel,
+)
 from openai import AsyncOpenAI  # noqa: E402
 
 from opentelemetry import _events, _logs, metrics  # noqa: E402
@@ -85,6 +88,9 @@ from util import OAuth2TokenManager  # noqa: E402
 # Optional app key for request tracking
 LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
 
+# Model name from environment
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1")
+
 # Check if we should use OAuth2 or standard OpenAI
 USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
 
@@ -118,6 +124,52 @@ def get_openai_client() -> AsyncOpenAI:
     else:
         # Standard OpenAI client using OPENAI_API_KEY
         return AsyncOpenAI()
+
+
+class CustomChatCompletionsModel(OpenAIChatCompletionsModel):
+    """Custom ChatCompletions model that adds required 'user' field for OAuth API."""
+
+    def __init__(
+        self,
+        model: str,
+        openai_client: AsyncOpenAI,
+        app_key: str | None = None,
+    ):
+        super().__init__(model=model, openai_client=openai_client)
+        # API requires user field as JSON: {"appkey": "<value>"}
+        import json
+
+        self._user = json.dumps({"appkey": app_key or ""})
+
+    async def _fetch_response(self, *args, **kwargs):
+        # Get the original client
+        client = self._get_client()
+
+        # Create a wrapped chat completions that adds user field
+        original_create = client.chat.completions.create
+
+        async def create_with_user(*create_args, **create_kwargs):
+            create_kwargs["user"] = self._user
+            return await original_create(*create_args, **create_kwargs)
+
+        # Temporarily replace the create method
+        client.chat.completions.create = create_with_user
+        try:
+            return await super()._fetch_response(*args, **kwargs)
+        finally:
+            # Restore original method
+            client.chat.completions.create = original_create
+
+
+def get_chat_completions_model() -> OpenAIChatCompletionsModel:
+    """Create a ChatCompletions model using the configured OpenAI client."""
+    client = get_openai_client()
+    if USE_OAUTH2:
+        # Use custom model for OAuth API that requires 'user' field with appkey
+        return CustomChatCompletionsModel(
+            model=OPENAI_MODEL, openai_client=client, app_key=LLM_APP_KEY
+        )
+    return OpenAIChatCompletionsModel(model=OPENAI_MODEL, openai_client=client)
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +285,7 @@ def create_flight_agent() -> Agent:
     """Create the flight specialist agent."""
     return Agent(
         name="Flight Specialist",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are a flight specialist. Search for the best flight options "
             "using the search_flights tool. Provide clear recommendations including "
@@ -247,7 +299,7 @@ def create_hotel_agent() -> Agent:
     """Create the hotel specialist agent."""
     return Agent(
         name="Hotel Specialist",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are a hotel specialist. Find the best accommodation using the "
             "search_hotels tool. Provide detailed recommendations including "
@@ -261,7 +313,7 @@ def create_activity_agent() -> Agent:
     """Create the activity specialist agent."""
     return Agent(
         name="Activity Specialist",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are an activities specialist. Curate memorable experiences using "
             "the search_activities tool. Provide detailed activity recommendations "
@@ -275,7 +327,7 @@ def create_coordinator_agent() -> Agent:
     """Create the travel coordinator agent that synthesizes the final itinerary."""
     return Agent(
         name="Travel Coordinator",
-        model="gpt-5-nano",
+        model=get_chat_completions_model(),
         instructions=(
             "You are a travel coordinator. Synthesize flight, hotel, and activity information "
             "into a comprehensive, well-organized travel itinerary with clear sections."
