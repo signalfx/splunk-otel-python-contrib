@@ -88,7 +88,7 @@ from util import OAuth2TokenManager  # noqa: E402
 # Optional app key for request tracking
 LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
 
-# Model name from environment (default to gpt-4.1 for Cisco endpoint)
+# Model name from environment
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1")
 
 # Check if we should use OAuth2 or standard OpenAI
@@ -126,8 +126,8 @@ def get_openai_client() -> AsyncOpenAI:
         return AsyncOpenAI()
 
 
-class CiscoChatCompletionsModel(OpenAIChatCompletionsModel):
-    """Custom ChatCompletions model that adds required 'user' field for Cisco API."""
+class CustomChatCompletionsModel(OpenAIChatCompletionsModel):
+    """Custom ChatCompletions model that adds required 'user' field for OAuth API."""
 
     def __init__(
         self,
@@ -136,7 +136,7 @@ class CiscoChatCompletionsModel(OpenAIChatCompletionsModel):
         app_key: str | None = None,
     ):
         super().__init__(model=model, openai_client=openai_client)
-        # Cisco API requires user field as JSON: {"appkey": "<value>"}
+        # API requires user field as JSON: {"appkey": "<value>"}
         import json
 
         self._user = json.dumps({"appkey": app_key or ""})
@@ -165,8 +165,8 @@ def get_chat_completions_model() -> OpenAIChatCompletionsModel:
     """Create a ChatCompletions model using the configured OpenAI client."""
     client = get_openai_client()
     if USE_OAUTH2:
-        # Use custom model for Cisco API that requires 'user' field with appkey
-        return CiscoChatCompletionsModel(
+        # Use custom model for OAuth API that requires 'user' field with appkey
+        return CustomChatCompletionsModel(
             model=OPENAI_MODEL, openai_client=client, app_key=LLM_APP_KEY
         )
     return OpenAIChatCompletionsModel(model=OPENAI_MODEL, openai_client=client)

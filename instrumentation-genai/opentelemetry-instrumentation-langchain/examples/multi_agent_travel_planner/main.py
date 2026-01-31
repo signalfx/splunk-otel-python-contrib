@@ -24,16 +24,13 @@ See README.md for more information
 """
 
 import argparse
-import base64
+import json
 import os
 import random
-import json
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
 from typing import Annotated, Dict, List, Optional, TypedDict
 from uuid import uuid4
-
-import requests
 
 from langchain_core.messages import (
     AIMessage,
@@ -45,73 +42,10 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-
-
-# ---------------------------------------------------------------------------
-# OAuth Token Manager for Cisco chat-ai
-# ---------------------------------------------------------------------------
-
-
-class TokenManager:
-    """Manages OAuth2 tokens for Cisco chat-ai API."""
-
-    def __init__(
-        self, client_id, client_secret, app_key, cache_file="/tmp/.token.json"
-    ):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.app_key = app_key
-        self.cache_file = cache_file
-        self.token_url = os.getenv(
-            "LLM_TOKEN_URL", "https://id.cisco.com/oauth2/default/v1/token"
-        )
-
-    def _get_cached_token(self):
-        if not os.path.exists(self.cache_file):
-            return None
-        try:
-            with open(self.cache_file, "r") as f:
-                cache_data = json.load(f)
-            expires_at = datetime.fromisoformat(cache_data["expires_at"])
-            if datetime.now() < expires_at - timedelta(minutes=5):
-                return cache_data["access_token"]
-        except (json.JSONDecodeError, KeyError, ValueError):
-            pass
-        return None
-
-    def _fetch_new_token(self):
-        payload = "grant_type=client_credentials"
-        value = base64.b64encode(
-            f"{self.client_id}:{self.client_secret}".encode("utf-8")
-        ).decode("utf-8")
-        headers = {
-            "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": f"Basic {value}",
-        }
-        response = requests.post(self.token_url, headers=headers, data=payload)
-        response.raise_for_status()
-        token_data = response.json()
-        expires_in = token_data.get("expires_in", 3600)
-        expires_at = datetime.now() + timedelta(seconds=expires_in)
-        cache_data = {
-            "access_token": token_data["access_token"],
-            "expires_at": expires_at.isoformat(),
-        }
-        with open(self.cache_file, "w") as f:
-            json.dump(cache_data, f, indent=2)
-        os.chmod(self.cache_file, 0o600)
-        return token_data["access_token"]
-
-    def get_token(self):
-        token = self._get_cached_token()
-        if token:
-            return token
-        return self._fetch_new_token()
-
+from util import OAuth2TokenManager
 
 # Global token manager instance (initialized in main)
-_token_manager: Optional[TokenManager] = None
+_token_manager: Optional[OAuth2TokenManager] = None
 
 
 from langchain.agents import (  # noqa: E402
@@ -260,12 +194,10 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "ls_temperature": temperature,
     }
 
-    # Check if using Cisco OAuth (LLM_CLIENT_ID set) or standard OpenAI API key
+    # Check if using OAuth (LLM_CLIENT_ID set) or standard OpenAI API key
     if _token_manager is not None:
         api_key = _token_manager.get_token()
-        base_url = os.getenv(
-            "LLM_BASE_URL", "https://chat-ai.cisco.com/openai/deployments"
-        )
+        base_url = OAuth2TokenManager.get_llm_base_url(model)
         app_key = os.getenv("LLM_APP_KEY", "")
         user_md = {"appkey": app_key} if app_key else {}
         return ChatOpenAI(
@@ -274,7 +206,7 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
             tags=tags,
             metadata=metadata,
             api_key=api_key,
-            base_url=f"{base_url}/{model}",
+            base_url=base_url,
             default_headers={"api-key": api_key},
             model_kwargs={"user": json.dumps(user_md)} if user_md else {},
         )
@@ -645,13 +577,12 @@ def _configure_manual_instrumentation() -> None:
 def main(manual_instrumentation: bool = False) -> None:
     global _token_manager
 
-    # Initialize OAuth token manager if Cisco credentials are provided
+    # Initialize OAuth token manager if credentials are provided
     client_id = os.getenv("LLM_CLIENT_ID")
     client_secret = os.getenv("LLM_CLIENT_SECRET")
-    app_key = os.getenv("LLM_APP_KEY", "")
     if client_id and client_secret:
-        _token_manager = TokenManager(client_id, client_secret, app_key)
-        print("🔐 Using Cisco OAuth authentication")
+        _token_manager = OAuth2TokenManager()
+        print("🔐 Using OAuth authentication")
     else:
         print("🔑 Using standard OPENAI_API_KEY authentication")
 

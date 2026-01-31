@@ -17,16 +17,8 @@ WORKDIR /app/travel-planner
 # Upgrade pip
 RUN python -m pip install --upgrade pip
 
-# Install Python dependencies from requirements.txt
+# Install Python dependencies (includes Splunk OpenTelemetry GenAI packages)
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Splunk OpenTelemetry GenAI packages from PyPI
-RUN pip install --no-cache-dir \
-    splunk-otel-util-genai==0.1.9 \
-    splunk-otel-util-genai-evals==0.1.7 \
-    splunk-otel-genai-evals-deepeval==0.1.12 \
-    splunk-otel-genai-emitters-splunk==0.1.6 \
-    splunk-otel-instrumentation-openai-agents==0.1.2
 
 # Pre-create .deepeval directory to avoid permission errors
 RUN mkdir -p .deepeval && \
