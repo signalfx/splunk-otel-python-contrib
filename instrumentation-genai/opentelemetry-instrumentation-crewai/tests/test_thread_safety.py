@@ -240,9 +240,9 @@ class TestThreadSafety:
                 f.result()  # Wait for completion
 
         # No thread should have encountered an unhandled exception
-        assert (
-            len(errors) == 0
-        ), f"Errors occurred during concurrent instrumentation: {errors}"
+        assert len(errors) == 0, (
+            f"Errors occurred during concurrent instrumentation: {errors}"
+        )
 
         # The handler should exist after instrumentation
         assert crewai_module._handler is not None
