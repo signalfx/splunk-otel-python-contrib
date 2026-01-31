@@ -49,18 +49,25 @@ To instrument a CrewAI application, you must meet the following requirements:
 - Python 3.10+
 - pip
 
-Install the Splunk Distribution of the opentelemetry-util-genai packages:
+Install the Splunk Distribution of OpenTelemetry packages from PyPI:
 
 ```bash
+# Core instrumentation packages
+pip install splunk-otel-instrumentation-crewai
 pip install splunk-otel-util-genai
-```
 
-(Optional) To enable instrumentation-side LLM-as-a-Judge evaluation:
-
-```bash
+# Splunk-specific emitters (required for Splunk Observability Cloud)
 pip install splunk-otel-genai-emitters-splunk
+
+# Optional: LLM-as-a-Judge evaluations with DeepEval
+pip install splunk-otel-util-genai-evals
 pip install splunk-otel-genai-evals-deepeval
+
+# Or install all at once using requirements.txt (recommended)
+pip install -r requirements.txt
 ```
+
+> **Note:** All packages are available on PyPI and regularly updated. The `requirements.txt` in this directory includes all necessary dependencies with compatible versions.
 
 ### Steps
 
@@ -85,19 +92,31 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. **Install the CrewAI instrumentation from local source:**
+> **Note:** The `requirements.txt` already includes all necessary packages from PyPI:
+> - `splunk-otel-instrumentation-crewai` - CrewAI instrumentation
+> - `splunk-otel-util-genai` - Core GenAI utilities
+> - `splunk-otel-genai-emitters-splunk` - Splunk-specific emitters
+> - `splunk-otel-util-genai-evals` - Evaluation framework
+> - `splunk-otel-genai-evals-deepeval` - DeepEval integration
+
+**For local development** (if you want to test unreleased changes):
 
 ```bash
+# Install from local source instead
+pip install -e ../../../util/opentelemetry-util-genai
+pip install -e ../../../util/opentelemetry-util-genai-evals
+pip install -e ../../../util/opentelemetry-util-genai-evals-deepeval
+pip install -e ../../../util/opentelemetry-util-genai-emitters-splunk
 pip install -e ../[instruments]
 ```
 
-5. **Create environment variable configuration:**
+4. **Create environment variable configuration:**
 
 ```bash
 cp env.example .env
 ```
 
-6. **Set the required environment variables in `.env`:**
+5. **Set the required environment variables in `.env`:**
 
 **LLM Credentials (OAuth2):**
 
@@ -139,7 +158,7 @@ OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
 OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION=replace-category:SplunkEvaluationResults
 ```
 
-7. **(Optional) Set DeepEval custom LLM-as-a-Judge settings:**
+6. **(Optional) Set DeepEval custom LLM-as-a-Judge settings:**
 
 > Note: Route evaluations through your own LLM provider instead of OpenAI.
 
@@ -154,7 +173,7 @@ DEEPEVAL_LLM_CLIENT_APP_NAME=<your-app-key>
 DEEPEVAL_FILE_SYSTEM=READ_ONLY
 ```
 
-8. **(Optional) Debug settings:**
+7. **(Optional) Debug settings:**
 
 ```bash
 OTEL_INSTRUMENTATION_GENAI_DEBUG=false
@@ -165,14 +184,14 @@ OTEL_GENAI_EVAL_DEBUG_EACH=false
 CREWAI_DISABLE_TELEMETRY=true
 ```
 
-9. **Start the OpenTelemetry Collector:**
+8. **Start the OpenTelemetry Collector:**
 
 ```bash
 # Example using Docker
 docker run -p 4317:4317 otel/opentelemetry-collector:latest
 ```
 
-10. **Load environment variables and run:**
+9. **Load environment variables and run:**
 
 **Manual instrumentation (default):**
 
