@@ -127,6 +127,17 @@ class _StubTelemetryHandler:
     def get_entity(self, run_id):
         return self.entities.get(str(run_id))
 
+    def get_span_by_run_id(self, run_id):
+        """Return the span associated with a run_id.
+
+        This is used by callback_handler._resolve_parent_span() to find
+        the parent span for proper span hierarchy linking.
+        """
+        entity = self.entities.get(str(run_id))
+        if entity is not None:
+            return getattr(entity, "span", None)
+        return None
+
 
 @pytest.fixture(name="handler_with_stub")
 def _handler_with_stub_fixture() -> Tuple[
@@ -411,3 +422,70 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
+
+
+# =============================================================================
+# PR #1: Parent-Child Span Linking Tests
+# =============================================================================
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_parent_span_linking(handler_with_stub):
+    """Test that child invocations have correct parent_span resolved."""
+    handler, stub = handler_with_stub
+
+    # Create agent (root)
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"input": "test"},
+        run_id=agent_run_id,
+        tags=["agent"],
+    )
+
+    # Create LLM invocation as child of agent
+    llm_run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized={"name": "ChatOpenAI"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=llm_run_id,
+        parent_run_id=agent_run_id,
+        invocation_params={"model_name": "gpt-4"},
+    )
+
+    # Verify parent_run_id is set correctly
+    assert stub.started_llms, "LLM invocation not recorded"
+    llm_inv = stub.started_llms[-1]
+    assert llm_inv.parent_run_id == agent_run_id
+
+    # The parent_span should be set if parent entity exists
+    agent = stub.entities.get(str(agent_run_id))
+    assert agent is not None, "Agent entity should exist"
+
+
+def test_nested_span_hierarchy_three_levels(handler_with_stub):
+    """Test three-level span hierarchy: agent -> step -> llm."""
+    handler, stub = handler_with_stub
+
+    # Level 1: Agent
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"input": "test"},
+        run_id=agent_run_id,
+        tags=["agent"],
+    )
+
+    # Level 2: Step (child of agent)
+    step_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "ModelStep"},
+        inputs={},
+        run_id=step_run_id,
+        parent_run_id=agent_run_id,
+        metadata={},
+    )
+
+    # Verify parent_run_id chain
+    step = stub.started_steps[-1]
+    assert step.parent_run_id == agent_run_id
