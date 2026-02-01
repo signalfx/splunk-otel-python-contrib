@@ -489,6 +489,7 @@ def plan_synthesizer_node(state: PlannerState) -> PlannerState:
             ),
         ]
     )
+    # Set for workflow final_output
     state["final_itinerary"] = response.content
     state["messages"].append(response)
     state["current_agent"] = "completed"

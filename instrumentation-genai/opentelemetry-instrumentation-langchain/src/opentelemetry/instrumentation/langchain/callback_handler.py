@@ -374,6 +374,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             return
         if isinstance(entity, Workflow):
             entity.output_messages = _make_output_message(outputs)
+            final_output = outputs.get("final_itinerary")
+            entity.final_output = final_output
             self._handler.stop_workflow(entity)
         elif isinstance(entity, AgentInvocation):
             entity.output_messages = _make_output_message(outputs)
