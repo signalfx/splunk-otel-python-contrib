@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-01-30
+
+### Fixed
+- Align workflow and agent instrumentation with `input_messages` to match updated GenAI types
+- Avoid invalid `initial_input` and `input_context` arguments in workflow spans
+
 ## [0.1.0] - 2025-01-29
 
 ### Added
@@ -42,5 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message content capture disabled by default (enable via `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`)
 - System prompts may not appear as separate messages in `gen_ai.input.messages` (framework-dependent)
 
-[Unreleased]: https://github.com/signalfx/splunk-otel-python-contrib/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/signalfx/splunk-otel-python-contrib/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/signalfx/splunk-otel-python-contrib/releases/tag/v0.1.1
 [0.1.0]: https://github.com/signalfx/splunk-otel-python-contrib/releases/tag/v0.1.0

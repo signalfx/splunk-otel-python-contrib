@@ -9,7 +9,13 @@ import asyncio
 
 from opentelemetry import trace as _trace_mod
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import AgentInvocation, ToolCall, Workflow
+from opentelemetry.util.genai.types import (
+    AgentInvocation,
+    InputMessage,
+    Text,
+    ToolCall,
+    Workflow,
+)
 
 
 class WorkflowEventInstrumentor:
@@ -61,7 +67,12 @@ class WorkflowEventInstrumentor:
                         self._current_agent_name = agent_name
                         agent_invocation = AgentInvocation(
                             name=f"agent.{agent_name}",
-                            input_context=str(event.input[-1].content)
+                            input_messages=[
+                                InputMessage(
+                                    role="user",
+                                    parts=[Text(content=str(event.input[-1].content))],
+                                )
+                            ]
                             if event.input
                             else "",
                             attributes={},
@@ -210,11 +221,16 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         #     ├─ Agent 2 (analysis)
         #     └─ Agent 3 (synthesis)
         if not inside_workflow:
+            input_messages = (
+                [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
+                if user_msg
+                else []
+            )
             root_workflow = Workflow(
                 name=f"{type(instance).__name__} Workflow",
                 workflow_type="llamaindex.workflow",
                 framework="llamaindex",
-                initial_input=str(user_msg),
+                input_messages=input_messages,
                 attributes={},
             )
 
@@ -224,9 +240,14 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         # Level 2: Create agent invocation (nested inside workflow if one exists)
         # The agent span will automatically become a child of the active span
         # (either our workflow or parent workflow) due to OpenTelemetry's context propagation
+        agent_input_messages = (
+            [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
+            if user_msg
+            else []
+        )
         current_agent = AgentInvocation(
             name=f"agent.{type(instance).__name__}",
-            input_context=str(user_msg),
+            input_messages=agent_input_messages,
             attributes={},
         )
         current_agent.framework = "llamaindex"
