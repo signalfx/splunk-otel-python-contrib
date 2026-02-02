@@ -51,6 +51,9 @@ from .deepeval_model import create_eval_model as _create_eval_model
 from .deepeval_runner import run_evaluation as _run_deepeval
 from .deepeval_runner import run_evaluation_async as _run_deepeval_async
 
+# Suppress verbose DeepEval/LiteLLM output and configure environment
+from .suppress_output import suppress_deepeval_output  # noqa: F401
+
 try:  # Optional debug logging import
     from opentelemetry.util.genai.debug import genai_debug_log
 except (ImportError, ModuleNotFoundError):  # pragma: no cover

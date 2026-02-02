@@ -12,8 +12,11 @@ This package provides a test emitter for OpenTelemetry GenAI utilities. It captu
 
 ## Installation
 
+This package is for **development and testing only** and is not published to PyPI.
+
 ```bash
-pip install splunk-otel-genai-emitters-test
+# Install in editable mode from the repository
+pip install -e ./util/opentelemetry-util-genai-emitters-test
 ```
 
 ## Usage
@@ -56,8 +59,8 @@ The package includes a CLI tool for testing evaluation framework performance and
 
 1. **Install the package with dependencies**:
    ```bash
-   pip install -e util/opentelemetry-util-genai-emitters-test
-   pip install -e util/opentelemetry-util-genai-evals-deepeval
+   pip install -e ./util/opentelemetry-util-genai-emitters-test
+   pip install -e ./util/opentelemetry-util-genai-evals-deepeval
    ```
 
 2. **Configure DeepEval LLM** (required for running evaluations):
