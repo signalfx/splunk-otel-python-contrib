@@ -29,8 +29,11 @@ Or use the auto-suppression by simply importing this module:
 
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
 import os
+import sys
 import warnings
 
 _suppressed = False
@@ -40,10 +43,17 @@ def suppress_deepeval_output() -> None:
     """Suppress verbose output from DeepEval and related libraries.
 
     This function:
-    1. Sets DEEPEVAL_FILE_SYSTEM=READ_ONLY to prevent disk cache warnings
-    2. Sets DEEPEVAL_TELEMETRY_OPT_OUT=YES to disable DeepEval telemetry
-    3. Suppresses OpenTelemetry LogRecord deprecation warnings
-    4. Sets logging levels to WARNING for LiteLLM and DeepEval loggers
+    1. Sets DEEPEVAL_TELEMETRY_OPT_OUT=YES to disable DeepEval's internal telemetry
+       (Posthog/New Relic). This prevents the evaluator from creating its own
+       telemetry in the context of the instrumented application.
+    2. Sets DEEPEVAL_FILE_SYSTEM=READ_ONLY to prevent DeepEval from creating
+       .deepeval folder, which may not work in cloud/read-only environments.
+    3. Suppresses OpenTelemetry LogRecord deprecation warnings.
+    4. Sets logging levels to WARNING for LiteLLM and DeepEval loggers.
+
+    Note: The DEEPEVAL_FILE_SYSTEM=READ_ONLY setting triggers a warning from
+    DeepEval that is printed during module import. This warning is captured
+    and suppressed by redirecting stdout during the initial import.
 
     This function is idempotent - calling it multiple times has no effect
     after the first call.
@@ -55,8 +65,14 @@ def suppress_deepeval_output() -> None:
 
     # Set environment variables for DeepEval configuration
     # These must be set before importing deepeval
-    os.environ.setdefault("DEEPEVAL_FILE_SYSTEM", "READ_ONLY")
+
+    # Disable DeepEval's internal telemetry (Posthog/New Relic) to prevent
+    # the evaluator from emitting its own spans/events in the instrumented app context
     os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
+
+    # Prevent DeepEval from creating .deepeval folder (for cloud/read-only environments)
+    # Note: This triggers a warning from DeepEval that we suppress below
+    os.environ.setdefault("DEEPEVAL_FILE_SYSTEM", "READ_ONLY")
 
     # Suppress OpenTelemetry LogRecord deprecation warning
     try:
@@ -75,8 +91,40 @@ def suppress_deepeval_output() -> None:
     logging.getLogger("deepeval.evaluate").setLevel(logging.WARNING)
 
 
+@contextlib.contextmanager
+def suppress_stdout():
+    """Context manager to temporarily suppress stdout.
+
+    Used to capture and discard the "Warning: DeepEval is configured for
+    read only environment" message that deepeval prints at import time.
+    """
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+
+
+def import_deepeval_quietly():
+    """Import deepeval modules while suppressing their startup warnings.
+
+    This should be called after suppress_deepeval_output() to ensure
+    environment variables are set before importing deepeval.
+    """
+    with suppress_stdout():
+        # These imports trigger the "read only environment" warning
+        import deepeval.prompt.prompt  # noqa: F401
+        import deepeval.test_run.cache  # noqa: F401
+        import deepeval.test_run.test_run  # noqa: F401
+
+
 # Auto-suppress on import for convenience
 suppress_deepeval_output()
 
 
-__all__ = ["suppress_deepeval_output"]
+__all__ = [
+    "suppress_deepeval_output",
+    "import_deepeval_quietly",
+    "suppress_stdout",
+]
