@@ -60,8 +60,8 @@ pip install splunk-otel-util-genai
 pip install splunk-otel-genai-emitters-splunk
 
 # Optional: LLM-as-a-Judge evaluations with DeepEval
-pip install splunk-otel-util-genai-evals
 pip install splunk-otel-genai-evals-deepeval
+Note: splunk-otel-util-genai-evals gets installed as a dependency of this package
 
 # Or install all at once using requirements.txt (recommended)
 pip install -r requirements.txt
