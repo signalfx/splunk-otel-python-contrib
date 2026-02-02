@@ -237,7 +237,14 @@ def run_agent_invocation():
         agent_type="assistant",
         framework="custom",
         model="gpt-4o-mini",
-        input_context="User wants to know the weather in New York",
+        input_messages=[
+            InputMessage(
+                role="user",
+                parts=[
+                    Text(content="User wants to know the weather in New York")
+                ],
+            ),
+        ],
     )
 
     handler.start_agent(agent)
@@ -251,7 +258,6 @@ def run_agent_invocation():
         objective="Determine what weather information the user needs",
         source="agent",
         status="in_progress",
-        input_data="What's the weather like in New York?",
     )
     handler.start_step(step)
     time.sleep(0.05)
