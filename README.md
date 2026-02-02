@@ -396,6 +396,26 @@ The CI lint job checks:
 
 Pre-commit hooks use the same ruff version and configuration as CI, ensuring local checks match CI requirements.
 
+## 16. Test Emitter & Evaluation Performance Testing
+
+The `splunk-otel-genai-emitters-test` package provides tools for testing and validating the evaluation framework:
+
+- **Test Emitter**: Captures all telemetry in memory for testing and validation
+- **Evaluation Performance Test**: CLI tool for validating evaluation metrics against known test samples
+
+For detailed usage instructions, see [util/opentelemetry-util-genai-emitters-test/README.md](util/opentelemetry-util-genai-emitters-test/README.md).
+
+Quick example:
+```bash
+# Install the test emitter
+pip install -e util/opentelemetry-util-genai-emitters-test
+pip install -e util/opentelemetry-util-genai-evals-deepeval
+
+# Run evaluation performance test
+python -m opentelemetry.util.genai.emitters.eval_perf_test \
+    --samples 120 --concurrent --workers 4 --output results.json
+```
+
 ## 17. Validation Strategy
 
 - Unit tests: env parsing, category overrides, evaluator grammar, sampling, content capture gating.
