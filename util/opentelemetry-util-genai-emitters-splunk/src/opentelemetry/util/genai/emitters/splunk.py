@@ -660,8 +660,9 @@ class SplunkEvaluationResultsEmitter(EmitterMeta):
 def splunk_emitters() -> list[EmitterSpec]:
     def _conversation_factory(ctx: Any) -> SplunkConversationEventsEmitter:
         capture_mode = getattr(ctx, "capture_event_content", False)
+        # Use content_logger (Logs API) not event_logger (Events API) for log record emission
         return SplunkConversationEventsEmitter(
-            event_logger=getattr(ctx, "event_logger", None),
+            event_logger=getattr(ctx, "content_logger", None),
             capture_content=cast(bool, capture_mode),
         )
 
