@@ -347,6 +347,104 @@ class Manager(CompletionCallback):
         """
         return self._error_tracker.get_error_summary()
 
+    # Queue monitoring methods -------------------------------------------
+    def get_queue_depth(self) -> int:
+        """Get current number of items in the queue.
+
+        Returns:
+            Number of items currently waiting in the evaluation queue
+        """
+        return self._queue.qsize()
+
+    def get_queue_size(self) -> int:
+        """Get configured queue size (0 means unbounded).
+
+        Returns:
+            Maximum queue size, 0 if unbounded
+        """
+        return self._queue_size
+
+    def get_pending_count(self) -> int:
+        """Get count of unfinished tasks (queued + being processed).
+
+        Returns:
+            Number of tasks not yet completed
+        """
+        return self._queue.unfinished_tasks
+
+    def is_queue_empty(self) -> bool:
+        """Check if queue is empty and all tasks are done.
+
+        Returns:
+            True if no pending work
+        """
+        return self._queue.empty() and self._queue.unfinished_tasks == 0
+
+    def get_worker_count(self) -> int:
+        """Get number of active workers.
+
+        Returns:
+            Number of worker threads
+        """
+        return len(self._workers)
+
+    def get_status(self) -> dict[str, Any]:
+        """Get comprehensive status of the evaluation manager.
+
+        Returns:
+            Dictionary with queue depth, pending tasks, worker info, etc.
+        """
+        error_summary = self._error_tracker.get_error_summary()
+        return {
+            "concurrent_mode": self._concurrent_mode,
+            "worker_count": len(self._workers),
+            "queue_size": self._queue_size,
+            "queue_depth": self._queue.qsize(),
+            "pending_tasks": self._queue.unfinished_tasks,
+            "is_shutdown": self._shutdown.is_set(),
+            "has_evaluators": self.has_evaluators,
+            "total_errors": error_summary.get("total_errors", 0),
+            "errors_by_type": error_summary.get("errors_by_type", {}),
+        }
+
+    def wait_for_all_with_progress(
+        self,
+        timeout: float | None = None,
+        poll_interval: float = 1.0,
+        callback: Any = None,
+    ) -> bool:
+        """Wait for all evaluations with progress monitoring.
+
+        Args:
+            timeout: Maximum time to wait in seconds (None = wait forever)
+            poll_interval: Time between progress checks
+            callback: Optional callable(status_dict) called at each poll
+
+        Returns:
+            True if all evaluations completed, False if timeout
+        """
+        if not self.has_evaluators:
+            return True
+
+        deadline = time.monotonic() + timeout if timeout else None
+
+        while True:
+            status = self.get_status()
+
+            if callback:
+                try:
+                    callback(status)
+                except Exception:  # pragma: no cover
+                    pass
+
+            if status["pending_tasks"] == 0 and status["queue_depth"] == 0:
+                return True
+
+            if deadline and time.monotonic() >= deadline:
+                return False
+
+            time.sleep(poll_interval)
+
     # Internal helpers ---------------------------------------------------
     def _worker_loop(self) -> None:
         """Sequential worker loop (legacy mode)."""
