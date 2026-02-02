@@ -13,6 +13,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, BaseMessage, AIMessage
 from langchain_core.outputs import LLMResult
+from opentelemetry.util.genai.attributes import GEN_AI_WORKFLOW_NAME
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     Workflow,
@@ -199,6 +200,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         super().__init__()
         self._handler = telemetry_handler
+        self._workflow: Optional[Workflow] = None
 
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
@@ -224,6 +226,10 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         metadata: Optional[dict[str, Any]],
         agent_name: Optional[str],
     ) -> AgentInvocation:
+        # Add workflow name to attributes before creating invocation
+        if self._workflow is not None:
+            if hasattr(self._workflow, "name") and self._workflow.name:
+                attrs[GEN_AI_WORKFLOW_NAME] = self._workflow.name
         agent = AgentInvocation(
             name=name,
             run_id=run_id,
@@ -277,7 +283,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
                 wf.input_messages = _make_input_message(inputs)
-                self._handler.start_workflow(wf)
+                last_agent = inputs.get("last_agent")
+                wf.last_agent_name = _safe_str(last_agent)
+                self._workflow = self._handler.start_workflow(wf)
             return
         else:
             context_agent = self._find_nearest_agent(parent_run_id)
@@ -374,9 +382,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             return
         if isinstance(entity, Workflow):
             entity.output_messages = _make_output_message(outputs)
+            entity.final_output = self._workflow.final_output
             self._handler.stop_workflow(entity)
         elif isinstance(entity, AgentInvocation):
             entity.output_messages = _make_output_message(outputs)
+            if self._workflow and self._workflow.last_agent_name == entity.agent_name:
+                self._workflow.final_output = entity.output_messages[-1]
             self._handler.stop_agent(entity)
         elif isinstance(entity, Step):
             self._handler.stop_step(entity)
@@ -466,6 +477,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if metadata and "ls_provider" in metadata:
             provider = _safe_str(metadata["ls_provider"])
 
+        # Pass workflow name to LLM invocation
+        if self._workflow is not None:
+            if hasattr(self._workflow, "name") and self._workflow.name:
+                attrs[GEN_AI_WORKFLOW_NAME] = (
+                    self._workflow.name
+                )
+
         inv = LLMInvocation(
             request_model=request_model,
             input_messages=input_messages,
@@ -481,6 +499,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 agent_name_value = context_agent.agent_name or context_agent.name
                 inv.agent_name = _safe_str(agent_name_value)
                 inv.agent_id = str(context_agent.run_id)
+            else:
+                inv.agent_name = metadata.get("agent_name")
         self._handler.start_llm(inv)
 
     def on_llm_start(
@@ -545,6 +565,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         finish_reason=finish_reason or "stop",
                     )
                 ]
+                if self._workflow and self._workflow.last_agent_name == inv.agent_name:
+                    if inv.output_messages:
+                        self._workflow.final_output = inv.output_messages[-1]
         llm_output = getattr(response, "llm_output", {}) or {}
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
         inv.input_tokens = usage.get("prompt_tokens")

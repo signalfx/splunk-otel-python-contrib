@@ -174,6 +174,7 @@ class PlannerState(TypedDict):
     final_itinerary: Optional[str]
     current_agent: str
     poison_events: List[str]
+    last_agent: Optional[str]
 
 
 def _model_name() -> str:
@@ -614,10 +615,11 @@ def main(manual_instrumentation: bool = False) -> None:
         "final_itinerary": None,
         "current_agent": "start",
         "poison_events": [],
+        "last_agent": "plan_synthesizer",
     }
 
     workflow = build_workflow()
-    app = workflow.compile()
+    app = workflow.compile(name="multi_agent_travel_planner")
 
     config = {
         "configurable": {"thread_id": session_id},
