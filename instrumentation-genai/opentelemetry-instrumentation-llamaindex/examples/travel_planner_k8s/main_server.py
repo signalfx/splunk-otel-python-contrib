@@ -25,7 +25,7 @@ import requests
 # Add parent directory to path to import from util
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from util import OAuth2TokenManager
-from llama_index.core.agent.workflow import ReActAgent
+from llama_index.core.agent.workflow import AgentWorkflow, ReActAgent
 from llama_index.core.base.llms.types import (
     ChatMessage,
     ChatResponse,
@@ -35,13 +35,6 @@ from llama_index.core.base.llms.types import (
 )
 from llama_index.core.llms import CustomLLM
 from llama_index.core.tools import FunctionTool
-from llama_index.core.workflow import (
-    Event,
-    StartEvent,
-    StopEvent,
-    Workflow,
-    step,
-)
 from llama_index.llms.openai import OpenAI
 
 from opentelemetry import trace, metrics, _events, _logs
@@ -275,9 +268,18 @@ def get_flight_agent():
     if _flight_agent is None:
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_flights)]
-        system_prompt = "You are a flight search specialist. Use the search_flights tool to find flights, then provide the result."
+        system_prompt = (
+            "You are a flight specialist. Use the search_flights tool first. "
+            "After providing flight details, hand off to HotelAgent."
+        )
         _flight_agent = ReActAgent(
-            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
+            name="FlightAgent",
+            description="Searches flights for the requested trip.",
+            tools=tools,
+            llm=llm,
+            can_handoff_to=["HotelAgent"],
+            verbose=True,
+            system_prompt=system_prompt,
         )
     return _flight_agent
 
@@ -288,9 +290,18 @@ def get_hotel_agent():
     if _hotel_agent is None:
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_hotels)]
-        system_prompt = "You are a hotel search specialist. Use the search_hotels tool to find hotels, then provide the result."
+        system_prompt = (
+            "You are a hotel specialist. Use the search_hotels tool with destination and dates. "
+            "After providing hotel options, hand off to ActivityAgent."
+        )
         _hotel_agent = ReActAgent(
-            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
+            name="HotelAgent",
+            description="Finds hotels for the requested destination and dates.",
+            tools=tools,
+            llm=llm,
+            can_handoff_to=["ActivityAgent"],
+            verbose=True,
+            system_prompt=system_prompt,
         )
     return _hotel_agent
 
@@ -301,105 +312,63 @@ def get_activity_agent():
     if _activity_agent is None:
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_activities)]
-        system_prompt = "You are an activity recommendation specialist. Use the search_activities tool to find activities, then provide the result."
+        system_prompt = (
+            "You are an activities specialist. Use the search_activities tool and produce the final response. "
+            "Include sections for Flights, Hotels, and Activities in the final answer."
+        )
         _activity_agent = ReActAgent(
-            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
+            name="ActivityAgent",
+            description="Suggests activities and returns the final itinerary.",
+            tools=tools,
+            llm=llm,
+            can_handoff_to=[],
+            verbose=True,
+            system_prompt=system_prompt,
         )
     return _activity_agent
 
 
-# Workflow Event Classes
-class FlightEvent(Event):
-    """Event containing flight search results."""
+def create_travel_planner_workflow(timeout: int = 300) -> AgentWorkflow:
+    """Create an AgentWorkflow that hands off across specialist ReAct agents."""
+    flight_agent = get_flight_agent()
+    hotel_agent = get_hotel_agent()
+    activity_agent = get_activity_agent()
 
-    flight_result: str
-    destination: str
-    departure_date: str
-    check_out_date: str
-
-
-class HotelEvent(Event):
-    """Event containing hotel search results."""
-
-    flight_result: str
-    hotel_result: str
-    destination: str
+    return AgentWorkflow(
+        agents=[flight_agent, hotel_agent, activity_agent],
+        root_agent=flight_agent.name,
+        timeout=timeout,
+    )
 
 
-class TravelPlanRequest(Event):
-    """Initial travel plan request parameters."""
-
-    origin: str
-    destination: str
-    departure_date: str
-    check_out_date: str
-    budget: int
-    duration: int
-    travelers: int
-    interests: list
-
-
-# Multi-Agent Workflow using LlamaIndex Workflow Pattern
-class TravelPlannerWorkflow(Workflow):
-    """
-    LlamaIndex Workflow for multi-agent travel planning orchestration.
-
-    This workflow orchestrates three specialist agents:
-    1. Flight Specialist - searches for flights
-    2. Hotel Specialist - searches for hotels
-    3. Activity Specialist - recommends activities
-
-    The workflow automatically creates proper span hierarchy for observability.
-    """
-
-    @step
-    async def search_flights(self, ev: StartEvent) -> FlightEvent:
-        """Step 1: Search for flights using flight specialist agent."""
-        print("\n--- Flight Specialist Agent ---")
-        flight_agent = get_flight_agent()
-        flight_query = f"Search for flights from {ev.origin} to {ev.destination} departing on {ev.departure_date}"
-        flight_handler = flight_agent.run(user_msg=flight_query, max_iterations=3)
-        flight_response = await flight_handler
-
-        return FlightEvent(
-            flight_result=str(flight_response),
-            destination=ev.destination,
-            departure_date=ev.departure_date,
-            check_out_date=ev.check_out_date,
-        )
-
-    @step
-    async def search_hotels(self, ev: FlightEvent) -> HotelEvent:
-        """Step 2: Search for hotels using hotel specialist agent."""
-        print("\n--- Hotel Specialist Agent ---")
-        hotel_agent = get_hotel_agent()
-        hotel_query = f"Search for hotels in {ev.destination} from {ev.departure_date} to {ev.check_out_date}"
-        hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
-        hotel_response = await hotel_handler
-
-        return HotelEvent(
-            flight_result=ev.flight_result,
-            hotel_result=str(hotel_response),
-            destination=ev.destination,
-        )
-
-    @step
-    async def search_activities(self, ev: HotelEvent) -> StopEvent:
-        """Step 3: Recommend activities using activity specialist agent."""
-        print("\n--- Activity Specialist Agent ---")
-        activity_agent = get_activity_agent()
-        activity_query = f"Recommend activities in {ev.destination}"
-        activity_handler = activity_agent.run(user_msg=activity_query, max_iterations=3)
-        activity_response = await activity_handler
-
-        # Aggregate all results
-        final_result = (
-            f"Flights: {ev.flight_result}\n\n"
-            f"Hotels: {ev.hotel_result}\n\n"
-            f"Activities: {activity_response}"
-        )
-
-        return StopEvent(result=final_result)
+def build_travel_request_prompt(
+    *,
+    origin: str,
+    destination: str,
+    departure_date: str,
+    check_out_date: str,
+    budget: int,
+    duration: int,
+    travelers: int,
+    interests: list,
+) -> str:
+    """Build the user message passed into AgentWorkflow.run()."""
+    interests_text = ", ".join(str(item) for item in interests)
+    return (
+        "Create a travel plan using all specialist agents.\n"
+        f"- Origin: {origin}\n"
+        f"- Destination: {destination}\n"
+        f"- Departure date: {departure_date}\n"
+        f"- Check-out date: {check_out_date}\n"
+        f"- Budget: ${budget}\n"
+        f"- Duration: {duration} days\n"
+        f"- Travelers: {travelers}\n"
+        f"- Interests: {interests_text}\n\n"
+        "Requirements:\n"
+        "1) FlightAgent must find a flight.\n"
+        "2) HotelAgent must find a hotel.\n"
+        "3) ActivityAgent must recommend activities and return a final consolidated response."
+    )
 
 
 class TravelPlannerHandler(BaseHTTPRequestHandler):
@@ -460,21 +429,22 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     check_out = check_in + timedelta(days=duration)
                     check_out_date = check_out.strftime("%Y-%m-%d")
 
-                    # Invoke the multi-agent workflow using LlamaIndex Workflow
-                    workflow = TravelPlannerWorkflow(timeout=300, verbose=False)
+                    # Invoke the multi-agent workflow using AgentWorkflow
+                    workflow = create_travel_planner_workflow(timeout=300)
+                    user_msg = build_travel_request_prompt(
+                        origin=origin,
+                        destination=destination,
+                        departure_date=departure_date,
+                        check_out_date=check_out_date,
+                        budget=budget,
+                        duration=duration,
+                        travelers=travelers,
+                        interests=interests,
+                    )
 
                     # Define async wrapper to run the workflow
                     async def run_workflow():
-                        return await workflow.run(
-                            origin=origin,
-                            destination=destination,
-                            departure_date=departure_date,
-                            check_out_date=check_out_date,
-                            budget=budget,
-                            duration=duration,
-                            travelers=travelers,
-                            interests=interests,
-                        )
+                        return await workflow.run(user_msg=user_msg)
 
                     try:
                         # Run the workflow in a new event loop
@@ -488,18 +458,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
-                                result = loop.run_until_complete(
-                                    workflow.run(
-                                        origin=origin,
-                                        destination=destination,
-                                        departure_date=departure_date,
-                                        check_out_date=check_out_date,
-                                        budget=budget,
-                                        duration=duration,
-                                        travelers=travelers,
-                                        interests=interests,
-                                    )
-                                )
+                                result = loop.run_until_complete(run_workflow())
                             finally:
                                 loop.close()
                         else:

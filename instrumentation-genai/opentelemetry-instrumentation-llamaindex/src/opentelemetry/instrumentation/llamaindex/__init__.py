@@ -7,7 +7,6 @@ from opentelemetry.instrumentation.llamaindex.callback_handler import (
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
     wrap_agent_run,
-    wrap_workflow_run,
 )
 from wrapt import wrap_function_wrapper
 
@@ -87,20 +86,6 @@ class LlamaindexInstrumentor(BaseInstrumentor):
                 )
             except Exception:
                 # AgentWorkflow might not be available or importable.
-                pass
-
-        # Instrument base Workflow.run() for custom workflow subclasses.
-        # This allows custom multi-agent orchestration workflows (e.g., TravelPlannerWorkflow)
-        # to create a parent workflow span, with nested agents as children.
-        for method_name in ["run"]:
-            try:
-                wrap_function_wrapper(
-                    module="llama_index.core.workflow.workflow",
-                    name=f"Workflow.{method_name}",
-                    wrapper=wrap_workflow_run,
-                )
-            except Exception:
-                # Workflow might not be available or importable.
                 pass
 
     def _uninstrument(self, **kwargs):
