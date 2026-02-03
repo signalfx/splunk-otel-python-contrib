@@ -316,11 +316,13 @@ async def test_multi_agent_workflow_example_emits_spans(
     }
 
     for span in spans:
-        if (
-            span.attributes.get("gen_ai.operation.name") == "invoke_agent"
-            and span.attributes.get("gen_ai.agent.name")
-            in {"ResearchAgent", "WriteAgent", "ReviewAgent"}
-        ):
+        if span.attributes.get(
+            "gen_ai.operation.name"
+        ) == "invoke_agent" and span.attributes.get("gen_ai.agent.name") in {
+            "ResearchAgent",
+            "WriteAgent",
+            "ReviewAgent",
+        }:
             assert span.parent is not None
             assert span.parent.span_id == workflow_span_id
 

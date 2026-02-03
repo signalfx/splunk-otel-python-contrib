@@ -94,10 +94,10 @@ class WorkflowEventInstrumentor:
                             elif (
                                 hasattr(self._current_agent, "parent_span")
                                 and self._current_agent.parent_span
-                                ):
-                                    agent_invocation.parent_span = (
-                                        self._current_agent.parent_span
-                                    )
+                            ):
+                                agent_invocation.parent_span = (
+                                    self._current_agent.parent_span
+                                )
                             self._handler.start_agent(agent_invocation)
                             self._active_agents[agent_key] = agent_invocation
 
@@ -303,7 +303,9 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
             ):
                 self._original = original
                 self._current_agent = agent_span
-                self._root_workflow = workflow_span  # May be None if inside another workflow
+                self._root_workflow = (
+                    workflow_span  # May be None if inside another workflow
+                )
                 self._result = None
                 self._is_orchestrator_workflow = is_orchestrator_workflow
 
@@ -334,7 +336,8 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                         self._current_agent.output_result = str(self._result)
                         self._current_agent.output_messages = [
                             OutputMessage(
-                                role="assistant", parts=[Text(content=str(self._result))]
+                                role="assistant",
+                                parts=[Text(content=str(self._result))],
                             )
                         ]
 

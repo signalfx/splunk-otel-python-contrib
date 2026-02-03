@@ -5,11 +5,6 @@ This server exposes an HTTP endpoint for travel planning requests and uses
 OpenTelemetry instrumentation to capture traces and metrics.
 """
 
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
-
 import os
 import sys
 from pathlib import Path
@@ -21,10 +16,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 
-# Add parent directory to path to import from util
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from util import OAuth2TokenManager
 from llama_index.core.agent.workflow import AgentWorkflow, ReActAgent
 from llama_index.core.base.llms.types import (
     ChatMessage,
@@ -50,13 +43,16 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogEx
 from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 
+# Load environment variables from .env file
+load_dotenv()
+
 
 # Custom LLM for CircuIT
 class CircuITLLM(CustomLLM):
     """Custom LLM implementation for Cisco CircuIT OAuth2 gateway."""
 
     api_url: str
-    token_manager: OAuth2TokenManager
+    token_manager: Any
     app_key: str
     model_name: str = "gpt-4o-mini"
     temperature: float = 0.0
@@ -146,6 +142,11 @@ def get_llm():
         )
 
         if has_circuit:
+            util_path = str(Path(__file__).parent.parent)
+            if util_path not in sys.path:
+                sys.path.insert(0, util_path)
+            from util import OAuth2TokenManager
+
             print("✓ Using CircuIT LLM")
             print(f"  Base URL: {circuit_vars['CIRCUIT_BASE_URL']}")
             token_manager = OAuth2TokenManager(
