@@ -106,8 +106,8 @@ def test_conversation_event_emission() -> None:
     context = EmitterFactoryContext(
         tracer=None,
         meter=metrics.get_meter(__name__),
-        event_logger=logger,
-        content_logger=None,
+        event_logger=None,
+        content_logger=logger,
         evaluation_histogram=None,
         capture_span_content=False,
         capture_event_content=True,
