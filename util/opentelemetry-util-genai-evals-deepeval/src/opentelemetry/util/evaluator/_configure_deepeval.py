@@ -31,3 +31,18 @@ os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
 # Prevent DeepEval from creating .deepeval folder (for cloud/read-only environments).
 # This triggers a warning message that we suppress during import.
 os.environ.setdefault("DEEPEVAL_FILE_SYSTEM", "READ_ONLY")
+
+# CRITICAL: Import the external deepeval package NOW, before our local deepeval.py
+# module gets loaded. This ensures the external package is in sys.modules first,
+# preventing our local deepeval.py from shadowing it.
+# We suppress stdout during import to hide the "read only environment" warning.
+import io
+import sys
+
+_old_stdout = sys.stdout
+sys.stdout = io.StringIO()
+try:
+    import deepeval as _external_deepeval  # noqa: F401
+finally:
+    sys.stdout = _old_stdout
+del _old_stdout

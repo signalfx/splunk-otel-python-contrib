@@ -92,13 +92,21 @@ def suppress_rich_console() -> Generator[None, None, None]:
     indicators, and promotional messages. This context manager temporarily
     replaces the console's file with a null stream to suppress all output.
 
+    Uses importlib to avoid name shadowing with local deepeval.py module.
+
     Usage:
         with suppress_rich_console():
             result = evaluate([test_case], metrics)
     """
+    import importlib
+
     try:
-        from deepeval.test_run.test_run import console as test_run_console
+        test_run_module = importlib.import_module("deepeval.test_run.test_run")
+        test_run_console = getattr(test_run_module, "console", None)
     except ImportError:
+        test_run_console = None
+
+    if test_run_console is None:
         # If we can't import, just yield without suppression
         yield
         return
@@ -123,28 +131,34 @@ def patch_deepeval_console() -> None:
     progress indicators, promotional messages, etc.).
 
     Call this function once after importing deepeval to suppress all console output.
-    """
-    try:
-        from deepeval.test_run.test_run import console as test_run_console
 
-        test_run_console.file = io.StringIO()
+    Uses importlib to avoid name shadowing with local deepeval.py module.
+    """
+    import importlib
+
+    try:
+        test_run_module = importlib.import_module("deepeval.test_run.test_run")
+        test_run_console = getattr(test_run_module, "console", None)
+        if test_run_console is not None:
+            test_run_console.file = io.StringIO()
     except ImportError:
         pass
 
     # Also patch the utils console if it exists
     try:
-        from deepeval.utils import console as utils_console
-
-        utils_console.file = io.StringIO()
+        utils_module = importlib.import_module("deepeval.utils")
+        utils_console = getattr(utils_module, "console", None)
+        if utils_console is not None:
+            utils_console.file = io.StringIO()
     except (ImportError, AttributeError):
         pass
 
     # Patch custom_console used in progress bars
     try:
-        from deepeval import utils as deepeval_utils
-
-        if hasattr(deepeval_utils, "custom_console"):
-            deepeval_utils.custom_console.file = io.StringIO()
+        utils_module = importlib.import_module("deepeval.utils")
+        custom_console = getattr(utils_module, "custom_console", None)
+        if custom_console is not None:
+            custom_console.file = io.StringIO()
     except (ImportError, AttributeError):
         pass
 
@@ -154,12 +168,17 @@ def import_deepeval_quietly() -> None:
 
     This should be called after environment variables are set to ensure
     they take effect before importing deepeval.
+
+    Uses importlib to avoid name shadowing with local deepeval.py module.
     """
+    import importlib
+
     with suppress_stdout():
         # These imports trigger the "read only environment" warning
-        import deepeval.prompt.prompt  # noqa: F401
-        import deepeval.test_run.cache  # noqa: F401
-        import deepeval.test_run.test_run  # noqa: F401
+        # Use importlib to avoid shadowing by local deepeval.py module
+        importlib.import_module("deepeval.prompt.prompt")
+        importlib.import_module("deepeval.test_run.cache")
+        importlib.import_module("deepeval.test_run.test_run")
 
     # Patch the console to suppress all future output
     patch_deepeval_console()
