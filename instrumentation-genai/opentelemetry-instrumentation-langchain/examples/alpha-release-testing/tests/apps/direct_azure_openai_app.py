@@ -54,6 +54,10 @@ from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+
+# Note: These imports are required for this DEMO app which demonstrates MANUAL instrumentation.
+# In a typical customer app using auto-instrumentation, these would NOT be needed.
+# This app is specifically designed to show how to use the TelemetryHandler API directly.
 from opentelemetry.util.genai.handler import get_telemetry_handler
 from opentelemetry.util.genai.types import (
     LLMInvocation,
@@ -75,11 +79,9 @@ os.environ.setdefault(
 )
 os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric_event")
 
-# Enable Deepeval evaluator for bias, toxicity, hallucination, relevance, sentiment
-os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "Deepeval")
-os.environ.setdefault(
-    "OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE", "1.0"
-)  # Evaluate 100% of invocations
+# Note: Evaluation configuration should be set via .env file or environment variables:
+# OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS - Configure evaluators externally
+# OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE - Set sample rate (0.0-1.0)
 
 # Configure OpenTelemetry with complete observability stack
 resource = Resource.create(
