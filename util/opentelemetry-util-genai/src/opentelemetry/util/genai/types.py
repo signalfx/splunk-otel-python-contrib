@@ -519,6 +519,7 @@ class Workflow(GenAI):
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
     )
+    final_output: Optional[str] = None  # summary or final result
 
 
 @dataclass
