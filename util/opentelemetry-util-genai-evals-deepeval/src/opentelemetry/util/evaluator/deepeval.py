@@ -37,6 +37,8 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
 )
 
+# Configure DeepEval environment BEFORE importing any deepeval modules
+from . import _configure_deepeval  # noqa: F401
 from .deepeval_adapter import build_llm_test_case as _build_llm_test_case
 from .deepeval_metrics import (
     METRIC_REGISTRY as _DEEPEVAL_METRIC_REGISTRY,
@@ -51,11 +53,11 @@ from .deepeval_model import create_eval_model as _create_eval_model
 from .deepeval_runner import run_evaluation as _run_deepeval
 from .deepeval_runner import run_evaluation_async as _run_deepeval_async
 
-# Suppress verbose DeepEval/LiteLLM output and configure environment.
-# This must be imported before any deepeval modules to ensure env vars are set.
+# Suppress verbose DeepEval/LiteLLM output and configure logging levels.
+# import_deepeval_quietly also patches the rich console to suppress evaluation banners.
 from .suppress_output import import_deepeval_quietly  # noqa: F401
 
-# Import deepeval modules while suppressing startup warnings (e.g., "read only environment")
+# Import deepeval modules while suppressing startup warnings and patch consoles
 import_deepeval_quietly()
 
 try:  # Optional debug logging import

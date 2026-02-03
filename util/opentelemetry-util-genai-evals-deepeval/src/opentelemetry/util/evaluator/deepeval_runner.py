@@ -9,13 +9,21 @@ The core evaluation logic is centralized in _execute_evaluation.
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Sequence
+# Configure DeepEval environment BEFORE importing any deepeval modules
+from . import _configure_deepeval  # noqa: F401, isort: skip
 
-from deepeval import evaluate as deepeval_evaluate
-from deepeval.evaluate.configs import AsyncConfig, DisplayConfig
+# Suppress DeepEval's console output (evaluation results, promotional messages)
+from .suppress_output import import_deepeval_quietly  # isort: skip
 
-from opentelemetry.util.genai.evals.env import (
+import_deepeval_quietly()
+
+import asyncio  # noqa: E402
+from typing import Any, Sequence  # noqa: E402
+
+from deepeval import evaluate as deepeval_evaluate  # noqa: E402
+from deepeval.evaluate.configs import AsyncConfig, DisplayConfig  # noqa: E402
+
+from opentelemetry.util.genai.evals.env import (  # noqa: E402
     read_concurrent_flag,
     read_max_concurrent,
 )

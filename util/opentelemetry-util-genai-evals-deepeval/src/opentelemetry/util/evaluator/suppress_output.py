@@ -13,18 +13,14 @@
 # limitations under the License.
 """Suppress verbose DeepEval and related library output.
 
-This module configures environment variables and logging levels to reduce
-noise from DeepEval, LiteLLM, and OpenTelemetry when running evaluations.
+This module provides utilities to reduce noise from DeepEval, LiteLLM,
+and OpenTelemetry when running evaluations.
 
-Import this module early (before importing deepeval) to ensure suppressions
-take effect:
-
-    from opentelemetry.util.evaluator.suppress_output import suppress_deepeval_output
-    suppress_deepeval_output()
-
-Or use the auto-suppression by simply importing this module:
-
-    import opentelemetry.util.evaluator.suppress_output  # noqa: F401
+Key functions:
+- suppress_deepeval_output(): Configure logging levels to suppress verbose output
+- suppress_stdout(): Context manager to temporarily suppress stdout
+- suppress_rich_console(): Context manager to suppress rich console output during evaluation
+- import_deepeval_quietly(): Import deepeval modules while suppressing startup warnings
 """
 
 from __future__ import annotations
@@ -32,28 +28,22 @@ from __future__ import annotations
 import contextlib
 import io
 import logging
-import os
 import sys
 import warnings
+from typing import Generator
 
 _suppressed = False
 
 
 def suppress_deepeval_output() -> None:
-    """Suppress verbose output from DeepEval and related libraries.
+    """Suppress verbose logging output from DeepEval and related libraries.
 
     This function:
-    1. Sets DEEPEVAL_TELEMETRY_OPT_OUT=YES to disable DeepEval's internal telemetry
-       (Posthog/New Relic). This prevents the evaluator from creating its own
-       telemetry in the context of the instrumented application.
-    2. Sets DEEPEVAL_FILE_SYSTEM=READ_ONLY to prevent DeepEval from creating
-       .deepeval folder, which may not work in cloud/read-only environments.
-    3. Suppresses OpenTelemetry LogRecord deprecation warnings.
-    4. Sets logging levels to WARNING for LiteLLM and DeepEval loggers.
+    1. Suppresses OpenTelemetry LogRecord deprecation warnings.
+    2. Sets logging levels to WARNING for LiteLLM and DeepEval loggers.
 
-    Note: The DEEPEVAL_FILE_SYSTEM=READ_ONLY setting triggers a warning from
-    DeepEval that is printed during module import. This warning is captured
-    and suppressed by redirecting stdout during the initial import.
+    Note: Environment variables (DEEPEVAL_TELEMETRY_OPT_OUT, DEEPEVAL_FILE_SYSTEM)
+    should be set in the deepeval module before importing deepeval.
 
     This function is idempotent - calling it multiple times has no effect
     after the first call.
@@ -62,17 +52,6 @@ def suppress_deepeval_output() -> None:
     if _suppressed:
         return
     _suppressed = True
-
-    # Set environment variables for DeepEval configuration
-    # These must be set before importing deepeval
-
-    # Disable DeepEval's internal telemetry (Posthog/New Relic) to prevent
-    # the evaluator from emitting its own spans/events in the instrumented app context
-    os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
-
-    # Prevent DeepEval from creating .deepeval folder (for cloud/read-only environments)
-    # Note: This triggers a warning from DeepEval that we suppress below
-    os.environ.setdefault("DEEPEVAL_FILE_SYSTEM", "READ_ONLY")
 
     # Suppress OpenTelemetry LogRecord deprecation warning
     try:
@@ -92,11 +71,10 @@ def suppress_deepeval_output() -> None:
 
 
 @contextlib.contextmanager
-def suppress_stdout():
+def suppress_stdout() -> Generator[None, None, None]:
     """Context manager to temporarily suppress stdout.
 
-    Used to capture and discard the "Warning: DeepEval is configured for
-    read only environment" message that deepeval prints at import time.
+    Used to capture and discard unwanted print statements from DeepEval.
     """
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
@@ -106,11 +84,76 @@ def suppress_stdout():
         sys.stdout = old_stdout
 
 
-def import_deepeval_quietly():
+@contextlib.contextmanager
+def suppress_rich_console() -> Generator[None, None, None]:
+    """Context manager to suppress rich console output during evaluation.
+
+    DeepEval uses rich.console.Console to print evaluation results, progress
+    indicators, and promotional messages. This context manager temporarily
+    replaces the console's file with a null stream to suppress all output.
+
+    Usage:
+        with suppress_rich_console():
+            result = evaluate([test_case], metrics)
+    """
+    try:
+        from deepeval.test_run.test_run import console as test_run_console
+    except ImportError:
+        # If we can't import, just yield without suppression
+        yield
+        return
+
+    # Save the original file
+    original_file = test_run_console.file
+
+    # Replace with a null stream
+    test_run_console.file = io.StringIO()
+    try:
+        yield
+    finally:
+        # Restore the original file
+        test_run_console.file = original_file
+
+
+def patch_deepeval_console() -> None:
+    """Patch DeepEval's rich console to suppress all output permanently.
+
+    This function replaces the console's file with a null stream, effectively
+    suppressing all rich console output from DeepEval (evaluation results,
+    progress indicators, promotional messages, etc.).
+
+    Call this function once after importing deepeval to suppress all console output.
+    """
+    try:
+        from deepeval.test_run.test_run import console as test_run_console
+
+        test_run_console.file = io.StringIO()
+    except ImportError:
+        pass
+
+    # Also patch the utils console if it exists
+    try:
+        from deepeval.utils import console as utils_console
+
+        utils_console.file = io.StringIO()
+    except (ImportError, AttributeError):
+        pass
+
+    # Patch custom_console used in progress bars
+    try:
+        from deepeval import utils as deepeval_utils
+
+        if hasattr(deepeval_utils, "custom_console"):
+            deepeval_utils.custom_console.file = io.StringIO()
+    except (ImportError, AttributeError):
+        pass
+
+
+def import_deepeval_quietly() -> None:
     """Import deepeval modules while suppressing their startup warnings.
 
-    This should be called after suppress_deepeval_output() to ensure
-    environment variables are set before importing deepeval.
+    This should be called after environment variables are set to ensure
+    they take effect before importing deepeval.
     """
     with suppress_stdout():
         # These imports trigger the "read only environment" warning
@@ -118,8 +161,11 @@ def import_deepeval_quietly():
         import deepeval.test_run.cache  # noqa: F401
         import deepeval.test_run.test_run  # noqa: F401
 
+    # Patch the console to suppress all future output
+    patch_deepeval_console()
 
-# Auto-suppress on import for convenience
+
+# Auto-suppress logging on import for convenience
 suppress_deepeval_output()
 
 
@@ -127,4 +173,6 @@ __all__ = [
     "suppress_deepeval_output",
     "import_deepeval_quietly",
     "suppress_stdout",
+    "suppress_rich_console",
+    "patch_deepeval_console",
 ]
