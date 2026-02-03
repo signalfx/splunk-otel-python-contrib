@@ -61,7 +61,9 @@ from opentelemetry.instrumentation.aidefense.util.helper import (
 
 _logger = logging.getLogger(__name__)
 
-_instruments = ("cisco-aidefense-sdk >= 2.0.0",)
+# SDK dependency is optional - Gateway Mode works without it
+# SDK Mode will gracefully handle missing SDK via try/except ImportError
+_instruments: tuple = ()
 
 # AI Defense Gateway URL patterns
 # These patterns identify requests going through AI Defense Gateway
