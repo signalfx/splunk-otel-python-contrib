@@ -492,7 +492,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             # Extract response/output if available
             response = payload.get("response")
             if response:
-                agent_invocation.output_result = _safe_str(response)
+                output_content = _safe_str(response)
+                agent_invocation.output_result = output_content
+                agent_invocation.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content=output_content)],
+                    )
+                ]
 
         # Stop the agent invocation
         self._handler.stop_agent(agent_invocation)
@@ -649,7 +656,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if payload:
             response = payload.get("response")
             if response:
-                entity.final_output = _safe_str(_get_attr(response, "response", ""))
+                output_content = _safe_str(_get_attr(response, "response", ""))
+                entity.final_output = output_content
+                entity.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content=output_content)],
+                    )
+                ]
         self._handler.stop_workflow(entity)
         self._invocation_manager.delete_invocation_state(event_id)
 
@@ -803,9 +817,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 if payload:
                     response = payload.get("response")
                     if response:
-                        workflow.final_output = _safe_str(
-                            _get_attr(response, "response", "")
-                        )
+                        output_content = _safe_str(_get_attr(response, "response", ""))
+                        workflow.final_output = output_content
+                        workflow.output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[Text(content=output_content)],
+                            )
+                        ]
                 self._handler.stop_workflow(workflow)
                 self._invocation_manager.delete_invocation_state(workflow_id)
                 # Remove from tracking after successful close

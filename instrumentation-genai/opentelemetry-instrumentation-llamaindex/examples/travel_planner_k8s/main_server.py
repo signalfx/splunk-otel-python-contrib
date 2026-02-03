@@ -5,6 +5,11 @@ This server exposes an HTTP endpoint for travel planning requests and uses
 OpenTelemetry instrumentation to capture traces and metrics.
 """
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 import os
 import sys
 from pathlib import Path
@@ -39,7 +44,7 @@ from llama_index.core.workflow import (
 )
 from llama_index.llms.openai import OpenAI
 
-from opentelemetry import trace, metrics
+from opentelemetry import trace, metrics, _events, _logs
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -49,6 +54,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
+from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 
 
@@ -194,8 +200,6 @@ def setup_telemetry():
     metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
 
     # Setup logs provider for content events
-    from opentelemetry import _logs
-
     logger_provider = LoggerProvider()
 
     # Add OTLP exporter for sending to collector
@@ -208,6 +212,13 @@ def setup_telemetry():
 
     _logs.set_logger_provider(logger_provider)
     print("✓ Logs provider configured for content events (OTLP + Console)\n")
+
+    # Setup events provider for evaluation events
+    # The EventLoggerProvider wraps the LoggerProvider to emit events as logs
+    _events.set_event_logger_provider(
+        EventLoggerProvider(logger_provider=logger_provider)
+    )
+    print("✓ Events provider configured for evaluation events\n")
 
 
 # Define Travel Planning Tools

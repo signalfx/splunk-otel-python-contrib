@@ -12,6 +12,7 @@ from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     InputMessage,
+    OutputMessage,
     Text,
     ToolCall,
     Workflow,
@@ -208,18 +209,15 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 # Access span attributes (implementation-specific, but standard in SDK)
                 if hasattr(current_span, "attributes"):
                     op_name = current_span.attributes.get("gen_ai.operation.name")
-                    if op_name == "workflow":
+                    # The span emitter sets "invoke_workflow" for workflow spans
+                    if op_name == "invoke_workflow":
                         inside_workflow = True
             except Exception:
                 pass  # If we can't determine, assume not inside workflow
 
-        # Level 1: Create root workflow span only if NOT inside another workflow
-        # This supports multi-agent orchestration where a custom Workflow orchestrates
-        # multiple ReActAgent instances, creating proper hierarchy:
-        #   CustomWorkflow
-        #     ├─ Agent 1 (research)
-        #     ├─ Agent 2 (analysis)
-        #     └─ Agent 3 (synthesis)
+        # Create workflow span only for standalone agents (not inside another workflow)
+        # Standalone agent: workflow ReActAgent → agent.ReActAgent
+        # Inside TravelPlannerWorkflow: Just agent.ReActAgent (nested under parent)
         if not inside_workflow:
             input_messages = (
                 [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
@@ -227,19 +225,15 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 else []
             )
             root_workflow = Workflow(
-                name=f"{type(instance).__name__} Workflow",
+                name=f"{type(instance).__name__}",
                 workflow_type="llamaindex.workflow",
                 framework="llamaindex",
                 input_messages=input_messages,
                 attributes={},
             )
-
-            # Start the workflow span - this becomes the active span context
             telemetry_handler.start_workflow(root_workflow)
 
-        # Level 2: Create agent invocation (nested inside workflow if one exists)
-        # The agent span will automatically become a child of the active span
-        # (either our workflow or parent workflow) due to OpenTelemetry's context propagation
+        # Create agent invocation (always)
         agent_input_messages = (
             [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
             if user_msg
@@ -254,8 +248,6 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         current_agent.agent_name = type(instance).__name__
 
         # Start the agent span (automatically becomes child of active span)
-        # This pushes (agent_name, run_id) onto the _agent_context_stack
-        # and stores the span in _span_registry[run_id]
         telemetry_handler.start_agent(current_agent)
 
     # Call the original run() method to get the workflow handler
@@ -265,16 +257,18 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         # Create workflow instrumentor for tool tracking
         instrumentor = WorkflowEventInstrumentor(telemetry_handler)
 
-        # Wrap the handler to close agent (and workflow if created) spans when complete
+        # Wrap the handler to close agent and workflow spans when complete
         original_handler = handler
 
         class InstrumentedHandler:
             """Wrapper that closes agent and workflow spans when workflow completes."""
 
-            def __init__(self, original, workflow_span, agent_span):
+            def __init__(self, original, agent_span, workflow_span=None):
                 self._original = original
-                self._root_workflow = workflow_span
                 self._current_agent = agent_span
+                self._root_workflow = (
+                    workflow_span  # May be None if inside another workflow
+                )
                 self._result = None
 
             def __await__(self):
@@ -301,8 +295,11 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 try:
                     self._result = await self._original
                     self._current_agent.output_result = str(self._result)
-                    if self._root_workflow:  # Only set if we created a workflow span
-                        self._root_workflow.final_output = str(self._result)
+                    self._current_agent.output_messages = [
+                        OutputMessage(
+                            role="assistant", parts=[Text(content=str(self._result))]
+                        )
+                    ]
 
                     # Wait for the event streaming task to complete to ensure all
                     # inner agent invocations are properly closed
@@ -319,9 +316,18 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                         except Exception:
                             pass  # Already logged in stream_events()
 
-                    # Stop spans in reverse order: agent first, then workflow (if we created it)
+                    # Stop agent span
                     telemetry_handler.stop_agent(self._current_agent)
-                    if self._root_workflow:  # Only stop if we created a workflow span
+
+                    # Stop workflow span if we created one (standalone agent case)
+                    if self._root_workflow:
+                        self._root_workflow.output_result = str(self._result)
+                        self._root_workflow.output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[Text(content=str(self._result))],
+                            )
+                        ]
                         telemetry_handler.stop_workflow(self._root_workflow)
                 except Exception as e:
                     # Try to record the failure in telemetry, but don't let instrumentation
@@ -330,11 +336,9 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                         from opentelemetry.util.genai.types import Error
 
                         error = Error(message=str(e), type=type(e))
-                        # Fail spans in reverse order: agent first, then workflow (if we created it)
                         telemetry_handler.fail_agent(self._current_agent, error)
-                        if (
-                            self._root_workflow
-                        ):  # Only fail if we created a workflow span
+                        # Also fail the workflow if we created one
+                        if self._root_workflow:
                             telemetry_handler.fail_workflow(self._root_workflow, error)
                     except Exception as telemetry_error:
                         import logging
@@ -351,6 +355,129 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 # Delegate all other attributes to the original handler
                 return getattr(self._original, name)
 
-        handler = InstrumentedHandler(original_handler, root_workflow, current_agent)
+        handler = InstrumentedHandler(original_handler, current_agent, root_workflow)
 
     return handler
+
+
+def wrap_workflow_run(wrapped, instance, args, kwargs):
+    """
+    Wrap Workflow.run() to instrument custom workflow subclasses.
+
+    This creates a Workflow span for custom workflow classes like TravelPlannerWorkflow
+    that orchestrate multiple agents. The workflow span becomes the parent context,
+    so any agents called within will be nested as children.
+
+    Hierarchy for custom workflows:
+        Workflow (TravelPlannerWorkflow.run)
+          ├─ AgentInvocation (research_agent)
+          │   └─ LLMInvocation
+          ├─ AgentInvocation (analysis_agent)
+          │   └─ LLMInvocation
+          └─ AgentInvocation (synthesis_agent)
+              └─ LLMInvocation
+
+    Note: This does NOT instrument ReActAgent/FunctionAgent which inherit from Workflow
+    but are handled by wrap_agent_run. We detect agent subclasses and skip them here.
+    """
+    from llama_index.core.agent.workflow import AgentWorkflow
+
+    # Skip if this is an agent (ReActAgent, FunctionAgent, etc.)
+    # Those are handled by wrap_agent_run which creates both Workflow + Agent spans
+    try:
+        # Check if instance is a subclass of AgentWorkflow (which includes ReActAgent, FunctionAgent)
+        if isinstance(instance, AgentWorkflow):
+            # Let wrap_agent_run handle this
+            return wrapped(*args, **kwargs)
+    except Exception:
+        pass  # If we can't determine, proceed with workflow instrumentation
+
+    # Get user message from args/kwargs
+    user_msg = kwargs.get("user_msg") or (args[0] if args else None)
+
+    # Find the callback handler to get the telemetry handler
+    telemetry_handler = None
+    try:
+        from opentelemetry.instrumentation.llamaindex.callback_handler import (
+            LlamaindexCallbackHandler,
+        )
+
+        # Look for our callback handler in the global Settings
+        from llama_index.core import Settings
+
+        if Settings.callback_manager:
+            for handler in Settings.callback_manager.handlers:
+                if isinstance(handler, LlamaindexCallbackHandler):
+                    telemetry_handler = handler._handler
+                    break
+    except Exception:
+        pass
+
+    if not telemetry_handler:
+        # No telemetry handler found, just call the original
+        return wrapped(*args, **kwargs)
+
+    # Create the workflow span for this custom workflow
+    input_messages = (
+        [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
+        if user_msg
+        else []
+    )
+    workflow = Workflow(
+        name=type(instance).__name__,
+        workflow_type="llamaindex.workflow",
+        framework="llamaindex",
+        input_messages=input_messages,
+        attributes={},
+    )
+
+    # Start the workflow span - this becomes the parent context for nested agents
+    telemetry_handler.start_workflow(workflow)
+
+    # Call the original run() method
+    original_handler = wrapped(*args, **kwargs)
+
+    # Create an instrumented handler that will close the workflow span when awaited
+    class InstrumentedWorkflowHandler:
+        """Wrapper that closes the workflow span when the result is awaited."""
+
+        def __init__(self, original, workflow_obj):
+            self._original = original
+            self._workflow = workflow_obj
+            self._result = None
+
+        def __await__(self):
+            return self._await_impl().__await__()
+
+        async def _await_impl(self):
+            """Actual async implementation."""
+            try:
+                self._result = await self._original
+                self._workflow.final_output = str(self._result)
+                # Set output_messages for content events
+                self._workflow.output_messages = [
+                    OutputMessage(
+                        role="assistant", parts=[Text(content=str(self._result))]
+                    )
+                ]
+                telemetry_handler.stop_workflow(self._workflow)
+            except Exception as e:
+                try:
+                    from opentelemetry.util.genai.types import Error
+
+                    error = Error(message=str(e), type=type(e))
+                    telemetry_handler.fail_workflow(self._workflow, error)
+                except Exception as telemetry_error:
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Failed to record telemetry error: {telemetry_error}"
+                    )
+                raise
+            return self._result
+
+        def __getattr__(self, name):
+            return getattr(self._original, name)
+
+    return InstrumentedWorkflowHandler(original_handler, workflow)
