@@ -3,15 +3,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping as MappingABC
-from collections.abc import Sequence as SequenceABC
-from importlib import import_module
-from typing import Any, Mapping, Sequence
+# Configure DeepEval environment BEFORE importing any deepeval modules
+from . import _configure_deepeval  # noqa: F401, isort: skip
 
-from deepeval.metrics import GEval
-from deepeval.test_case import LLMTestCaseParams
+# Import deepeval modules while suppressing startup warnings
+from .suppress_output import import_deepeval_quietly  # isort: skip
 
-from opentelemetry.util.genai.types import Error, EvaluationResult
+import_deepeval_quietly()
+
+from collections.abc import Mapping as MappingABC  # noqa: E402
+from collections.abc import Sequence as SequenceABC  # noqa: E402
+from importlib import import_module  # noqa: E402
+from typing import Any, Mapping, Sequence  # noqa: E402
+
+from deepeval.metrics import GEval  # noqa: E402
+from deepeval.test_case import LLMTestCaseParams  # noqa: E402
+
+from opentelemetry.util.genai.types import (  # noqa: E402
+    Error,
+    EvaluationResult,
+)
 
 # Canonical registry of metric names to Deepeval metric class names or sentinels
 METRIC_REGISTRY: Mapping[str, str] = {
