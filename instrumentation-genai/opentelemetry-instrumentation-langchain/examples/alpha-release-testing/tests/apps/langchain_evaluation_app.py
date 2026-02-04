@@ -1,11 +1,16 @@
 """
 Two-Agent Application with Deliberate Metric Triggers for Evaluation Testing
 
-This application deliberately generates responses that trigger evaluation metrics:
+PURPOSE: This app tests EVALUATION METRICS (not evaluation events).
+It validates that the evaluation pipeline correctly detects and scores:
 - Toxicity: Inappropriate or harmful content
 - Bias: Prejudiced or unfair statements
 - Hallucination: Factually incorrect information
 - Relevance: Off-topic or irrelevant responses
+- Sentiment: Negative or hostile tone
+
+The app deliberately generates problematic responses to verify that
+evaluation metrics are triggered and reported correctly in Splunk APM.
 
 Each run cycles through different scenarios to test the evaluation pipeline.
 """

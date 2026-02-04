@@ -1,0 +1,29 @@
+# Alpha Release Testing - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# OpenTelemetry Core
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-otlp>=1.20.0
+opentelemetry-instrumentation>=0.41b0
+
+# GenAI Instrumentation (from PyPI when available, or install locally)
+# splunk-otel-util-genai
+# splunk-otel-util-genai-evals
+# splunk-otel-util-genai-evals-deepeval
+# splunk-otel-util-genai-emitters-splunk
+
+# LangChain Stack
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-core>=0.1.0
+langgraph>=0.0.20
+
+# OpenAI
+openai>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# DeepEval for evaluation metrics
+deepeval>=0.21.0
