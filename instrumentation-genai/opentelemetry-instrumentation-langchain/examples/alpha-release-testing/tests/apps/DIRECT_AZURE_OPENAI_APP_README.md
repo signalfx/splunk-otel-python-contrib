@@ -229,7 +229,7 @@ AZURE_OPENAI_API_KEY=<your-key>
 AZURE_OPENAI_ENDPOINT=<your-endpoint>
 AZURE_OPENAI_DEPLOYMENT=<your-deployment>
 OTEL_SERVICE_NAME=direct-ai-app
-OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity,hallucination,relevance,sentiment))"
+OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity,hallucination,relevance,sentiment),AgentInvocation(bias,toxicity,hallucination,relevance,sentiment))"
 ```
 
 ### Execute
