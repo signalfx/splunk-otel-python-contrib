@@ -1,10 +1,5 @@
 # Evaluation Monitoring & LLM-as-a-Judge Evaluator
 
-> **Status:** Alpha — feature complete, actively validated  
-> **Branch:** HYBIM-492-eval-monitoring
-
----
-
 ## Executive Summary
 
 This feature adds evaluator-side monitoring metrics for the async evaluation pipeline and introduces two new evaluator modes for LLM-as-a-Judge evaluation:
@@ -529,13 +524,18 @@ print(f'Result: {results[0].metric_name}={results[0].score}, label={results[0].l
 
 ## 10. Future Work
 
-### 10.1 Short-term
+### 10.1 Completed
+
+- [x] Add non-batched mode for concurrent evaluation *(v0.1.13)*
+- [x] Performance benchmarks comparing evaluator modes *(v0.1.13)*
+- [x] Async evaluation support for NativeEvaluator *(v0.1.13)*
+
+### 10.2 Short-term
 
 - [ ] Migrate monitoring metrics to the Emitter design pattern
-- [ ] Add non-batched mode for concurrent evaluation
-- [ ] Validate custom metrics implementation
+- [ ] Validate custom metrics implementation with real workloads
 
-### 10.2 Long-term
+### 10.3 Long-term
 
 - [ ] Rename package from `opentelemetry-util-genai-evals-deepeval` to `opentelemetry-util-genai-evals-native`
 - [ ] Optional evaluator spans (opt-in for debugging)
