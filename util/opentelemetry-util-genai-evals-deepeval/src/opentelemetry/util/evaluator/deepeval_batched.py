@@ -436,9 +436,15 @@ class DeepevalBatchedEvaluator(Evaluator):
         provider_name = os.getenv("DEEPEVAL_LLM_PROVIDER") or "openai"
         request_model = (
             os.getenv("DEEPEVAL_EVALUATION_MODEL")
+            or os.getenv("DEEPEVAL_LLM_MODEL")
             or os.getenv("DEEPEVAL_MODEL")
             or os.getenv("OPENAI_MODEL")
             or "gpt-4o-mini"
+        )
+        base_url = (
+            os.getenv("DEEPEVAL_LLM_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL")
+            or None
         )
         extra_attrs = {
             "gen_ai.evaluation.evaluator.name": "deepeval_batched",
@@ -467,10 +473,16 @@ class DeepevalBatchedEvaluator(Evaluator):
         )
 
         try:
-            client = openai.OpenAI(api_key=api_key)
-            completion = client.chat.completions.create(
-                model=request_model,
-                messages=[
+            client_kwargs: dict[str, Any] = {"api_key": api_key}
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            client = openai.OpenAI(**client_kwargs)
+            # Build completion kwargs - response_format may not be supported
+            # by all providers (e.g., local LLM servers), so we try with it
+            # first and fall back without it if needed.
+            completion_kwargs: dict[str, Any] = {
+                "model": request_model,
+                "messages": [
                     {
                         "role": "system",
                         "content": "Return only valid JSON.",
@@ -480,9 +492,18 @@ class DeepevalBatchedEvaluator(Evaluator):
                         "content": prompt,
                     },
                 ],
-                temperature=0,
-                response_format={"type": "json_object"},
-            )
+                "temperature": 0,
+            }
+            try:
+                completion = client.chat.completions.create(
+                    **completion_kwargs,
+                    response_format={"type": "json_object"},
+                )
+            except openai.BadRequestError:
+                # Fallback: provider doesn't support response_format
+                completion = client.chat.completions.create(
+                    **completion_kwargs
+                )
             try:
                 response_content = completion.choices[0].message.content
             except Exception:
@@ -541,7 +562,18 @@ class DeepevalBatchedEvaluator(Evaluator):
         eval_results: list[EvaluationResult] = []
         for metric in tuple(dict.fromkeys(normalized_metrics)):
             metric_payload = results_obj.get(metric)
-            if not isinstance(metric_payload, dict):
+            # Handle flexible response formats:
+            # 1. {"score": 0.5, "reason": "..."}  - standard format
+            # 2. 0.5  - just a number
+            # 3. {"bias": 0.5}  - nested format with metric name
+            if isinstance(metric_payload, dict):
+                score = _safe_float(metric_payload.get("score"))
+                reason = metric_payload.get("reason")
+                explanation = reason if isinstance(reason, str) else None
+            elif isinstance(metric_payload, (int, float)):
+                score = _safe_float(metric_payload)
+                explanation = None
+            else:
                 eval_results.append(
                     EvaluationResult(
                         metric_name=metric,
@@ -554,9 +586,6 @@ class DeepevalBatchedEvaluator(Evaluator):
                     )
                 )
                 continue
-            score = _safe_float(metric_payload.get("score"))
-            reason = metric_payload.get("reason")
-            explanation = reason if isinstance(reason, str) else None
 
             threshold = _parse_threshold(
                 _metric_option(self.options, metric=metric, key="threshold")
