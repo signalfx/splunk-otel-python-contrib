@@ -124,7 +124,7 @@ Instrumentation Options
 Requirements
 ------------
 
-- Python >= 3.9
+- Python >= 3.10
 - openai-agents >= 0.3.3
 - OpenTelemetry API >= 1.37
 - ``splunk-otel-util-genai`` >= 0.1.9
