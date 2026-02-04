@@ -1,109 +1,181 @@
-OpenTelemetry OpenAI Agents Instrumentation
-===========================================
+OpenTelemetry OpenAI Agents Instrumentation (Alpha)
+===================================================
 
 |pypi|
 
-.. |pypi| image:: https://badge.fury.io/py/opentelemetry-instrumentation-openai-agents-v2.svg
-   :target: https://pypi.org/project/opentelemetry-instrumentation-openai-agents-v2/
+.. |pypi| image:: https://badge.fury.io/py/splunk-otel-instrumentation-openai-agents-v2.svg
+   :target: https://pypi.org/project/splunk-otel-instrumentation-openai-agents-v2/
 
-This library provides the official OpenTelemetry instrumentation for the
-`openai-agents SDK <https://pypi.org/project/openai-agents/>`_. It converts
-the rich trace data emitted by the Agents runtime
-into the GenAI semantic conventions, enriches spans with request/response payload
-metadata, and records duration/token usage metrics.
+This package provides OpenTelemetry instrumentation for 
+`OpenAI Agents SDK <https://github.com/openai/openai-agents-python>`_,
+a framework for building agentic AI applications. It leverages Splunk distribution 
+of ``opentelemetry-util-genai`` for producing telemetry in semantic convention. 
+`Core concepts, high-level usage and configuration <https://github.com/signalfx/splunk-otel-python-contrib/>`_
 
-Features
---------
-
-* Generates spans for agents, tools, generations, guardrails, and handoffs using
-  the OpenTelemetry GenAI semantic conventions.
-* Captures prompts, responses, tool arguments, and system instructions when content
-  capture is enabled.
-* Publishes duration and token metrics for every operation.
-* Supports environment overrides so you can configure agent metadata or disable
-  telemetry without code changes.
+Status: Alpha (APIs and produced telemetry are subject to change).
 
 Installation
 ------------
 
-If your application is already configured with OpenTelemetry, install the package
-and its optional instruments:
+.. code-block:: bash
 
-.. code-block:: console
+    pip install splunk-otel-instrumentation-openai-agents-v2
 
-    pip install opentelemetry-instrumentation-openai-agents-v2
-    pip install openai-agents
 
-Usage
------
+Quick Start
+-----------
 
-Instrumentation automatically wires the Agents tracing processor into the SDK.
-Configure OpenTelemetry as usual, then call ``OpenAIAgentsInstrumentor``.
+Manual Instrumentation (development/debugging)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code-block:: python
+.. code:: python
 
-    from agents import Agent, Runner, function_tool
-    from opentelemetry import trace
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.openai_agents import OpenAIAgentsInstrumentor
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from agents import Agent, Runner, function_tool
 
-
-    def configure_otel() -> None:
-        provider = TracerProvider()
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-        trace.set_tracer_provider(provider)
-
-        OpenAIAgentsInstrumentor().instrument(tracer_provider=provider)
-
+    # manual instrumentation, easy to debug in your IDE
+    OpenAIAgentsInstrumentor().instrument()
 
     @function_tool
     def get_weather(city: str) -> str:
-        return f"The forecast for {city} is sunny with pleasant temperatures."
+        return f"The forecast for {city} is sunny."
 
-
-    assistant = Agent(
+    agent = Agent(
         name="Travel Concierge",
         instructions="You are a concise travel concierge.",
         tools=[get_weather],
     )
 
-    result = Runner.run_sync(assistant, "I'm visiting Barcelona this weekend. How should I pack?")
+    result = Runner.run_sync(agent, "How is the weather in Paris?")
     print(result.final_output)
+
+Zero-code instrumentation
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In zero-code instrumentation mode, ensure you install opentelemetry-distribution and run your 
+app with the OpenTelemetry OpenAI Agents Instrumentor enabled:
+
+.. code:: bash
+
+    opentelemetry-instrument python your_agents_app.py
+
+.. code:: python
+
+    from agents import Agent, Runner
+
+    agent = Agent(
+        name="Travel Concierge",
+        instructions="You are a concise travel concierge.",
+    )
+
+    result = Runner.run_sync(agent, "What are top attractions in Tokyo?")
+    print(result.final_output)
+
+
+What Gets Instrumented
+-----------------------
+
+This instrumentation captures:
+
+- **Workflows** -> Mapped to ``Workflow`` spans
+- **Agents** -> Mapped to ``AgentInvocation`` spans
+- **Tool Calls** -> Mapped to ``ToolCall`` spans
+- **Generations** -> Mapped to ``LLMInvocation`` spans
+
+All spans are properly nested with correct parent-child relationships and include
+rich attributes about the operation.
+
 
 Configuration
 -------------
 
-The instrumentor exposes runtime toggles through keyword arguments and environment
-variables:
+Environment Variables
+~~~~~~~~~~~~~~~~~~~~~
 
-* ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` or
-  ``OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_CONTENT`` – controls how much
-  message content is captured. Valid values map to
-  ``opentelemetry.instrumentation.openai_agents.ContentCaptureMode``
-  (``span_only``, ``event_only``, ``span_and_event``, ``no_content``).
-* ``OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_METRICS`` – set to ``false`` to
-  disable duration/token metrics.
-* ``OTEL_INSTRUMENTATION_OPENAI_AGENTS_SYSTEM`` – overrides the ``gen_ai.system``
-  attribute when your deployment is not the default OpenAI platform.
+.. code-block:: bash
 
-You can also override agent metadata directly when calling
-``OpenAIAgentsInstrumentor().instrument(...)`` using ``agent_name``, ``agent_id``,
-``agent_description``, ``base_url``, ``server_address``, and ``server_port``.
+    # Capture message content (disabled by default)
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 
-Examples
---------
+    # Content capture mode
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
 
-The ``examples`` directory contains runnable scenarios, including:
+    # Disable metrics
+    export OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_METRICS=false
 
-* ``examples/manual`` – manual OpenTelemetry configuration for a single agent run.
-* ``examples/content-capture`` – demonstrates span and event content capture.
-* ``examples/zero-code`` – end-to-end setup using environment configuration only.
 
-References
-----------
+Instrumentation Options
+~~~~~~~~~~~~~~~~~~~~~~~
 
-* `OpenTelemetry Python Contrib <https://github.com/open-telemetry/opentelemetry-python-contrib>`_
-* `OpenTelemetry GenAI semantic conventions <https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/>`_
-* `OpenAI Agents SDK <https://github.com/openai/openai-agents-python>`_
+.. code-block:: python
+
+    from opentelemetry.instrumentation.openai_agents import OpenAIAgentsInstrumentor
+
+    # Basic instrumentation
+    OpenAIAgentsInstrumentor().instrument()
+
+    # With custom tracer provider
+    OpenAIAgentsInstrumentor().instrument(tracer_provider=my_tracer_provider)
+
+    # Uninstrumentation
+    OpenAIAgentsInstrumentor().uninstrument()
+
+
+Requirements
+------------
+
+- Python >= 3.9
+- openai-agents >= 0.3.3
+- OpenTelemetry API >= 1.37
+- ``splunk-otel-util-genai`` >= 0.1.9
+
+
+Trace Hierarchy Example
+------------------------
+
+.. code-block::
+
+    Workflow: Travel Planning (Workflow)
+    └── Agent: Travel Concierge (AgentInvocation)
+        ├── LLM: gpt-4o-mini (Generation)
+        │   └── gen_ai.choice
+        ├── Tool: get_weather (ToolCall)
+        └── LLM: gpt-4o-mini (Generation)
+            └── gen_ai.choice
+
+
+Each span includes rich attributes:
+
+- ``gen_ai.system`` = "openai"
+- ``gen_ai.framework`` = "openai_agents"
+- ``gen_ai.operation.name`` = "invoke_workflow" | "invoke_agent" | "execute_tool" | "chat"
+- Framework-specific attributes (agent name, tool names, etc.)
+
+
+Testing
+-------
+Run the package tests (from repository root or this directory)::
+
+    pytest instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/tests
+
+
+Contributing
+------------
+
+Issues / PRs welcome in the main splunk-otel-python-contrib repository. This
+module is alpha: feedback on attribute coverage, performance, and OpenAI Agents
+surface expansion is especially helpful.
+
+
+Links
+-----
+
+- `OpenAI Agents SDK <https://github.com/openai/openai-agents-python>`_
+- `OpenTelemetry Python <https://opentelemetry.io/docs/languages/python/>`_
+- `Splunk GenAI Utilities <https://github.com/signalfx/splunk-otel-python-contrib>`_
+
+
+License
+-------
+
+Apache-2.0
