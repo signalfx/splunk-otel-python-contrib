@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.13 - 2026-02-04
+
+### Added
+- **NativeEvaluator Async Support** - Added `evaluate_async()` method for non-blocking evaluation
+  - Enables concurrent evaluation when used with async evaluation pipeline
+  - Returns same results as synchronous `evaluate()` method
+
+### Changed
+- **Performance Benchmarks Documented** - Comprehensive comparison of evaluator modes:
+  - Native Batched: 15.35 evals/s (7x faster than Deepeval library)
+  - Native Non-Batched: 6.89 evals/s (3x faster than Deepeval library)
+  - Deepeval Library: 2.24 evals/s (slower due to 2-3 LLM calls per metric)
+- **eval_perf_test.py** - Improved wait logic and progress reporting
+
 ## Version 0.1.12 - 2026-01-30
 
 ### Fixed
