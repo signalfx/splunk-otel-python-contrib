@@ -16,11 +16,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 
-# Add parent directory to path to import from util
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from util import OAuth2TokenManager
-from llama_index.core.agent.workflow import ReActAgent
+from llama_index.core.agent.workflow import AgentWorkflow, ReActAgent
 from llama_index.core.base.llms.types import (
     ChatMessage,
     ChatResponse,
@@ -30,26 +28,28 @@ from llama_index.core.base.llms.types import (
 )
 from llama_index.core.llms import CustomLLM
 from llama_index.core.tools import FunctionTool
-from llama_index.core.workflow import (
-    Event,
-    StartEvent,
-    StopEvent,
-    Workflow,
-    step,
-)
 from llama_index.llms.openai import OpenAI
 
-from opentelemetry import trace, metrics
+from opentelemetry import trace, metrics, _events, _logs
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExportResult,
+    SpanExporter,
+)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Custom LLM for CircuIT
@@ -57,7 +57,7 @@ class CircuITLLM(CustomLLM):
     """Custom LLM implementation for Cisco CircuIT OAuth2 gateway."""
 
     api_url: str
-    token_manager: OAuth2TokenManager
+    token_manager: Any
     app_key: str
     model_name: str = "gpt-4o-mini"
     temperature: float = 0.0
@@ -125,6 +125,91 @@ class CircuITLLM(CustomLLM):
 
 # LLM Configuration
 _llm_instance = None
+_span_hierarchy_exporter = None
+
+
+class _SpanHierarchyExporter(SpanExporter):
+    """In-memory span collector for printing per-trace hierarchy."""
+
+    def __init__(self):
+        self._spans = []
+
+    def export(self, spans):
+        self._spans.extend(spans)
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self):
+        return None
+
+    def force_flush(self, timeout_millis: int = 30000):
+        return True
+
+    def get_spans_for_trace(self, trace_id: int):
+        return [s for s in self._spans if s.context.trace_id == trace_id]
+
+    def clear_trace(self, trace_id: int):
+        self._spans = [s for s in self._spans if s.context.trace_id != trace_id]
+
+
+def _format_trace_hierarchy(spans):
+    if not spans:
+        return "No spans captured for this trace."
+
+    by_id = {span.context.span_id: span for span in spans}
+    children = {}
+    roots = []
+    for span in spans:
+        parent_id = span.parent.span_id if span.parent else None
+        if parent_id in by_id:
+            children.setdefault(parent_id, []).append(span)
+        else:
+            roots.append(span)
+
+    def _line(span, depth):
+        op_name = span.attributes.get("gen_ai.operation.name") or span.name
+        parent_id = f"{span.parent.span_id:016x}" if span.parent else "null"
+        workflow_name = span.attributes.get("gen_ai.workflow.name")
+        agent_name = span.attributes.get("gen_ai.agent.name")
+        input_tokens = span.attributes.get("gen_ai.usage.input_tokens")
+        output_tokens = span.attributes.get("gen_ai.usage.output_tokens")
+
+        extras = []
+        if workflow_name:
+            extras.append(f"workflow={workflow_name}")
+        if agent_name:
+            extras.append(f"agent={agent_name}")
+        if input_tokens is not None or output_tokens is not None:
+            extras.append(f"tokens={input_tokens}/{output_tokens}")
+        extras_text = f" [{', '.join(extras)}]" if extras else ""
+
+        return (
+            f"{'    ' * depth}{op_name} ({span.context.span_id:016x})"
+            f" - parentId: {parent_id}{extras_text}"
+        )
+
+    def _walk(span, depth, out):
+        out.append(_line(span, depth))
+        for child in sorted(
+            children.get(span.context.span_id, []), key=lambda s: s.start_time
+        ):
+            _walk(child, depth + 1, out)
+
+    lines = []
+    for root in sorted(roots, key=lambda s: s.start_time):
+        _walk(root, 0, lines)
+    return "\n".join(lines)
+
+
+def _print_trace_hierarchy(trace_id: int):
+    if not _span_hierarchy_exporter:
+        return
+    spans = _span_hierarchy_exporter.get_spans_for_trace(trace_id)
+    if not spans:
+        return
+    print("\nTrace hierarchy:")
+    print(_format_trace_hierarchy(spans))
+    print("")
+    _span_hierarchy_exporter.clear_trace(trace_id)
 
 
 def get_llm():
@@ -147,6 +232,11 @@ def get_llm():
         )
 
         if has_circuit:
+            util_path = str(Path(__file__).parent.parent)
+            if util_path not in sys.path:
+                sys.path.insert(0, util_path)
+            from util import OAuth2TokenManager
+
             print("✓ Using CircuIT LLM")
             print(f"  Base URL: {circuit_vars['CIRCUIT_BASE_URL']}")
             token_manager = OAuth2TokenManager(
@@ -183,10 +273,15 @@ def get_llm():
 
 # Setup Telemetry
 def setup_telemetry():
+    global _span_hierarchy_exporter
     # Setup trace provider
     trace.set_tracer_provider(TracerProvider())
     trace.get_tracer_provider().add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter())
+    )
+    _span_hierarchy_exporter = _SpanHierarchyExporter()
+    trace.get_tracer_provider().add_span_processor(
+        SimpleSpanProcessor(_span_hierarchy_exporter)
     )
 
     # Setup metrics provider
@@ -194,20 +289,20 @@ def setup_telemetry():
     metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
 
     # Setup logs provider for content events
-    from opentelemetry import _logs
-
     logger_provider = LoggerProvider()
 
     # Add OTLP exporter for sending to collector
     logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
 
-    # Add Console exporter for debugging (prints to terminal)
-    logger_provider.add_log_record_processor(
-        BatchLogRecordProcessor(ConsoleLogExporter())
-    )
-
     _logs.set_logger_provider(logger_provider)
-    print("✓ Logs provider configured for content events (OTLP + Console)\n")
+    print("✓ Logs provider configured for content events (OTLP)\n")
+
+    # Setup events provider for evaluation events
+    # The EventLoggerProvider wraps the LoggerProvider to emit events as logs
+    _events.set_event_logger_provider(
+        EventLoggerProvider(logger_provider=logger_provider)
+    )
+    print("✓ Events provider configured for evaluation events\n")
 
 
 # Define Travel Planning Tools
@@ -264,9 +359,18 @@ def get_flight_agent():
     if _flight_agent is None:
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_flights)]
-        system_prompt = "You are a flight search specialist. Use the search_flights tool to find flights, then provide the result."
+        system_prompt = (
+            "You are a flight specialist. Use the search_flights tool first. "
+            "After providing flight details, hand off to HotelAgent."
+        )
         _flight_agent = ReActAgent(
-            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
+            name="FlightAgent",
+            description="Searches flights for the requested trip.",
+            tools=tools,
+            llm=llm,
+            can_handoff_to=["HotelAgent"],
+            verbose=True,
+            system_prompt=system_prompt,
         )
     return _flight_agent
 
@@ -277,9 +381,23 @@ def get_hotel_agent():
     if _hotel_agent is None:
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_hotels)]
-        system_prompt = "You are a hotel search specialist. Use the search_hotels tool to find hotels, then provide the result."
+        system_prompt = (
+            "You are a hotel specialist.\n"
+            "Required behavior:\n"
+            "1) Call the search_hotels tool exactly once using destination, check-in, and check-out.\n"
+            "2) Summarize concise hotel options from the tool result.\n"
+            "3) Immediately hand off to ActivityAgent.\n"
+            "Do not continue chatting without calling the tool.\n"
+            "Do not call handoff before calling search_hotels."
+        )
         _hotel_agent = ReActAgent(
-            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
+            name="HotelAgent",
+            description="Finds hotels for the requested destination and dates.",
+            tools=tools,
+            llm=llm,
+            can_handoff_to=["ActivityAgent"],
+            verbose=True,
+            system_prompt=system_prompt,
         )
     return _hotel_agent
 
@@ -290,105 +408,63 @@ def get_activity_agent():
     if _activity_agent is None:
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_activities)]
-        system_prompt = "You are an activity recommendation specialist. Use the search_activities tool to find activities, then provide the result."
+        system_prompt = (
+            "You are an activities specialist. Use the search_activities tool and produce the final response. "
+            "Include sections for Flights, Hotels, and Activities in the final answer."
+        )
         _activity_agent = ReActAgent(
-            tools=tools, llm=llm, verbose=True, system_prompt=system_prompt
+            name="ActivityAgent",
+            description="Suggests activities and returns the final itinerary.",
+            tools=tools,
+            llm=llm,
+            can_handoff_to=[],
+            verbose=True,
+            system_prompt=system_prompt,
         )
     return _activity_agent
 
 
-# Workflow Event Classes
-class FlightEvent(Event):
-    """Event containing flight search results."""
+def create_travel_planner_workflow(timeout: int = 300) -> AgentWorkflow:
+    """Create an AgentWorkflow that hands off across specialist ReAct agents."""
+    flight_agent = get_flight_agent()
+    hotel_agent = get_hotel_agent()
+    activity_agent = get_activity_agent()
 
-    flight_result: str
-    destination: str
-    departure_date: str
-    check_out_date: str
-
-
-class HotelEvent(Event):
-    """Event containing hotel search results."""
-
-    flight_result: str
-    hotel_result: str
-    destination: str
+    return AgentWorkflow(
+        agents=[flight_agent, hotel_agent, activity_agent],
+        root_agent=flight_agent.name,
+        timeout=timeout,
+    )
 
 
-class TravelPlanRequest(Event):
-    """Initial travel plan request parameters."""
-
-    origin: str
-    destination: str
-    departure_date: str
-    check_out_date: str
-    budget: int
-    duration: int
-    travelers: int
-    interests: list
-
-
-# Multi-Agent Workflow using LlamaIndex Workflow Pattern
-class TravelPlannerWorkflow(Workflow):
-    """
-    LlamaIndex Workflow for multi-agent travel planning orchestration.
-
-    This workflow orchestrates three specialist agents:
-    1. Flight Specialist - searches for flights
-    2. Hotel Specialist - searches for hotels
-    3. Activity Specialist - recommends activities
-
-    The workflow automatically creates proper span hierarchy for observability.
-    """
-
-    @step
-    async def search_flights(self, ev: StartEvent) -> FlightEvent:
-        """Step 1: Search for flights using flight specialist agent."""
-        print("\n--- Flight Specialist Agent ---")
-        flight_agent = get_flight_agent()
-        flight_query = f"Search for flights from {ev.origin} to {ev.destination} departing on {ev.departure_date}"
-        flight_handler = flight_agent.run(user_msg=flight_query, max_iterations=3)
-        flight_response = await flight_handler
-
-        return FlightEvent(
-            flight_result=str(flight_response),
-            destination=ev.destination,
-            departure_date=ev.departure_date,
-            check_out_date=ev.check_out_date,
-        )
-
-    @step
-    async def search_hotels(self, ev: FlightEvent) -> HotelEvent:
-        """Step 2: Search for hotels using hotel specialist agent."""
-        print("\n--- Hotel Specialist Agent ---")
-        hotel_agent = get_hotel_agent()
-        hotel_query = f"Search for hotels in {ev.destination} from {ev.departure_date} to {ev.check_out_date}"
-        hotel_handler = hotel_agent.run(user_msg=hotel_query, max_iterations=3)
-        hotel_response = await hotel_handler
-
-        return HotelEvent(
-            flight_result=ev.flight_result,
-            hotel_result=str(hotel_response),
-            destination=ev.destination,
-        )
-
-    @step
-    async def search_activities(self, ev: HotelEvent) -> StopEvent:
-        """Step 3: Recommend activities using activity specialist agent."""
-        print("\n--- Activity Specialist Agent ---")
-        activity_agent = get_activity_agent()
-        activity_query = f"Recommend activities in {ev.destination}"
-        activity_handler = activity_agent.run(user_msg=activity_query, max_iterations=3)
-        activity_response = await activity_handler
-
-        # Aggregate all results
-        final_result = (
-            f"Flights: {ev.flight_result}\n\n"
-            f"Hotels: {ev.hotel_result}\n\n"
-            f"Activities: {activity_response}"
-        )
-
-        return StopEvent(result=final_result)
+def build_travel_request_prompt(
+    *,
+    origin: str,
+    destination: str,
+    departure_date: str,
+    check_out_date: str,
+    budget: int,
+    duration: int,
+    travelers: int,
+    interests: list,
+) -> str:
+    """Build the user message passed into AgentWorkflow.run()."""
+    interests_text = ", ".join(str(item) for item in interests)
+    return (
+        "Create a travel plan using all specialist agents.\n"
+        f"- Origin: {origin}\n"
+        f"- Destination: {destination}\n"
+        f"- Departure date: {departure_date}\n"
+        f"- Check-out date: {check_out_date}\n"
+        f"- Budget: ${budget}\n"
+        f"- Duration: {duration} days\n"
+        f"- Travelers: {travelers}\n"
+        f"- Interests: {interests_text}\n\n"
+        "Requirements:\n"
+        "1) FlightAgent must find a flight.\n"
+        "2) HotelAgent must find a hotel.\n"
+        "3) ActivityAgent must recommend activities and return a final consolidated response."
+    )
 
 
 class TravelPlannerHandler(BaseHTTPRequestHandler):
@@ -408,6 +484,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handle POST requests for travel planning."""
         if self.path == "/plan":
+            request_trace_id = None
             # Create a root span for the HTTP request
             tracer = trace.get_tracer(__name__)
             with tracer.start_as_current_span(
@@ -419,6 +496,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     "http.scheme": "http",
                 },
             ) as span:
+                request_trace_id = span.get_span_context().trace_id
                 try:
                     content_length = int(self.headers["Content-Length"])
                     post_data = self.rfile.read(content_length)
@@ -449,21 +527,22 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     check_out = check_in + timedelta(days=duration)
                     check_out_date = check_out.strftime("%Y-%m-%d")
 
-                    # Invoke the multi-agent workflow using LlamaIndex Workflow
-                    workflow = TravelPlannerWorkflow(timeout=300, verbose=False)
+                    # Invoke the multi-agent workflow using AgentWorkflow
+                    workflow = create_travel_planner_workflow(timeout=300)
+                    user_msg = build_travel_request_prompt(
+                        origin=origin,
+                        destination=destination,
+                        departure_date=departure_date,
+                        check_out_date=check_out_date,
+                        budget=budget,
+                        duration=duration,
+                        travelers=travelers,
+                        interests=interests,
+                    )
 
                     # Define async wrapper to run the workflow
                     async def run_workflow():
-                        return await workflow.run(
-                            origin=origin,
-                            destination=destination,
-                            departure_date=departure_date,
-                            check_out_date=check_out_date,
-                            budget=budget,
-                            duration=duration,
-                            travelers=travelers,
-                            interests=interests,
-                        )
+                        return await workflow.run(user_msg=user_msg)
 
                     try:
                         # Run the workflow in a new event loop
@@ -477,18 +556,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
-                                result = loop.run_until_complete(
-                                    workflow.run(
-                                        origin=origin,
-                                        destination=destination,
-                                        departure_date=departure_date,
-                                        check_out_date=check_out_date,
-                                        budget=budget,
-                                        duration=duration,
-                                        travelers=travelers,
-                                        interests=interests,
-                                    )
-                                )
+                                result = loop.run_until_complete(run_workflow())
                             finally:
                                 loop.close()
                         else:
@@ -525,6 +593,8 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     self.wfile.write(
                         json.dumps({"status": "error", "error": str(e)}).encode()
                     )
+            if request_trace_id is not None:
+                _print_trace_hierarchy(request_trace_id)
         else:
             self.send_response(404)
             self.end_headers()

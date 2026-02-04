@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: travel-planner
-          image: shuniche855/llamaindex-travel-planner:latest
+          image: shuniche855/travel-planner:0.0.18
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -99,12 +99,55 @@ spec:
               value: "span_metric_event,splunk"
             - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
               value: "replace-category:SplunkEvaluationResults"
+            # Include input/output messages in evaluation events
+            - name: SPLUNK_EVALUATION_RESULTS_MESSAGE_CONTENT
+              value: "true"
             - name: OTEL_GENAI_EVAL_DEBUG_SKIPS
               value: "true"
             - name: OTEL_GENAI_EVAL_DEBUG_EACH
-              value: "false"
-            - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
               value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
+              value: "false"
+            # DeepEval configuration
+            - name: DEEPEVAL_FILE_SYSTEM
+              value: "READ_ONLY"
+            - name: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
+              value: "Deepeval(LLMInvocation(bias,toxicity))"
+            # DeepEval LLM Configuration (for LLM-as-a-judge evaluation)
+            - name: DEEPEVAL_LLM_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: deepeval-base-url
+                  optional: true
+            - name: DEEPEVAL_LLM_MODEL
+              value: "gpt-4.1"
+            - name: DEEPEVAL_LLM_PROVIDER
+              value: "openai"
+            - name: DEEPEVAL_LLM_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: token-url
+                  optional: true
+            - name: DEEPEVAL_LLM_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: client-id
+                  optional: true
+            - name: DEEPEVAL_LLM_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: client-secret
+                  optional: true
+            - name: DEEPEVAL_LLM_CLIENT_APP_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: circuit-credentials
+                  key: app-key
+                  optional: true
             - name: SPLUNK_PROFILER_ENABLED
               value: "true"
             # Set evaluation wait time to 10 seconds (short enough to avoid health check timeout)
