@@ -407,9 +407,9 @@ For detailed usage instructions, see [util/opentelemetry-util-genai-emitters-tes
 
 Quick example:
 ```bash
-# Install the test emitter
-pip install -e util/opentelemetry-util-genai-emitters-test
-pip install -e util/opentelemetry-util-genai-evals-deepeval
+# Install the test emitter (development only, not published to PyPI)
+pip install -e ./util/opentelemetry-util-genai-emitters-test
+pip install -e ./util/opentelemetry-util-genai-evals-deepeval
 
 # Run evaluation performance test
 python -m opentelemetry.util.genai.emitters.eval_perf_test \

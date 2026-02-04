@@ -3,12 +3,22 @@
 
 from __future__ import annotations
 
-from typing import Any
+# Configure DeepEval environment BEFORE importing any deepeval modules
+from . import _configure_deepeval  # noqa: F401, isort: skip
 
-from deepeval.test_case import LLMTestCase
+# Import deepeval modules while suppressing startup warnings
+from .suppress_output import import_deepeval_quietly  # isort: skip
 
-from opentelemetry.util.genai.evals.normalize import normalize_invocation
-from opentelemetry.util.genai.types import (
+import_deepeval_quietly()
+
+from typing import Any  # noqa: E402
+
+from deepeval.test_case import LLMTestCase  # noqa: E402
+
+from opentelemetry.util.genai.evals.normalize import (  # noqa: E402
+    normalize_invocation,
+)
+from opentelemetry.util.genai.types import (  # noqa: E402
     AgentInvocation,
     GenAI,
     LLMInvocation,

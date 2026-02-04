@@ -32,3 +32,6 @@ opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/o
 opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-common&subdirectory=exporter/opentelemetry-exporter-otlp-proto-common
 opentelemetry-proto @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-proto&subdirectory=opentelemetry-proto
 opentelemetry-instrumentation @ git+https://github.com/open-telemetry/opentelemetry-python-contrib.git@v0.59b0#egg=opentelemetry-instrumentation&subdirectory=opentelemetry-instrumentation
+
+# DeepEval dependency for opentelemetry-util-genai-evals-deepeval
+deepeval>=3.3.9,<3.8.0
