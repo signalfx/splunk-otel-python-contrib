@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from llama_index.core.callbacks.base_handler import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType
+from opentelemetry import trace as trace_api
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
@@ -252,7 +253,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
     def _find_workflow_name(
         self, parent_id: str, context_agent: Optional[AgentInvocation] = None
     ) -> Optional[str]:
-        """Resolve workflow name from parent chain, then active context agent."""
+        """Resolve workflow name from parent chain, context agent, then active span."""
         current_id = parent_id
         visited: set[str] = set()
         while current_id and current_id not in visited:
@@ -273,6 +274,19 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 workflow_name = attributes.get("gen_ai.workflow.name")
                 if workflow_name:
                     return _safe_str(workflow_name)
+        # Fallback: resolve from active tracing context
+        current_span = trace_api.get_current_span()
+        if not current_span:
+            return None
+        attrs = getattr(current_span, "attributes", None)
+        if isinstance(attrs, dict):
+            workflow_name = attrs.get("gen_ai.workflow.name")
+            if workflow_name:
+                return _safe_str(workflow_name)
+        if hasattr(current_span, "_attributes"):
+            workflow_name = current_span._attributes.get("gen_ai.workflow.name")
+            if workflow_name:
+                return _safe_str(workflow_name)
         return None
 
     def on_event_start(
@@ -775,6 +789,17 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if agent_name:
                 tool_call.agent_name = _normalize_agent_name(agent_name)  # type: ignore[attr-defined]
             tool_call.agent_id = str(context_agent.run_id)  # type: ignore[attr-defined]
+            context_attrs = getattr(context_agent, "attributes", None)
+            if isinstance(context_attrs, dict):
+                workflow_name = context_attrs.get("gen_ai.workflow.name")
+                if workflow_name:
+                    tool_call.attributes["gen_ai.workflow.name"] = _safe_str(
+                        workflow_name
+                    )
+        if "gen_ai.workflow.name" not in tool_call.attributes:
+            workflow_name = self._find_workflow_name(parent_id, context_agent)
+            if workflow_name:
+                tool_call.attributes["gen_ai.workflow.name"] = workflow_name
 
         # Get parent span before starting the tool call
         parent_span = self._get_parent_span(parent_id)
