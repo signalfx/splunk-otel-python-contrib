@@ -108,9 +108,9 @@ def test_real_openai_evaluation(monkeypatch):
         print(
             f"    passed: {result.attributes.get('gen_ai.evaluation.passed')}"
         )
-        assert (
-            result.error is None
-        ), f"Unexpected error for {name}: {result.error}"
+        assert result.error is None, (
+            f"Unexpected error for {name}: {result.error}"
+        )
         assert result.score is not None, f"Missing score for {name}"
 
     # Verify metrics were emitted
@@ -128,9 +128,9 @@ def test_real_openai_evaluation(monkeypatch):
     for name in sorted(names):
         print(f"  {name}")
 
-    assert (
-        EVAL_CLIENT_OPERATION_DURATION in names
-    ), "Duration metric not emitted"
+    assert EVAL_CLIENT_OPERATION_DURATION in names, (
+        "Duration metric not emitted"
+    )
     assert EVAL_CLIENT_TOKEN_USAGE in names, "Token usage metric not emitted"
 
     print("\n✅ Real OpenAI integration test passed!")

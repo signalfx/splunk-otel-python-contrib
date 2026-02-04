@@ -195,7 +195,11 @@ from opentelemetry.util.genai.types import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
+    # Ensure default (non-batched) mode is used for these tests
+    monkeypatch.delenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", raising=False
+    )
     clear_registry()
     importlib.reload(plugin)
     plugin.register()
