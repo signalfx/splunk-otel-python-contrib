@@ -1,4 +1,4 @@
-"""Tests for LLMJudgeEvaluator (LLM-as-a-judge evaluator)."""
+"""Tests for NativeEvaluator (LLM-as-a-judge evaluator)."""
 
 import importlib
 import json
@@ -8,7 +8,7 @@ import pytest
 
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-from opentelemetry.util.evaluator import llmjudge as llmjudge_plugin
+from opentelemetry.util.evaluator import native as native_plugin
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING,
 )
@@ -42,8 +42,8 @@ def _restore_builtin_evaluators() -> None:
 def _reset_registry():
     clear_registry()
     _restore_builtin_evaluators()
-    importlib.reload(llmjudge_plugin)
-    llmjudge_plugin.register()
+    importlib.reload(native_plugin)
+    native_plugin.register()
     yield
     clear_registry()
     _restore_builtin_evaluators()
@@ -53,7 +53,7 @@ def _reset_registry():
 def reset_mode_env(monkeypatch):
     """Ensure mode environment variables are unset for clean tests."""
     monkeypatch.delenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED", raising=False
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", raising=False
     )
     monkeypatch.delenv(
         "OTEL_INSTRUMENTATION_GENAI_EVALS_CUSTOM_RUBRICS", raising=False
@@ -76,9 +76,9 @@ def _build_invocation() -> LLMInvocation:
     return invocation
 
 
-def test_registration_adds_llmjudge() -> None:
+def test_registration_adds_native() -> None:
     names = list_evaluators()
-    assert "llmjudge" in names
+    assert "native" in names
 
 
 def _patch_openai(monkeypatch, *, content: str) -> None:
@@ -93,7 +93,7 @@ def _patch_openai(monkeypatch, *, content: str) -> None:
         )
     )
     monkeypatch.setattr(
-        llmjudge_plugin.openai, "OpenAI", lambda **_kwargs: stub_client
+        native_plugin.openai, "OpenAI", lambda **_kwargs: stub_client
     )
 
 
@@ -106,7 +106,7 @@ def _collect_metric_names(reader: InMemoryMetricReader) -> set[str]:
     return {m.name for m in metrics}
 
 
-def test_llmjudge_emits_evaluation_client_metrics(
+def test_native_emits_evaluation_client_metrics(
     monkeypatch, reset_mode_env
 ) -> None:
     reader = InMemoryMetricReader()
@@ -116,7 +116,7 @@ def test_llmjudge_emits_evaluation_client_metrics(
         _meter_provider = provider
 
     evaluator = get_evaluator(
-        "llmjudge",
+        "native",
         metrics=["bias"],
         invocation_type="LLMInvocation",
     )
@@ -145,8 +145,8 @@ def test_llmjudge_emits_evaluation_client_metrics(
     assert EVAL_CLIENT_TOKEN_USAGE in names
 
 
-def test_llmjudge_default_metrics_covered() -> None:
-    evaluator = get_evaluator("llmjudge")
+def test_native_default_metrics_covered() -> None:
+    evaluator = get_evaluator("native")
     assert set(m.lower() for m in evaluator.metrics) == {
         "bias",
         "toxicity",
@@ -156,13 +156,13 @@ def test_llmjudge_default_metrics_covered() -> None:
     }
 
 
-def test_llmjudge_batched_mode_parses_results(
+def test_native_batched_mode_parses_results(
     monkeypatch, reset_mode_env
 ) -> None:
     """Test batched mode (default) parses batched JSON response."""
     invocation = _build_invocation()
     evaluator = get_evaluator(
-        "llmjudge",
+        "native",
         metrics=["bias", "answer_relevancy", "sentiment"],
         invocation_type="LLMInvocation",
     )
@@ -195,14 +195,14 @@ def test_llmjudge_batched_mode_parses_results(
     assert by_name["sentiment"].label == "Positive"
 
 
-def test_llmjudge_non_batched_mode_parses_results(
+def test_native_non_batched_mode_parses_results(
     monkeypatch, reset_mode_env
 ) -> None:
     """Test non-batched mode parses individual JSON responses."""
     invocation = _build_invocation()
 
     # Create evaluator with batched=False
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(
+    evaluator = native_plugin.NativeEvaluator(
         ["bias", "toxicity"],
         invocation_type="LLMInvocation",
         batched=False,
@@ -228,7 +228,7 @@ def test_llmjudge_non_batched_mode_parses_results(
         chat=SimpleNamespace(completions=SimpleNamespace(create=mock_create))
     )
     monkeypatch.setattr(
-        llmjudge_plugin.openai, "OpenAI", lambda **_kwargs: stub_client
+        native_plugin.openai, "OpenAI", lambda **_kwargs: stub_client
     )
 
     with monkeypatch.context() as m:
@@ -241,36 +241,36 @@ def test_llmjudge_non_batched_mode_parses_results(
     assert {r.metric_name for r in results} == {"bias", "toxicity"}
 
 
-def test_llmjudge_non_batched_env_var(monkeypatch, reset_mode_env) -> None:
-    """Test that OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED=false enables non-batched."""
+def test_native_non_batched_env_var(monkeypatch, reset_mode_env) -> None:
+    """Test that OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=non-batched enables non-batched."""
     monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED", "false"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "non-batched"
     )
 
     # Need to reload module to pick up env var
-    importlib.reload(llmjudge_plugin)
+    importlib.reload(native_plugin)
 
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(["bias"])
+    evaluator = native_plugin.NativeEvaluator(["bias"])
     assert evaluator._batched is False
 
 
-def test_llmjudge_batched_env_var_true(monkeypatch, reset_mode_env) -> None:
-    """Test that OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED=true enables batched."""
+def test_native_batched_env_var(monkeypatch, reset_mode_env) -> None:
+    """Test that OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=batched enables batched."""
     monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED", "true"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "batched"
     )
 
-    importlib.reload(llmjudge_plugin)
+    importlib.reload(native_plugin)
 
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(["bias"])
+    evaluator = native_plugin.NativeEvaluator(["bias"])
     assert evaluator._batched is True
 
 
-def test_llmjudge_threshold_option_affects_label(
+def test_native_threshold_option_affects_label(
     monkeypatch, reset_mode_env
 ) -> None:
     invocation = _build_invocation()
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(
+    evaluator = native_plugin.NativeEvaluator(
         ("toxicity",),
         invocation_type="LLMInvocation",
         options={"toxicity": {"threshold": "0.1"}},
@@ -289,7 +289,7 @@ def test_llmjudge_threshold_option_affects_label(
     assert results[0].label == "Toxic"
 
 
-def test_llmjudge_custom_rubrics_constructor(
+def test_native_custom_rubrics_constructor(
     monkeypatch, reset_mode_env
 ) -> None:
     """Test custom rubrics passed via constructor."""
@@ -304,7 +304,7 @@ def test_llmjudge_custom_rubrics_constructor(
         }
     }
 
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(
+    evaluator = native_plugin.NativeEvaluator(
         ["helpfulness"],
         invocation_type="LLMInvocation",
         custom_rubrics=custom_rubrics,
@@ -331,7 +331,7 @@ def test_llmjudge_custom_rubrics_constructor(
     assert results[0].label == "Helpful"
 
 
-def test_llmjudge_custom_rubrics_env_var(monkeypatch, reset_mode_env) -> None:
+def test_native_custom_rubrics_env_var(monkeypatch, reset_mode_env) -> None:
     """Test custom rubrics loaded from environment variable."""
     custom_rubrics_json = json.dumps(
         {
@@ -347,10 +347,10 @@ def test_llmjudge_custom_rubrics_env_var(monkeypatch, reset_mode_env) -> None:
         "OTEL_INSTRUMENTATION_GENAI_EVALS_CUSTOM_RUBRICS", custom_rubrics_json
     )
 
-    importlib.reload(llmjudge_plugin)
+    importlib.reload(native_plugin)
 
     invocation = _build_invocation()
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(
+    evaluator = native_plugin.NativeEvaluator(
         ["code_quality"],
         invocation_type="LLMInvocation",
     )
@@ -375,10 +375,10 @@ def test_llmjudge_custom_rubrics_env_var(monkeypatch, reset_mode_env) -> None:
     assert results[0].label == "Good Code"
 
 
-def test_llmjudge_flexible_json_parsing(monkeypatch, reset_mode_env) -> None:
+def test_native_flexible_json_parsing(monkeypatch, reset_mode_env) -> None:
     """Test that evaluator accepts direct numeric scores without score/reason wrapper."""
     invocation = _build_invocation()
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(
+    evaluator = native_plugin.NativeEvaluator(
         ["bias"],
         invocation_type="LLMInvocation",
     )
@@ -398,7 +398,7 @@ def test_llmjudge_flexible_json_parsing(monkeypatch, reset_mode_env) -> None:
     assert results[0].label == "Not Biased"
 
 
-def test_llmjudge_handles_missing_output(reset_mode_env) -> None:
+def test_native_handles_missing_output(reset_mode_env) -> None:
     """Test that evaluator handles invocations without output text."""
     invocation = LLMInvocation(request_model="test-model")
     invocation.input_messages.append(
@@ -406,7 +406,7 @@ def test_llmjudge_handles_missing_output(reset_mode_env) -> None:
     )
     # No output messages
 
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(["bias"])
+    evaluator = native_plugin.NativeEvaluator(["bias"])
     results = evaluator.evaluate(invocation)
 
     assert len(results) == 1
@@ -414,10 +414,10 @@ def test_llmjudge_handles_missing_output(reset_mode_env) -> None:
     assert "output text" in results[0].explanation.lower()
 
 
-def test_llmjudge_handles_missing_api_key(monkeypatch, reset_mode_env) -> None:
+def test_native_handles_missing_api_key(monkeypatch, reset_mode_env) -> None:
     """Test that evaluator handles missing API key gracefully."""
     invocation = _build_invocation()
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(["bias"])
+    evaluator = native_plugin.NativeEvaluator(["bias"])
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GENAI_OPENAI_API_KEY", raising=False)
@@ -429,12 +429,12 @@ def test_llmjudge_handles_missing_api_key(monkeypatch, reset_mode_env) -> None:
     assert "api key" in results[0].explanation.lower()
 
 
-def test_llmjudge_attributes_include_evaluator_name(
+def test_native_attributes_include_evaluator_name(
     monkeypatch, reset_mode_env
 ) -> None:
     """Test that results include gen_ai.evaluation.evaluator.name attribute."""
     invocation = _build_invocation()
-    evaluator = llmjudge_plugin.LLMJudgeEvaluator(["bias"])
+    evaluator = native_plugin.NativeEvaluator(["bias"])
 
     _patch_openai(
         monkeypatch,
@@ -450,5 +450,5 @@ def test_llmjudge_attributes_include_evaluator_name(
     assert len(results) == 1
     assert (
         results[0].attributes.get("gen_ai.evaluation.evaluator.name")
-        == "llmjudge"
+        == "native"
     )

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""LLM-as-a-Judge evaluator with inline rubrics.
+"""Native LLM-as-a-Judge evaluator with inline rubrics.
 
 This evaluator uses LLM-as-a-judge to evaluate metrics using inline rubrics.
 It does NOT require the deepeval package to be installed.
@@ -27,7 +27,7 @@ The evaluator emits OpenTelemetry metrics for:
 These metrics are emitted when OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true.
 
 Environment Variables:
-- OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED: "true" (default) or "false"
+- OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE: "batched" (default) or "non-batched"
 - OTEL_INSTRUMENTATION_GENAI_EVALS_CUSTOM_RUBRICS: JSON string of custom rubrics
 """
 
@@ -261,11 +261,15 @@ def _resolve_openai_api_key(invocation: GenAI) -> str | None:
 
 
 def _is_batched_mode() -> bool:
-    """Check if batched mode is enabled (default: True)."""
+    """Check if batched mode is enabled (default: True).
+
+    Uses OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE env var.
+    Values: 'batched' (default) or 'non-batched'.
+    """
     val = os.getenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED", "true"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "batched"
     )
-    return val.lower() not in ("false", "0", "no", "off")
+    return val.lower().strip() != "non-batched"
 
 
 def _load_custom_rubrics() -> Mapping[str, dict[str, Any]]:
@@ -518,7 +522,7 @@ def _parse_batched_response(
                 metric_name=m,
                 explanation=f"Failed to parse judge JSON: {exc}",
                 error=Error(message=str(exc), type=ValueError),
-                attributes={"llmjudge.error": "json_parse_error"},
+                attributes={"native.error": "json_parse_error"},
             )
             for m in metrics
         ]
@@ -530,7 +534,7 @@ def _parse_batched_response(
                 metric_name=m,
                 explanation="Judge JSON missing 'results' object",
                 error=Error(message="Missing results", type=ValueError),
-                attributes={"llmjudge.error": "missing_results"},
+                attributes={"native.error": "missing_results"},
             )
             for m in metrics
         ]
@@ -554,7 +558,7 @@ def _parse_single_response(
             metric_name=metric,
             explanation=f"Failed to parse judge JSON: {exc}",
             error=Error(message=str(exc), type=ValueError),
-            attributes={"llmjudge.error": "json_parse_error"},
+            attributes={"native.error": "json_parse_error"},
         )
 
     if not isinstance(payload, dict):
@@ -562,7 +566,7 @@ def _parse_single_response(
             metric_name=metric,
             explanation="Judge response is not a JSON object",
             error=Error(message="Invalid response", type=ValueError),
-            attributes={"llmjudge.error": "invalid_response"},
+            attributes={"native.error": "invalid_response"},
         )
 
     # Wrap in results format for reuse
@@ -610,7 +614,7 @@ def _process_metric_results(
                     error=Error(
                         message="Missing metric result", type=ValueError
                     ),
-                    attributes={"llmjudge.error": "missing_metric"},
+                    attributes={"native.error": "missing_metric"},
                 )
             )
             continue
@@ -661,12 +665,12 @@ def _process_metric_results(
             label = "Pass" if passed else "Fail"
 
         attributes: dict[str, Any] = {
-            "gen_ai.evaluation.evaluator.name": "llmjudge"
+            "gen_ai.evaluation.evaluator.name": "native"
         }
         if threshold is not None and metric != "sentiment":
-            attributes["llmjudge.threshold"] = threshold
+            attributes["native.threshold"] = threshold
         if passed is not None:
-            attributes["llmjudge.success"] = passed
+            attributes["native.success"] = passed
             attributes["gen_ai.evaluation.passed"] = passed
 
         eval_results.append(
@@ -683,8 +687,8 @@ def _process_metric_results(
     return eval_results
 
 
-class LLMJudgeEvaluator(Evaluator):
-    """LLM-as-a-judge evaluator with inline rubrics.
+class NativeEvaluator(Evaluator):
+    """Native LLM-as-a-judge evaluator with inline rubrics.
 
     This evaluator uses LLM-as-a-judge to evaluate metrics using inline rubrics.
     It does NOT require the deepeval package to be installed.
@@ -710,7 +714,7 @@ class LLMJudgeEvaluator(Evaluator):
     - DEEPEVAL_EVALUATION_MODEL / DEEPEVAL_LLM_MODEL: Model to use (default: gpt-4o-mini)
     - DEEPEVAL_LLM_BASE_URL / OPENAI_BASE_URL: Custom base URL for OpenAI-compatible APIs
     - DEEPEVAL_LLM_PROVIDER: Provider name for metrics (default: openai)
-    - OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED: "true" (default) or "false"
+    - OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE: "batched" (default) or "non-batched"
     """
 
     def __init__(
@@ -763,7 +767,7 @@ class LLMJudgeEvaluator(Evaluator):
         if operation != "invoke_agent":
             try:
                 genai_debug_log(
-                    "evaluator.llmjudge.skip.non_invoke_agent",
+                    "evaluator.native.skip.non_invoke_agent",
                     invocation,
                     operation=invocation.operation,
                 )
@@ -801,9 +805,9 @@ class LLMJudgeEvaluator(Evaluator):
                     explanation=message,
                     error=Error(message=message, type=ValueError),
                     attributes={
-                        "llmjudge.error": message,
-                        "llmjudge.skipped": True,
-                        "llmjudge.missing_params": ["retrieval_context"],
+                        "native.error": message,
+                        "native.skipped": True,
+                        "native.missing_params": ["retrieval_context"],
                     },
                 )
             )
@@ -838,9 +842,9 @@ class LLMJudgeEvaluator(Evaluator):
         )
 
         extra_attrs = {
-            "gen_ai.evaluation.evaluator.name": "llmjudge",
+            "gen_ai.evaluation.evaluator.name": "native",
             "gen_ai.invocation.type": invocation_type,
-            "llmjudge.batched": self._batched,
+            "native.batched": self._batched,
         }
 
         meter_provider = getattr(self, "_otel_meter_provider", None)
@@ -975,7 +979,7 @@ class LLMJudgeEvaluator(Evaluator):
                         metric_name=metric,
                         explanation=str(exc),
                         error=Error(message=str(exc), type=type(exc)),
-                        attributes={"llmjudge.error": str(exc)},
+                        attributes={"native.error": str(exc)},
                     )
                 )
                 continue
@@ -997,7 +1001,7 @@ class LLMJudgeEvaluator(Evaluator):
                         error=Error(
                             message="Missing content", type=RuntimeError
                         ),
-                        attributes={"llmjudge.error": "missing_content"},
+                        attributes={"native.error": "missing_content"},
                     )
                 )
                 continue
@@ -1012,13 +1016,13 @@ class LLMJudgeEvaluator(Evaluator):
     def _error_results(
         self, message: str, error_type: type[BaseException]
     ) -> Sequence[EvaluationResult]:
-        _LOGGER.warning("LLM Judge evaluation failed: %s", message)
+        _LOGGER.warning("Native evaluation failed: %s", message)
         return [
             EvaluationResult(
                 metric_name=metric,
                 explanation=message,
                 error=Error(message=message, type=error_type),
-                attributes={"llmjudge.error": message},
+                attributes={"native.error": message},
             )
             for metric in self.metrics
         ]
@@ -1028,8 +1032,8 @@ def _factory(
     metrics: Iterable[str] | None = None,
     invocation_type: str | None = None,
     options: Mapping[str, Mapping[str, str]] | None = None,
-) -> LLMJudgeEvaluator:
-    return LLMJudgeEvaluator(
+) -> NativeEvaluator:
+    return NativeEvaluator(
         metrics,
         invocation_type=invocation_type,
         options=options,
@@ -1048,14 +1052,14 @@ def registration() -> EvaluatorRegistration:
 
 def register() -> None:
     register_evaluator(
-        "llmjudge",
+        "native",
         _REGISTRATION.factory,
         default_metrics=_REGISTRATION.default_metrics_factory,
     )
 
 
 __all__ = [
-    "LLMJudgeEvaluator",
+    "NativeEvaluator",
     "registration",
     "register",
 ]

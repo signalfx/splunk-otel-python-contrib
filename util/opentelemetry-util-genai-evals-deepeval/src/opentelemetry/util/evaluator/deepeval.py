@@ -813,18 +813,17 @@ class DeepevalEvaluator(Evaluator):
         return "gpt-4o-mini"
 
 
-def _get_evaluator_mode() -> str:
-    """Get the evaluator mode from environment variable.
+def _get_evaluator_implementation() -> str:
+    """Get the evaluator implementation from environment variable.
 
     Returns:
-    - 'llmjudge': Use LLMJudgeEvaluator (no deepeval dependency, supports batched/non-batched)
-    - 'batched': Alias for 'llmjudge' (backward compatibility)
+    - 'native': Use NativeEvaluator (no deepeval dependency, supports batched/non-batched)
     - 'deepeval': Use standard DeepevalEvaluator with full Deepeval library
     """
-    mode = os.getenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "deepeval"
+    impl = os.getenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "native"
     )
-    return mode.lower().strip()
+    return impl.lower().strip()
 
 
 def _factory(
@@ -832,12 +831,11 @@ def _factory(
     invocation_type: str | None = None,
     options: Mapping[str, Mapping[str, str]] | None = None,
 ) -> DeepevalEvaluator:
-    mode = _get_evaluator_mode()
-    # 'llmjudge' is the new name, 'batched' is kept for backward compatibility
-    if mode in ("llmjudge", "batched"):
-        from .llmjudge import LLMJudgeEvaluator
+    impl = _get_evaluator_implementation()
+    if impl == "native":
+        from .native import NativeEvaluator
 
-        return LLMJudgeEvaluator(
+        return NativeEvaluator(
             metrics,
             invocation_type=invocation_type,
             options=options,
