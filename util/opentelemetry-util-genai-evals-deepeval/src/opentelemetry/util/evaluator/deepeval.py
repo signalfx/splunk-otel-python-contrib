@@ -817,11 +817,14 @@ def _get_evaluator_implementation() -> str:
     """Get the evaluator implementation from environment variable.
 
     Returns:
+    - 'deepeval': Use standard DeepevalEvaluator with full Deepeval library (default)
     - 'native': Use NativeEvaluator (no deepeval dependency, supports batched/non-batched)
-    - 'deepeval': Use standard DeepevalEvaluator with full Deepeval library
+
+    Note: Default is 'deepeval' for backward compatibility. The native evaluator
+    shows promising performance (7x faster) but requires more real-world validation.
     """
     impl = os.getenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "native"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "deepeval"
     )
     return impl.lower().strip()
 

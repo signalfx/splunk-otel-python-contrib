@@ -370,7 +370,7 @@ Results:
 | Environment Variable | Values | Description |
 |---------------------|--------|-------------|
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE` | `batched` (default), `non-batched` | Controls whether metrics are evaluated in one LLM call or separately |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION` | `native` (default), `deepeval` | Which evaluator implementation to use (native = NativeEvaluator, deepeval = Deepeval library) |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION` | `deepeval` (default), `native` | Which evaluator implementation to use (deepeval = Deepeval library, native = NativeEvaluator) |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT` | `true`, `false` | Enable/disable concurrent evaluation |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS` | integer (default: 4) | Number of concurrent evaluation workers |
 

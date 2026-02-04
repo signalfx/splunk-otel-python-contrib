@@ -44,8 +44,8 @@ def _build_invocation() -> LLMInvocation:
     return invocation
 
 
-def test_default_implementation_uses_native_evaluator(monkeypatch) -> None:
-    """When implementation env var is not set, factory returns NativeEvaluator."""
+def test_default_implementation_uses_deepeval_evaluator(monkeypatch) -> None:
+    """When implementation env var is not set, factory returns DeepevalEvaluator for backward compatibility."""
     clear_registry()
     _restore_builtin_evaluators()
 
@@ -62,8 +62,8 @@ def test_default_implementation_uses_native_evaluator(monkeypatch) -> None:
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
 
-    # NativeEvaluator should be returned by default
-    assert type(evaluator).__name__ == "NativeEvaluator"
+    # DeepevalEvaluator should be returned by default for backward compatibility
+    assert type(evaluator).__name__ == "DeepevalEvaluator"
 
     clear_registry()
     _restore_builtin_evaluators()
