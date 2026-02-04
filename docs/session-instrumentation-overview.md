@@ -95,6 +95,19 @@ galileo_context.set_session(session_id)
 
 **Limitation**: Galileo's context is not OTel-native; it uses its own context propagation mechanism.
 
+#### Implementation Evidence
+
+**Session Context Propagation via ContextVars:**
+- [decorator.py - Session context variables](https://github.com/rungalileo/galileo-python/blob/main/src/galileo/decorator.py#L84-L97): Defines `_session_id_context: ContextVar` for thread-safe session tracking
+- [decorator.py - Session stack management](https://github.com/rungalileo/galileo-python/blob/main/src/galileo/decorator.py#L166-L171): Pushes/pops session context during `__enter__`/`__exit__`
+- [decorator.py - set_session method](https://github.com/rungalileo/galileo-python/blob/main/src/galileo/decorator.py#L1190-L1200): Sets session ID on the logger instance
+
+**OTel SpanProcessor Integration:**
+- [otel.py - GalileoSpanProcessor.on_start](https://github.com/rungalileo/galileo-python/blob/main/src/galileo/otel.py#L258-L280): Reads `_session_id_context` and sets `galileo.session.id` attribute on each span at start time
+
+**Cross-RPC Propagation (Distributed Mode):**
+- [middleware/tracing.py - TracingMiddleware](https://github.com/rungalileo/galileo-python/blob/main/src/galileo/middleware/tracing.py#L86-L115): Extracts `X-Galileo-Trace-ID` and `X-Galileo-Parent-ID` headers for HTTP-based propagation (session is configured per-service via environment variables, not propagated in headers)
+
 ### Third-Party Integration Auto-Sessions
 
 - **OpenAI Wrapper**: Auto-creates sessions per conversation
@@ -197,6 +210,23 @@ processors:
 - [OpenTelemetry Integration](https://langfuse.com/docs/integrations/opentelemetry)
 - [Attribute Mapping](https://langfuse.com/integrations/native/opentelemetry#property-mapping)
 
+#### Implementation Evidence
+
+**Session Propagation via Context & Baggage:**
+- [propagation.py - propagate_attributes function](https://github.com/langfuse/langfuse-python/blob/main/langfuse/_client/propagation.py#L84-L205): Core context manager that sets `session_id`, `user_id`, `metadata` on context and optionally on OTel baggage
+- [propagation.py - _set_propagated_attribute](https://github.com/langfuse/langfuse-python/blob/main/langfuse/_client/propagation.py#L335-L391): Sets attributes on context, current span, and baggage (when `as_baggage=True`)
+- [propagation.py - _get_propagated_span_key](https://github.com/langfuse/langfuse-python/blob/main/langfuse/_client/propagation.py#L461-L474): Maps `session_id` → `langfuse.trace.session_id` attribute name
+
+**SpanProcessor Auto-Propagation:**
+- [span_processor.py - LangfuseSpanProcessor.on_start](https://github.com/langfuse/langfuse-python/blob/main/langfuse/_client/span_processor.py#L120-L132): Reads propagated attributes from context and sets them on every new span
+
+**Cross-RPC via OTel Baggage:**
+- [propagation.py - Baggage key handling](https://github.com/langfuse/langfuse-python/blob/main/langfuse/_client/propagation.py#L280-L306): Extracts `langfuse_*` prefixed baggage entries and converts to span attributes
+- [test_propagate_attributes.py - Baggage cross-process test](https://github.com/langfuse/langfuse-python/blob/main/tests/test_propagate_attributes.py#L1769-L1803): Tests that baggage survives context detach/reattach simulating cross-process scenarios
+
+**Restriction Mechanism:**
+- [propagation.py - as_baggage parameter](https://github.com/langfuse/langfuse-python/blob/main/langfuse/_client/propagation.py#L113-L124): `as_baggage=False` (default) means attributes are NOT propagated via HTTP headers; setting `as_baggage=True` opts in to cross-service propagation
+
 ---
 
 ## Traceloop (OpenLLMetry)
@@ -261,6 +291,27 @@ def my_workflow():
 
 - [Association Properties](https://www.traceloop.com/docs/openllmetry/tracing/association)
 - [Workflow Annotations](https://www.traceloop.com/docs/openllmetry/tracing/annotations)
+
+#### Implementation Evidence
+
+**Association Properties Core Logic:**
+- [associations.py - AssociationProperty enum](https://github.com/traceloop/openllmetry/blob/main/packages/traceloop-sdk/traceloop/sdk/associations/associations.py#L5-L11): Defines `SESSION_ID`, `USER_ID`, `CUSTOMER_ID` as standard association properties
+- [tracing.py - set_association_properties](https://github.com/traceloop/openllmetry/blob/main/packages/traceloop-sdk/traceloop/sdk/tracing/tracing.py#L230-L256): Attaches properties to OTel context and sets them on current span if within a workflow/task
+
+**SpanProcessor Auto-Propagation:**
+- [tracing.py - default_span_processor_on_start](https://github.com/traceloop/openllmetry/blob/main/packages/traceloop-sdk/traceloop/sdk/tracing/tracing.py#L340-L360): Called on every span start, reads `association_properties` from context and sets `traceloop.association.properties.{key}` attributes
+- [tracing.py - _span_processor_on_start (TracerWrapper)](https://github.com/traceloop/openllmetry/blob/main/packages/traceloop-sdk/traceloop/sdk/tracing/tracing.py#L169-L184): Hooks into SpanProcessor to propagate associations + check content allow list
+
+**Cross-RPC via TraceContext Propagation:**
+- [openai/shared/__init__.py - propagate_trace_context](https://github.com/traceloop/openllmetry/blob/main/packages/opentelemetry-instrumentation-openai/opentelemetry/instrumentation/openai/shared/__init__.py#L372-L399): Injects trace context into HTTP headers via `TraceContextTextMapPropagator` for cross-service calls
+- [langchain/__init__.py - _OpenAITracingWrapper](https://github.com/traceloop/openllmetry/blob/main/packages/opentelemetry-instrumentation-langchain/opentelemetry/instrumentation/langchain/__init__.py#L241-L263): Injects trace context into `extra_headers` for LangChain→OpenAI calls
+
+**MCP Context Propagation:**
+- [mcp/instrumentation.py - ContextSavingStreamWriter](https://github.com/traceloop/openllmetry/blob/main/packages/opentelemetry-instrumentation-mcp/opentelemetry/instrumentation/mcp/instrumentation.py#L591-L614): Captures and propagates context through MCP streaming
+
+**Tests Confirming Propagation:**
+- [test_associations.py](https://github.com/traceloop/openllmetry/blob/main/packages/traceloop-sdk/tests/test_associations.py#L48-L78): Tests that `SESSION_ID` propagates from workflow to child task spans
+- [test_association_properties.py](https://github.com/traceloop/openllmetry/blob/main/packages/traceloop-sdk/tests/test_association_properties.py#L78-L143): Tests LangChain metadata (`session_id`) auto-extraction and propagation
 
 ---
 
@@ -348,6 +399,34 @@ Phoenix provides:
 - [Setup Sessions](https://arize.com/docs/phoenix/tracing/how-to-tracing/setup-tracing/setup-sessions)
 - [Customize Spans](https://arize.com/docs/phoenix/tracing/how-to-tracing/add-metadata/customize-spans)
 - [OpenInference Package](https://pypi.org/project/openinference-instrumentation/)
+
+#### Implementation Evidence
+
+**Session Context Managers:**
+- [context_attributes.py - using_session class](https://github.com/arize-ai/openinference/blob/main/python/openinference-instrumentation/src/openinference/instrumentation/context_attributes.py#L97-L112): Context manager that stores `session_id` in OTel context
+- [context_attributes.py - attach_context](https://github.com/arize-ai/openinference/blob/main/python/openinference-instrumentation/src/openinference/instrumentation/context_attributes.py#L49-L67): Attaches `session.id`, `user.id`, `metadata` to the OTel context
+
+**Semantic Conventions:**
+- [trace/__init__.py - SpanAttributes.SESSION_ID](https://github.com/arize-ai/openinference/blob/main/python/openinference-semantic-conventions/src/openinference/semconv/trace/__init__.py#L215-L246): Defines `session.id` and `user.id` as standard semantic convention attributes
+
+**JavaScript Implementation:**
+- [contextAttributes.ts - setSession](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-core/src/trace/contextAttributes.ts#L139-L163): Sets session ID in OTel context via `context.setValue(SESSION_ID_KEY, sessionId)`
+- [contextAttributes.ts - getSession](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-core/src/trace/contextAttributes.ts#L164-L175): Retrieves session from context
+
+**SpanProcessor Integration:**
+- [OpenInferenceSpanProcessor.ts](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-vercel/src/OpenInferenceSpanProcessor.ts#L39-L71): Extends SimpleSpanProcessor to add OpenInference attributes on span end
+- [OpenInferenceBatchSpanProcessor](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-vercel/src/OpenInferenceSpanProcessor.ts#L102-L147): Batch version with `addOpenInferenceAttributesToSpan(span)` call in `onEnd`
+
+**LangChain Session ID Extraction:**
+- [utils.ts - formatSessionId (langchain)](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-instrumentation-langchain/src/utils.ts#L717-L741): Extracts `session_id`, `thread_id`, or `conversation_id` from LangChain run metadata
+- [tracer.test.ts - session ID tests](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-instrumentation-langchain/test/tracer.test.ts#L668-L732): Tests session ID extraction with priority (`session_id` > `thread_id` > `conversation_id`)
+
+**Cross-RPC Propagation:**
+- [mcp.test.ts - context propagation test](https://github.com/arize-ai/openinference/blob/main/js/packages/openinference-instrumentation-mcp/test/mcp.test.ts#L291-L312): Tests that trace context propagates through MCP client→server calls
+- [test_context_managers.py](https://github.com/arize-ai/openinference/blob/main/python/openinference-instrumentation/tests/test_context_managers.py#L27-L49): Tests that `using_session` properly sets/clears context
+
+**Tests:**
+- [test_instrumentor.py - verify_context_attributes](https://github.com/arize-ai/openinference/blob/main/python/instrumentation/openinference-instrumentation-crewai/tests/test_instrumentor.py#L289-L308): Verifies `session.id` and `user.id` appear on CrewAI spans
 
 ---
 
@@ -440,6 +519,33 @@ McpInstrumentor().instrument()
 - [AGNTCY Observe SDK](https://github.com/agntcy/observe)
 - [Getting Started Guide](https://github.com/agntcy/observe/blob/main/GETTING-STARTED.md)
 - [AGNTCY Documentation](https://docs.agntcy.org/)
+- [AGNTCY Agentic Apps Examples](https://github.com/agntcy/agentic-apps)
+
+#### Implementation Evidence
+
+**ioa-observe SDK Decorators (from agentic-apps usage):**
+- [noa-web-surfer/main.py - @agent decorator](https://github.com/agntcy/agentic-apps/blob/main/network_of_assistants/noa-web-surfer/main.py#L24-L26): Uses `@agent(name="web-surfer-agent", description="...")` decorator from `ioa_observe.sdk.decorators`
+- [noa-math-assistant/agent.py - @agent, @tool, @workflow decorators](https://github.com/agntcy/agentic-apps/blob/main/network_of_assistants/noa-math-assistant/agent.py#L11-L14): Imports `agent`, `tool`, `workflow` decorators from `ioa_observe.sdk.decorators`
+- [noa-moderator/agent.py - @agent and @graph decorators](https://github.com/agntcy/agentic-apps/blob/main/network_of_assistants/noa-moderator/agent.py#L156-L162): Combines `@agent` class decorator with `@graph` method decorator for multi-agent orchestration
+
+**SLIM Protocol Integration:**
+- [noa-web-surfer/main.py - SLIMInstrumentor](https://github.com/agntcy/agentic-apps/blob/main/network_of_assistants/noa-web-surfer/main.py#L14-L15): Imports `SLIMInstrumentor` from `ioa_observe.sdk.instrumentations.slim`
+- [noa-slim/slim/__init__.py - SLIM tracing init](https://github.com/agntcy/agentic-apps/blob/main/network_of_assistants/noa-slim/slim/__init__.py#L12-L44): SLIM class initializes OpenTelemetry tracing with configurable endpoint
+
+**OpenTelemetry Tracing Integration:**
+- [core/tracing.py - setup_tracing](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/tracing.py#L116-L209): Complete OTel TracerProvider setup with OTLP, console, and file exporters
+- [core/tracing.py - @traced decorator](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/tracing.py#L297-L337): Custom decorator wrapping functions with OTel spans
+- [core/tracing.py - get_trace_context](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/tracing.py#L266-L280): Gets current trace context for propagation via `inject()`
+- [core/tracing.py - extract_trace_context](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/tracing.py#L282-L293): Extracts trace context from incoming headers via `extract()`
+- [core/tracing.py - TraceContextTextMapPropagator](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/tracing.py#L35-L40): Sets W3C TraceContext as global propagator
+
+**Session Management:**
+- [core/dashboard.py - reset_session](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/dashboard.py#L268-L288): Session reset with new `session_id` generation using timestamps
+- [core/dashboard.py - session_service](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/core/dashboard.py#L238-L266): Session lifecycle management via `create_session_sync()`
+
+**Cross-Agent A2A Protocol:**
+- [scheduler_agent.py - A2A with tracing](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/agents/scheduler_agent.py#L253-L292): Scheduler supports HTTP and SLIM transports with OTel tracing
+- [ui_agent.py - A2A components](https://github.com/agntcy/agentic-apps/blob/main/tourist_scheduling_system/src/agents/ui_agent.py#L563-L580): A2A executor with request handler for cross-agent communication
 
 ---
 
@@ -502,6 +608,104 @@ task_payload = {
         "session_id": "session-456"
     }
 }
+```
+
+### Restricting Cross-RPC Propagation
+
+When running public services (e.g., public MCP servers), you may want to prevent third-party `trace_id` and `session_id` from propagating into your spans. Different platforms provide various mechanisms for this:
+
+#### Comparison of Restriction Approaches
+
+| Platform | Restriction Mechanism | Granularity | Evidence |
+|----------|----------------------|-------------|----------|
+| Langfuse | `as_baggage=False` parameter | Per-attribute | [observe decorator](https://github.com/langfuse/langfuse-python/blob/main/langfuse/decorators/langfuse_decorator.py#L366-L374) |
+| Traceloop | Content allow lists | Per-entity | [association properties](https://github.com/traceloop/openllmetry/blob/main/packages/openllmetry/src/openllmetry/__init__.py#L127-L133) |
+| Galileo | Per-service env config | Per-service | Per-service environment variable configuration |
+| OTel Core | `_SUPPRESS_INSTRUMENTATION_KEY` | Per-operation | [suppress_instrumentation](https://github.com/open-telemetry/opentelemetry-python/blob/main/opentelemetry-instrumentation/src/opentelemetry/instrumentation/utils.py) |
+
+#### Langfuse: as_baggage=False (Default)
+
+Langfuse defaults to **not propagating** session metadata via baggage, requiring explicit opt-in:
+
+```python
+from langfuse.decorators import observe
+
+@observe(as_baggage=False)  # Default - session NOT propagated to downstream services
+def public_endpoint():
+    # Third-party trace context will NOT be linked
+    pass
+
+@observe(as_baggage=True)  # Explicit opt-in for trusted internal services
+def internal_endpoint():
+    # Session/trace propagated via OTel baggage
+    pass
+```
+
+**Implementation Evidence:**
+- [langfuse_decorator.py - as_baggage handling](https://github.com/langfuse/langfuse-python/blob/main/langfuse/decorators/langfuse_decorator.py#L366-L374): Conditionally calls `propagate_attributes` only when `as_baggage=True`
+
+#### Traceloop: Content Allow Lists
+
+Traceloop uses entity-based allow lists to control what content is captured:
+
+```python
+from traceloop.sdk import Traceloop
+
+Traceloop.init(
+    # Only capture content from specified entities
+    content_allow_list=["my_safe_agent"],
+    # Or use environment variable
+    # TRACELOOP_TRACE_CONTENT_ALLOW_LIST="my_safe_agent,my_safe_tool"
+)
+```
+
+**Implementation Evidence:**
+- [\_\_init\_\_.py - content_allow_list](https://github.com/traceloop/openllmetry/blob/main/packages/openllmetry/src/openllmetry/__init__.py#L127-L133): Configuration for filtering traced entities
+
+#### Galileo: Per-Service Configuration
+
+Galileo uses environment variables for per-service configuration, allowing different settings per deployment:
+
+```python
+# Production public service - no session propagation
+# GALILEO_SESSION_PROPAGATE=false
+
+# Internal trusted service - full propagation
+# GALILEO_SESSION_PROPAGATE=true
+```
+
+#### OpenTelemetry Core: Suppression Keys
+
+For fine-grained control, use OTel's built-in suppression mechanism:
+
+```python
+from opentelemetry.context import attach, detach, set_value
+from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
+
+# Temporarily suppress all instrumentation (including context propagation)
+token = attach(set_value(_SUPPRESS_INSTRUMENTATION_KEY, True))
+try:
+    # Code here runs without OTel instrumentation
+    external_service_call()
+finally:
+    detach(token)
+```
+
+#### Custom Header Filtering (Server-Side)
+
+For MCP and other protocols, implement server-side filtering:
+
+```python
+from opentelemetry.propagate import extract
+
+TRUSTED_ORIGINS = {"internal.company.com", "trusted-partner.com"}
+
+def extract_context_if_trusted(headers: dict, request_origin: str):
+    """Only extract trace context from trusted origins."""
+    if request_origin in TRUSTED_ORIGINS:
+        return extract(headers)
+    # Return empty context for untrusted origins
+    return {}
 ```
 
 ---
