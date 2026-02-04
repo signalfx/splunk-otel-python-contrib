@@ -89,11 +89,11 @@ All metrics are gated by `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` (def
 ### 3.2 Implementation Selection
 
 ```bash
-# Use Native evaluator (default) - no Deepeval library needed
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=native
-
-# Use Deepeval library implementation
+# Use Deepeval library implementation (default - for backward compatibility)
 export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=deepeval
+
+# Use Native evaluator (faster, but needs more real-world testing)
+export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=native
 
 # Configure Native evaluator mode (only for native implementation)
 # Default is batched mode
@@ -213,7 +213,7 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="native(LLMInvocation(bias,co
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION` | Evaluator implementation: `native` or `deepeval` | `native` |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION` | Evaluator implementation: `deepeval` or `native` | `deepeval` |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE` | Mode for native evaluator: `batched` or `non-batched` | `batched` |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_CUSTOM_RUBRICS` | JSON string of custom metric rubrics | (empty) |
 
@@ -492,101 +492,3 @@ print(f'Result: {results[0].metric_name}={results[0].score}, label={results[0].l
 "
 # Expected: Result: bias=0.0, label=Not Biased
 ```
-
----
-
-## 9. Code Review Summary
-
-### 9.1 Issues Found and Fixed
-
-| Issue | Location | Fix |
-|-------|----------|-----|
-| Batched evaluator ignoring `DEEPEVAL_LLM_BASE_URL` | native.py | Added `base_url` parameter to OpenAI client |
-| Model resolution missing `DEEPEVAL_LLM_MODEL` | native.py | Added to resolution chain |
-| JSON parsing too rigid | native.py | Accept direct numeric scores |
-| `response_format` not supported by all providers | native.py | Added try/except fallback |
-| Test isolation issue | test_deepeval_evaluator.py | Added `monkeypatch.delenv()` |
-
-### 9.2 Positives
-
-- ✅ Clean separation between monitoring instruments and evaluator logic
-- ✅ Backward compatible (all changes behind feature flags)
-- ✅ Good test coverage for both modes
-- ✅ Flexible LLM provider support (OpenAI, Azure, local)
-
-### 9.3 Suggestions for Future
-
-1. **Observable Gauge for Queue Size**: Consider `ObservableUpDownCounter` with callback for more accurate scrape-time values
-2. **Token Usage Parity**: Standard deepeval mode doesn't emit token usage (relies on Deepeval internals)
-3. **Evaluation Spans**: Documented but not implemented; keep as opt-in feature
-
----
-
-## 10. Future Work
-
-### 10.1 Completed
-
-- [x] Add non-batched mode for concurrent evaluation *(v0.1.13)*
-- [x] Performance benchmarks comparing evaluator modes *(v0.1.13)*
-- [x] Async evaluation support for NativeEvaluator *(v0.1.13)*
-
-### 10.2 Design Decision: Monitoring vs Emitters
-
-**Decision**: Keep evaluation monitoring metrics **separate** from the Emitter pattern.
-
-**Rationale**:
-- **Emitters** are designed for **application telemetry** - spans, metrics, and events that describe what the instrumented GenAI application is doing (LLM invocations, agent workflows, evaluation results)
-- **Monitoring metrics** are **operational/infrastructure telemetry** - metrics that describe how the evaluation pipeline itself is performing (queue health, processing latency, errors)
-
-**Benefits of separation**:
-1. **No pollution**: App telemetry stays clean without internal pipeline noise
-2. **Independent enablement**: Users can enable app telemetry without monitoring overhead, or vice versa
-3. **Different consumers**: App telemetry → developers/APM; Monitoring → SRE/operations
-4. **Different cardinality**: Operational metrics are fixed/low cardinality; app telemetry varies with usage
-5. **Potential for different exporters**: Could route operational metrics to a separate backend
-
-**Current design**:
-- `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` → operational metrics (opt-in)
-- Emitters → application-level telemetry only
-
-### 10.3 Short-term
-
-- [ ] Validate custom metrics implementation with real workloads
-
-### 10.4 Long-term
-
-- [ ] Rename package from `opentelemetry-util-genai-evals-deepeval` to `opentelemetry-util-genai-evals-native`
-- [ ] Optional evaluator spans (opt-in for debugging)
-- [ ] Support additional LLM providers (Anthropic, Google)
-
----
-
-## Appendix: PR Description Template
-
-### Title
-feat(evals): Add Evaluation Monitoring Metrics and LLM Judge Evaluator
-
-### Summary
-
-Adds evaluator-side monitoring metrics for the async evaluation pipeline and introduces a new LLM Judge evaluator as an alternative to the Deepeval integration.
-
-### What Changed
-
-**🔍 Evaluation Monitoring Metrics**
-- `gen_ai.evaluation.client.operation.duration` - Duration of LLM-as-a-judge calls
-- `gen_ai.evaluation.client.token.usage` - Token usage for judge calls
-- `gen_ai.evaluation.client.queue.size` - Current evaluation queue size
-- `gen_ai.evaluation.client.enqueue.errors` - Enqueue failure counter
-- Gated by `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true`
-
-**🤖 LLM Judge Evaluator**
-- New evaluator that evaluates metrics using LLM-as-a-judge without Deepeval dependency
-- Supports batched (all metrics in one call) and non-batched (one metric per call) modes
-- Works with any OpenAI-compatible API (OpenAI, Azure, LM Studio, Ollama)
-- Switch modes with `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=native`
-
-### Breaking Changes
-None. All changes are additive and behind feature flags.
-
-### Related Issues
-- HYBIM-492
