@@ -32,7 +32,9 @@ Features:
 Usage:
     # Set environment variables for DeepEval LLM configuration
     export DEEPEVAL_LLM_BASE_URL=http://localhost:1234/v1
-    export DEEPEVAL_LLM_MODEL=liquid/lfm2.5-1.2b  # or other local model
+    export DEEPEVAL_LLM_MODEL=mistralai/ministral-3-14b-reasoning
+    # or another local model
+    #export DEEPEVAL_LLM_MODEL=liquid/lfm2.5-1.2b
 
     # Optional: Configure concurrent mode
     export OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true
@@ -926,17 +928,29 @@ def run_test(
         poll_interval = 2.0
         max_time = time.time() + timeout  # Absolute maximum timeout
 
+        # Give initial delay for submissions to propagate to queue
+        time.sleep(0.5)
+
         while time.time() < max_time:
-            # Check if we're done
+            # Always get current stats from test emitter
+            stats = test_emitter.get_stats()
+            eval_results = stats.get("total_evaluation_results", 0)
+
+            # Check if we're done - need BOTH: queue empty AND results received
             if manager:
                 status = manager.get_status()
                 pending = status.get("pending_tasks", 0)
-                if pending == 0 and status.get("queue_depth", 0) == 0:
-                    return True
+                queue_depth = status.get("queue_depth", 0)
+
+                # Done if queue is empty AND we have some results
+                # (or if expected_evals is 0)
+                if pending == 0 and queue_depth == 0:
+                    # Only consider done if we have results or no evals expected
+                    if eval_results > 0 or expected_evals == 0:
+                        return True
                 progress_callback(status)
             else:
-                stats = test_emitter.get_stats()
-                eval_results = stats.get("total_evaluation_results", 0)
+                # Fallback: just check result count
                 if eval_results >= expected_evals:
                     return True
                 progress_callback({"pending_tasks": 0, "queue_depth": 0})

@@ -754,6 +754,15 @@ class NativeEvaluator(Evaluator):
             return list(self._evaluate_agent(item))
         return []
 
+    async def evaluate_async(self, item: GenAI) -> list[EvaluationResult]:
+        """Asynchronously evaluate a GenAI telemetry entity.
+
+        Overrides base class to properly delegate to NativeEvaluator's evaluate method.
+        """
+        import asyncio
+
+        return await asyncio.to_thread(self.evaluate, item)
+
     def _evaluate_llm(
         self, invocation: LLMInvocation
     ) -> Sequence[EvaluationResult]:
