@@ -816,8 +816,10 @@ class DeepevalEvaluator(Evaluator):
 def _get_evaluator_mode() -> str:
     """Get the evaluator mode from environment variable.
 
-    Returns 'batched' for DeepevalBatchedEvaluator or 'deepeval' for
-    the standard DeepevalEvaluator.
+    Returns:
+    - 'llmjudge': Use LLMJudgeEvaluator (no deepeval dependency, supports batched/non-batched)
+    - 'batched': Alias for 'llmjudge' (backward compatibility)
+    - 'deepeval': Use standard DeepevalEvaluator with full Deepeval library
     """
     mode = os.getenv(
         "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "deepeval"
@@ -831,10 +833,11 @@ def _factory(
     options: Mapping[str, Mapping[str, str]] | None = None,
 ) -> DeepevalEvaluator:
     mode = _get_evaluator_mode()
-    if mode == "batched":
-        from .deepeval_batched import DeepevalBatchedEvaluator
+    # 'llmjudge' is the new name, 'batched' is kept for backward compatibility
+    if mode in ("llmjudge", "batched"):
+        from .llmjudge import LLMJudgeEvaluator
 
-        return DeepevalBatchedEvaluator(
+        return LLMJudgeEvaluator(
             metrics,
             invocation_type=invocation_type,
             options=options,
