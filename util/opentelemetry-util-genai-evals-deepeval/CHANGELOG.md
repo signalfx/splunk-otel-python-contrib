@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.13 - 2026-02-04
+
+### Added
+- **Evaluation Monitoring Integration** - DeepEval evaluator now emits monitoring metrics
+  - Records evaluation duration via `EvaluationMonitor.record_evaluation()`
+  - Records token usage from DeepEval results when available
+  - Supports both sync and async evaluation paths
+
+### Changed
+- `run_evaluation()` and `run_evaluation_async()` now return `tuple[result, duration]`
+  - Duration measured using `time.perf_counter()` for precise timing
+  - Enables accurate latency tracking for monitoring metrics
+- `_evaluate_generic()` and `_evaluate_generic_async()` capture and record monitoring data
+
 ## Version 0.1.12 - 2026-01-30
 
 ### Fixed
@@ -21,12 +35,6 @@ All notable changes to this repository are documented in this file.
 
 ## Version 0.1.10 - 2026-01-26
 
-### Added
-- **Evaluation Monitoring Integration** - DeepEval evaluator now emits monitoring metrics
-  - Records evaluation duration via `EvaluationMonitor.record_evaluation()`
-  - Records token usage from DeepEval results when available
-  - Supports both sync and async evaluation paths
-
 ### Changed
 - **Hallucination GEval Metric** - Improved accuracy and industry-standard scoring
   - Score inversion: GEval outputs higher=better (1.0=no hallucination), now inverted to lower=better (0.0=no hallucination) to match DeepEval's HallucinationMetric convention
@@ -39,11 +47,6 @@ All notable changes to this repository are documented in this file.
   - Clear threshold boundaries: 0.0-0.35=Negative, 0.35-0.65=Neutral, 0.65-1.0=Positive
   - Improved criteria and steps for better intensity and mixed sentiment handling
   - Backward-compatible `deepeval.sentiment.compound` attribute still available
-
-- `run_evaluation()` and `run_evaluation_async()` now return `tuple[result, duration]`
-  - Duration measured using `time.perf_counter()` for precise timing
-  - Enables accurate latency tracking for monitoring metrics
-- `_evaluate_generic()` and `_evaluate_generic_async()` capture and record monitoring data
 
 ## Version 0.1.9 - 2026-01-17
 
