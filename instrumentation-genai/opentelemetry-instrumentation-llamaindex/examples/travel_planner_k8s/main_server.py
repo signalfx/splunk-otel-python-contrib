@@ -32,14 +32,19 @@ from llama_index.llms.openai import OpenAI
 
 from opentelemetry import trace, metrics, _events, _logs
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExportResult,
+    SpanExporter,
+)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 
@@ -120,6 +125,91 @@ class CircuITLLM(CustomLLM):
 
 # LLM Configuration
 _llm_instance = None
+_span_hierarchy_exporter = None
+
+
+class _SpanHierarchyExporter(SpanExporter):
+    """In-memory span collector for printing per-trace hierarchy."""
+
+    def __init__(self):
+        self._spans = []
+
+    def export(self, spans):
+        self._spans.extend(spans)
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self):
+        return None
+
+    def force_flush(self, timeout_millis: int = 30000):
+        return True
+
+    def get_spans_for_trace(self, trace_id: int):
+        return [s for s in self._spans if s.context.trace_id == trace_id]
+
+    def clear_trace(self, trace_id: int):
+        self._spans = [s for s in self._spans if s.context.trace_id != trace_id]
+
+
+def _format_trace_hierarchy(spans):
+    if not spans:
+        return "No spans captured for this trace."
+
+    by_id = {span.context.span_id: span for span in spans}
+    children = {}
+    roots = []
+    for span in spans:
+        parent_id = span.parent.span_id if span.parent else None
+        if parent_id in by_id:
+            children.setdefault(parent_id, []).append(span)
+        else:
+            roots.append(span)
+
+    def _line(span, depth):
+        op_name = span.attributes.get("gen_ai.operation.name") or span.name
+        parent_id = f"{span.parent.span_id:016x}" if span.parent else "null"
+        workflow_name = span.attributes.get("gen_ai.workflow.name")
+        agent_name = span.attributes.get("gen_ai.agent.name")
+        input_tokens = span.attributes.get("gen_ai.usage.input_tokens")
+        output_tokens = span.attributes.get("gen_ai.usage.output_tokens")
+
+        extras = []
+        if workflow_name:
+            extras.append(f"workflow={workflow_name}")
+        if agent_name:
+            extras.append(f"agent={agent_name}")
+        if input_tokens is not None or output_tokens is not None:
+            extras.append(f"tokens={input_tokens}/{output_tokens}")
+        extras_text = f" [{', '.join(extras)}]" if extras else ""
+
+        return (
+            f"{'    ' * depth}{op_name} ({span.context.span_id:016x})"
+            f" - parentId: {parent_id}{extras_text}"
+        )
+
+    def _walk(span, depth, out):
+        out.append(_line(span, depth))
+        for child in sorted(
+            children.get(span.context.span_id, []), key=lambda s: s.start_time
+        ):
+            _walk(child, depth + 1, out)
+
+    lines = []
+    for root in sorted(roots, key=lambda s: s.start_time):
+        _walk(root, 0, lines)
+    return "\n".join(lines)
+
+
+def _print_trace_hierarchy(trace_id: int):
+    if not _span_hierarchy_exporter:
+        return
+    spans = _span_hierarchy_exporter.get_spans_for_trace(trace_id)
+    if not spans:
+        return
+    print("\nTrace hierarchy:")
+    print(_format_trace_hierarchy(spans))
+    print("")
+    _span_hierarchy_exporter.clear_trace(trace_id)
 
 
 def get_llm():
@@ -183,10 +273,15 @@ def get_llm():
 
 # Setup Telemetry
 def setup_telemetry():
+    global _span_hierarchy_exporter
     # Setup trace provider
     trace.set_tracer_provider(TracerProvider())
     trace.get_tracer_provider().add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter())
+    )
+    _span_hierarchy_exporter = _SpanHierarchyExporter()
+    trace.get_tracer_provider().add_span_processor(
+        SimpleSpanProcessor(_span_hierarchy_exporter)
     )
 
     # Setup metrics provider
@@ -199,13 +294,8 @@ def setup_telemetry():
     # Add OTLP exporter for sending to collector
     logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
 
-    # Add Console exporter for debugging (prints to terminal)
-    logger_provider.add_log_record_processor(
-        BatchLogRecordProcessor(ConsoleLogExporter())
-    )
-
     _logs.set_logger_provider(logger_provider)
-    print("✓ Logs provider configured for content events (OTLP + Console)\n")
+    print("✓ Logs provider configured for content events (OTLP)\n")
 
     # Setup events provider for evaluation events
     # The EventLoggerProvider wraps the LoggerProvider to emit events as logs
@@ -292,8 +382,13 @@ def get_hotel_agent():
         llm = get_llm()
         tools = [FunctionTool.from_defaults(fn=search_hotels)]
         system_prompt = (
-            "You are a hotel specialist. Use the search_hotels tool with destination and dates. "
-            "After providing hotel options, hand off to ActivityAgent."
+            "You are a hotel specialist.\n"
+            "Required behavior:\n"
+            "1) Call the search_hotels tool exactly once using destination, check-in, and check-out.\n"
+            "2) Summarize concise hotel options from the tool result.\n"
+            "3) Immediately hand off to ActivityAgent.\n"
+            "Do not continue chatting without calling the tool.\n"
+            "Do not call handoff before calling search_hotels."
         )
         _hotel_agent = ReActAgent(
             name="HotelAgent",
@@ -389,6 +484,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handle POST requests for travel planning."""
         if self.path == "/plan":
+            request_trace_id = None
             # Create a root span for the HTTP request
             tracer = trace.get_tracer(__name__)
             with tracer.start_as_current_span(
@@ -400,6 +496,7 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     "http.scheme": "http",
                 },
             ) as span:
+                request_trace_id = span.get_span_context().trace_id
                 try:
                     content_length = int(self.headers["Content-Length"])
                     post_data = self.rfile.read(content_length)
@@ -496,6 +593,8 @@ class TravelPlannerHandler(BaseHTTPRequestHandler):
                     self.wfile.write(
                         json.dumps({"status": "error", "error": str(e)}).encode()
                     )
+            if request_trace_id is not None:
+                _print_trace_hierarchy(request_trace_id)
         else:
             self.send_response(404)
             self.end_headers()

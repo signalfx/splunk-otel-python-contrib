@@ -127,6 +127,38 @@ def _assert_agent_and_workflow_attributes(spans):
     assert any(span.attributes.get("gen_ai.agent.name") for span in agent_spans)
 
 
+def _span_tree_text(spans):
+    by_id = {span.context.span_id: span for span in spans}
+    children = {}
+    roots = []
+    for span in spans:
+        parent_id = span.parent.span_id if span.parent else None
+        if parent_id in by_id:
+            children.setdefault(parent_id, []).append(span)
+        else:
+            roots.append(span)
+
+    def _line(span, depth):
+        op = span.attributes.get("gen_ai.operation.name") or span.name
+        parent_id = span.parent.span_id if span.parent else None
+        return (
+            f"{'  ' * depth}{op}({span.name}) "
+            f"span_id={span.context.span_id:x} parent_id={parent_id}"
+        )
+
+    def _walk(span, depth, out):
+        out.append(_line(span, depth))
+        for child in sorted(
+            children.get(span.context.span_id, []), key=lambda s: s.start_time
+        ):
+            _walk(child, depth + 1, out)
+
+    lines = []
+    for root in sorted(roots, key=lambda s: s.start_time):
+        _walk(root, 0, lines)
+    return "\n".join(lines)
+
+
 @pytest.fixture(scope="module")
 def instrumented_telemetry():
     tracer_provider, meter_provider, memory_exporter = setup_telemetry()
@@ -325,6 +357,39 @@ async def test_multi_agent_workflow_example_emits_spans(
         }:
             assert span.parent is not None
             assert span.parent.span_id == workflow_span_id
+
+    concrete_agent_span_ids = {
+        span.context.span_id
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
+        and span.attributes.get("gen_ai.agent.name")
+        in {"ResearchAgent", "WriteAgent", "ReviewAgent"}
+    }
+    chat_spans = [
+        span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat"
+    ]
+    # In mocked handoff-only flows, LlamaIndex may not emit LLM callback events,
+    # so chat spans can be absent. If present, they must attach to concrete agents.
+    if chat_spans:
+        prefixed_agent_name_chats = [
+            span
+            for span in chat_spans
+            if str(span.attributes.get("gen_ai.agent.name", "")).startswith("agent.")
+        ]
+        assert not prefixed_agent_name_chats, (
+            "Found chat spans with prefixed gen_ai.agent.name.\n"
+            f"{_span_tree_text(spans)}"
+        )
+        wrong_parent_chat_spans = [
+            span
+            for span in chat_spans
+            if (span.parent is None)
+            or (span.parent.span_id not in concrete_agent_span_ids)
+        ]
+        assert not wrong_parent_chat_spans, (
+            "Found chat spans not attached to concrete agent spans.\n"
+            f"{_span_tree_text(spans)}"
+        )
 
 
 @pytest.mark.asyncio

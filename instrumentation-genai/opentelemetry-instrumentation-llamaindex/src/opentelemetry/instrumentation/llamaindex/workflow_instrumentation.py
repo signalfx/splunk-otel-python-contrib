@@ -7,6 +7,7 @@ by intercepting workflow event streams to capture tool calls.
 
 import asyncio
 from collections.abc import Mapping
+from typing import Any, Optional
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
@@ -17,6 +18,14 @@ from opentelemetry.util.genai.types import (
     ToolCall,
     Workflow,
 )
+from opentelemetry.instrumentation.llamaindex.invocation_manager import (
+    _InvocationManager,
+)
+
+
+def _normalize_agent_name(value: Any) -> str:
+    name = str(value) if value is not None else ""
+    return name[6:] if name.startswith("agent.") else name
 
 
 class WorkflowEventInstrumentor:
@@ -27,8 +36,13 @@ class WorkflowEventInstrumentor:
     instrumentor instances coexist, each tracking its own agent.
     """
 
-    def __init__(self, handler: TelemetryHandler):
+    def __init__(
+        self,
+        handler: TelemetryHandler,
+        invocation_manager: Optional[_InvocationManager] = None,
+    ):
         self._handler = handler
+        self._invocation_manager = invocation_manager
         self._active_tools = {}  # tool_id -> ToolCall
         self._current_agent = (
             None  # The agent being tracked by this instrumentor instance
@@ -57,6 +71,15 @@ class WorkflowEventInstrumentor:
         self._agent_scope = str(getattr(current_agent, "run_id", id(current_agent)))
         self._active_agents = {}
         self._current_agent_key = None
+        self._workflow_name = None
+        current_agent_attrs = getattr(current_agent, "attributes", None)
+        if isinstance(current_agent_attrs, dict):
+            workflow_name = current_agent_attrs.get("gen_ai.workflow.name")
+            if workflow_name:
+                self._workflow_name = str(workflow_name)
+        context_key_token = None
+        if self._invocation_manager:
+            context_key_token = self._invocation_manager.set_current_agent_key(None)
 
         try:
             async for event in workflow_handler.stream_events():
@@ -69,6 +92,7 @@ class WorkflowEventInstrumentor:
                         agent_name = event.current_agent_name
                         agent_key = (self._agent_scope, agent_name)
                         self._current_agent_key = agent_key
+                        agent_key_str = f"{agent_key[0]}::{agent_key[1]}"
                         if agent_key not in self._active_agents:
                             agent_invocation = AgentInvocation(
                                 name=f"agent.{agent_name}",
@@ -86,6 +110,10 @@ class WorkflowEventInstrumentor:
                             )
                             agent_invocation.framework = "llamaindex"
                             agent_invocation.agent_name = agent_name
+                            if self._workflow_name:
+                                agent_invocation.attributes["gen_ai.workflow.name"] = (
+                                    self._workflow_name
+                                )
                             if (
                                 hasattr(self._current_agent, "span")
                                 and self._current_agent.span
@@ -100,6 +128,14 @@ class WorkflowEventInstrumentor:
                                 )
                             self._handler.start_agent(agent_invocation)
                             self._active_agents[agent_key] = agent_invocation
+                            if self._invocation_manager:
+                                self._invocation_manager.register_agent_invocation(
+                                    agent_key_str, agent_invocation
+                                )
+                        if self._invocation_manager:
+                            self._invocation_manager.set_current_agent_key(
+                                agent_key_str
+                            )
 
                 elif isinstance(event, AgentOutput):
                     if (
@@ -110,6 +146,7 @@ class WorkflowEventInstrumentor:
                         agent_name = event.current_agent_name
                         agent_key = (self._agent_scope, agent_name)
                         self._current_agent_key = agent_key
+                        agent_key_str = f"{agent_key[0]}::{agent_key[1]}"
                         agent_invocation = self._active_agents.get(agent_key)
                         if agent_invocation:
                             agent_invocation.output_result = str(event.response.content)
@@ -119,6 +156,10 @@ class WorkflowEventInstrumentor:
                                     parts=[Text(content=str(event.response.content))],
                                 )
                             ]
+                            if self._invocation_manager:
+                                self._invocation_manager.set_current_agent_key(
+                                    agent_key_str
+                                )
 
                 # Tool call start
                 if isinstance(event, WorkflowToolCall):
@@ -134,12 +175,16 @@ class WorkflowEventInstrumentor:
                     if self._current_agent_key:
                         active_agent = self._active_agents.get(self._current_agent_key)
                     if active_agent:
-                        tool_call.agent_name = active_agent.agent_name
+                        tool_call.agent_name = _normalize_agent_name(
+                            active_agent.agent_name
+                        )
                         tool_call.agent_id = str(active_agent.run_id)
                         if hasattr(active_agent, "span") and active_agent.span:
                             tool_call.parent_span = active_agent.span
                     elif self._current_agent:
-                        tool_call.agent_name = self._current_agent.agent_name
+                        tool_call.agent_name = _normalize_agent_name(
+                            self._current_agent.agent_name
+                        )
                         tool_call.agent_id = str(self._current_agent.run_id)
                         if (
                             hasattr(self._current_agent, "span")
@@ -166,6 +211,11 @@ class WorkflowEventInstrumentor:
 
             for agent_invocation in list(self._active_agents.values()):
                 self._handler.stop_agent(agent_invocation)
+            for agent_key in list(self._active_agents.keys()):
+                if self._invocation_manager:
+                    self._invocation_manager.unregister_agent_invocation(
+                        f"{agent_key[0]}::{agent_key[1]}"
+                    )
             self._active_agents.clear()
 
         except Exception as e:
@@ -186,11 +236,19 @@ class WorkflowEventInstrumentor:
                 for agent_invocation in list(self._active_agents.values()):
                     error = Error(message=str(e), type=type(e))
                     self._handler.fail_agent(agent_invocation, error)
+                for agent_key in list(self._active_agents.keys()):
+                    if self._invocation_manager:
+                        self._invocation_manager.unregister_agent_invocation(
+                            f"{agent_key[0]}::{agent_key[1]}"
+                        )
                 self._active_agents.clear()
             except Exception as cleanup_error:
                 logger.warning(
                     f"Failed to clean up tool spans after error: {cleanup_error}"
                 )
+        finally:
+            if self._invocation_manager and context_key_token is not None:
+                self._invocation_manager.reset_current_agent_key(context_key_token)
 
 
 def wrap_agent_run(wrapped, instance, args, kwargs):
@@ -213,14 +271,17 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     from llama_index.core import Settings
 
     telemetry_handler = None
+    invocation_manager = None
     for callback_handler in Settings.callback_manager.handlers:
         if hasattr(callback_handler, "_handler"):
             telemetry_handler = callback_handler._handler
+            invocation_manager = getattr(callback_handler, "_invocation_manager", None)
             break
 
     # Create workflow and agent spans
     root_workflow = None
     current_agent = None
+    workflow_name = None
     if telemetry_handler:
         # Check if we're already inside a workflow span to avoid creating
         # duplicate workflow spans for nested/parallel agent execution.
@@ -230,11 +291,15 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         if current_span and current_span.is_recording():
             try:
                 op_name = None
+                workflow_name = None
                 span_attrs = getattr(current_span, "attributes", None)
                 if isinstance(span_attrs, dict):
                     op_name = span_attrs.get("gen_ai.operation.name")
+                    workflow_name = span_attrs.get("gen_ai.workflow.name")
                 if op_name is None and hasattr(current_span, "_attributes"):
                     op_name = current_span._attributes.get("gen_ai.operation.name")
+                if workflow_name is None and hasattr(current_span, "_attributes"):
+                    workflow_name = current_span._attributes.get("gen_ai.workflow.name")
                 inside_workflow = op_name == "invoke_workflow"
             except Exception:
                 pass  # If we can't determine, assume not inside workflow
@@ -254,6 +319,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 attributes={},
             )
             telemetry_handler.start_workflow(root_workflow)
+            workflow_name = root_workflow.name
 
         # Create agent invocation
         agent_input_messages = (
@@ -268,6 +334,8 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         )
         current_agent.framework = "llamaindex"
         current_agent.agent_name = type(instance).__name__
+        if workflow_name:
+            current_agent.attributes["gen_ai.workflow.name"] = str(workflow_name)
 
         is_orchestrator_workflow = bool(
             hasattr(instance, "agents")
@@ -286,7 +354,7 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
 
     if telemetry_handler and current_agent:
         # Create workflow instrumentor for tool tracking
-        instrumentor = WorkflowEventInstrumentor(telemetry_handler)
+        instrumentor = WorkflowEventInstrumentor(telemetry_handler, invocation_manager)
 
         # Wrap the handler to close agent and workflow spans when complete
         original_handler = handler
