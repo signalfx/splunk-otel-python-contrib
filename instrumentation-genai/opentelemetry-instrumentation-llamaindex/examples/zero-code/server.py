@@ -1,27 +1,98 @@
 """
-LlamaIndex Zero-Code Server using CircuIT LLM.
+LlamaIndex Zero-Code Server using CircuIT or OpenAI LLM.
 
 This server exposes an HTTP endpoint for chat requests and uses
 zero-code OpenTelemetry instrumentation via opentelemetry-instrument.
 
-Run with: opentelemetry-instrument python main_server.py
+Run with: opentelemetry-instrument python server.py
 """
 
 import json
 import os
-import sys
-from pathlib import Path
+import base64
+import time
 from typing import Any
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
 
-# Add parent directory to path to import from util
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from util import OAuth2TokenManager
 from llama_index.core.base.llms.types import ChatMessage, ChatResponse, MessageRole
 from llama_index.core.llms import CustomLLM, CompletionResponse, LLMMetadata
 from llama_index.core.llms.callbacks import llm_chat_callback
+from llama_index.llms.openai import OpenAI
+
+
+class OAuth2TokenManager:
+    """Simple OAuth2 client-credentials token manager for custom LLM gateways."""
+
+    def __init__(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        scope: str | None = None,
+        token_refresh_buffer_seconds: int = 300,
+    ) -> None:
+        self.token_url = token_url
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.scope = scope
+        self.token_refresh_buffer = token_refresh_buffer_seconds
+        self._token: str | None = None
+        self._token_expiry = 0.0
+
+    def get_token(self) -> str:
+        if self._token and time.time() < (
+            self._token_expiry - self.token_refresh_buffer
+        ):
+            return self._token
+        return self._refresh_token()
+
+    def _refresh_token(self) -> str:
+        credentials = base64.b64encode(
+            f"{self.client_id}:{self.client_secret}".encode()
+        ).decode()
+        data = {"grant_type": "client_credentials"}
+        if self.scope:
+            data["scope"] = self.scope
+        response = requests.post(
+            self.token_url,
+            headers={
+                "Accept": "*/*",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": f"Basic {credentials}",
+            },
+            data=data,
+            timeout=30,
+        )
+        response.raise_for_status()
+        token_data = response.json()
+        self._token = str(token_data["access_token"])
+        expires_in = int(token_data.get("expires_in", 3600))
+        self._token_expiry = time.time() + expires_in
+        return self._token
+
+
+# =============================================================================
+# LLM Configuration - OAuth2 Provider
+# =============================================================================
+
+# Optional app key for request tracking
+LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
+
+# Check if we should use OAuth2 or standard OpenAI
+USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
+
+# Initialize token manager if OAuth2 credentials are present
+token_manager: OAuth2TokenManager | None = None
+if USE_OAUTH2:
+    token_manager = OAuth2TokenManager(
+        token_url=os.environ.get("LLM_TOKEN_URL", ""),
+        client_id=os.environ.get("LLM_CLIENT_ID", ""),
+        client_secret=os.environ.get("LLM_CLIENT_SECRET", ""),
+        scope=os.environ.get("LLM_SCOPE"),
+    )
 
 
 # Custom LLM for Cisco CircuIT
@@ -30,7 +101,7 @@ class CircuITLLM(CustomLLM):
 
     api_url: str
     token_manager: OAuth2TokenManager
-    app_key: str
+    app_key: str | None = None
     model_name: str = "gpt-4o-mini"
     temperature: float = 0.0
 
@@ -58,8 +129,12 @@ class CircuITLLM(CustomLLM):
                 }
             )
 
-        # CircuIT requires appkey as JSON string in user field
-        user_field = json.dumps({"appkey": self.app_key})
+        payload: dict[str, Any] = {
+            "messages": api_messages,
+            "temperature": self.temperature,
+        }
+        if self.app_key:
+            payload["user"] = json.dumps({"appkey": self.app_key})
 
         # Make request to CircuIT
         response = requests.post(
@@ -68,11 +143,7 @@ class CircuITLLM(CustomLLM):
                 "api-key": access_token,
                 "Content-Type": "application/json",
             },
-            json={
-                "messages": api_messages,
-                "temperature": self.temperature,
-                "user": user_field,
-            },
+            json=payload,
             timeout=60,
         )
         response.raise_for_status()
@@ -106,32 +177,34 @@ class CircuITLLM(CustomLLM):
 
 # Initialize LLM
 def initialize_llm():
-    """Initialize CircuIT LLM from environment variables."""
-    circuit_base_url = os.getenv("CIRCUIT_BASE_URL")
-    circuit_token_url = os.getenv("CIRCUIT_TOKEN_URL")
-    circuit_client_id = os.getenv("CIRCUIT_CLIENT_ID")
-    circuit_client_secret = os.getenv("CIRCUIT_CLIENT_SECRET")
-    circuit_app_key = os.getenv("CIRCUIT_APP_KEY", "llamaindex-zero-code-demo")
-    circuit_scope = os.getenv("CIRCUIT_SCOPE")
+    """Initialize OAuth2 gateway LLM or fall back to standard OpenAI API key."""
+    openai_model_name = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+    llm_base_url = os.getenv("LLM_BASE_URL")
+    # Backward-compatible fallback names
+    llm_base_url = llm_base_url or os.getenv("CIRCUIT_BASE_URL")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
 
-    if not all(
-        [circuit_base_url, circuit_token_url, circuit_client_id, circuit_client_secret]
-    ):
-        raise RuntimeError("Missing required CircuIT environment variables")
+    if USE_OAUTH2 and token_manager:
+        if not llm_base_url:
+            raise RuntimeError(
+                "LLM_BASE_URL is required when using OAuth2 gateway credentials."
+            )
 
-    token_manager = OAuth2TokenManager(
-        token_url=circuit_token_url,
-        client_id=circuit_client_id,
-        client_secret=circuit_client_secret,
-        scope=circuit_scope,
-    )
+        return CircuITLLM(
+            api_url=str(llm_base_url),
+            token_manager=token_manager,
+            app_key=LLM_APP_KEY,
+            model_name=openai_model_name,
+            temperature=0.0,
+        )
 
-    return CircuITLLM(
-        api_url=circuit_base_url,
-        token_manager=token_manager,
-        app_key=circuit_app_key,
-        model_name="gpt-4o-mini",
-        temperature=0.0,
+    if openai_api_key:
+        return OpenAI(model=openai_model_name, temperature=0.0)
+
+    raise RuntimeError(
+        "No LLM credentials configured. Set either OAuth2 gateway credentials "
+        "(LLM_BASE_URL/LLM_TOKEN_URL/LLM_CLIENT_ID/LLM_CLIENT_SECRET) "
+        "or OPENAI_API_KEY."
     )
 
 
@@ -205,7 +278,8 @@ def run_server(port=8080):
     """Run the HTTP server."""
     # Initialize LLM
     ChatRequestHandler.llm = initialize_llm()
-    print("✓ LlamaIndex CircuIT LLM initialized")
+    provider = "CircuIT" if isinstance(ChatRequestHandler.llm, CircuITLLM) else "OpenAI"
+    print(f"✓ LlamaIndex {provider} LLM initialized")
 
     server_address = ("", port)
     httpd = HTTPServer(server_address, ChatRequestHandler)
