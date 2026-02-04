@@ -60,6 +60,34 @@ from .suppress_output import import_deepeval_quietly  # noqa: F401
 # Import deepeval modules while suppressing startup warnings and patch consoles
 import_deepeval_quietly()
 
+# Monitoring support - lazy import to avoid circular dependencies
+_monitoring_enabled: bool | None = None
+
+
+def _get_monitor() -> Any:
+    """Lazily get the evaluation monitor if monitoring is enabled."""
+    global _monitoring_enabled
+    if _monitoring_enabled is None:
+        try:
+            from opentelemetry.util.genai.evals.env import read_monitoring_flag
+
+            _monitoring_enabled = read_monitoring_flag()
+        except ImportError:
+            _monitoring_enabled = False
+
+    if not _monitoring_enabled:
+        return None
+
+    try:
+        from opentelemetry.util.genai.evals.monitoring import (
+            get_evaluation_monitor,
+        )
+
+        return get_evaluation_monitor()
+    except ImportError:
+        return None
+
+
 try:  # Optional debug logging import
     from opentelemetry.util.genai.debug import genai_debug_log
 except (ImportError, ModuleNotFoundError):  # pragma: no cover

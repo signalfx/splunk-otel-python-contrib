@@ -214,7 +214,7 @@ def test_hallucination_metric_score_inversion(monkeypatch):
         # Use a closure to capture the current fake_result
         def make_fake_runner(result):
             def fake_runner(case, metrics):
-                return result
+                return result, 0.0  # Return (result, duration) tuple
 
             return fake_runner
 
@@ -293,7 +293,10 @@ def test_hallucination_metric_name_variants(monkeypatch):
         )
         monkeypatch.setattr(
             "opentelemetry.util.evaluator.deepeval._run_deepeval",
-            lambda case, metrics: fake_result,
+            lambda case, metrics: (
+                fake_result,
+                0.0,
+            ),  # Return (result, duration) tuple
         )
 
         results = evaluator.evaluate(invocation)

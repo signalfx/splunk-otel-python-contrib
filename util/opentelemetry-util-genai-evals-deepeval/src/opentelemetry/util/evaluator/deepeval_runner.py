@@ -18,6 +18,7 @@ from .suppress_output import import_deepeval_quietly  # isort: skip
 import_deepeval_quietly()
 
 import asyncio  # noqa: E402
+import time  # noqa: E402
 from typing import Any, Sequence  # noqa: E402
 
 from deepeval import evaluate as deepeval_evaluate  # noqa: E402
@@ -64,7 +65,7 @@ def _execute_evaluation(
 def run_evaluation(
     test_case: Any,
     metrics: Sequence[Any],
-) -> Any:
+) -> tuple[Any, float]:
     """Run DeepEval evaluation synchronously (sequential mode).
 
     This function is called from the sequential evaluation path where
@@ -76,15 +77,18 @@ def run_evaluation(
         metrics: List of metrics to run.
 
     Returns:
-        Evaluation result from DeepEval.
+        Tuple of (evaluation result, duration in seconds).
     """
-    return _execute_evaluation(test_case, metrics, run_async=False)
+    start_time = time.perf_counter()
+    result = _execute_evaluation(test_case, metrics, run_async=False)
+    duration = time.perf_counter() - start_time
+    return result, duration
 
 
 async def run_evaluation_async(
     test_case: Any,
     metrics: Sequence[Any],
-) -> Any:
+) -> tuple[Any, float]:
     """Run DeepEval evaluation asynchronously with parallel metrics.
 
     This function is called from the concurrent evaluation path. It runs
@@ -104,12 +108,15 @@ async def run_evaluation_async(
         metrics: List of metrics to run.
 
     Returns:
-        Evaluation result from DeepEval.
+        Tuple of (evaluation result, duration in seconds).
     """
     use_parallel = read_concurrent_flag()
-    return await asyncio.to_thread(
+    start_time = time.perf_counter()
+    result = await asyncio.to_thread(
         _execute_evaluation, test_case, metrics, use_parallel
     )
+    duration = time.perf_counter() - start_time
+    return result, duration
 
 
 __all__ = ["run_evaluation", "run_evaluation_async"]

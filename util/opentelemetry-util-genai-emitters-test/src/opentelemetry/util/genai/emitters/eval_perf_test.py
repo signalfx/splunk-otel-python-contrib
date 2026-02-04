@@ -32,7 +32,9 @@ Features:
 Usage:
     # Set environment variables for DeepEval LLM configuration
     export DEEPEVAL_LLM_BASE_URL=http://localhost:1234/v1
-    export DEEPEVAL_LLM_MODEL=liquid/lfm2.5-1.2b  # or other local model
+    DEEPEVAL_LLM_MODEL=mistralai/ministral-3-14b-reasoning
+    # or another local model
+    #export DEEPEVAL_LLM_MODEL=liquid/lfm2.5-1.2b
 
     # Optional: Configure concurrent mode
     export OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true

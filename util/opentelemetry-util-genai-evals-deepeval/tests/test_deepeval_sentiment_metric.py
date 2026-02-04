@@ -265,7 +265,7 @@ def test_sentiment_label_thresholds(monkeypatch):
         # Use a closure to capture the current fake_result
         def make_fake_runner(result):
             def fake_runner(case, metrics):
-                return result
+                return result, 0.0  # Return (result, duration) tuple
 
             return fake_runner
 
