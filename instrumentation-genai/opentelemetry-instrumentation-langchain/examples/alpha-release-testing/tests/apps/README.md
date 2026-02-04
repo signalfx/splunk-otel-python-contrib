@@ -8,44 +8,7 @@ This directory contains production-ready test applications for validating Alpha 
 
 ## 📱 Available Applications
 
-### 1. **Retail Shop LangChain App** (`retail_shop_langchain_app.py`) ⭐ NEW
-
-**Purpose**: Multi-agent retail system with unified trace validation
-
-**Features**:
-- ✅ **3-Agent Hierarchy**: Store Manager (parent) → Inventory Agent + Customer Service Agent (children)
-- ✅ **LangChain Auto-Instrumentation**: Uses `create_agent()` and `LangchainInstrumentor().instrument()`
-- ✅ **Unified Traces**: Root span wrapper ensures single trace per scenario
-- ✅ **Tool Functions**: `check_inventory()`, `get_return_policy()`, `format_response()`
-- ✅ **Normal Content**: Demonstrates passing evaluation metrics
-
-**Test Scenarios**:
-1. **Product Availability** - Customer inquires about iPhone 15 Pro stock
-2. **Return Request** - Customer requests laptop return process
-
-**Usage**:
-```bash
-# Run both scenarios
-python retail_shop_langchain_app.py
-
-# Verify in Splunk APM
-# Service: retail-shop-langchain
-# Environment: From OTEL_DEPLOYMENT_ENVIRONMENT
-```
-
-**Configuration**: `config/.env`
-
-**Validates**:
-- ✅ LangChain automatic instrumentation
-- ✅ Unified trace structure with root spans
-- ✅ Multi-agent coordination
-- ✅ Evaluation metrics on all agents
-- ✅ Environment variable configuration
-- ✅ Tool execution tracking
-
----
-
-### 2. **LangChain Evaluation App** (`langchain_evaluation_app.py`)
+### 1. **LangChain Evaluation App** (`langchain_evaluation_app.py`)
 
 **Source**: `qse-evaluation-harness/multi-agent-openai-metrics-trigger.py`
 
@@ -466,13 +429,15 @@ Spans:
 - OpenAI chat calls
 
 Metrics:
-- gen_ai.evaluation.bias
-- gen_ai.evaluation.hallucination
-- gen_ai.evaluation.sentiment
-- gen_ai.evaluation.toxicity
-- gen_ai.evaluation.relevance
+- gen_ai.evaluation.score (consolidated metric with gen_ai.evaluation.metric_name dimension)
 - gen_ai.client.token.usage
 - gen_ai.agent.duration
+
+Events:
+- gen_ai.evaluation (evaluation event with score, metric_name, pass/fail)
+
+Attributes:
+- gen_ai.client.inference.operation.details (inference operation details)
 ```
 
 ### LangGraph Travel Planner App
@@ -801,17 +766,17 @@ pip list | grep -E "langchain|opentelemetry|traceloop"
 
 ## 📊 Application Comparison Matrix
 
-| Feature | Retail Shop | LangChain Eval | LangGraph Travel | Direct Azure | Traceloop |
-|---------|-------------|----------------|------------------|--------------|-----------|
-| **Instrumentation** | LangChain Auto | LangChain Auto | LangGraph | Manual GenAI | Traceloop SDK |
-| **Agent Count** | 3 (1+2) | 2 | 5 | 5 (1+4) | 5 |
-| **Scenarios** | 2 | 6 | 1 | 2 | 1 |
-| **Unified Traces** | ✅ Root span | ❌ Separate | ✅ Workflow | ✅ Parent span | ✅ Workflow |
-| **Tool Usage** | ✅ 3 tools | ❌ No tools | ✅ Mock tools | ❌ No tools | ✅ Mock tools |
-| **Content Type** | Normal | Problematic | Normal/Poisoned | Normal | Normal |
-| **Eval Metrics** | ✅ All 5 | ✅ All 5 | ✅ All 5 | ✅ All 5 | ✅ All 5 |
-| **Use Case** | Unified traces | Metric testing | Workflow orchestration | Manual instrumentation | SDK translation |
-| **Status** | ⭐ NEW | Reference | Existing | ⭐ ENHANCED | Existing |
+| Feature | LangChain Eval | LangGraph Travel | Direct Azure | Traceloop |
+|---------|----------------|------------------|--------------|-----------|
+| **Instrumentation** | LangChain Auto | LangGraph | Manual GenAI | Traceloop SDK |
+| **Agent Count** | 2 | 5 | 5 (1+4) | 5 |
+| **Scenarios** | 6 | 1 | 2 | 1 |
+| **Unified Traces** | ❌ Separate | ✅ Workflow | ✅ Parent span | ✅ Workflow |
+| **Tool Usage** | ❌ No tools | ✅ Mock tools | ❌ No tools | ✅ Mock tools |
+| **Content Type** | Problematic | Normal/Poisoned | Normal | Normal |
+| **Eval Metrics** | ✅ gen_ai.evaluation.score | ✅ gen_ai.evaluation.score | ✅ gen_ai.evaluation.score | ✅ gen_ai.evaluation.score |
+| **Use Case** | Metric testing | Workflow orchestration | Manual instrumentation | SDK translation |
+| **Status** | Reference | Existing | ⭐ ENHANCED | Existing |
 
 ---
 
@@ -831,7 +796,7 @@ Each application should:
 ## 🎯 Key Takeaways
 
 ### **For Unified Traces**
-Use **Retail Shop App** or **Direct Azure App** - both demonstrate root span patterns for single trace per workflow.
+Use **Direct Azure App** - demonstrates root span patterns for single trace per workflow.
 
 ### **For Evaluation Metrics Testing**
 Use **LangChain Eval App** - 6 scenarios specifically designed to trigger different evaluation metrics.

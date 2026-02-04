@@ -653,8 +653,11 @@ def flush_telemetry():
         print(f"[FLUSH] Warning: Could not flush metrics: {e}", flush=True)
 
     # Give batch processors time to complete final export operations
-    print("[FLUSH] Waiting for final batch export (5s)", flush=True)
-    time.sleep(5)
+    # Note: 30 seconds is needed to ensure async evaluations complete before export
+    print(
+        "[FLUSH] Waiting for async evaluations and final batch export (30s)", flush=True
+    )
+    time.sleep(30)
 
     print("[FLUSH] Telemetry flush complete\n", flush=True)
 
