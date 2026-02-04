@@ -197,6 +197,7 @@ def test_manager_shutdown_clears_workers(monkeypatch):
 
 def test_manager_drops_invocation_when_queue_full(monkeypatch):
     """Test that invocations are dropped when queue is full."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_QUEUE_SIZE", "2")
 
     handler = _StubHandler()
@@ -217,10 +218,12 @@ def test_manager_drops_invocation_when_queue_full(monkeypatch):
     assert invocation3.evaluation_error == "client_evaluation_queue_full"
     assert invocation1.evaluation_error is None
     assert invocation2.evaluation_error is None
+    manager.shutdown()
 
 
 def test_on_completion_skips_unsupported_invocation_types(monkeypatch):
     """Test that unsupported invocation types are skipped with proper error."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
@@ -236,10 +239,12 @@ def test_on_completion_skips_unsupported_invocation_types(monkeypatch):
         == "client_evaluation_skipped_as_invocation_type_not_supported"
     )
     assert len(handler.calls) == 0
+    manager.shutdown()
 
 
 def test_on_completion_skips_tool_llm_invocations(monkeypatch):
     """Test that tool-only LLM invocations are skipped with proper error."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
@@ -261,10 +266,12 @@ def test_on_completion_skips_tool_llm_invocations(monkeypatch):
         == "client_evaluation_skipped_as_tool_llm_invocation_type_not_supported"
     )
     assert len(handler.calls) == 0
+    manager.shutdown()
 
 
 def test_on_completion_skips_invocation_with_error(monkeypatch):
     """Test that invocations with errors are skipped with proper error flag."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
@@ -281,10 +288,12 @@ def test_on_completion_skips_invocation_with_error(monkeypatch):
         == "client_evaluation_skipped_as_error_on_invocation"
     )
     assert len(handler.calls) == 0
+    manager.shutdown()
 
 
 def test_on_completion_processes_valid_invocation(monkeypatch):
     """Test that valid invocations are processed without error."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
 
     handler = _StubHandler()
     manager = Manager(handler)
@@ -299,3 +308,4 @@ def test_on_completion_processes_valid_invocation(monkeypatch):
 
     # Should be queued without error
     assert invocation.evaluation_error is None
+    manager.shutdown()
