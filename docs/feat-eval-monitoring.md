@@ -10,7 +10,7 @@
 This feature adds evaluator-side monitoring metrics for the async evaluation pipeline and introduces two new evaluator modes for LLM-as-a-Judge evaluation:
 
 1. **Deepeval Mode** (`deepeval`) — Uses Deepeval library's evaluation runner with full metric class support
-2. **LLM Judge Mode** (`llmjudge`) — Standalone evaluator with inline rubrics, no Deepeval dependency
+2. **Native Evaluator Mode** (`native`) — Standalone evaluator with inline rubrics, no Deepeval dependency
    - Supports **batched** (all metrics in one LLM call) and **non-batched** (one metric per call) modes
    - Works with any OpenAI-compatible API (OpenAI, Azure, LM Studio, Ollama, etc.)
 
@@ -69,7 +69,7 @@ All metrics are gated by `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` (def
 | `gen_ai.provider.name` | Low | e.g., `openai`, `anthropic` |
 | `gen_ai.request.model` | Low | e.g., `gpt-4o-mini` |
 | `gen_ai.evaluation.name` | Low | metric name |
-| `gen_ai.evaluation.evaluator.name` | Low | e.g., `llmjudge`, `deepeval` |
+| `gen_ai.evaluation.evaluator.name` | Low | e.g., `native`, `deepeval` |
 | `gen_ai.token.type` | Low | `input` or `output` |
 | `error.type` | Low | exception type on failure |
 
@@ -88,24 +88,24 @@ All metrics are gated by `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` (def
 | Mode | Evaluator | Dependency | Metrics per Call | Best For |
 |------|-----------|------------|------------------|----------|
 | `deepeval` | DeepevalEvaluator | Deepeval library | 1 | Full Deepeval features |
-| `llmjudge` (batched) | LLMJudgeEvaluator | OpenAI SDK only | All | Efficiency, simple setups |
-| `llmjudge` (non-batched) | LLMJudgeEvaluator | OpenAI SDK only | 1 | Concurrent evaluation, debugging |
+| `native` (batched) | NativeEvaluator | OpenAI SDK only | All | Efficiency, simple setups |
+| `native` (non-batched) | NativeEvaluator | OpenAI SDK only | 1 | Concurrent evaluation, debugging |
 
-### 3.2 Mode Selection
+### 3.2 Implementation Selection
 
 ```bash
-# Use Deepeval (default if installed)
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=deepeval
+# Use Native evaluator (default) - no Deepeval library needed
+export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=native
 
-# Use LLM Judge with batched mode (default for llmjudge)
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge
+# Use Deepeval library implementation
+export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=deepeval
 
-# 'batched' is an alias for 'llmjudge' (backward compatibility)
+# Configure Native evaluator mode (only for native implementation)
+# Default is batched mode
 export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=batched
 
-# Use LLM Judge with non-batched mode
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge
-export OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED=false
+# Use non-batched mode (one LLM call per metric)
+export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=non-batched
 ```
 
 ### 3.3 Built-in Metrics
@@ -130,7 +130,7 @@ The LLM Judge evaluator supports customer-defined custom metrics with custom rub
 ### 4.1 Defining Custom Metrics
 
 ```python
-from opentelemetry.util.evaluator.llmjudge import LLMJudgeEvaluator
+from opentelemetry.util.evaluator.native import NativeEvaluator
 
 # Define custom rubrics
 custom_rubrics = {
@@ -165,7 +165,7 @@ Return a brief reason explaining your assessment.
 }
 
 # Create evaluator with custom metrics
-evaluator = LLMJudgeEvaluator(
+evaluator = NativeEvaluator(
     metrics=["bias", "helpfulness", "conciseness"],  # Mix built-in and custom
     custom_rubrics=custom_rubrics,
 )
@@ -184,7 +184,7 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_CUSTOM_RUBRICS='{
 }'
 
 # Use the custom metric
-export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="llmjudge(LLMInvocation(bias,code_quality))"
+export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="native(LLMInvocation(bias,code_quality))"
 ```
 
 ### 4.3 Custom Rubric Schema
@@ -218,8 +218,8 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="llmjudge(LLMInvocation(bias,
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE` | Evaluator mode: `deepeval`, `llmjudge`, `batched` | `deepeval` |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED` | Enable batched mode for llmjudge | `true` |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION` | Evaluator implementation: `native` or `deepeval` | `native` |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE` | Mode for native evaluator: `batched` or `non-batched` | `batched` |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_CUSTOM_RUBRICS` | JSON string of custom metric rubrics | (empty) |
 
 ### 5.3 LLM Provider Configuration
@@ -240,7 +240,7 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="llmjudge(LLMInvocation(bias,
 
 ## 6. Usage Guide
 
-### 6.1 Basic Setup (Deepeval Mode)
+### 6.1 Basic Setup (Deepeval Implementation)
 
 ```bash
 # Install packages
@@ -249,29 +249,29 @@ pip install opentelemetry-util-genai-evals-deepeval deepeval
 # Configure
 export OPENAI_API_KEY=sk-...
 export OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true
+export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=deepeval
 export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity))"
 ```
 
-### 6.2 LLM Judge Mode (No Deepeval)
+### 6.2 Native Evaluator (Default, No Deepeval)
 
 ```bash
 # Install packages (no deepeval needed)
 pip install opentelemetry-util-genai-evals-deepeval
 
-# Configure for batched mode
+# Configure for batched mode (default)
 export OPENAI_API_KEY=sk-...
 export OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge
+# IMPLEMENTATION defaults to native, MODE defaults to batched
 export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity,answer_relevancy))"
 ```
 
 ### 6.3 Local LLM (LM Studio, Ollama)
 
 ```bash
-# Configure for local LLM
+# Configure for local LLM (native implementation is default)
 export DEEPEVAL_LLM_BASE_URL=http://localhost:1234/v1
 export DEEPEVAL_LLM_MODEL=llama-3.2-8b-instruct
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge
 export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias))"
 
 # Note: OPENAI_API_KEY still needed (can be any value for local LLMs)
@@ -282,8 +282,7 @@ export OPENAI_API_KEY=not-needed
 
 ```bash
 # Use non-batched mode for more granular metrics/debugging
-export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge
-export OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED=false
+export OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=non-batched
 ```
 
 ---
@@ -304,7 +303,7 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED=false
 
 | File | Purpose |
 |------|---------|
-| [llmjudge.py](../util/opentelemetry-util-genai-evals-deepeval/src/opentelemetry/util/evaluator/llmjudge.py) | LLM Judge evaluator (main) |
+| [native.py](../util/opentelemetry-util-genai-evals-deepeval/src/opentelemetry/util/evaluator/native.py) | LLM Judge evaluator (main) |
 | [deepeval.py](../util/opentelemetry-util-genai-evals-deepeval/src/opentelemetry/util/evaluator/deepeval.py) | Mode switching factory |
 
 #### Environment Variables (`util/opentelemetry-util-genai`)
@@ -327,7 +326,7 @@ export OTEL_INSTRUMENTATION_GENAI_EVALS_LLMJUDGE_BATCHED=false
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                    Evaluator (LLMJudge or Deepeval)              │
+│                    Evaluator (Native or Deepeval)              │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ evaluate(invocation)                                        ││
 │  │   ├── Build prompt (batched or single metric)               ││
@@ -472,7 +471,7 @@ python -m opentelemetry.util.genai.emitters.eval_perf_test \
 # With local LLM (LM Studio)
 DEEPEVAL_LLM_BASE_URL=http://localhost:1234/v1 \
 DEEPEVAL_LLM_MODEL=llama-3.2-8b-instruct \
-OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge \
+OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=native \
 python -m opentelemetry.util.genai.emitters.eval_perf_test \
   --samples 10 --concurrent --workers 4 --timeout 180
 ```
@@ -483,16 +482,16 @@ python -m opentelemetry.util.genai.emitters.eval_perf_test \
 # Quick test of LLM Judge evaluator
 DEEPEVAL_LLM_BASE_URL=http://localhost:1234/v1 \
 DEEPEVAL_LLM_MODEL=liquid/lfm2.5-1.2b \
-OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge \
+OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=native \
 python -c "
-from opentelemetry.util.evaluator.llmjudge import LLMJudgeEvaluator
+from opentelemetry.util.evaluator.native import NativeEvaluator
 from opentelemetry.util.genai.types import LLMInvocation, InputMessage, OutputMessage, Text
 
 inv = LLMInvocation(request_model='test')
 inv.input_messages.append(InputMessage(role='user', parts=[Text(content='What is 2+2?')]))
 inv.output_messages.append(OutputMessage(role='assistant', parts=[Text(content='4')], finish_reason='stop'))
 
-evaluator = LLMJudgeEvaluator(['bias'])
+evaluator = NativeEvaluator(['bias'])
 results = evaluator.evaluate(inv)
 print(f'Result: {results[0].metric_name}={results[0].score}, label={results[0].label}')
 "
@@ -507,10 +506,10 @@ print(f'Result: {results[0].metric_name}={results[0].score}, label={results[0].l
 
 | Issue | Location | Fix |
 |-------|----------|-----|
-| Batched evaluator ignoring `DEEPEVAL_LLM_BASE_URL` | llmjudge.py | Added `base_url` parameter to OpenAI client |
-| Model resolution missing `DEEPEVAL_LLM_MODEL` | llmjudge.py | Added to resolution chain |
-| JSON parsing too rigid | llmjudge.py | Accept direct numeric scores |
-| `response_format` not supported by all providers | llmjudge.py | Added try/except fallback |
+| Batched evaluator ignoring `DEEPEVAL_LLM_BASE_URL` | native.py | Added `base_url` parameter to OpenAI client |
+| Model resolution missing `DEEPEVAL_LLM_MODEL` | native.py | Added to resolution chain |
+| JSON parsing too rigid | native.py | Accept direct numeric scores |
+| `response_format` not supported by all providers | native.py | Added try/except fallback |
 | Test isolation issue | test_deepeval_evaluator.py | Added `monkeypatch.delenv()` |
 
 ### 9.2 Positives
@@ -538,7 +537,7 @@ print(f'Result: {results[0].metric_name}={results[0].score}, label={results[0].l
 
 ### 10.2 Long-term
 
-- [ ] Rename package from `opentelemetry-util-genai-evals-deepeval` to `opentelemetry-util-genai-evals-llmjudge`
+- [ ] Rename package from `opentelemetry-util-genai-evals-deepeval` to `opentelemetry-util-genai-evals-native`
 - [ ] Optional evaluator spans (opt-in for debugging)
 - [ ] Support additional LLM providers (Anthropic, Google)
 
@@ -566,7 +565,7 @@ Adds evaluator-side monitoring metrics for the async evaluation pipeline and int
 - New evaluator that evaluates metrics using LLM-as-a-judge without Deepeval dependency
 - Supports batched (all metrics in one call) and non-batched (one metric per call) modes
 - Works with any OpenAI-compatible API (OpenAI, Azure, LM Studio, Ollama)
-- Switch modes with `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=llmjudge`
+- Switch modes with `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=native`
 
 ### Breaking Changes
 None. All changes are additive and behind feature flags.

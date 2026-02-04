@@ -1,7 +1,7 @@
-"""Tests for the deepeval mode switching functionality.
+"""Tests for the deepeval implementation switching functionality.
 
-Tests that OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE env var correctly
-switches between DeepevalEvaluator (default) and DeepevalBatchedEvaluator.
+Tests that OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION env var correctly
+switches between NativeEvaluator (default) and DeepevalEvaluator.
 """
 
 import importlib
@@ -44,14 +44,15 @@ def _build_invocation() -> LLMInvocation:
     return invocation
 
 
-def test_default_mode_uses_deepeval_evaluator(monkeypatch) -> None:
-    """When mode env var is not set, factory returns DeepevalEvaluator."""
+def test_default_implementation_uses_native_evaluator(monkeypatch) -> None:
+    """When implementation env var is not set, factory returns NativeEvaluator."""
     clear_registry()
     _restore_builtin_evaluators()
 
     # Ensure env var is not set
     monkeypatch.delenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", raising=False
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION",
+        raising=False,
     )
 
     from opentelemetry.util.evaluator import deepeval as plugin
@@ -61,75 +62,74 @@ def test_default_mode_uses_deepeval_evaluator(monkeypatch) -> None:
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
 
-    # DeepevalEvaluator (not batched) should be returned
+    # NativeEvaluator should be returned by default
+    assert type(evaluator).__name__ == "NativeEvaluator"
+
+    clear_registry()
+    _restore_builtin_evaluators()
+
+
+def test_native_implementation_uses_native_evaluator(monkeypatch) -> None:
+    """When implementation is 'native', factory returns NativeEvaluator."""
+    clear_registry()
+    _restore_builtin_evaluators()
+
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "native"
+    )
+
+    from opentelemetry.util.evaluator import deepeval as plugin
+
+    importlib.reload(plugin)
+    plugin.register()
+
+    evaluator = get_evaluator("deepeval", metrics=["bias"])
+
+    assert type(evaluator).__name__ == "NativeEvaluator"
+
+    clear_registry()
+    _restore_builtin_evaluators()
+
+
+def test_deepeval_implementation_uses_deepeval_evaluator(monkeypatch) -> None:
+    """When implementation is 'deepeval', factory returns DeepevalEvaluator."""
+    clear_registry()
+    _restore_builtin_evaluators()
+
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "deepeval"
+    )
+
+    from opentelemetry.util.evaluator import deepeval as plugin
+
+    importlib.reload(plugin)
+    plugin.register()
+
+    evaluator = get_evaluator("deepeval", metrics=["bias"])
+
     assert type(evaluator).__name__ == "DeepevalEvaluator"
 
     clear_registry()
     _restore_builtin_evaluators()
 
 
-def test_deepeval_mode_uses_deepeval_evaluator(monkeypatch) -> None:
-    """When mode is 'deepeval', factory returns DeepevalEvaluator."""
+def test_native_implementation_evaluates_with_openai(monkeypatch) -> None:
+    """Native implementation should use OpenAI directly without deepeval package."""
     clear_registry()
     _restore_builtin_evaluators()
 
     monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "deepeval"
-    )
-
-    from opentelemetry.util.evaluator import deepeval as plugin
-
-    importlib.reload(plugin)
-    plugin.register()
-
-    evaluator = get_evaluator("deepeval", metrics=["bias"])
-
-    assert type(evaluator).__name__ == "DeepevalEvaluator"
-
-    clear_registry()
-    _restore_builtin_evaluators()
-
-
-def test_batched_mode_uses_batched_evaluator(monkeypatch) -> None:
-    """When mode is 'batched', factory returns LLMJudgeEvaluator (backward compat)."""
-    clear_registry()
-    _restore_builtin_evaluators()
-
-    monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "batched"
-    )
-
-    from opentelemetry.util.evaluator import deepeval as plugin
-
-    importlib.reload(plugin)
-    plugin.register()
-
-    evaluator = get_evaluator("deepeval", metrics=["bias"])
-
-    # LLMJudgeEvaluator should be returned (batched is alias for llmjudge)
-    assert type(evaluator).__name__ == "LLMJudgeEvaluator"
-
-    clear_registry()
-    _restore_builtin_evaluators()
-
-
-def test_batched_mode_evaluates_with_openai(monkeypatch) -> None:
-    """Batched mode should use OpenAI directly without deepeval package."""
-    clear_registry()
-    _restore_builtin_evaluators()
-
-    monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "batched"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "native"
     )
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     from opentelemetry.util.evaluator import deepeval as plugin
-    from opentelemetry.util.evaluator import llmjudge
+    from opentelemetry.util.evaluator import native
 
     importlib.reload(plugin)
     plugin.register()
 
-    # Mock OpenAI for the llmjudge evaluator
+    # Mock OpenAI for the native evaluator
     completion = SimpleNamespace(
         choices=[
             SimpleNamespace(
@@ -147,9 +147,7 @@ def test_batched_mode_evaluates_with_openai(monkeypatch) -> None:
             completions=SimpleNamespace(create=lambda **_kwargs: completion)
         )
     )
-    monkeypatch.setattr(
-        llmjudge.openai, "OpenAI", lambda **_kwargs: stub_client
-    )
+    monkeypatch.setattr(native.openai, "OpenAI", lambda **_kwargs: stub_client)
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
     results = evaluator.evaluate(_build_invocation())
@@ -163,13 +161,13 @@ def test_batched_mode_evaluates_with_openai(monkeypatch) -> None:
     _restore_builtin_evaluators()
 
 
-def test_mode_case_insensitive(monkeypatch) -> None:
-    """Mode value should be case-insensitive."""
+def test_implementation_case_insensitive(monkeypatch) -> None:
+    """Implementation value should be case-insensitive."""
     clear_registry()
     _restore_builtin_evaluators()
 
     monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "BATCHED"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "NATIVE"
     )
 
     from opentelemetry.util.evaluator import deepeval as plugin
@@ -179,19 +177,20 @@ def test_mode_case_insensitive(monkeypatch) -> None:
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
 
-    assert type(evaluator).__name__ == "LLMJudgeEvaluator"
+    assert type(evaluator).__name__ == "NativeEvaluator"
 
     clear_registry()
     _restore_builtin_evaluators()
 
 
-def test_llmjudge_mode_uses_llmjudge_evaluator(monkeypatch) -> None:
-    """When mode is 'llmjudge', factory returns LLMJudgeEvaluator."""
+def test_invalid_implementation_defaults_to_deepeval(monkeypatch) -> None:
+    """Invalid implementation value should default to deepeval (for safety)."""
     clear_registry()
     _restore_builtin_evaluators()
 
     monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "llmjudge"
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION",
+        "invalid_impl",
     )
 
     from opentelemetry.util.evaluator import deepeval as plugin
@@ -201,29 +200,7 @@ def test_llmjudge_mode_uses_llmjudge_evaluator(monkeypatch) -> None:
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
 
-    assert type(evaluator).__name__ == "LLMJudgeEvaluator"
-
-    clear_registry()
-    _restore_builtin_evaluators()
-
-
-def test_invalid_mode_defaults_to_deepeval(monkeypatch) -> None:
-    """Invalid mode value should default to deepeval."""
-    clear_registry()
-    _restore_builtin_evaluators()
-
-    monkeypatch.setenv(
-        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "invalid_mode"
-    )
-
-    from opentelemetry.util.evaluator import deepeval as plugin
-
-    importlib.reload(plugin)
-    plugin.register()
-
-    evaluator = get_evaluator("deepeval", metrics=["bias"])
-
-    # Should fallback to DeepevalEvaluator
+    # Should fallback to DeepevalEvaluator for unknown values
     assert type(evaluator).__name__ == "DeepevalEvaluator"
 
     clear_registry()
