@@ -530,12 +530,30 @@ print(f'Result: {results[0].metric_name}={results[0].score}, label={results[0].l
 - [x] Performance benchmarks comparing evaluator modes *(v0.1.13)*
 - [x] Async evaluation support for NativeEvaluator *(v0.1.13)*
 
-### 10.2 Short-term
+### 10.2 Design Decision: Monitoring vs Emitters
 
-- [ ] Migrate monitoring metrics to the Emitter design pattern
+**Decision**: Keep evaluation monitoring metrics **separate** from the Emitter pattern.
+
+**Rationale**:
+- **Emitters** are designed for **application telemetry** - spans, metrics, and events that describe what the instrumented GenAI application is doing (LLM invocations, agent workflows, evaluation results)
+- **Monitoring metrics** are **operational/infrastructure telemetry** - metrics that describe how the evaluation pipeline itself is performing (queue health, processing latency, errors)
+
+**Benefits of separation**:
+1. **No pollution**: App telemetry stays clean without internal pipeline noise
+2. **Independent enablement**: Users can enable app telemetry without monitoring overhead, or vice versa
+3. **Different consumers**: App telemetry → developers/APM; Monitoring → SRE/operations
+4. **Different cardinality**: Operational metrics are fixed/low cardinality; app telemetry varies with usage
+5. **Potential for different exporters**: Could route operational metrics to a separate backend
+
+**Current design**:
+- `OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true` → operational metrics (opt-in)
+- Emitters → application-level telemetry only
+
+### 10.3 Short-term
+
 - [ ] Validate custom metrics implementation with real workloads
 
-### 10.3 Long-term
+### 10.4 Long-term
 
 - [ ] Rename package from `opentelemetry-util-genai-evals-deepeval` to `opentelemetry-util-genai-evals-native`
 - [ ] Optional evaluator spans (opt-in for debugging)
