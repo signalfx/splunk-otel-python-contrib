@@ -91,7 +91,7 @@ def test_deepeval_mode_uses_deepeval_evaluator(monkeypatch) -> None:
 
 
 def test_batched_mode_uses_batched_evaluator(monkeypatch) -> None:
-    """When mode is 'batched', factory returns DeepevalBatchedEvaluator."""
+    """When mode is 'batched', factory returns LLMJudgeEvaluator (backward compat)."""
     clear_registry()
     _restore_builtin_evaluators()
 
@@ -106,8 +106,8 @@ def test_batched_mode_uses_batched_evaluator(monkeypatch) -> None:
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
 
-    # DeepevalBatchedEvaluator should be returned
-    assert type(evaluator).__name__ == "DeepevalBatchedEvaluator"
+    # LLMJudgeEvaluator should be returned (batched is alias for llmjudge)
+    assert type(evaluator).__name__ == "LLMJudgeEvaluator"
 
     clear_registry()
     _restore_builtin_evaluators()
@@ -124,12 +124,12 @@ def test_batched_mode_evaluates_with_openai(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     from opentelemetry.util.evaluator import deepeval as plugin
-    from opentelemetry.util.evaluator import deepeval_batched
+    from opentelemetry.util.evaluator import llmjudge
 
     importlib.reload(plugin)
     plugin.register()
 
-    # Mock OpenAI for the batched evaluator
+    # Mock OpenAI for the llmjudge evaluator
     completion = SimpleNamespace(
         choices=[
             SimpleNamespace(
@@ -148,7 +148,7 @@ def test_batched_mode_evaluates_with_openai(monkeypatch) -> None:
         )
     )
     monkeypatch.setattr(
-        deepeval_batched.openai, "OpenAI", lambda **_kwargs: stub_client
+        llmjudge.openai, "OpenAI", lambda **_kwargs: stub_client
     )
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
@@ -179,7 +179,29 @@ def test_mode_case_insensitive(monkeypatch) -> None:
 
     evaluator = get_evaluator("deepeval", metrics=["bias"])
 
-    assert type(evaluator).__name__ == "DeepevalBatchedEvaluator"
+    assert type(evaluator).__name__ == "LLMJudgeEvaluator"
+
+    clear_registry()
+    _restore_builtin_evaluators()
+
+
+def test_llmjudge_mode_uses_llmjudge_evaluator(monkeypatch) -> None:
+    """When mode is 'llmjudge', factory returns LLMJudgeEvaluator."""
+    clear_registry()
+    _restore_builtin_evaluators()
+
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE", "llmjudge"
+    )
+
+    from opentelemetry.util.evaluator import deepeval as plugin
+
+    importlib.reload(plugin)
+    plugin.register()
+
+    evaluator = get_evaluator("deepeval", metrics=["bias"])
+
+    assert type(evaluator).__name__ == "LLMJudgeEvaluator"
 
     clear_registry()
     _restore_builtin_evaluators()

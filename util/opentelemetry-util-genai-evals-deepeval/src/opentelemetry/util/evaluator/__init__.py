@@ -16,9 +16,11 @@
 
 from .deepeval import DeepevalEvaluator, register, registration
 from .deepeval_model import OAuth2TokenManager, create_eval_model
+from .llmjudge import LLMJudgeEvaluator
 
 __all__ = [
     "DeepevalEvaluator",
+    "LLMJudgeEvaluator",
     "register",
     "registration",
     "OAuth2TokenManager",
