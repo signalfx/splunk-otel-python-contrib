@@ -454,7 +454,7 @@ Metrics:
 - gen_ai.agent.duration
 - gen_ai.client.operation.duration
 - gen_ai.client.token.usage
-- gen_ai.evaluation.* (all evaluation metrics)
+- gen_ai.evaluation.score (consolidated metric with gen_ai.evaluation.metric_name dimension)
 
 Attributes:
 - gen_ai.workflow.name

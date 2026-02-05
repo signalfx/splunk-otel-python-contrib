@@ -28,34 +28,26 @@ WORKDIR ${APP_HOME}
 # System tooling for curl/health checks and timezone awareness
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        tzdata \
-        git \
+    ca-certificates \
+    curl \
+    tzdata \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only the directories needed for editable installs
-COPY instrumentation-genai ${APP_HOME}/instrumentation-genai
-COPY util ${APP_HOME}/util
+# Copy only the test application files (no local package installs needed - using PyPI)
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/alpha-release-testing ${APP_HOME}/alpha-release-testing
 
-WORKDIR ${APP_HOME}/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/alpha-release-testing
+WORKDIR ${APP_HOME}/alpha-release-testing
 
 # Drop any developer .env that might be present to avoid baking secrets into the image
 RUN rm -f config/.env
 
-# Install dependencies from requirements.txt
-# Note: GenAI util packages are commented out in requirements.txt until published to PyPI
-# For now, install them from local source in editable mode
+# Install all dependencies from requirements.txt (all packages available on PyPI)
 COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/alpha-release-testing/deploy/requirements.txt ${APP_HOME}/requirements.txt
 RUN python -m venv .venv-langchain \
     && . .venv-langchain/bin/activate \
     && pip install --upgrade pip \
-    && pip install -r ${APP_HOME}/requirements.txt \
-    && pip install --no-deps -e ../../../../util/opentelemetry-util-genai \
-    && pip install --no-deps -e ../../../../util/opentelemetry-util-genai-emitters-splunk \
-    && pip install --no-deps -e ../../../../util/opentelemetry-util-genai-evals \
-    && pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval \
-    && pip install -e ../..
+    && pip install -r ${APP_HOME}/requirements.txt
 
 # Default environment can be overridden at runtime
 ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 \
@@ -64,7 +56,7 @@ ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 \
     OTEL_RESOURCE_ATTRIBUTES=deployment.environment=alpha,test.phase=validation
 
 # Activate venv for all commands
-ENV PATH="${APP_HOME}/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/alpha-release-testing/.venv-langchain/bin:$PATH"
+ENV PATH="${APP_HOME}/alpha-release-testing/.venv-langchain/bin:$PATH"
 
 # Health check (optional - can be customized per deployment)
 HEALTHCHECK --interval=5m --timeout=30s --start-period=30s --retries=3 \
