@@ -147,11 +147,12 @@ For detailed information, see these files in the repository:
 
 1. Create `instrumentation-genai/opentelemetry-instrumentation-{name}/`
 2. Copy structure from existing instrumentation (e.g., langchain)
-3. Implement a target instrumented framework demo apps, i.e. `instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot`
-4. Implement callback handler/wrappers for the instrumented functions
-5. Don't create telemetry in the instrumentation library, use `util/opentelemetry-util-genai` APIs to create GenAI Types and for lifecycle
-6. Validate functionality with real app
-7. Add tests with mocked LLM Provider call (test all the way through the framework, don't mock the framework)
+3. **Set `requires-python = ">=3.10"` in `pyproject.toml`** - The codebase uses Python 3.10+ features (PEP 604 union types)
+4. Implement a target instrumented framework demo apps, i.e. `instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot`
+5. Implement callback handler/wrappers for the instrumented functions
+6. Don't create telemetry in the instrumentation library, use `util/opentelemetry-util-genai` APIs to create GenAI Types and for lifecycle
+7. Validate functionality with real app
+8. Add tests with mocked LLM Provider call (test all the way through the framework, don't mock the framework)
 
 ### Adding a New Emitter
 
