@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sre-copilot-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-copilot-config
+  namespace: sre-copilot-platform
+data:
+  AZURE_EMBEDDING_DEPLOYMENT: text-embedding-3-large
+  AZURE_OPENAI_API_VERSION: 2024-12-01-preview
+  AZURE_OPENAI_ENDPOINT: https://<AZURE_RESOURCE_NAME>.openai.azure.com/
+  CIRCUIT_BASE_URL: https://<CIRCUIT_HOST>/openai/deployments/gpt-4.1
+  CIRCUIT_TOKEN_URL: https://<AUTH_HOST>/oauth2/default/v1/token
+  DEEPEVAL_FILE_SYSTEM: READ_ONLY
+  DEEPEVAL_LLM_BASE_URL: https://<CIRCUIT_HOST>/openai/deployments/gpt-4.1
+  DEEPEVAL_LLM_CLIENT_APP_NAME: <CLIENT_APP_NAME>
+  DEEPEVAL_LLM_MODEL: gpt-4.1
+  DEEPEVAL_LLM_PROVIDER: openai
+  DEEPEVAL_LLM_TOKEN_URL: https://<AUTH_HOST>/oauth2/default/v1/token
+  DEEPEVAL_MAX_CONCURRENT: "10"
+  DEPLOYMENT_ENV: o11y-for-ai
+  MCP_SERVER_URL: http://sre-copilot-mcp.sre-copilot-platform.svc.cluster.local:8081
+  OPENAI_MODEL: gpt-4o-mini
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: DELTA
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_GENAI_EVAL_DEBUG_EACH: "false"
+  OTEL_GENAI_EVAL_DEBUG_SKIPS: "false"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: SPAN
+  OTEL_INSTRUMENTATION_GENAI_DEBUG: "false"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS: span_metric,splunk
+  OTEL_INSTRUMENTATION_LANGCHAIN_DEBUG: "false"
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_PYTHON_LOG_LEVEL: debug
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=o11y-for-ai
+  OTEL_TRACES_EXPORTER: otlp

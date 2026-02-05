@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-copilot-api
+  namespace: sre-copilot-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sre-copilot-api
+  template:
+    metadata:
+      labels:
+        app: sre-copilot-api
+    spec:
+      initContainers:
+      - name: generate-env
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - env > /env-volume/.env
+        envFrom:
+        - configMapRef:
+            name: sre-copilot-config
+        - secretRef:
+            name: sre-copilot-secrets
+        volumeMounts:
+        - name: env-file
+          mountPath: /env-volume
+      containers:
+      - name: sre-copilot-api
+        image: ertserendavga918/sre-copilot-api-platform:v0.1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        envFrom:
+        - configMapRef:
+            name: sre-copilot-config
+        - secretRef:
+            name: sre-copilot-secrets
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: "sre-copilot"
+        - name: SPLUNK_OTEL_AGENT
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://$(SPLUNK_OTEL_AGENT):14317"
+        volumeMounts:
+        - name: env-file
+          mountPath: /app/.env
+          subPath: .env
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 2Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+      volumes:
+      - name: env-file
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-copilot-mcp
+  namespace: sre-copilot-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sre-copilot-mcp
+  template:
+    metadata:
+      labels:
+        app: sre-copilot-mcp
+    spec:
+      containers:
+      - name: sre-copilot-mcp
+        image: ertserendavga918/sre-copilot-mcp-platform:v0.1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8081
+          name: http
+        envFrom:
+        - configMapRef:
+            name: sre-copilot-config
+        - secretRef:
+            name: sre-copilot-secrets
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: "sre-copilot-mcp"
+        - name: SPLUNK_OTEL_AGENT
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://$(SPLUNK_OTEL_AGENT):14317"
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-copilot-api
+  namespace: sre-copilot-platform
+spec:
+  selector:
+    app: sre-copilot-api
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-copilot-mcp
+  namespace: sre-copilot-platform
+spec:
+  selector:
+    app: sre-copilot-mcp
+  ports:
+  - port: 8081
+    targetPort: 8081
+    name: http

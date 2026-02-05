@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sre-copilot-run-scenario-001
+  namespace: sre-copilot-platform
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  schedule: '*/10 * * * *'
+  timeZone: America/Los_Angeles
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: trigger
+            image: curlimages/curl:8.5.0
+            imagePullPolicy: IfNotPresent
+            args:
+            - -sS
+            - -X
+            - POST
+            - http://sre-copilot-api.sre-copilot-platform.svc.cluster.local:8080/run
+            - -H
+            - 'Content-Type: application/json'
+            - -d
+            - '{"scenario_id":"scenario-001"}'
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
