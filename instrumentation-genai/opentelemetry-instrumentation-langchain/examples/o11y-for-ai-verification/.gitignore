@@ -1,0 +1,10 @@
+config/.env
+*.env
+reports/
+docs/
+bin/
+o11y-ai-test-framework/reports/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/

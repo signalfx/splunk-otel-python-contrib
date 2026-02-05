@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm-proxy
+    ports:
+      - "4000:4000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4317}
+      - OTEL_SERVICE_NAME=litellm-proxy
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=alpha-test,service.version=1.0.0
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:Z
+    command: [ "--config", "/app/config.yaml", "--port", "4000", "--detailed_debug" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:4000/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

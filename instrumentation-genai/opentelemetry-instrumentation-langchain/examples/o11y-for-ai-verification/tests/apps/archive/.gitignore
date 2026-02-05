@@ -1,0 +1,5 @@
+# Ignore all files in archive directory
+# Archive is for reference only and should not be committed
+*
+!.gitignore
+!README.md

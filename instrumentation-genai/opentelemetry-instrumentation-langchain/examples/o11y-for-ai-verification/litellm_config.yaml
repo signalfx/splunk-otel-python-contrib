@@ -1,0 +1,24 @@
+model_list:
+  - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: openai/gpt-3.5-turbo
+      api_key: os.environ/OPENAI_API_KEY
+  
+  - model_name: gpt-4
+    litellm_params:
+      model: openai/gpt-4
+      api_key: os.environ/OPENAI_API_KEY
+  
+  - model_name: azure-gpt-4
+    litellm_params:
+      model: azure/gpt-4
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: "2024-08-01-preview"
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  
+general_settings:
+  master_key: "sk-1234"

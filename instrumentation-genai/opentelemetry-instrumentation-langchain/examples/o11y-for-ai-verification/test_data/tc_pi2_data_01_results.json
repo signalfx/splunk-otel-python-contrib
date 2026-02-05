@@ -1,0 +1,44 @@
+{
+  "test_id": "TC-PI2-DATA-01",
+  "test_name": "Test Data Versioning with Git LFS",
+  "timestamp": "2026-01-23T20:24:52.217504",
+  "checks": [
+    {
+      "check": "Git LFS Installation",
+      "status": "FAIL",
+      "details": "Git LFS not installed or not in PATH: Command '['git', 'lfs', 'version']' returned non-zero exit status 1."
+    },
+    {
+      "check": "Git LFS Tracking Configuration",
+      "status": "FAIL",
+      "details": ".gitattributes file not found"
+    },
+    {
+      "check": "PII Masking Validation",
+      "status": "PASS",
+      "details": "All 5000 prompts properly masked"
+    },
+    {
+      "check": "Prompts File Generation",
+      "status": "PASS",
+      "details": "Generated prompts_v1.0.json with 5000 prompts (1,140,151 bytes, SHA256: f12b22c1d42e2ab7...)"
+    },
+    {
+      "check": "Prompts File Generation",
+      "status": "PASS",
+      "details": "Generated prompts_v1.1.json with 5000 prompts (1,140,151 bytes, SHA256: 00d52a8a14c33ec7...)"
+    },
+    {
+      "check": "Data Refresh Process",
+      "status": "PASS",
+      "details": "Version updated from 1.0 to 1.1, timestamp refreshed, 5000 prompts maintained"
+    }
+  ],
+  "overall_status": "FAIL",
+  "summary": {
+    "total_checks": 6,
+    "passed": 4,
+    "failed": 2,
+    "warnings": 0
+  }
+}
