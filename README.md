@@ -259,6 +259,7 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 - Backpressure strategies for high-volume content events.
 
 ## 14. Development setup
+
 Get the packages installed:
 
 Setup a virtual env (Note: will erase your .venv in the current folder)
@@ -272,8 +273,6 @@ pip install -e util/opentelemetry-util-genai --no-deps
 pip install -e util/opentelemetry-util-genai-evals --no-deps
 pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
 pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
-pip install -e util/opentelemetry-util-genai-traceloop-translator --no-deps
-pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
 pip install -r dev-genai-requirements.txt
 pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/requirements.txt
 
@@ -281,11 +280,56 @@ export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
-export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="Deepeval(LLMInvocation(bias,toxicity))"
+# configure which GenAI types to evaluate and which evaluations, for example
+# export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity),AgentInvocation(hallucination))"
+# use minimal set up for development to avoid extra inference cost or use a local LLM
+export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="Deepeval(LLMInvocation(bias,toxicity))" 
 export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
+# Deepeval optimization
+export DEEPEVAL_FILE_SYSTEM=READ_ONLY
+export DEEPEVAL_TELEMETRY_OPT_OUT=YES
 ```
 
-Sudo-code to create LLMInvocation for your in-code llm code
+To debug util-genai
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_DEBUG=false
+```
+
+### to install an instrumentation library
+
+```bash
+pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
+```
+
+Examples for each instrumentation library or package can be found in `<that package folder>/examples`, i.e.
+
+```bash
+util/opentelemetry-util-genai/examples/
+```
+
+### Installing a Translator library
+
+To use exiting 3rd partu instrumentations and convert it to Splunk Distro semantic conventions/run instrumentation-side evaluations you can install a translator library. 
+
+For example for existing traseloop instrumentations
+```bash
+pip install -e util/opentelemetry-util-genai-traceloop-translator --no-deps
+```
+
+## Installing aidefence instrumentation
+
+```bash
+pip install -e instrumentation-genai/opentelemetry-instrumentation-aidefense
+
+export AI_DEFENSE_API_KEY="your-ai-defense-key"
+
+python instrumentation-genai/opentelemetry-instrumentation-aidefense/examples/multi_agent_travel_planner/main.py
+```
+
+## In-code instrumentation example
+
+Sudo-code to create LLMInvocation for your in-code for an application:
 
 ```python
 from opentelemetry.util.genai.handler import get_telemetry_handler
@@ -302,14 +346,10 @@ inv.output_messages = [OutputMessage(role="assistant", parts=[Text("Hi!")], fini
 handler.stop_llm(inv)
 ```
 
-Additionally, for `aidefense`
+Additionally, you can run a simple example reporting an LLM Invocation
 
 ```bash
-pip install -e instrumentation-genai/opentelemetry-instrumentation-aidefense
-
-export AI_DEFENSE_API_KEY="your-ai-defense-key"
-
-python instrumentation-genai/opentelemetry-instrumentation-aidefense/examples/multi_agent_travel_planner/main.py
+python util/opentelemetry-util-genai/examples/invocation_example.py llm --exporter otlp --session-id my-session-123
 ```
 
 ## 15. Linting and Formatting
