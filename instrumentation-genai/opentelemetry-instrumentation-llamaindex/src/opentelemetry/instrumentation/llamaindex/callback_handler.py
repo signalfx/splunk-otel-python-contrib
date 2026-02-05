@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from llama_index.core.callbacks.base_handler import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType
+from opentelemetry import trace as trace_api
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
@@ -38,6 +39,12 @@ def _get_attr(obj: Any, key: str, default: Any = None) -> Any:
         return obj.get(key, default)
     except AttributeError:
         return getattr(obj, key, default)
+
+
+def _normalize_agent_name(value: Any) -> str:
+    """Normalize agent name for gen_ai.agent.name (without 'agent.' prefix)."""
+    name = _safe_str(value)
+    return name[6:] if name.startswith("agent.") else name
 
 
 def _make_input_messages(messages: List[Any]) -> List[InputMessage]:
@@ -135,13 +142,151 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         """End a trace - required by BaseCallbackHandler."""
         pass
 
-    def _get_parent_span(self, parent_id: str) -> Optional[Any]:
+    def _get_parent_span(
+        self, parent_id: str, allow_fallback: bool = True
+    ) -> Optional[Any]:
         """Get parent span from invocation manager using parent_id."""
         if not parent_id:
-            return None
+            return self._get_active_agent_span_fallback() if allow_fallback else None
         parent_entity = self._invocation_manager.get_invocation(parent_id)
         if parent_entity:
             return getattr(parent_entity, "span", None)
+        return self._get_active_agent_span_fallback() if allow_fallback else None
+
+    def _get_active_agent_span_fallback(
+        self, expected_parent_span: Optional[Any] = None
+    ) -> Optional[Any]:
+        """Fallback to active agent span from task-local context, then handler stack."""
+        if not self._handler:
+            return None
+        context_agent = self._invocation_manager.get_current_agent_invocation()
+        context_agent_span = (
+            getattr(context_agent, "span", None) if context_agent else None
+        )
+        if context_agent_span:
+            if expected_parent_span is None:
+                return context_agent_span
+            parent_ctx = getattr(context_agent_span, "parent", None)
+            expected_parent_span_id = None
+            if hasattr(expected_parent_span, "get_span_context"):
+                try:
+                    expected_parent_span_id = (
+                        expected_parent_span.get_span_context().span_id
+                    )
+                except Exception:
+                    expected_parent_span_id = None
+            if (
+                expected_parent_span_id is not None
+                and parent_ctx
+                and parent_ctx.span_id == expected_parent_span_id
+            ):
+                return context_agent_span
+        stack = getattr(self._handler, "_agent_context_stack", None)
+        if not stack:
+            return None
+        span_registry = getattr(self._handler, "_span_registry", {})
+        expected_parent_span_id = None
+        if expected_parent_span and hasattr(expected_parent_span, "get_span_context"):
+            try:
+                expected_parent_span_id = (
+                    expected_parent_span.get_span_context().span_id
+                )
+            except Exception:
+                expected_parent_span_id = None
+        try:
+            if expected_parent_span_id is None:
+                _agent_name, agent_run_id = stack[-1]
+                return span_registry.get(str(agent_run_id))
+
+            for _agent_name, agent_run_id in reversed(stack):
+                agent_span = span_registry.get(str(agent_run_id))
+                if not agent_span:
+                    continue
+                parent_ctx = getattr(agent_span, "parent", None)
+                if parent_ctx and parent_ctx.span_id == expected_parent_span_id:
+                    return agent_span
+            return None
+        except Exception:
+            return None
+
+    def _get_active_agent_context_fallback(
+        self, expected_parent_span: Optional[Any] = None
+    ) -> Optional[tuple[str, str]]:
+        """Resolve active agent (name, id) from context, then handler stack."""
+        context_agent = self._invocation_manager.get_current_agent_invocation()
+        if context_agent and getattr(context_agent, "run_id", None):
+            name = getattr(context_agent, "agent_name", None) or getattr(
+                context_agent, "name", None
+            )
+            if name:
+                return (_normalize_agent_name(name), str(context_agent.run_id))
+
+        if not self._handler:
+            return None
+        stack = getattr(self._handler, "_agent_context_stack", None)
+        if not stack:
+            return None
+        span_registry = getattr(self._handler, "_span_registry", {})
+        expected_parent_span_id = None
+        if expected_parent_span and hasattr(expected_parent_span, "get_span_context"):
+            try:
+                expected_parent_span_id = (
+                    expected_parent_span.get_span_context().span_id
+                )
+            except Exception:
+                expected_parent_span_id = None
+        try:
+            if expected_parent_span_id is None:
+                top_name, top_id = stack[-1]
+                return (_normalize_agent_name(top_name), str(top_id))
+            for agent_name, agent_run_id in reversed(stack):
+                agent_span = span_registry.get(str(agent_run_id))
+                if not agent_span:
+                    continue
+                parent_ctx = getattr(agent_span, "parent", None)
+                if parent_ctx and parent_ctx.span_id == expected_parent_span_id:
+                    return (_normalize_agent_name(agent_name), str(agent_run_id))
+            return None
+        except Exception:
+            return None
+
+    def _find_workflow_name(
+        self, parent_id: str, context_agent: Optional[AgentInvocation] = None
+    ) -> Optional[str]:
+        """Resolve workflow name from parent chain, context agent, then active span."""
+        current_id = parent_id
+        visited: set[str] = set()
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            parent_entity = self._invocation_manager.get_invocation(current_id)
+            if isinstance(parent_entity, Workflow):
+                return parent_entity.name
+            attributes = getattr(parent_entity, "attributes", None)
+            if isinstance(attributes, dict):
+                workflow_name = attributes.get("gen_ai.workflow.name")
+                if workflow_name:
+                    return _safe_str(workflow_name)
+            current_id = self._invocation_manager.get_parent_id(current_id) or ""
+
+        if context_agent:
+            attributes = getattr(context_agent, "attributes", None)
+            if isinstance(attributes, dict):
+                workflow_name = attributes.get("gen_ai.workflow.name")
+                if workflow_name:
+                    return _safe_str(workflow_name)
+        # Fallback: resolve from active tracing context
+        current_span = trace_api.get_current_span()
+        if not current_span:
+            return None
+        attrs = getattr(current_span, "attributes", None)
+        if isinstance(attrs, dict):
+            workflow_name = attrs.get("gen_ai.workflow.name")
+            if workflow_name:
+                return _safe_str(workflow_name)
+        if hasattr(current_span, "_attributes"):
+            workflow_name = current_span._attributes.get("gen_ai.workflow.name")
+            if workflow_name:
+                return _safe_str(workflow_name)
         return None
 
     def on_event_start(
@@ -236,10 +381,63 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         llm_inv.framework = "llamaindex"
 
-        # Resolve parent_id to parent_span before starting, for proper span context
-        parent_span = self._get_parent_span(parent_id)
+        # Prefer explicit parent_id mapping; if it points to workflow, use active
+        # agent span only when that agent is a child of the resolved parent span.
+        parent_span = self._get_parent_span(parent_id, allow_fallback=False)
+        resolved_parent_span = parent_span
+        context_agent = self._invocation_manager.get_current_agent_invocation()
+        context_agent_span = (
+            getattr(context_agent, "span", None) if context_agent else None
+        )
+        workflow_name = self._find_workflow_name(parent_id, context_agent)
+        if workflow_name:
+            llm_inv.attributes["gen_ai.workflow.name"] = workflow_name
+
+        if parent_span:
+            if context_agent_span:
+                parent_ctx = getattr(context_agent_span, "parent", None)
+                expected_parent_span_id = None
+                if hasattr(parent_span, "get_span_context"):
+                    try:
+                        expected_parent_span_id = parent_span.get_span_context().span_id
+                    except Exception:
+                        expected_parent_span_id = None
+                if (
+                    expected_parent_span_id is not None
+                    and parent_ctx
+                    and parent_ctx.span_id == expected_parent_span_id
+                ):
+                    parent_span = context_agent_span
+                    if getattr(context_agent, "agent_name", None):
+                        llm_inv.agent_name = _normalize_agent_name(
+                            context_agent.agent_name
+                        )
+                    if getattr(context_agent, "run_id", None):
+                        llm_inv.agent_id = str(context_agent.run_id)
+            else:
+                active_agent_span = self._get_active_agent_span_fallback(
+                    expected_parent_span=parent_span
+                )
+                if active_agent_span:
+                    parent_span = active_agent_span
+        else:
+            parent_span = context_agent_span or self._get_active_agent_span_fallback()
+            if context_agent_span and context_agent:
+                if getattr(context_agent, "agent_name", None):
+                    llm_inv.agent_name = _normalize_agent_name(context_agent.agent_name)
+                if getattr(context_agent, "run_id", None):
+                    llm_inv.agent_id = str(context_agent.run_id)
         if parent_span:
             llm_inv.parent_span = parent_span  # type: ignore[attr-defined]
+        if not llm_inv.agent_name or not llm_inv.agent_id:
+            active_ctx = self._get_active_agent_context_fallback(
+                expected_parent_span=resolved_parent_span
+            )
+            if active_ctx:
+                if not llm_inv.agent_name:
+                    llm_inv.agent_name = active_ctx[0]
+                if not llm_inv.agent_id:
+                    llm_inv.agent_id = active_ctx[1]
         # Start the LLM invocation
         llm_inv = self._handler.start_llm(llm_inv)
 
@@ -278,12 +476,38 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
                 # Get raw_response for token usage
                 raw_response = _get_attr(response, "raw")
-                # Extract token usage from raw_response
+                usage = None
                 if raw_response:
                     usage = _get_attr(raw_response, "usage")
-                    if usage:
-                        llm_inv.input_tokens = _get_attr(usage, "prompt_tokens")
-                        llm_inv.output_tokens = _get_attr(usage, "completion_tokens")
+                    if not usage:
+                        usage = _get_attr(raw_response, "token_usage")
+                if not usage:
+                    usage = _get_attr(response, "usage")
+                if not usage:
+                    usage = _get_attr(response, "token_usage")
+                if not usage:
+                    metadata = _get_attr(response, "response_metadata")
+                    if metadata:
+                        usage = _get_attr(metadata, "token_usage")
+                if not usage:
+                    message = _get_attr(response, "message")
+                    if message:
+                        usage = _get_attr(message, "usage")
+                        if not usage:
+                            usage = _get_attr(message, "token_usage")
+                        if not usage:
+                            additional_kwargs = _get_attr(message, "additional_kwargs")
+                            if additional_kwargs:
+                                usage = _get_attr(additional_kwargs, "usage")
+                                if not usage:
+                                    usage = _get_attr(additional_kwargs, "token_usage")
+                if usage:
+                    llm_inv.input_tokens = _get_attr(usage, "prompt_tokens")
+                    llm_inv.output_tokens = _get_attr(usage, "completion_tokens")
+                    if llm_inv.input_tokens is None:
+                        llm_inv.input_tokens = _get_attr(usage, "input_tokens")
+                    if llm_inv.output_tokens is None:
+                        llm_inv.output_tokens = _get_attr(usage, "output_tokens")
 
         # Stop the LLM invocation
         llm_inv = self._handler.stop_llm(llm_inv)
@@ -440,20 +664,27 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # Create AgentInvocation for the agent execution
         agent_invocation = AgentInvocation(
             name=f"agent.task.{task_id}" if task_id else "agent.invoke",
-            input_context=input_text if input_text else "",
+            input_messages=[
+                InputMessage(
+                    role="user", parts=[Text(content=input_text if input_text else "")]
+                )
+            ],
             attributes={},
         )
         agent_invocation.framework = "llamaindex"
 
         # Set enhanced metadata
         if agent_name:
-            agent_invocation.agent_name = _safe_str(agent_name)
+            agent_invocation.agent_name = _normalize_agent_name(agent_name)
         if agent_type:
             agent_invocation.agent_type = _safe_str(agent_type)
         if agent_description:
             agent_invocation.description = _safe_str(agent_description)
         if model_name:
             agent_invocation.model = _safe_str(model_name)
+        workflow_name = self._find_workflow_name(parent_id)
+        if workflow_name:
+            agent_invocation.attributes["gen_ai.workflow.name"] = workflow_name
 
         # Get parent span before starting the invocation
         parent_span = self._get_parent_span(parent_id)
@@ -488,7 +719,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             # Extract response/output if available
             response = payload.get("response")
             if response:
-                agent_invocation.output_result = _safe_str(response)
+                output_content = _safe_str(response)
+                agent_invocation.output_result = output_content
+                agent_invocation.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content=output_content)],
+                    )
+                ]
 
         # Stop the agent invocation
         self._handler.stop_agent(agent_invocation)
@@ -549,8 +787,19 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 context_agent, "name", None
             )
             if agent_name:
-                tool_call.agent_name = _safe_str(agent_name)  # type: ignore[attr-defined]
+                tool_call.agent_name = _normalize_agent_name(agent_name)  # type: ignore[attr-defined]
             tool_call.agent_id = str(context_agent.run_id)  # type: ignore[attr-defined]
+            context_attrs = getattr(context_agent, "attributes", None)
+            if isinstance(context_attrs, dict):
+                workflow_name = context_attrs.get("gen_ai.workflow.name")
+                if workflow_name:
+                    tool_call.attributes["gen_ai.workflow.name"] = _safe_str(
+                        workflow_name
+                    )
+        if "gen_ai.workflow.name" not in tool_call.attributes:
+            workflow_name = self._find_workflow_name(parent_id, context_agent)
+            if workflow_name:
+                tool_call.attributes["gen_ai.workflow.name"] = workflow_name
 
         # Get parent span before starting the tool call
         parent_span = self._get_parent_span(parent_id)
@@ -610,10 +859,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # If no parent, this is the root workflow
         if not parent_id:
+            input_messages = (
+                [InputMessage(role="user", parts=[Text(content=_safe_str(query_str))])]
+                if query_str
+                else []
+            )
             workflow = Workflow(
                 name="llama_index_query_pipeline",
                 workflow_type="workflow",
-                initial_input=_safe_str(query_str),
+                input_messages=input_messages,
                 attributes={},
             )
             workflow.framework = "llamaindex"
@@ -640,7 +894,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if payload:
             response = payload.get("response")
             if response:
-                entity.final_output = _safe_str(_get_attr(response, "response", ""))
+                output_content = _safe_str(_get_attr(response, "response", ""))
+                entity.final_output = output_content
+                entity.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content=output_content)],
+                    )
+                ]
         self._handler.stop_workflow(entity)
         self._invocation_manager.delete_invocation_state(event_id)
 
@@ -677,10 +938,15 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not parent_entity:
             # No valid parent - create auto-workflow
             workflow_id = f"{event_id}_workflow"
+            input_messages = (
+                [InputMessage(role="user", parts=[Text(content=_safe_str(query_str))])]
+                if query_str
+                else []
+            )
             workflow = Workflow(
                 name="llama_index_rag",
                 workflow_type="rag",
-                initial_input=_safe_str(query_str),
+                input_messages=input_messages,
                 attributes={},
             )
             workflow.framework = "llamaindex"
@@ -789,9 +1055,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 if payload:
                     response = payload.get("response")
                     if response:
-                        workflow.final_output = _safe_str(
-                            _get_attr(response, "response", "")
-                        )
+                        output_content = _safe_str(_get_attr(response, "response", ""))
+                        workflow.final_output = output_content
+                        workflow.output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[Text(content=output_content)],
+                            )
+                        ]
                 self._handler.stop_workflow(workflow)
                 self._invocation_manager.delete_invocation_state(workflow_id)
                 # Remove from tracking after successful close

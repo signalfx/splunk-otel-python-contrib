@@ -2,18 +2,9 @@ Multi-Agent Travel Planner Example
 ==================================
 
 This example demonstrates a multi-agent travel planning workflow using the
-OpenAI Agents SDK with OpenTelemetry instrumentation and support for OAuth2
-authentication to custom LLM endpoints.
-
-Features
---------
-
-- Multi-agent architecture with specialized agents (Flight, Hotel, Activity, Coordinator)
-- Manual OpenTelemetry SDK configuration (traces, metrics, logs, events)
-- OAuth2 token management for custom LLM endpoints
-- Backward compatible with standard OpenAI API
-- Kubernetes CronJob deployment ready
-- Docker containerization support
+OpenAI Agents SDK with OpenTelemetry instrumentation. It leverages Splunk 
+distribution of ``opentelemetry-util-genai`` for producing telemetry in 
+semantic convention.
 
 Agents
 ------
@@ -23,98 +14,168 @@ Agents
 - **Activity Specialist**: Curates local activities and experiences
 - **Travel Coordinator**: Orchestrates and synthesizes the final itinerary
 
-Setup
------
+Instrumentation Modes
+---------------------
 
-1. Copy `.env.example <.env.example>`_ to `.env` and configure your LLM provider:
+This example supports two instrumentation modes controlled by ``--manual-instrumentation``:
 
-   **Option 1: Standard OpenAI API**
+**Manual Instrumentation:**
 
-   ::
-
-       OPENAI_API_KEY=your-openai-api-key
-
-   **Option 2: OAuth2 LLM Provider (custom endpoint)**
-
-   ::
-
-       LLM_CLIENT_ID=your-client-id
-       LLM_CLIENT_SECRET=your-client-secret
-       LLM_TOKEN_URL=https://your-identity-provider/oauth2/token
-       LLM_BASE_URL=https://your-llm-gateway/openai/deployments
-       OPENAI_MODEL_NAME=gpt-4o-mini
-
-2. Create a virtual environment and install the dependencies:
-
-   ::
-
-       python3 -m venv .venv
-       source .venv/bin/activate
-       pip install -r requirements.txt
-       pip install -e ../../  # Install local instrumentation package
-
-Run
----
-
-Execute the travel planner with manual instrumentation:
-
-::
+.. code:: bash
 
     python main.py --manual-instrumentation
 
-Or run with zero-code instrumentation:
+**Zero-Code Instrumentation:**
 
-::
+.. code:: bash
 
     opentelemetry-instrument python main.py
 
-Expected Output
----------------
+Prerequisites
+-------------
+
+- Python 3.10+
+- Access to an LLM provider (OpenAI API key or OAuth2 credentials)
+
+Install the Splunk Distribution of OpenTelemetry packages:
+
+.. code:: bash
+
+    # Core instrumentation packages
+    pip install splunk-otel-instrumentation-openai-agents-v2
+    pip install splunk-otel-util-genai
+
+    # Splunk-specific emitters (required for Splunk Observability Cloud)
+    pip install splunk-otel-genai-emitters-splunk
+
+    # Or install all at once using requirements.txt
+    pip install -r requirements.txt
+
+Setup
+-----
+
+1. **Change to the examples directory:**
+
+.. code:: bash
+
+    cd instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/examples/travel-planner
+
+2. **Create the virtual environment:**
+
+.. code:: bash
+
+    python -m venv .venv
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+3. **Install the dependencies:**
+
+.. code:: bash
+
+    pip install -r requirements.txt
+
+**For local development** (if you want to test unreleased changes):
+
+.. code:: bash
+
+    pip install splunk-otel-util-genai
+    pip install splunk-otel-genai-emitters-splunk
+    pip install splunk-otel-instrumentation-openai-agents-v2
+
+4. **Create environment variable configuration:**
+
+.. code:: bash
+
+    cp .env.example .env
+
+5. **Set the required environment variables in ``.env``:**
+
+**LLM Credentials (Option 1 - OpenAI):**
+
+.. code:: bash
+
+    OPENAI_API_KEY=your-openai-api-key
+
+**LLM Credentials (Option 2 - OAuth2):**
+
+.. code:: bash
+
+    LLM_CLIENT_ID=your-client-id
+    LLM_CLIENT_SECRET=your-client-secret
+    LLM_TOKEN_URL=https://your-identity-provider/oauth2/token
+    LLM_BASE_URL=https://your-llm-gateway/openai/deployments
+    OPENAI_MODEL_NAME=gpt-4o-mini
+
+**OpenTelemetry Configuration:**
+
+.. code:: bash
+
+    OTEL_SERVICE_NAME=travel-planner
+    OTEL_RESOURCE_ATTRIBUTES=deployment.environment=demo
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+    OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+    OTEL_LOGS_EXPORTER=otlp
+
+**GenAI Instrumentation:**
+
+.. code:: bash
+
+    # Emitters configuration
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk
+
+    # Message content capture
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+
+**(Optional) LLM-as-a-Judge Evaluations:**
+
+.. code:: bash
+
+    # Enable evaluation results aggregation
+    OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
+
+    # Evaluation emitter configuration
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION=replace-category:SplunkEvaluationResults
+
+    # Configure evaluators (e.g., DeepEval metrics)
+    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS=Deepeval(LLMInvocation(bias,toxicity))
+
+6. **Start the OpenTelemetry Collector:**
+
+.. code:: bash
+
+    docker run -p 4317:4317 otel/opentelemetry-collector:latest
+
+7. **Load environment variables and run:**
+
+.. code:: bash
+
+    source .env
+    python main.py --manual-instrumentation
+
+Expected Trace Structure
+------------------------
 
 ::
 
-    [AUTH] Using OAuth2 authentication
-    ✓ Manual OpenTelemetry instrumentation configured
-    🌍 Multi-Agent Travel Planner
-    ============================================================
-
-    Origin: Seattle
-    Destination: Paris
-    Dates: 2024-02-15 to 2024-02-22
-
-    ✈️  Flight Specialist - Searching for flights...
-    Result: Top choice: SkyLine non-stop service Seattle->Paris...
-
-    🏨 Hotel Specialist - Searching for hotels...
-    Result: Grand Meridian near the historic centre...
-
-    🎭 Activity Specialist - Curating activities...
-    Result: Signature experiences in Paris...
-
-    📝 Coordinator - Creating final itinerary...
-
-    ============================================================
-    ✅ Travel Itinerary Complete!
-    ============================================================
-
-    [Final itinerary output...]
-
-    ================================================================================
-    TELEMETRY OUTPUT BELOW
-    ================================================================================
-
-    [FLUSH] Starting telemetry flush
-    [FLUSH] Flushing traces (timeout=30s)
-    [FLUSH] Flushing metrics (timeout=30s)
-    [FLUSH] Flushing logs (timeout=30s)
-    [FLUSH] Telemetry flush complete
+    gen_ai.workflow (Travel Planner)
+    ├── invoke_agent (Flight Specialist)
+    │   ├── chat (OpenAI)
+    │   └── execute_tool (search_flights)
+    ├── invoke_agent (Hotel Specialist)
+    │   ├── chat (OpenAI)
+    │   └── execute_tool (search_hotels)
+    ├── invoke_agent (Activity Specialist)
+    │   ├── chat (OpenAI)
+    │   └── execute_tool (search_activities)
+    └── invoke_agent (Travel Coordinator)
+        └── chat (OpenAI)
 
 Docker
 ------
 
 Build and run with Docker:
 
-::
+.. code:: bash
 
     # From repository root
     docker build -f instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/examples/travel-planner/Dockerfile -t openai-agents-travel-planner .
@@ -123,18 +184,20 @@ Build and run with Docker:
 Kubernetes
 ----------
 
-Deploy as a CronJob:
+Create Secrets:
 
-::
+.. code:: bash
 
-    # Create secrets
     kubectl create secret generic llm-credentials \
-      --from-literal=client-id=<your-client-id> \
-      --from-literal=client-secret=<your-client-secret> \
-      --from-literal=token-url=<your-token-url> \
-      --from-literal=base-url=<your-base-url>
+      --from-literal=client-id=your-client-id \
+      --from-literal=client-secret=your-client-secret \
+      --from-literal=token-url=https://your-idp/oauth2/token \
+      --from-literal=base-url=https://your-llm-gateway/openai/deployments
 
-    # Apply CronJob
+Deploy CronJob:
+
+.. code:: bash
+
     kubectl apply -f cronjob.yaml
 
 Project Structure
@@ -143,12 +206,48 @@ Project Structure
 ::
 
     travel-planner/
-    ├── main.py              # Multi-agent travel planner with OAuth2 support
+    ├── main.py                      # Multi-agent travel planner
     ├── util/
     │   ├── __init__.py
     │   └── oauth2_token_manager.py  # OAuth2 token management
-    ├── requirements.txt     # Python dependencies
-    ├── .env.example         # Environment variable template
-    ├── Dockerfile           # Container build
-    ├── cronjob.yaml         # Kubernetes CronJob spec
-    └── README.rst           # This file
+    ├── requirements.txt             # Python dependencies
+    ├── .env.example                 # Environment variable template
+    ├── Dockerfile                   # Container build
+    ├── cronjob.yaml                 # Kubernetes CronJob spec
+    └── README.rst                   # This file
+
+Environment Variables Reference
+-------------------------------
+
+**LLM Configuration:**
+
++----------------------+----------------------------------+------------------+
+| Variable             | Description                      | Required         |
++======================+==================================+==================+
+| ``LLM_CLIENT_ID``    | OAuth2 client ID                 | Yes (OAuth2)     |
++----------------------+----------------------------------+------------------+
+| ``LLM_CLIENT_SECRET``| OAuth2 client secret             | Yes (OAuth2)     |
++----------------------+----------------------------------+------------------+
+| ``LLM_TOKEN_URL``    | OAuth2 token endpoint            | Yes (OAuth2)     |
++----------------------+----------------------------------+------------------+
+| ``LLM_BASE_URL``     | LLM gateway base URL             | Yes (OAuth2)     |
++----------------------+----------------------------------+------------------+
+| ``OPENAI_API_KEY``   | OpenAI API key                   | Yes (OpenAI)     |
++----------------------+----------------------------------+------------------+
+
+**GenAI Instrumentation:**
+
++---------------------------------------------------+-----------------------------+--------------+
+| Variable                                          | Description                 | Default      |
++===================================================+=============================+==============+
+| ``OTEL_INSTRUMENTATION_GENAI_EMITTERS``           | GenAI emitters              | ``span``     |
++---------------------------------------------------+-----------------------------+--------------+
+| ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` | Capture message content| ``false``    |
++---------------------------------------------------+-----------------------------+--------------+
+
+Related Documentation
+---------------------
+
+- `OpenTelemetry Python Documentation <https://opentelemetry.io/docs/languages/python/>`_
+- `Splunk Observability for AI <https://help.splunk.com/en/splunk-observability-cloud/observability-for-ai/set-up-observability-for-ai>`_
+- `OpenAI Agents SDK <https://github.com/openai/openai-agents-python>`_

@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -53,6 +54,10 @@ class _InvocationManager:
         # TODO: TTL cache to avoid memory leaks in long-running processes.
         self._invocations: Dict[str, _InvocationState] = {}
         self._parents: Dict[str, Optional[str]] = {}
+        self._current_agent_key: ContextVar[Optional[str]] = ContextVar(
+            f"llamaindex_current_agent_key_{id(self)}", default=None
+        )
+        self._agent_invocation_by_key: Dict[str, Any] = {}
 
     def add_invocation_state(
         self,
@@ -103,3 +108,21 @@ class _InvocationManager:
         for current_id in to_delete:
             self._invocations.pop(current_id, None)
             self._parents.pop(current_id, None)
+
+    def set_current_agent_key(self, agent_key: Optional[str]) -> Token:
+        return self._current_agent_key.set(agent_key)
+
+    def reset_current_agent_key(self, token: Token) -> None:
+        self._current_agent_key.reset(token)
+
+    def register_agent_invocation(self, agent_key: str, invocation: Any) -> None:
+        self._agent_invocation_by_key[agent_key] = invocation
+
+    def unregister_agent_invocation(self, agent_key: str) -> None:
+        self._agent_invocation_by_key.pop(agent_key, None)
+
+    def get_current_agent_invocation(self) -> Optional[Any]:
+        key = self._current_agent_key.get()
+        if not key:
+            return None
+        return self._agent_invocation_by_key.get(key)

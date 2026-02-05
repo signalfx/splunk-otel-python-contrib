@@ -1,0 +1,12 @@
+# Core dependencies
+openai>=1.0.0
+requests>=2.28.0
+python-dotenv>=1.0.0
+
+# OpenTelemetry
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-otlp-proto-grpc>=1.20.0
+
+# Local instrumentation (install from repo root)
+# pip install -e ../../

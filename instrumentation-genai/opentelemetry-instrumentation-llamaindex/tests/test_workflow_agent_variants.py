@@ -1,5 +1,6 @@
 import asyncio
 import os
+from collections import Counter
 
 import pytest
 from llama_index.core.agent.workflow import AgentWorkflow, CodeActAgent, FunctionAgent
@@ -11,6 +12,7 @@ from llama_index.core.base.llms.types import (
 )
 from llama_index.core.llms import MockLLM
 from llama_index.core.llms.llm import ToolSelection
+from llama_index.core.workflow import StartEvent, StopEvent, Workflow, step
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
@@ -123,6 +125,38 @@ def _assert_agent_and_workflow_attributes(spans):
     ]
     assert any(span.attributes.get("gen_ai.workflow.name") for span in workflow_spans)
     assert any(span.attributes.get("gen_ai.agent.name") for span in agent_spans)
+
+
+def _span_tree_text(spans):
+    by_id = {span.context.span_id: span for span in spans}
+    children = {}
+    roots = []
+    for span in spans:
+        parent_id = span.parent.span_id if span.parent else None
+        if parent_id in by_id:
+            children.setdefault(parent_id, []).append(span)
+        else:
+            roots.append(span)
+
+    def _line(span, depth):
+        op = span.attributes.get("gen_ai.operation.name") or span.name
+        parent_id = span.parent.span_id if span.parent else None
+        return (
+            f"{'  ' * depth}{op}({span.name}) "
+            f"span_id={span.context.span_id:x} parent_id={parent_id}"
+        )
+
+    def _walk(span, depth, out):
+        out.append(_line(span, depth))
+        for child in sorted(
+            children.get(span.context.span_id, []), key=lambda s: s.start_time
+        ):
+            _walk(child, depth + 1, out)
+
+    lines = []
+    for root in sorted(roots, key=lambda s: s.start_time):
+        _walk(root, 0, lines)
+    return "\n".join(lines)
 
 
 @pytest.fixture(scope="module")
@@ -283,3 +317,122 @@ async def test_multi_agent_workflow_example_emits_spans(
         if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
     }
     assert {"ResearchAgent", "WriteAgent", "ReviewAgent"} <= agent_names
+
+    workflow_spans = [
+        span
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_workflow"
+    ]
+    assert len(workflow_spans) == 1
+    workflow_span_id = workflow_spans[0].context.span_id
+
+    orchestrator_agent_spans = [
+        span
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
+        and span.attributes.get("gen_ai.agent.name") == "AgentWorkflow"
+    ]
+    assert len(orchestrator_agent_spans) == 0
+
+    concrete_agent_counts = Counter(
+        span.attributes.get("gen_ai.agent.name")
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
+        and span.attributes.get("gen_ai.agent.name")
+        in {"ResearchAgent", "WriteAgent", "ReviewAgent"}
+    )
+    assert concrete_agent_counts == {
+        "ResearchAgent": 1,
+        "WriteAgent": 1,
+        "ReviewAgent": 1,
+    }
+
+    for span in spans:
+        if span.attributes.get(
+            "gen_ai.operation.name"
+        ) == "invoke_agent" and span.attributes.get("gen_ai.agent.name") in {
+            "ResearchAgent",
+            "WriteAgent",
+            "ReviewAgent",
+        }:
+            assert span.parent is not None
+            assert span.parent.span_id == workflow_span_id
+
+    concrete_agent_span_ids = {
+        span.context.span_id
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
+        and span.attributes.get("gen_ai.agent.name")
+        in {"ResearchAgent", "WriteAgent", "ReviewAgent"}
+    }
+    chat_spans = [
+        span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat"
+    ]
+    # In mocked handoff-only flows, LlamaIndex may not emit LLM callback events,
+    # so chat spans can be absent. If present, they must attach to concrete agents.
+    if chat_spans:
+        prefixed_agent_name_chats = [
+            span
+            for span in chat_spans
+            if str(span.attributes.get("gen_ai.agent.name", "")).startswith("agent.")
+        ]
+        assert not prefixed_agent_name_chats, (
+            "Found chat spans with prefixed gen_ai.agent.name.\n"
+            f"{_span_tree_text(spans)}"
+        )
+        wrong_parent_chat_spans = [
+            span
+            for span in chat_spans
+            if (span.parent is None)
+            or (span.parent.span_id not in concrete_agent_span_ids)
+        ]
+        assert not wrong_parent_chat_spans, (
+            "Found chat spans not attached to concrete agent spans.\n"
+            f"{_span_tree_text(spans)}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_custom_workflow_single_agent_has_one_workflow_and_no_duplicates(
+    monkeypatch, instrumented_telemetry
+):
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric")
+    memory_exporter = instrumented_telemetry
+    memory_exporter.clear()
+
+    agent = FunctionAgent(
+        name="CustomSingleAgent",
+        llm=FunctionCallingLLM("Done."),
+        tools=[],
+        streaming=False,
+    )
+
+    class CustomWorkflow(Workflow):
+        @step
+        async def run_agent(self, ev: StartEvent) -> StopEvent:
+            handler = agent.run(user_msg="Help me plan a short trip.")
+            result = await handler
+            return StopEvent(result=str(result))
+
+    workflow = CustomWorkflow(timeout=30, verbose=False)
+    await workflow.run()
+    await asyncio.sleep(0.1)
+
+    spans = memory_exporter.get_finished_spans()
+    workflow_spans = [
+        span
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_workflow"
+    ]
+    assert len(workflow_spans) == 1
+    workflow_span_id = workflow_spans[0].context.span_id
+
+    function_agent_spans = [
+        span
+        for span in spans
+        if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
+        and span.attributes.get("gen_ai.agent.name") == "FunctionAgent"
+    ]
+    assert len(function_agent_spans) == 1
+    assert function_agent_spans[0].parent is not None
+    assert function_agent_spans[0].parent.span_id == workflow_span_id
