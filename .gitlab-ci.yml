@@ -204,6 +204,22 @@ build-instrumentation-crewai:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-openai:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-v2
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-openai
+    - mv dist/* ../../dist/instrumentation-openai/
+    - cd ../../dist/instrumentation-openai
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-openai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-v0\.[0-9]+\.[0-9]+.*/'
+
 build-instrumentation-openai-agents:
   stage: build
   script:
@@ -429,6 +445,22 @@ sign-instrumentation-crewai:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-openai:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-openai
+  variables:
+    ARTIFACT: dist/instrumentation-openai/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-openai
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-openai/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-v0\.[0-9]+\.[0-9]+.*/'
+
 sign-instrumentation-openai-agents:
   stage: sign
   extends: .submit-signing-request
@@ -617,6 +649,19 @@ deploy-instrumentation-crewai:
     - sign-instrumentation-crewai
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-crewai-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-openai:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-openai-v2
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-openai/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-openai
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-openai-v0\.[0-9]+\.[0-9]+.*/'
 
 deploy-instrumentation-openai-agents:
   stage: deploy
