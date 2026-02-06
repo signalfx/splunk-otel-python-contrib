@@ -18,16 +18,22 @@ COPY instrumentation-genai/opentelemetry-instrumentation-openai-v2/examples/trav
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the local packages source code (util-genai + instrumentation)
+# Copy the local packages source code (util-genai + instrumentation + evals)
 COPY util/opentelemetry-util-genai /tmp/opentelemetry-util-genai
+COPY util/opentelemetry-util-genai-evals /tmp/opentelemetry-util-genai-evals
+COPY util/opentelemetry-util-genai-evals-deepeval /tmp/opentelemetry-util-genai-evals-deepeval
 COPY instrumentation-genai/opentelemetry-instrumentation-openai-v2 /tmp/opentelemetry-instrumentation-openai-v2
 
 # Install local packages (this will also install their dependencies)
 # Then force reinstall without deps to ensure local code takes precedence
 RUN pip install /tmp/opentelemetry-util-genai
+RUN pip install /tmp/opentelemetry-util-genai-evals
+RUN pip install /tmp/opentelemetry-util-genai-evals-deepeval
 RUN pip install /tmp/opentelemetry-instrumentation-openai-v2
 # Force reinstall local packages to override any cached versions
 RUN pip install --force-reinstall --no-deps /tmp/opentelemetry-util-genai
+RUN pip install --force-reinstall --no-deps /tmp/opentelemetry-util-genai-evals
+RUN pip install --force-reinstall --no-deps /tmp/opentelemetry-util-genai-evals-deepeval
 RUN pip install --force-reinstall --no-deps /tmp/opentelemetry-instrumentation-openai-v2
 
 # Copy application code (main.py and util folder)
