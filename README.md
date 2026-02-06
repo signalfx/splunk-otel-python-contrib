@@ -293,8 +293,8 @@ export OTEL_RESOURCE_ATTRIBUTES='deployment.environment=genai-dev'
 For telemetry to properly work with Splunk Platform instrumentation, set the env var to enable Splunk format for aggregated evaluation results.
 
 ```bash
-export OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION="replace-category:SplunkEvaluationResults"
 export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION="replace-category:SplunkEvaluationResults"
 ```
 
 ### Deepeval evaluator integration configuration
@@ -334,7 +334,7 @@ util/opentelemetry-util-genai/examples/
 
 ### Installing a Translator library
 
-To use exiting 3rd partu instrumentations and convert it to Splunk Distro semantic conventions/run instrumentation-side evaluations you can install a translator library. 
+To use exiting 3rd party instrumentations and convert it to Splunk Distro semantic conventions/run instrumentation-side evaluations you can install a translator library.
 
 For example for existing traseloop instrumentations
 ```bash
