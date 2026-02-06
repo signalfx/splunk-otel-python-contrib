@@ -51,90 +51,109 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+# Import OpenAI clients - instrumentation happens in setup_telemetry()
+from openai import AzureOpenAI, OpenAI
+
+from opentelemetry.trace import SpanKind
+
 load_dotenv()
 
-# ============================================================================
-# OpenTelemetry Setup - Console + OTLP Exporters (Traces, Metrics, Logs)
-# ============================================================================
-from opentelemetry import _events, _logs, metrics, trace  # noqa: E402
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # noqa: E402
-    OTLPLogExporter,
-)
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # noqa: E402
-    OTLPMetricExporter,
-)
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E402
-    OTLPSpanExporter,
-)
-from opentelemetry.sdk._events import EventLoggerProvider  # noqa: E402
-from opentelemetry.sdk._logs import LoggerProvider  # noqa: E402
-from opentelemetry.sdk._logs.export import (  # noqa: E402
-    BatchLogRecordProcessor,
-)
-from opentelemetry.sdk.metrics import MeterProvider  # noqa: E402
-from opentelemetry.sdk.metrics.export import (  # noqa: E402
-    PeriodicExportingMetricReader,
-)
-from opentelemetry.sdk.resources import Resource  # noqa: E402
-from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
-from opentelemetry.sdk.trace.export import (  # noqa: E402
-    BatchSpanProcessor,
-    ConsoleSpanExporter,
-)
-from opentelemetry.trace import SpanKind  # noqa: E402
+# Module-level globals that get initialized in setup_telemetry()
+trace_provider = None
+tracer = None
+logger_provider = None
+OTLP_ENDPOINT = None
 
-OTLP_ENDPOINT = os.environ.get(
-    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
-)
 
-resource = Resource.create(
-    {
-        "service.name": "travel_assistant_openai_shuwpan",
-        "service.version": "1.0.0",
-    }
-)
+def setup_telemetry():
+    """Setup OpenTelemetry instrumentation.
 
-# Configure Tracing
-trace_provider = TracerProvider(resource=resource)
-trace_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
-trace_provider.add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=True))
-)
-trace.set_tracer_provider(trace_provider)
-tracer = trace.get_tracer("travel_assistant")
+    This function MUST be called from within if __name__ == "__main__":
+    to prevent multiprocessing spawn from re-running the setup.
+    """
+    global trace_provider, tracer, logger_provider, OTLP_ENDPOINT
 
-# Configure Metrics
-metric_reader = PeriodicExportingMetricReader(
-    OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=True)
-)
-metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+    from opentelemetry import _events, _logs, metrics, trace
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+        OTLPLogExporter,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        OTLPSpanExporter,
+    )
+    from opentelemetry.sdk._events import EventLoggerProvider
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import (
+        BatchSpanProcessor,
+        ConsoleSpanExporter,
+    )
 
-# Configure Logging and Events
-logger_provider = LoggerProvider(resource=resource)
-logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=OTLP_ENDPOINT, insecure=True)))
-_logs.set_logger_provider(logger_provider)
-_events.set_event_logger_provider(EventLoggerProvider(logger_provider=logger_provider))
+    OTLP_ENDPOINT = os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
+    )
 
-print(f"📡 Exporting Traces, Metrics, Logs to Console + OTLP ({OTLP_ENDPOINT})")
+    resource = Resource.create(
+        {
+            "service.name": "travel_assistant_openai_shuwpan",
+            "service.version": "1.0.0",
+        }
+    )
 
-# ============================================================================
-# Instrument OpenAI
-# ============================================================================
-from opentelemetry.instrumentation.openai_v2 import (  # noqa: E402
-    OpenAIInstrumentor,
-)
+    # Configure Tracing
+    trace_provider = TracerProvider(resource=resource)
+    trace_provider.add_span_processor(
+        BatchSpanProcessor(ConsoleSpanExporter())
+    )
+    trace_provider.add_span_processor(
+        BatchSpanProcessor(
+            OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=True)
+        )
+    )
+    trace.set_tracer_provider(trace_provider)
+    tracer = trace.get_tracer("travel_assistant")
 
-OpenAIInstrumentor().instrument(
-    tracer_provider=trace_provider,
-    meter_provider=metrics.get_meter_provider(),
-    logger_provider=logger_provider,
-)
-print("✅ OpenAI instrumentation enabled")
+    # Configure Metrics
+    metric_reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=True)
+    )
+    metrics.set_meter_provider(
+        MeterProvider(resource=resource, metric_readers=[metric_reader])
+    )
 
-# ============================================================================
-# OpenAI Client Setup (after instrumentation)
-# ============================================================================
-from openai import AzureOpenAI, OpenAI  # noqa: E402
+    # Configure Logging and Events
+    logger_provider = LoggerProvider(resource=resource)
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(
+            OTLPLogExporter(endpoint=OTLP_ENDPOINT, insecure=True)
+        )
+    )
+    _logs.set_logger_provider(logger_provider)
+    _events.set_event_logger_provider(
+        EventLoggerProvider(logger_provider=logger_provider)
+    )
+
+    print(
+        f"📡 Exporting Traces, Metrics, Logs to Console + OTLP ({OTLP_ENDPOINT})"
+    )
+
+    # Instrument OpenAI
+    from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+
+    OpenAIInstrumentor().instrument(
+        tracer_provider=trace_provider,
+        meter_provider=metrics.get_meter_provider(),
+        logger_provider=logger_provider,
+    )
+    print("✅ OpenAI instrumentation enabled")
+
+    return trace_provider, tracer, logger_provider, OTLP_ENDPOINT
 
 
 def create_openai_client() -> OpenAI:
@@ -580,6 +599,13 @@ def search_destinations_with_embeddings(
 # Main
 # ============================================================================
 def main():
+    # Setup telemetry FIRST - this MUST be inside main() to avoid
+    # multiprocessing spawn issues with evaluation worker process
+    global trace_provider, tracer, logger_provider, OTLP_ENDPOINT
+    trace_provider, tracer, logger_provider, OTLP_ENDPOINT = setup_telemetry()
+
+    from opentelemetry import metrics
+
     print("=" * 70)
     print("✈️  Travel Assistant (OpenAI SDK + Tool Calling + Embeddings)")
     print("=" * 70)
@@ -660,21 +686,63 @@ def main():
         "Also, what's the weather like?"
     )
 
-    with tracer.start_as_current_span(
-        name="POST /travel/plan",
-        kind=SpanKind.SERVER,
-        attributes={
-            "http.request.method": "POST",
-            "http.route": "/travel/plan",
-        },
-    ):
-        run_assistant(chat_client, planning_query, model)
+    # Use TelemetryHandler workflow to wrap all OpenAI calls in a parent span
+    # This ensures evaluation spans are properly correlated
+    try:
+        from opentelemetry.util.genai.handler import get_telemetry_handler
+        from opentelemetry.util.genai.types import Workflow
+
+        handler = get_telemetry_handler()
+        if handler is not None:
+            # Create and start a workflow to act as parent for all OpenAI calls
+            workflow = Workflow(
+                name="travel_planning",
+                workflow_type="agent",
+                description="Travel planning assistant with tool calling",
+            )
+            handler.start_workflow(workflow)
+
+            try:
+                with tracer.start_as_current_span(
+                    name="POST /travel/plan",
+                    kind=SpanKind.SERVER,
+                    attributes={
+                        "http.request.method": "POST",
+                        "http.route": "/travel/plan",
+                    },
+                ):
+                    run_assistant(chat_client, planning_query, model)
+            finally:
+                handler.stop_workflow(workflow)
+        else:
+            # No handler available, just run without workflow wrapper
+            with tracer.start_as_current_span(
+                name="POST /travel/plan",
+                kind=SpanKind.SERVER,
+                attributes={
+                    "http.request.method": "POST",
+                    "http.route": "/travel/plan",
+                },
+            ):
+                run_assistant(chat_client, planning_query, model)
+    except ImportError:
+        # util-genai not available, just run with tracer span
+        with tracer.start_as_current_span(
+            name="POST /travel/plan",
+            kind=SpanKind.SERVER,
+            attributes={
+                "http.request.method": "POST",
+                "http.route": "/travel/plan",
+            },
+        ):
+            run_assistant(chat_client, planning_query, model)
 
     # Wait for async evaluations to complete
     print("\n" + "=" * 70)
     print("⏳ Waiting for evaluations to complete...")
     try:
         from opentelemetry.util.genai.handler import get_telemetry_handler
+
         handler = get_telemetry_handler()
         if handler is not None:
             handler.wait_for_evaluations(timeout=60.0)
@@ -692,4 +760,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # This guard is REQUIRED for multiprocessing spawn mode (macOS default)
+    # Without it, the evaluation worker process would re-run OTel setup
     main()
