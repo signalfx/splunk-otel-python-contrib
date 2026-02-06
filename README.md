@@ -280,20 +280,44 @@ export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
-# configure which GenAI types to evaluate and which evaluations, for example
-# export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity),AgentInvocation(hallucination))"
-# use minimal set up for development to avoid extra inference cost or use a local LLM
+# configure which GenAI types to evaluate and which evaluations
 export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="Deepeval(LLMInvocation(bias,toxicity))" 
-export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
 # Deepeval optimization
 export DEEPEVAL_FILE_SYSTEM=READ_ONLY
 export DEEPEVAL_TELEMETRY_OPT_OUT=YES
+# set environment and service names for ease of filtering
+export OTEL_SERVICE_NAME=genai-eval-test
+export OTEL_RESOURCE_ATTRIBUTES='deployment.environment=genai-dev'
 ```
 
-To debug util-genai
+For telemetry to properly work with Splunk Platform instrumentation, set the env var to enable Splunk format for aggregated evaluation results.
 
 ```bash
-export OTEL_INSTRUMENTATION_GENAI_DEBUG=false
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION="replace-category:SplunkEvaluationResults"
+export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
+```
+
+### Deepeval evaluator integration configuration
+
+Instrumentation-side evaluations can be configured using `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` environment variable
+
+```bash
+# uses defaults - evaluates LLMInvocation and AgentInvocation with 5 metrics:
+# (bias,toxicity,answer_relevancy,hallucination,sentiment)
+OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval"
+
+# Specific metrics for LLMInvocation
+OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity))"
+
+# Multiple types with metrics
+OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(bias,toxicity),AgentInvocation(hallucination))"
+
+# With metric options
+OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(hallucination(threshold=0.8)))"
+```
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_DEBUG=true
 ```
 
 ### to install an instrumentation library
@@ -349,7 +373,7 @@ handler.stop_llm(inv)
 Additionally, you can run a simple example reporting an LLM Invocation
 
 ```bash
-python util/opentelemetry-util-genai/examples/invocation_example.py llm --exporter otlp --session-id my-session-123
+python util/opentelemetry-util-genai/examples/invocation_example.py llm --exporter otlp
 ```
 
 ## 15. Linting and Formatting

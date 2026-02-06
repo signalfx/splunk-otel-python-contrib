@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.8 - 2026-02-06
+
+### Fixed
+- **Logging visibility** - INFO level log messages from the evals bootstrap, proxy, manager, and worker modules are now always visible (e.g., "Using separate process evaluation mode"). DEBUG level messages require `OTEL_INSTRUMENTATION_GENAI_DEBUG=true`.
+
 ## Version 0.1.7 - 2026-01-28
 
 ### Added

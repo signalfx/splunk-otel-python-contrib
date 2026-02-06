@@ -55,6 +55,18 @@ if _ENABLED and not _LOGGER.handlers:  # configure minimal handler if none
     handler.setFormatter(fmt)
     _LOGGER.addHandler(handler)
     _LOGGER.setLevel(logging.DEBUG)
+    _LOGGER.propagate = False  # Prevent duplicate logs via parent logger
+
+# Configure the parent logger for all opentelemetry.util.genai.* modules
+# including evals subpackages. INFO level messages (like "Using separate process
+# evaluation mode") are always visible; DEBUG level requires the debug flag.
+_PARENT_LOGGER = logging.getLogger("opentelemetry.util.genai")
+if not _PARENT_LOGGER.handlers:
+    parent_handler = logging.StreamHandler()
+    parent_fmt = logging.Formatter("[%(name)s] %(levelname)s: %(message)s")
+    parent_handler.setFormatter(parent_fmt)
+    _PARENT_LOGGER.addHandler(parent_handler)
+    _PARENT_LOGGER.setLevel(logging.DEBUG if _ENABLED else logging.INFO)
 
 
 def is_enabled() -> bool:

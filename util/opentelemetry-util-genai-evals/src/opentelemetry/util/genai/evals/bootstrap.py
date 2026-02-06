@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+# Import debug module to ensure parent logger is configured when debug is enabled
+# This must happen before any logging calls in this module
+from opentelemetry.util.genai import debug as _debug  # noqa: F401
 from opentelemetry.util.genai.callbacks import CompletionCallback
 
 from .manager import Manager
