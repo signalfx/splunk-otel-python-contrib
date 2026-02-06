@@ -70,7 +70,9 @@ class TestUploadHook(TestCase):
             FakeEntryPoint("my-hook", lambda: InvalidUploadHook)
         ]
 
-        with self.assertLogs(level=logging.DEBUG) as logs:
+        with self.assertLogs(
+            "opentelemetry.util.genai.upload_hook", level=logging.DEBUG
+        ) as logs:
             self.assertIsInstance(load_upload_hook(), _NoOpUploadHook)
         self.assertEqual(len(logs.output), 1)
         self.assertIn("is not a valid UploadHook. Using noop", logs.output[0])

@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.10 - 2026-02-06
+
+### Fixed
+- **Logging visibility for evals module** - INFO level messages from `opentelemetry.util.genai.evals.*` modules are now always visible (e.g., "Using separate process evaluation mode"). DEBUG level messages require `OTEL_INSTRUMENTATION_GENAI_DEBUG=true`.
+
 ## Version 0.1.9 - 2026-01-29
 
 - Release 0.1.9
