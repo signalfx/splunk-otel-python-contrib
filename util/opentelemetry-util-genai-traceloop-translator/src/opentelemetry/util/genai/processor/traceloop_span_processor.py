@@ -482,6 +482,20 @@ class TraceloopSpanProcessor(SpanProcessor):
         if not span or not span.name:
             return True
 
+        # Skip spans created by the util-genai library itself.
+        # These spans are already properly instrumented and should not be
+        # processed again by the traceloop translator to avoid duplicate
+        # evaluations, metrics, and logs.
+        scope = getattr(span, "instrumentation_scope", None)
+        scope_name = getattr(scope, "name", "") if scope else ""
+        if scope_name.startswith("opentelemetry.util.genai"):
+            _logger.debug(
+                "[TL_PROCESSOR] Skipping util-genai span (scope=%s): %s",
+                scope_name,
+                span.name,
+            )
+            return True
+
         # Skip synthetic spans we created (check span ID in set)
         if span_id and span_id in self._synthetic_span_ids:
             _logger.debug(
@@ -619,6 +633,9 @@ class TraceloopSpanProcessor(SpanProcessor):
 
                     # Close the invocation to trigger core lifecycle handling
                     # This will call the appropriate stop_* method and emit spans/metrics.
+                    # Note: handler.finish() already triggers evaluations via the completion
+                    # callback mechanism (_notify_completion -> on_completion), so no explicit
+                    # evaluate_agent() call is needed for AgentInvocation types.
                     handler = self.telemetry_handler or get_telemetry_handler()
                     try:
                         handler.finish(invocation)
@@ -627,25 +644,6 @@ class TraceloopSpanProcessor(SpanProcessor):
                             span.name,
                             getattr(invocation, "sample_for_evaluation", None),
                         )
-
-                        # If this invocation represents an agent call (invoke_agent),
-                        # explicitly trigger agent-level evaluations so that
-                        # gen_ai.evaluation.result events can be attached to the
-                        # agent span itself, in addition to any LLM-level evaluations.
-                        if isinstance(invocation, AgentInvocation):  # type: ignore[attr-defined]
-                            try:
-                                handler.evaluate_agent(invocation)
-                                _logger.debug(
-                                    "[TL_PROCESSOR] Agent invocation evaluated: %s",
-                                    span.name,
-                                )
-                            except (
-                                Exception
-                            ) as eval_err:  # pragma: no cover - defensive
-                                _logger.warning(
-                                    "[TL_PROCESSOR] Failed to evaluate AgentInvocation: %s",
-                                    eval_err,
-                                )
 
                     except Exception as stop_err:
                         _logger.warning(
@@ -778,9 +776,6 @@ class TraceloopSpanProcessor(SpanProcessor):
         if span.attributes and "_traceloop_translated" in span.attributes:
             return False
 
-        # CRITICAL: Exclude evaluation-related spans (prevent recursive evaluation)
-        # Deepeval creates spans like "Run evaluate()", "Bias", "Toxicity", etc.
-        # These should NEVER be queued for evaluation
         span_name = span.name or ""
         for exclude_pattern in _EXCLUDE_SPAN_PATTERNS:
             if exclude_pattern.lower() in span_name.lower():
@@ -1528,8 +1523,6 @@ class TraceloopSpanProcessor(SpanProcessor):
                 # Extract content and convert to parts
                 content = getattr(lc_msg, "content", "")
 
-                # CRITICAL 1: Check if content is a JSON string with LangChain serialization format
-                # Basically only use the "content" of the incoming traceloop entity input/output
                 if (
                     isinstance(content, str)
                     and content.startswith("{")
