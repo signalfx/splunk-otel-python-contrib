@@ -1,0 +1,82 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: litellm-poem-generator
+spec:
+  suspend: true  # Set to false to resume
+  schedule: " 0,30 16-23,0-2 * * 1-5"  # Every 30 min, 8am-6pm PST Mon-Fri (16:00-02:00 UTC)
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: litellm-poem-generator
+          containers:
+          - name: poem-generator
+            image: python:3.11-slim
+            env:
+            - name: LITELLM_PROXY_URL
+              value: "http://litellm.litellm-kdecker.svc.cluster.local:4000/v1"
+            - name: LITELLM_MASTER_KEY
+              value: "sk-1234"
+            command:
+            - /bin/sh
+            - -c
+            - |
+              pip install openai --quiet && python3 << 'EOF'
+              import os
+              import openai
+              from datetime import datetime
+
+              def generate_poem_with_litellm_proxy():
+                  """Generate a poem using OpenAI via LiteLLM proxy."""
+                  client = openai.OpenAI(
+                      api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+                      base_url=os.getenv("LITELLM_PROXY_URL", "http://localhost:4000/v1")
+                  )
+
+                  messages = [
+                      {"role": "system", "content": "You are a poetic assistant, skilled in crafting beautiful poems about technical topics."},
+                      {"role": "user", "content": "Write a short, creative poem about OpenTelemetry, the open-source observability framework. Focus on its ability to provide insights and visibility into distributed systems."}
+                  ]
+
+                  try:
+                      response = client.chat.completions.create(
+                          model="gpt-4.1",
+                          messages=messages,
+                          stream=True
+                      )
+                      poem = ""
+                      for chunk in response:
+                          if chunk.choices[0].delta.content:
+                              poem += chunk.choices[0].delta.content
+                      return poem
+                  except Exception as e:
+                      return f"Error generating poem via LiteLLM proxy: {str(e)}"
+
+              def main():
+                  timestamp = datetime.utcnow().isoformat()
+                  print(f"[{timestamp}] === OpenTelemetry Poetry Generator (via LiteLLM Proxy) ===")
+                  print(f"[{timestamp}] === Poem (GPT-4) ===")
+                  poem = generate_poem_with_litellm_proxy()
+                  print(poem)
+                  print(f"\n[{timestamp}] " + "="*50 + "\n")
+
+              if __name__ == "__main__":
+                  main()
+              EOF
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "500m"
+          restartPolicy: OnFailure
+      backoffLimit: 2
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm-poem-generator
