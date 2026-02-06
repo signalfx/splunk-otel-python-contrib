@@ -107,15 +107,25 @@ tracer = trace.get_tracer("travel_assistant")
 metric_reader = PeriodicExportingMetricReader(
     OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=True)
 )
-metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+metrics.set_meter_provider(
+    MeterProvider(resource=resource, metric_readers=[metric_reader])
+)
 
 # Configure Logging and Events
 logger_provider = LoggerProvider(resource=resource)
-logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=OTLP_ENDPOINT, insecure=True)))
+logger_provider.add_log_record_processor(
+    BatchLogRecordProcessor(
+        OTLPLogExporter(endpoint=OTLP_ENDPOINT, insecure=True)
+    )
+)
 _logs.set_logger_provider(logger_provider)
-_events.set_event_logger_provider(EventLoggerProvider(logger_provider=logger_provider))
+_events.set_event_logger_provider(
+    EventLoggerProvider(logger_provider=logger_provider)
+)
 
-print(f"📡 Exporting Traces, Metrics, Logs to Console + OTLP ({OTLP_ENDPOINT})")
+print(
+    f"📡 Exporting Traces, Metrics, Logs to Console + OTLP ({OTLP_ENDPOINT})"
+)
 
 # ============================================================================
 # Instrument OpenAI
@@ -675,6 +685,7 @@ def main():
     print("⏳ Waiting for evaluations to complete...")
     try:
         from opentelemetry.util.genai.handler import get_telemetry_handler
+
         handler = get_telemetry_handler()
         if handler is not None:
             handler.wait_for_evaluations(timeout=60.0)
