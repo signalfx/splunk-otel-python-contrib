@@ -2,6 +2,21 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.10 - 2026-02-02
+
+### Added
+- **Session Context Support** - New APIs for session/user tracking across GenAI operations:
+  - `session_context()` - Context manager for automatic session propagation
+  - `set_session_context()` / `get_session_context()` / `clear_session_context()` - Manual session management
+  - `SessionContext` dataclass for holding session state
+  - Added `session_id`, `user_id`, `customer_id` fields to `GenAI` base type
+  - New environment variables for static configuration:
+    - `OTEL_INSTRUMENTATION_GENAI_SESSION_ID`
+    - `OTEL_INSTRUMENTATION_GENAI_USER_ID`
+    - `OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID`
+  - Session attributes automatically emitted on spans: `session.id`, `user.id`, `customer.id`
+  - Priority order: explicit invocation value > contextvars > environment variables
+
 ## Version 0.1.9 - 2026-01-29
 
 - Release 0.1.9

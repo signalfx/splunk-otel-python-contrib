@@ -276,6 +276,45 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
 Burst capacity for evaluation rate limiting token bucket. Default: 4.
 """
 
+# ---- Session Context ----
+OTEL_INSTRUMENTATION_GENAI_SESSION_ID = "OTEL_INSTRUMENTATION_GENAI_SESSION_ID"
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_ID
+
+Static session ID to apply to all GenAI operations. This is useful for simple
+deployments where all requests share a single session context. For multi-tenant
+or multi-session scenarios, use the programmatic session context APIs instead.
+
+When set, this value is applied as the default ``session.id`` attribute on all
+GenAI spans unless explicitly overridden via the invocation object or the
+session context API.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_USER_ID = "OTEL_INSTRUMENTATION_GENAI_USER_ID"
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_USER_ID
+
+Static user ID to apply to all GenAI operations. Similar to session ID, this
+is useful for simple single-user deployments. For multi-user scenarios, use
+the programmatic session context APIs.
+
+When set, this value is applied as the default ``user.id`` attribute on all
+GenAI spans unless explicitly overridden.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID = (
+    "OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID
+
+Static customer/tenant ID to apply to all GenAI operations. Useful for
+single-tenant deployments or when customer context is known at startup.
+
+When set, this value is applied as the default ``customer.id`` attribute on all
+GenAI spans unless explicitly overridden.
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -305,4 +344,8 @@ __all__ = [
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
+    # session context
+    "OTEL_INSTRUMENTATION_GENAI_SESSION_ID",
+    "OTEL_INSTRUMENTATION_GENAI_USER_ID",
+    "OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID",
 ]
