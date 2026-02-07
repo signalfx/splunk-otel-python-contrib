@@ -106,6 +106,8 @@ Implemented through `EmitterSpec.invocation_types`; configuration layer replaces
 
 Supported modes: `append`, `prepend`, `replace-category` (alias `replace`), `replace-same-name`. Ordering hints (`after` / `before`) are present but inactive.
 
+**Important:** Some emitters (e.g. `splunk`) use `replace-category` for `content_events`, which replaces the entire category. If you want multiple content emitters (e.g. `SplunkConversationEvents` + `RateLimitPredictor`), use a category override to explicitly list both.
+
 ### 3.7 Error Handling
 
 CompositeEmitter wraps all emitter calls; failures are debug‑logged. Error metrics hook (`genai.emitter.errors`) is **not yet implemented** (planned enhancement).
@@ -234,7 +236,27 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 | Replace evaluation emitters | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION=replace:SplunkEvaluationAggregator` | Only Splunk evaluation emission |
 | Prepend custom metrics | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS=prepend:MyMetrics` | Custom metrics run first |
 | Replace content events | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS=replace:VendorContent` | Vendor events only |
+| Splunk + Tokenator content events | `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk,rate_limit_predictor` **and** `OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS=replace:SplunkConversationEvents,RateLimitPredictor` | Splunk conversation events + rate-limit warnings |
 | Agent-only cost metrics | (future) programmatic add with invocation_types filter | Metrics limited to agent invocations |
+
+## 10.1 Rate Limit Predictor Example
+
+For an end-to-end run (CrewAI app + SQLite persistence + rate-limit events), see:
+
+`util/opentelemetry-util-genai-tokenator/examples/README.md`
+
+Quick run (zero-code):
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk,rate_limit_predictor
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS=replace:SplunkConversationEvents,RateLimitPredictor
+export OTEL_INSTRUMENTATION_GENAI_RATE_LIMIT_DB_PATH=~/.opentelemetry_genai_rate_limit.db
+export OTEL_INSTRUMENTATION_GENAI_RATE_LIMIT_WARNING_THRESHOLD=0.0
+
+cd instrumentation-genai/opentelemetry-instrumentation-crewai/examples
+export OTEL_MANUAL_INSTRUMENTATION=false
+opentelemetry-instrument python customer_support.py
+```
 
 ## 11. Error & Performance Considerations
 
