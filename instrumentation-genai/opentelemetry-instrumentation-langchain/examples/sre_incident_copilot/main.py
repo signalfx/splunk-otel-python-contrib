@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -367,6 +368,12 @@ def main():
         action="store_true",
         help="Enable manual OpenTelemetry instrumentation",
     )
+    parser.add_argument(
+        "--wait-after-completion",
+        type=int,
+        default=0,
+        help="Number of seconds to wait after completion to ensure evaluations finish (default: 0)",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -447,6 +454,14 @@ def main():
         )
         action_val = validation_report["validations"]["action_safety"]
         print(f"   Action Safety: {action_val.get('action_safety_validated', False)}")
+
+        # Wait for instrumentation-side evaluations to complete if requested
+        if args.wait_after_completion > 0:
+            print(
+                f"\n⏳ Waiting {args.wait_after_completion} seconds for evaluations to complete..."
+            )
+            time.sleep(args.wait_after_completion)
+            print("   Evaluations should be complete.")
 
     except Exception as e:
         print(f"\n❌ Error: {e}")

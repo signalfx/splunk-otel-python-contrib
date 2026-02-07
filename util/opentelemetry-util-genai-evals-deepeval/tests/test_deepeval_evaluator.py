@@ -195,7 +195,11 @@ from opentelemetry.util.genai.types import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
+    # Ensure DeepevalEvaluator (not NativeEvaluator) is used for these tests
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "deepeval"
+    )
     clear_registry()
     importlib.reload(plugin)
     plugin.register()

@@ -813,11 +813,36 @@ class DeepevalEvaluator(Evaluator):
         return "gpt-4o-mini"
 
 
+def _get_evaluator_implementation() -> str:
+    """Get the evaluator implementation from environment variable.
+
+    Returns:
+    - 'deepeval': Use standard DeepevalEvaluator with full Deepeval library (default)
+    - 'native': Use NativeEvaluator (no deepeval dependency, supports batched/non-batched)
+
+    Note: Default is 'deepeval' for backward compatibility. The native evaluator
+    shows promising performance (7x faster) but requires more real-world validation.
+    """
+    impl = os.getenv(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION", "deepeval"
+    )
+    return impl.lower().strip()
+
+
 def _factory(
     metrics: Iterable[str] | None = None,
     invocation_type: str | None = None,
     options: Mapping[str, Mapping[str, str]] | None = None,
 ) -> DeepevalEvaluator:
+    impl = _get_evaluator_implementation()
+    if impl == "native":
+        from .native import NativeEvaluator
+
+        return NativeEvaluator(
+            metrics,
+            invocation_type=invocation_type,
+            options=options,
+        )
     return DeepevalEvaluator(
         metrics,
         invocation_type=invocation_type,

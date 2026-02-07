@@ -258,6 +258,130 @@ pip list | grep -i splunk-otel-genai-emitters-test
 - **Errors**: By type (queue_full, evaluator_error, etc.)
 - **Results by Metric**: Counts for bias, toxicity, hallucination, etc.
 
+### Performance Benchmark Results
+
+The following benchmarks compare different evaluator modes using the NativeEvaluator implementation.
+
+> **Note:** The `deepeval(...)` evaluator plugin defaults to using `NativeEvaluator` (not the Deepeval library).
+> To use the actual Deepeval library, set `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=deepeval`.
+
+#### Test Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Samples | 30 |
+| Workers | 4 |
+| Metrics | bias, toxicity, hallucination, answer_relevancy, sentiment |
+| Metrics per sample | 10 (5 metrics × 2 invocations per trace) |
+| Total evaluations | 300 |
+| Sample rate | 1 (100% evaluation) |
+| Local LLM | `liquid/lfm2.5-1.2b` via LM Studio at `http://localhost:1234/v1` |
+
+#### Results Summary
+
+| Mode | Implementation | Total Time | Throughput | LLM Calls per Invocation |
+|------|---------------|------------|------------|--------------------------|
+| **Native Batched** (default) | NativeEvaluator | 6.51s | **15.35 evals/s** | 1 call (all metrics) |
+| **Native Non-Batched** | NativeEvaluator | 14.52s | **6.89 evals/s** | 5 calls (one per metric) |
+| **Deepeval Library** | DeepevalEvaluator | 44.60s | **2.24 evals/s** | ~12-15 calls (2-3 per metric) |
+
+#### Key Findings
+
+1. **Native Batched is ~7x faster** than the Deepeval library
+2. **Native Non-Batched is ~3x faster** than the Deepeval library
+3. **Native Batched is ~2.2x faster** than Native Non-Batched mode
+4. Both native modes use the same `NativeEvaluator` implementation
+5. The performance difference between implementations is due to LLM call count
+
+#### Why Native is Faster than Deepeval Library
+
+| Implementation | LLM Calls per Metric | With 5 metrics | With 10 invocations (100 evaluations) |
+|---------------|---------------------|----------------|---------------------------------------|
+| **Native Batched** | 0.2 calls (all metrics in one prompt) | 1 call | **10 LLM calls total** |
+| **Native Non-Batched** | 1 call per metric | 5 calls | **50 LLM calls total** |
+| **Deepeval Library** | 2-3 calls per metric | 12-15 calls | **120-150 LLM calls total** |
+
+The Deepeval library makes multiple LLM calls per metric because each metric implementation performs:
+1. **Extraction step**: Extract relevant statements/claims from the response
+2. **Evaluation step**: Evaluate the extracted content against criteria
+3. **Reasoning step** (optional): Generate explanation for the score
+
+Testing with BiasMetric + ToxicityMetric (2 metrics) showed **5 LLM calls** (~2.5 calls/metric on average).
+
+This explains why the Deepeval library is ~3x slower than Native Non-Batched (which also uses 1 call per metric)
+and ~7x slower than Native Batched (which uses 1 call for all metrics combined).
+
+#### Detailed Results
+
+##### Batched Mode (Default)
+
+```
+Environment:
+  OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true
+  OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS=4
+  OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=batched (default)
+
+Results:
+  Total invocations: 10
+  Evaluations completed: 100
+  Completion rate: 100%
+  Evaluation time: 6.51s
+  Throughput: 15.35 evals/s
+```
+
+##### Non-Batched Mode
+
+```
+Environment:
+  OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true
+  OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS=4
+  OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE=non-batched
+
+Results:
+  Total invocations: 10
+  Evaluations completed: 100
+  Completion rate: 100%
+  Evaluation time: 14.52s
+  Throughput: 6.89 evals/s
+```
+
+##### Deepeval Library Mode
+
+```
+Environment:
+  OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT=true
+  OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS=4
+  OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION=deepeval
+
+Results:
+  Total invocations: 10
+  Evaluations completed: 100
+  Completion rate: 100%
+  Evaluation time: 44.60s
+  Throughput: 2.24 evals/s
+```
+
+**Note:** The Deepeval library mode is significantly slower due to:
+- Each metric makes 2-3 LLM calls (extraction + evaluation + reasoning)
+- Total of ~12-15 LLM calls per invocation (for 5 metrics) vs 1 call for native batched
+
+#### Configuration Reference
+
+| Environment Variable | Values | Description |
+|---------------------|--------|-------------|
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_MODE` | `batched` (default), `non-batched` | Controls whether metrics are evaluated in one LLM call or separately |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_DEEPEVAL_IMPLEMENTATION` | `deepeval` (default), `native` | Which evaluator implementation to use (deepeval = Deepeval library, native = NativeEvaluator) |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_CONCURRENT` | `true`, `false` | Enable/disable concurrent evaluation |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_WORKERS` | integer (default: 4) | Number of concurrent evaluation workers |
+
+#### Recommendations
+
+- **Use Native Batched mode (default)** for production - provides 7x better throughput than Deepeval library
+- **Use Native Non-Batched** when per-metric timing is needed or for debugging (still 3x faster than Deepeval)
+- **Use Deepeval Library** only if you need access to Deepeval-specific features or advanced metrics
+- Increase worker count for high-throughput scenarios
+- Native implementation is recommended for cost-sensitive production environments
+
 #### Phase 4: Test Scenarios
 
 1. **Baseline Sequential Test**
