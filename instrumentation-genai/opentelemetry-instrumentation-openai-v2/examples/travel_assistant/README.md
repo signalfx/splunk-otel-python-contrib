@@ -7,8 +7,7 @@ A travel assistant demonstrating OpenAI SDK **chat completions with tool calling
 - **Embeddings Search**: Semantic destination search using cosine similarity
 - **Tool Calling Loop**: Uses OpenAI function calling to search flights, hotels, activities, and weather
 - **Multi-turn Conversation**: Automatic tool execution and result integration
-- **Full Observability**: OpenTelemetry traces for all LLM calls (chat + embeddings)
-- **Dual Auth Support**: Works with Circuit (internal) or OpenAI API directly
+- **Full Observability**: OpenTelemetry traces, metrics, and logs for all LLM calls
 
 ## Prerequisites
 
@@ -23,64 +22,51 @@ pip install -e ../../
 
 ## Usage
 
-### Quick Start with .env File
+### Quick Start
 
 ```bash
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your OpenAI API key
 python main.py
 ```
 
-### Option 1: Circuit (Internal LLM Gateway)
+### Running with Environment Variables
 
 ```bash
-export LLM_CLIENT_ID="your-client-id"
-export LLM_CLIENT_SECRET="your-client-secret"
-export LLM_APP_KEY="your-app-key"  # optional
-export LLM_MODEL="gpt-4o-mini"     # optional, default: gpt-4o-mini
-
-python main.py
-```
-
-### Option 2: OpenAI API Directly
-
-```bash
-export USE_OPENAI_DIRECT=true
 export OPENAI_API_KEY="your-openai-api-key"
-export LLM_MODEL="gpt-4o-mini"     # optional
+export LLM_MODEL="gpt-4o-mini"  # optional
 
 python main.py
 ```
 
 ## Environment Variables
 
-### Chat (Circuit or OpenAI)
+### Chat Completions
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_CLIENT_ID` | OAuth2 client ID for Circuit | Required (Circuit) |
-| `LLM_CLIENT_SECRET` | OAuth2 client secret | Required (Circuit) |
-| `LLM_APP_KEY` | Application key for Circuit | Optional |
+| `OPENAI_API_KEY` | OpenAI API key | Required |
 | `LLM_MODEL` | Chat model to use | `gpt-4o-mini` |
-| `USE_OPENAI_DIRECT` | Use OpenAI API directly | `false` |
-| `OPENAI_API_KEY` | OpenAI API key | Required if direct |
 
-### Embeddings (Azure OpenAI - required)
+### Embeddings (Azure OpenAI - optional)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | Required |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | Required |
-| `AZURE_OPENAI_API_VERSION` | API version (e.g., `2024-02-01`) | Required |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | - |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | - |
+| `AZURE_OPENAI_API_VERSION` | API version (e.g., `2024-02-01`) | - |
 | `AZURE_EMBEDDING_DEPLOYMENT` | Azure deployment name for embeddings | `text-embedding-ada-002` |
 
-**Note:** Circuit chat endpoint doesn't support embeddings, so Azure is required for the embedding demo. If Azure is not configured, Part 1 (semantic search) will be skipped.
+**Note:** If Azure OpenAI is not configured, Part 1 (semantic search) will be skipped and only chat completions with tool calling will run.
 
 ### Observability
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint | `http://localhost:4317` |
+| `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Emitter types (`span`, `span_metric_event`, `splunk`) | `span` |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Capture prompt/response content | `false` |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN`, `EVENT`, or `SPAN_AND_EVENT` | `SPAN` |
 
 ## Available Tools
 

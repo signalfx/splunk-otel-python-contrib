@@ -54,11 +54,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================================================
-# OpenTelemetry Setup - Console + OTLP Exporters
+# OpenTelemetry Setup - Console + OTLP Exporters (Traces, Metrics, Logs)
 # ============================================================================
-from opentelemetry import trace  # noqa: E402
+from opentelemetry import _events, _logs, metrics, trace  # noqa: E402
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # noqa: E402
+    OTLPLogExporter,
+)
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # noqa: E402
+    OTLPMetricExporter,
+)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E402
     OTLPSpanExporter,
+)
+from opentelemetry.sdk._events import EventLoggerProvider  # noqa: E402
+from opentelemetry.sdk._logs import LoggerProvider  # noqa: E402
+from opentelemetry.sdk._logs.export import (  # noqa: E402
+    BatchLogRecordProcessor,
+)
+from opentelemetry.sdk.metrics import MeterProvider  # noqa: E402
+from opentelemetry.sdk.metrics.export import (  # noqa: E402
+    PeriodicExportingMetricReader,
 )
 from opentelemetry.sdk.resources import Resource  # noqa: E402
 from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
@@ -78,18 +93,39 @@ resource = Resource.create(
         "service.version": "1.0.0",
     }
 )
-provider = TracerProvider(resource=resource)
 
-# Add both exporters: Console for debugging + OTLP for collector
-provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
-provider.add_span_processor(
+# Configure Tracing
+trace_provider = TracerProvider(resource=resource)
+trace_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+trace_provider.add_span_processor(
     BatchSpanProcessor(OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=True))
 )
-
-trace.set_tracer_provider(provider)
+trace.set_tracer_provider(trace_provider)
 tracer = trace.get_tracer("travel_assistant")
 
-print(f"📡 Exporting to Console + OTLP ({OTLP_ENDPOINT})")
+# Configure Metrics
+metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=True)
+)
+metrics.set_meter_provider(
+    MeterProvider(resource=resource, metric_readers=[metric_reader])
+)
+
+# Configure Logging and Events
+logger_provider = LoggerProvider(resource=resource)
+logger_provider.add_log_record_processor(
+    BatchLogRecordProcessor(
+        OTLPLogExporter(endpoint=OTLP_ENDPOINT, insecure=True)
+    )
+)
+_logs.set_logger_provider(logger_provider)
+_events.set_event_logger_provider(
+    EventLoggerProvider(logger_provider=logger_provider)
+)
+
+print(
+    f"📡 Exporting Traces, Metrics, Logs to Console + OTLP ({OTLP_ENDPOINT})"
+)
 
 # ============================================================================
 # Instrument OpenAI
@@ -98,7 +134,11 @@ from opentelemetry.instrumentation.openai_v2 import (  # noqa: E402
     OpenAIInstrumentor,
 )
 
-OpenAIInstrumentor().instrument()
+OpenAIInstrumentor().instrument(
+    tracer_provider=trace_provider,
+    meter_provider=metrics.get_meter_provider(),
+    logger_provider=logger_provider,
+)
 print("✅ OpenAI instrumentation enabled")
 
 # ============================================================================
@@ -640,11 +680,25 @@ def main():
     ):
         run_assistant(chat_client, planning_query, model)
 
-    # Flush traces
+    # Wait for async evaluations to complete
     print("\n" + "=" * 70)
-    print(f"📊 Flushing spans to Console + OTLP ({OTLP_ENDPOINT})...")
-    provider.force_flush()
-    print("✅ Traces exported!")
+    print("⏳ Waiting for evaluations to complete...")
+    try:
+        from opentelemetry.util.genai.handler import get_telemetry_handler
+
+        handler = get_telemetry_handler()
+        if handler is not None:
+            handler.wait_for_evaluations(timeout=60.0)
+            print("✅ Evaluations completed!")
+    except Exception as e:
+        print(f"⚠️ Evaluation flush error: {e}")
+
+    # Flush all telemetry
+    print(f"📊 Flushing telemetry to Console + OTLP ({OTLP_ENDPOINT})...")
+    trace_provider.force_flush()
+    metrics.get_meter_provider().force_flush()
+    logger_provider.force_flush()
+    print("✅ Traces, Metrics, and Logs exported!")
     print("=" * 70)
 
 
