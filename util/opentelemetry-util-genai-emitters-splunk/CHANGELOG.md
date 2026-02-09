@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.7 - 2026-02-09
+
+### Fixed
+- **Content Logger** Use content_logger (Logs API) instead of event_logger (Events API) for SplunkConversationEventsEmitter and SplunkEvaluationResultsEmitter to ensure log record emission is consistent with evaluation emitter behavior.
+
 ## Version 0.1.6 - 2026-01-29
 
 ### Added
