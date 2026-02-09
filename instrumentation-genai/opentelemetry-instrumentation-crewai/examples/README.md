@@ -69,6 +69,17 @@ pip install -r requirements.txt
 
 > **Note:** All packages are available on PyPI and regularly updated. The `requirements.txt` in this directory includes all necessary dependencies with compatible versions.
 
+> **Important: Provider-Specific Instrumentation Required**
+>
+> CrewAI instrumentation captures workflow orchestration (Crews, Tasks, Agents, Tools) but **does not directly instrument LLM and embedding calls**. For complete observability including LLM call details (token usage, model names, latency), you must also install and enable provider-specific instrumentation packages:
+>
+> - **OpenAI**: `pip install opentelemetry-instrumentation-openai-v2`
+> - **Anthropic**: `pip install opentelemetry-instrumentation-anthropic`
+> - **Azure OpenAI**: `pip install opentelemetry-instrumentation-openai-v2` (same as OpenAI)
+> - **Other providers**: Check the [instrumentation-genai](../../) directory for available providers
+>
+> Without provider instrumentation, you'll see workflow structure but not the detailed LLM call spans shown in the trace diagrams below.
+
 ### Steps
 
 Set up your environment to run the instrumentation:

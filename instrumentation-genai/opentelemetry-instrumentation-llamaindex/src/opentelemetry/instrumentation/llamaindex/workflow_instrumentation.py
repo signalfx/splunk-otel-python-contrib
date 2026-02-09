@@ -6,10 +6,26 @@ by intercepting workflow event streams to capture tool calls.
 """
 
 import asyncio
+from collections.abc import Mapping
+from typing import Any, Optional
 
-from opentelemetry import trace as _trace_mod
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import AgentInvocation, ToolCall, Workflow
+from opentelemetry.util.genai.types import (
+    AgentInvocation,
+    InputMessage,
+    OutputMessage,
+    Text,
+    ToolCall,
+    Workflow,
+)
+from opentelemetry.instrumentation.llamaindex.invocation_manager import (
+    _InvocationManager,
+)
+
+
+def _normalize_agent_name(value: Any) -> str:
+    name = str(value) if value is not None else ""
+    return name[6:] if name.startswith("agent.") else name
 
 
 class WorkflowEventInstrumentor:
@@ -20,8 +36,13 @@ class WorkflowEventInstrumentor:
     instrumentor instances coexist, each tracking its own agent.
     """
 
-    def __init__(self, handler: TelemetryHandler):
+    def __init__(
+        self,
+        handler: TelemetryHandler,
+        invocation_manager: Optional[_InvocationManager] = None,
+    ):
         self._handler = handler
+        self._invocation_manager = invocation_manager
         self._active_tools = {}  # tool_id -> ToolCall
         self._current_agent = (
             None  # The agent being tracked by this instrumentor instance
@@ -47,47 +68,98 @@ class WorkflowEventInstrumentor:
         )
 
         self._current_agent = current_agent
+        self._agent_scope = str(getattr(current_agent, "run_id", id(current_agent)))
         self._active_agents = {}
-        self._current_agent_name = None
+        self._current_agent_key = None
+        self._workflow_name = None
+        current_agent_attrs = getattr(current_agent, "attributes", None)
+        if isinstance(current_agent_attrs, dict):
+            workflow_name = current_agent_attrs.get("gen_ai.workflow.name")
+            if workflow_name:
+                self._workflow_name = str(workflow_name)
+        context_key_token = None
+        if self._invocation_manager:
+            context_key_token = self._invocation_manager.set_current_agent_key(None)
 
         try:
             async for event in workflow_handler.stream_events():
                 if isinstance(event, AgentInput):
                     if (
                         self._current_agent
-                        and self._current_agent.agent_name == "AgentWorkflow"
+                        and event.current_agent_name
+                        and event.current_agent_name != self._current_agent.agent_name
                     ):
                         agent_name = event.current_agent_name
-                        self._current_agent_name = agent_name
-                        agent_invocation = AgentInvocation(
-                            name=f"agent.{agent_name}",
-                            input_context=str(event.input[-1].content)
-                            if event.input
-                            else "",
-                            attributes={},
-                        )
-                        agent_invocation.framework = "llamaindex"
-                        agent_invocation.agent_name = agent_name
-                        if (
-                            hasattr(self._current_agent, "span")
-                            and self._current_agent.span
-                        ):
-                            agent_invocation.parent_span = self._current_agent.span
-                        self._handler.start_agent(agent_invocation)
-                        self._active_agents[agent_name] = agent_invocation
+                        agent_key = (self._agent_scope, agent_name)
+                        self._current_agent_key = agent_key
+                        agent_key_str = f"{agent_key[0]}::{agent_key[1]}"
+                        if agent_key not in self._active_agents:
+                            agent_invocation = AgentInvocation(
+                                name=f"agent.{agent_name}",
+                                input_messages=[
+                                    InputMessage(
+                                        role="user",
+                                        parts=[
+                                            Text(content=str(event.input[-1].content))
+                                        ],
+                                    )
+                                ]
+                                if event.input
+                                else [],
+                                attributes={},
+                            )
+                            agent_invocation.framework = "llamaindex"
+                            agent_invocation.agent_name = agent_name
+                            if self._workflow_name:
+                                agent_invocation.attributes["gen_ai.workflow.name"] = (
+                                    self._workflow_name
+                                )
+                            if (
+                                hasattr(self._current_agent, "span")
+                                and self._current_agent.span
+                            ):
+                                agent_invocation.parent_span = self._current_agent.span
+                            elif (
+                                hasattr(self._current_agent, "parent_span")
+                                and self._current_agent.parent_span
+                            ):
+                                agent_invocation.parent_span = (
+                                    self._current_agent.parent_span
+                                )
+                            self._handler.start_agent(agent_invocation)
+                            self._active_agents[agent_key] = agent_invocation
+                            if self._invocation_manager:
+                                self._invocation_manager.register_agent_invocation(
+                                    agent_key_str, agent_invocation
+                                )
+                        if self._invocation_manager:
+                            self._invocation_manager.set_current_agent_key(
+                                agent_key_str
+                            )
 
                 elif isinstance(event, AgentOutput):
                     if (
                         self._current_agent
-                        and self._current_agent.agent_name == "AgentWorkflow"
+                        and event.current_agent_name
+                        and event.current_agent_name != self._current_agent.agent_name
                     ):
                         agent_name = event.current_agent_name
-                        self._current_agent_name = agent_name
-                        agent_invocation = self._active_agents.get(agent_name)
+                        agent_key = (self._agent_scope, agent_name)
+                        self._current_agent_key = agent_key
+                        agent_key_str = f"{agent_key[0]}::{agent_key[1]}"
+                        agent_invocation = self._active_agents.get(agent_key)
                         if agent_invocation:
                             agent_invocation.output_result = str(event.response.content)
-                            self._handler.stop_agent(agent_invocation)
-                            del self._active_agents[agent_name]
+                            agent_invocation.output_messages = [
+                                OutputMessage(
+                                    role="assistant",
+                                    parts=[Text(content=str(event.response.content))],
+                                )
+                            ]
+                            if self._invocation_manager:
+                                self._invocation_manager.set_current_agent_key(
+                                    agent_key_str
+                                )
 
                 # Tool call start
                 if isinstance(event, WorkflowToolCall):
@@ -100,15 +172,19 @@ class WorkflowEventInstrumentor:
                     tool_call.framework = "llamaindex"
 
                     active_agent = None
-                    if self._current_agent_name:
-                        active_agent = self._active_agents.get(self._current_agent_name)
+                    if self._current_agent_key:
+                        active_agent = self._active_agents.get(self._current_agent_key)
                     if active_agent:
-                        tool_call.agent_name = active_agent.agent_name
+                        tool_call.agent_name = _normalize_agent_name(
+                            active_agent.agent_name
+                        )
                         tool_call.agent_id = str(active_agent.run_id)
                         if hasattr(active_agent, "span") and active_agent.span:
                             tool_call.parent_span = active_agent.span
                     elif self._current_agent:
-                        tool_call.agent_name = self._current_agent.agent_name
+                        tool_call.agent_name = _normalize_agent_name(
+                            self._current_agent.agent_name
+                        )
                         tool_call.agent_id = str(self._current_agent.run_id)
                         if (
                             hasattr(self._current_agent, "span")
@@ -133,6 +209,15 @@ class WorkflowEventInstrumentor:
                         self._handler.stop_tool_call(tool_call)
                         del self._active_tools[event.tool_id]
 
+            for agent_invocation in list(self._active_agents.values()):
+                self._handler.stop_agent(agent_invocation)
+            for agent_key in list(self._active_agents.keys()):
+                if self._invocation_manager:
+                    self._invocation_manager.unregister_agent_invocation(
+                        f"{agent_key[0]}::{agent_key[1]}"
+                    )
+            self._active_agents.clear()
+
         except Exception as e:
             # Try to clean up any active tool spans on error, but don't let
             # instrumentation failures interfere with the application
@@ -142,33 +227,43 @@ class WorkflowEventInstrumentor:
             logger.warning(f"Error during workflow event instrumentation: {e}")
 
             try:
-                for tool_call in list(self._active_tools.values()):
-                    from opentelemetry.util.genai.types import Error
+                from opentelemetry.util.genai.types import Error
 
+                for tool_call in list(self._active_tools.values()):
                     error = Error(message=str(e), type=type(e))
                     self._handler.fail_tool_call(tool_call, error)
                 self._active_tools.clear()
+                for agent_invocation in list(self._active_agents.values()):
+                    error = Error(message=str(e), type=type(e))
+                    self._handler.fail_agent(agent_invocation, error)
+                for agent_key in list(self._active_agents.keys()):
+                    if self._invocation_manager:
+                        self._invocation_manager.unregister_agent_invocation(
+                            f"{agent_key[0]}::{agent_key[1]}"
+                        )
+                self._active_agents.clear()
             except Exception as cleanup_error:
                 logger.warning(
                     f"Failed to clean up tool spans after error: {cleanup_error}"
                 )
+        finally:
+            if self._invocation_manager and context_key_token is not None:
+                self._invocation_manager.reset_current_agent_key(context_key_token)
 
 
 def wrap_agent_run(wrapped, instance, args, kwargs):
     """
     Wrap agent.run() to instrument workflow events.
 
-    This creates a Workflow span as the root (since ReActAgent inherits from Workflow),
-    then creates an AgentInvocation span nested inside it, establishing a hierarchy
-    where workflows orchestrate agents.
-
-    Hierarchy:
-        Workflow (agent.run - workflow orchestration layer)
-          └─ AgentInvocation (agent execution layer)
+    For standalone agents (not inside a workflow), creates:
+        Workflow (workflow ReActAgent)
+          └─ AgentInvocation (invoke_agent agent.ReActAgent)
               ├─ LLMInvocation (reasoning)
               ├─ ToolCall (tool execution)
               └─ LLMInvocation (final response)
     """
+    from opentelemetry import trace as trace_api
+
     # Get the initial user message
     user_msg = kwargs.get("user_msg") or (args[0] if args else "")
 
@@ -176,85 +271,111 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
     from llama_index.core import Settings
 
     telemetry_handler = None
+    invocation_manager = None
     for callback_handler in Settings.callback_manager.handlers:
         if hasattr(callback_handler, "_handler"):
             telemetry_handler = callback_handler._handler
+            invocation_manager = getattr(callback_handler, "_invocation_manager", None)
             break
 
-    # Create workflow and agent spans to establish proper hierarchy
+    # Create workflow and agent spans
     root_workflow = None
     current_agent = None
+    workflow_name = None
     if telemetry_handler:
-        # Check if we're already inside a workflow span (multi-agent orchestration)
-        # by examining the current span's attributes for gen_ai.operation.name=workflow
-        current_span = _trace_mod.get_current_span()
+        # Check if we're already inside a workflow span to avoid creating
+        # duplicate workflow spans for nested/parallel agent execution.
+        current_span = trace_api.get_current_span()
         inside_workflow = False
 
         if current_span and current_span.is_recording():
-            # Check if parent span is a workflow by looking for workflow operation attribute
-            # This prevents creating nested workflow spans when agents are orchestrated
             try:
-                # Access span attributes (implementation-specific, but standard in SDK)
-                if hasattr(current_span, "attributes"):
-                    op_name = current_span.attributes.get("gen_ai.operation.name")
-                    if op_name == "workflow":
-                        inside_workflow = True
+                op_name = None
+                workflow_name = None
+                span_attrs = getattr(current_span, "attributes", None)
+                if isinstance(span_attrs, dict):
+                    op_name = span_attrs.get("gen_ai.operation.name")
+                    workflow_name = span_attrs.get("gen_ai.workflow.name")
+                if op_name is None and hasattr(current_span, "_attributes"):
+                    op_name = current_span._attributes.get("gen_ai.operation.name")
+                if workflow_name is None and hasattr(current_span, "_attributes"):
+                    workflow_name = current_span._attributes.get("gen_ai.workflow.name")
+                inside_workflow = op_name == "invoke_workflow"
             except Exception:
                 pass  # If we can't determine, assume not inside workflow
 
-        # Level 1: Create root workflow span only if NOT inside another workflow
-        # This supports multi-agent orchestration where a custom Workflow orchestrates
-        # multiple ReActAgent instances, creating proper hierarchy:
-        #   CustomWorkflow
-        #     ├─ Agent 1 (research)
-        #     ├─ Agent 2 (analysis)
-        #     └─ Agent 3 (synthesis)
+        # Create workflow span only for standalone agents (not inside another workflow)
         if not inside_workflow:
+            input_messages = (
+                [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
+                if user_msg
+                else []
+            )
             root_workflow = Workflow(
-                name=f"{type(instance).__name__} Workflow",
+                name=f"{type(instance).__name__}",
                 workflow_type="llamaindex.workflow",
                 framework="llamaindex",
-                initial_input=str(user_msg),
+                input_messages=input_messages,
                 attributes={},
             )
-
-            # Start the workflow span - this becomes the active span context
             telemetry_handler.start_workflow(root_workflow)
+            workflow_name = root_workflow.name
 
-        # Level 2: Create agent invocation (nested inside workflow if one exists)
-        # The agent span will automatically become a child of the active span
-        # (either our workflow or parent workflow) due to OpenTelemetry's context propagation
+        # Create agent invocation
+        agent_input_messages = (
+            [InputMessage(role="user", parts=[Text(content=str(user_msg))])]
+            if user_msg
+            else []
+        )
         current_agent = AgentInvocation(
             name=f"agent.{type(instance).__name__}",
-            input_context=str(user_msg),
+            input_messages=agent_input_messages,
             attributes={},
         )
         current_agent.framework = "llamaindex"
         current_agent.agent_name = type(instance).__name__
+        if workflow_name:
+            current_agent.attributes["gen_ai.workflow.name"] = str(workflow_name)
 
-        # Start the agent span (automatically becomes child of active span)
-        # This pushes (agent_name, run_id) onto the _agent_context_stack
-        # and stores the span in _span_registry[run_id]
-        telemetry_handler.start_agent(current_agent)
+        is_orchestrator_workflow = bool(
+            hasattr(instance, "agents")
+            and hasattr(instance, "root_agent")
+            and isinstance(getattr(instance, "agents", None), (list, tuple, Mapping))
+        )
+        if is_orchestrator_workflow and root_workflow and root_workflow.span:
+            current_agent.parent_span = root_workflow.span
+
+        # Start the agent span for non-orchestrator workflow instances.
+        if not is_orchestrator_workflow:
+            telemetry_handler.start_agent(current_agent)
 
     # Call the original run() method to get the workflow handler
     handler = wrapped(*args, **kwargs)
 
     if telemetry_handler and current_agent:
         # Create workflow instrumentor for tool tracking
-        instrumentor = WorkflowEventInstrumentor(telemetry_handler)
+        instrumentor = WorkflowEventInstrumentor(telemetry_handler, invocation_manager)
 
-        # Wrap the handler to close agent (and workflow if created) spans when complete
+        # Wrap the handler to close agent and workflow spans when complete
         original_handler = handler
 
         class InstrumentedHandler:
             """Wrapper that closes agent and workflow spans when workflow completes."""
 
-            def __init__(self, original, workflow_span, agent_span):
+            def __init__(
+                self,
+                original,
+                agent_span,
+                workflow_span=None,
+                is_orchestrator_workflow=False,
+            ):
                 self._original = original
-                self._root_workflow = workflow_span
                 self._current_agent = agent_span
+                self._root_workflow = (
+                    workflow_span  # May be None if inside another workflow
+                )
                 self._result = None
+                self._is_orchestrator_workflow = is_orchestrator_workflow
 
             def __await__(self):
                 # Start background task to instrument workflow events
@@ -279,9 +400,14 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 """Actual async implementation."""
                 try:
                     self._result = await self._original
-                    self._current_agent.output_result = str(self._result)
-                    if self._root_workflow:  # Only set if we created a workflow span
-                        self._root_workflow.final_output = str(self._result)
+                    if not self._is_orchestrator_workflow:
+                        self._current_agent.output_result = str(self._result)
+                        self._current_agent.output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[Text(content=str(self._result))],
+                            )
+                        ]
 
                     # Wait for the event streaming task to complete to ensure all
                     # inner agent invocations are properly closed
@@ -298,10 +424,21 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                         except Exception:
                             pass  # Already logged in stream_events()
 
-                    # Stop spans in reverse order: agent first, then workflow (if we created it)
-                    telemetry_handler.stop_agent(self._current_agent)
-                    if self._root_workflow:  # Only stop if we created a workflow span
+                    # Stop agent span for non-orchestrator workflow instances
+                    if not self._is_orchestrator_workflow:
+                        telemetry_handler.stop_agent(self._current_agent)
+
+                    # Stop workflow span if we created one (standalone agent case)
+                    if self._root_workflow:
+                        self._root_workflow.output_result = str(self._result)
+                        self._root_workflow.output_messages = [
+                            OutputMessage(
+                                role="assistant",
+                                parts=[Text(content=str(self._result))],
+                            )
+                        ]
                         telemetry_handler.stop_workflow(self._root_workflow)
+
                 except Exception as e:
                     # Try to record the failure in telemetry, but don't let instrumentation
                     # errors interfere with the application's exception handling
@@ -309,11 +446,10 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                         from opentelemetry.util.genai.types import Error
 
                         error = Error(message=str(e), type=type(e))
-                        # Fail spans in reverse order: agent first, then workflow (if we created it)
-                        telemetry_handler.fail_agent(self._current_agent, error)
-                        if (
-                            self._root_workflow
-                        ):  # Only fail if we created a workflow span
+                        if not self._is_orchestrator_workflow:
+                            telemetry_handler.fail_agent(self._current_agent, error)
+                        # Also fail the workflow if we created one
+                        if self._root_workflow:
                             telemetry_handler.fail_workflow(self._root_workflow, error)
                     except Exception as telemetry_error:
                         import logging
@@ -330,6 +466,11 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
                 # Delegate all other attributes to the original handler
                 return getattr(self._original, name)
 
-        handler = InstrumentedHandler(original_handler, root_workflow, current_agent)
+        handler = InstrumentedHandler(
+            original_handler,
+            current_agent,
+            root_workflow,
+            is_orchestrator_workflow,
+        )
 
     return handler

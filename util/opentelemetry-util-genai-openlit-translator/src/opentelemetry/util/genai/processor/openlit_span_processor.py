@@ -461,6 +461,20 @@ class OpenlitSpanProcessor(SpanProcessor):
         if not span or not span.name:
             return True
 
+        # Skip spans created by the util-genai library itself.
+        # These spans are already properly instrumented and should not be
+        # processed again by the openlit translator to avoid duplicate
+        # evaluations, metrics, and logs.
+        scope = getattr(span, "instrumentation_scope", None)
+        scope_name = getattr(scope, "name", "") if scope else ""
+        if scope_name.startswith("opentelemetry.util.genai"):
+            _logger.debug(
+                "[OPENLIT_PROCESSOR] Skipping util-genai span (scope=%s): %s",
+                scope_name,
+                span.name,
+            )
+            return True
+
         # Skip synthetic spans we created (check span ID in set)
         if span_id and span_id in self._synthetic_span_ids:
             _logger.debug(
@@ -583,6 +597,8 @@ class OpenlitSpanProcessor(SpanProcessor):
                     # 2. Determine sample_for_evaluation
                     # 3. Call _emitter.on_end() - which handles ReadableSpan gracefully
                     # 4. Call _notify_completion() - triggers evaluation callbacks
+                    # Note: Do NOT call handler.evaluate_agent() after finish()
+                    # as finish() already triggers evaluations via _notify_completion()
                     try:
                         handler.finish(invocation)
                         _logger.debug(
@@ -591,26 +607,6 @@ class OpenlitSpanProcessor(SpanProcessor):
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
-
-                        # If this invocation is an AgentInvocation (for example,
-                        # an OpenLit span representing an agent call), explicitly
-                        # trigger agent-level evaluations so that
-                        # gen_ai.evaluation.result events can be attached to the
-                        # agent span itself, mirroring the Traceloop behavior.
-                        if isinstance(invocation, AgentInvocation):  # type: ignore[attr-defined]
-                            try:
-                                handler.evaluate_agent(invocation)
-                                _logger.debug(
-                                    "[OPENLIT_PROCESSOR] Agent invocation evaluated: %s",
-                                    span.name,
-                                )
-                            except (
-                                Exception
-                            ) as eval_err:  # pragma: no cover - defensive
-                                _logger.warning(
-                                    "[OPENLIT_PROCESSOR] Failed to evaluate AgentInvocation: %s",
-                                    eval_err,
-                                )
 
                     except Exception as stop_err:
                         _logger.warning(

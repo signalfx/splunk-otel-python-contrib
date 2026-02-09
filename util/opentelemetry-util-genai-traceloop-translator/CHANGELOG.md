@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.8 - 2026-02-06
+- Resolved issue with missing Agent evaluations & skip already instrumented spans.
+- Removed redundant calls which was causing duplicate metrics & evaluations.
+
 ## Version 0.1.7 - 2026-01-29
 - Fixed TraceloopSpanProcessor to correctly read input/output messages from spans after structured message types refactor.
 
