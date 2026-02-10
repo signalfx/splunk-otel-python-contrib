@@ -36,8 +36,8 @@ AGNTCY project.
 
 The core goals are:
 
-1. **Configurable session attributes** — Session identity can be represented by `session.id`, `gen_ai.conversation.id`, or other configurable attributes depending on the use case
-2. **Turn = Trace model** — Each conversational turn maps to a single trace ID; the session attribute is the grouping key across turns
+1. **Standardized session attribute** — Use `gen_ai.conversation.id` as the standard upstream convention for session/conversation tracking in GenAI observability
+2. **Turn = Trace model** — Each conversational turn maps to a single trace ID; `gen_ai.conversation.id` is the grouping key across turns
 3. **User and custom attribute propagation** — Propagate `enduser.id` and arbitrary association attributes (Traceloop-style) via OTel Baggage
 4. **Cross-RPC propagation** — Via W3C Baggage header for MCP and agent-to-agent protocols
 5. **Restriction mechanisms** — Policies for disabling propagation at trust boundaries
@@ -46,7 +46,7 @@ The core goals are:
 
 | Decision | Rationale |
 |----------|-----------|
-| Session is a configurable attribute (`session.id` or `gen_ai.conversation.id`) | Different deployments use different grouping keys; make it configurable rather than prescriptive |
+| Use `gen_ai.conversation.id` as the standard session attribute | Aligns with GenAI semconv namespace; unambiguous GenAI-specific grouping key |
 | Each turn = one trace ID | The session/conversation attribute groups traces across turns; within a turn, trace context provides correlation |
 | Use existing `enduser.id` (not `gen_ai.user.id`) | lmolkova confirmed in [#1872](https://github.com/open-telemetry/semantic-conventions/issues/1872): existing semconv attribute is sufficient |
 | Support custom association attributes | Traceloop's `set_association_properties()` pattern is widely adopted; support arbitrary key-value propagation |
@@ -56,49 +56,48 @@ The core goals are:
 
 ## Motivation and Use Cases
 
-### Why `session.id` Matters for GenAI
+### Why `gen_ai.conversation.id` Matters for GenAI
 
 The GenAI SIG (specifically lmolkova in [#2883](https://github.com/open-telemetry/semantic-conventions/issues/2883))
-has asked for concrete scenarios demonstrating why `session.id` is needed beyond
-`gen_ai.conversation.id`. Here are the key scenarios:
+has asked for concrete scenarios demonstrating why a session/conversation
+grouping attribute is needed. Here are the key scenarios:
 
 #### Scenario 1: Multi-Turn Conversational Agent (Turn = Trace)
 
 A user engages in a multi-turn conversation with a chatbot powered by an LLM
 orchestrator (e.g., LangChain). **Each turn produces exactly one trace** (a single
 trace ID). Within that trace, all operations — tool calls, retrieval, LLM
-invocations — are child spans. The session attribute (configurable as `session.id`
-or `gen_ai.conversation.id`) is the grouping key across turns.
+invocations — are child spans. `gen_ai.conversation.id` is the grouping key across turns.
 
 ```
-Session attribute: session.id = "session-abc123"   (or gen_ai.conversation.id)
-User attribute:    enduser.id  = "user-456"
+Session attribute: gen_ai.conversation.id = "conv-abc123"
+User attribute:    enduser.id             = "user-456"
 
 ├─ Turn 1: "What is observability?"
 │  └─ Trace A (trace_id=aaa...)        ← one trace per turn
-│     ├─ Span: LangChain agent run     (root span, session.id=session-abc123)
+│     ├─ Span: LangChain agent run     (root span, gen_ai.conversation.id=conv-abc123)
 │     ├─ Span: Vector DB retrieval     (child span)
 │     └─ Span: OpenAI chat completion  (child span)
 │
 ├─ Turn 2: "How does it relate to monitoring?"
-│  └─ Trace B (trace_id=bbb...)        ← new trace, same session
-│     ├─ Span: LangChain agent run     (root span, session.id=session-abc123)
+│  └─ Trace B (trace_id=bbb...)        ← new trace, same conversation
+│     ├─ Span: LangChain agent run     (root span, gen_ai.conversation.id=conv-abc123)
 │     ├─ Span: OpenAI chat completion  (child span)
 │     └─ Span: Tool call               (child span)
 │
 └─ Turn 3: "Show me an example"
-   └─ Trace C (trace_id=ccc...)        ← new trace, same session
-      ├─ Span: LangChain agent run     (root span, session.id=session-abc123)
+   └─ Trace C (trace_id=ccc...)        ← new trace, same conversation
+      ├─ Span: LangChain agent run     (root span, gen_ai.conversation.id=conv-abc123)
       └─ Span: OpenAI code generation  (child span)
 ```
 
-The session attribute groups traces A, B, C into a single conversation for
-analysis like "average response quality per session" or "session abandonment rate."
+`gen_ai.conversation.id` groups traces A, B, C into a single conversation for
+analysis like "average response quality per conversation" or "conversation abandonment rate."
 Within each trace, the standard OTel parent-child span relationship provides
 full causal ordering.
 
-> **Key insight**: `trace_id` already provides per-turn correlation. The session
-> attribute adds the cross-turn grouping that `trace_id` alone cannot provide.
+> **Key insight**: `trace_id` already provides per-turn correlation.
+> `gen_ai.conversation.id` adds the cross-turn grouping that `trace_id` alone cannot provide.
 
 #### Scenario 2: Multi-Agent Orchestration via MCP (Turn = Trace Across Services)
 
@@ -109,24 +108,24 @@ within it. The session attribute and user identity propagate via Baggage:
 ```
 Turn: user asks "Analyze the latest security incidents"
 Trace ID: xxx-yyy-zzz (single trace for this turn)
-Session:  session.id = "session-xyz789"
+Session:  gen_ai.conversation.id = "conv-xyz789"
 User:     enduser.id = "user-456"
 Custom:   genai.association.department = "security"
 
 ├─ Orchestrator Agent (Service A)
 │  ├─ Span: agent run                    (root, all attrs from Baggage)
 │  ├─ Span: MCP call → Search Agent      → Service B (child span, same trace)
-│  │  └─ Span: search execution          (Service B, session.id from Baggage)
+│  │  └─ Span: search execution          (Service B, gen_ai.conversation.id from Baggage)
 │  ├─ Span: MCP call → Analysis Agent    → Service C (child span, same trace)
-│  │  └─ Span: analysis execution        (Service C, session.id from Baggage)
+│  │  └─ Span: analysis execution        (Service C, gen_ai.conversation.id from Baggage)
 │  └─ Span: LLM call → OpenAI           (child span, baggage cleared)
 ```
 
 #### Scenario 3: A2A (Agent-to-Agent) Protocol
 
 The AGNTCY/observe project ([91pavan's PoC in #2883](https://github.com/open-telemetry/semantic-conventions/issues/2883))
-demonstrates session propagation in A2A scenarios where `session.id` travels
-via OTel Baggage across agent boundaries.
+demonstrates session propagation in A2A scenarios where `gen_ai.conversation.id`
+travels via OTel Baggage across agent boundaries.
 
 #### Scenario 4: Evaluation Correlation
 
@@ -134,38 +133,29 @@ Session-level evaluation metrics (e.g., per-session hallucination rate, per-sess
 user satisfaction) require grouping all LLM invocations within a session for
 aggregate analysis.
 
-### Configurable Session Attribute: `session.id` vs `gen_ai.conversation.id`
+### Standard Session Attribute: `gen_ai.conversation.id`
 
-The session grouping attribute is **configurable** — deployments may choose
-which attribute represents their session concept:
+The standard upstream convention for session/conversation tracking in GenAI
+observability is **`gen_ai.conversation.id`**. This attribute:
 
-| Aspect | `gen_ai.conversation.id` | `session.id` |
-|--------|--------------------------|--------------|
-| Scope | Single conversation thread | Entire user session (may span conversations) |
-| Cross-service | Can be propagated via Baggage | Can be propagated via Baggage |
-| Applicability | GenAI-specific | General-purpose (web, mobile, GenAI) |
-| Existing in semconv | Proposed | Already in registry |
-| Multi-agent | Single agent context | Cross-agent boundary |
-| Typical use | Chatbot with a single thread | App with multiple conversation threads per session |
+| Aspect | `gen_ai.conversation.id` |
+|--------|--------------------------|
+| Scope | Session/conversation grouping key across turns |
+| Cross-service | Propagated via OTel Baggage |
+| Applicability | GenAI-specific, within the `gen_ai.*` semconv namespace |
+| Status | Proposed as RECOMMENDED on GenAI spans |
+| Multi-agent | Propagates across agent boundaries via Baggage |
+| Typical use | Multi-turn chatbot, agentic workflows, MCP orchestration |
 
-**Recommendation:** Use `session.id` when a session may span multiple conversations
-or when correlating with non-GenAI telemetry. Use `gen_ai.conversation.id` when
-the 1:1 mapping of session-to-conversation is sufficient. Both can coexist on the
-same span.
+**Rationale for choosing `gen_ai.conversation.id` over `session.id`:**
 
-#### Configuration
-
-```bash
-# Which attribute(s) to use as the session grouping key
-# Default: session.id
-OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE=session.id
-
-# Or use conversation.id for single-thread chatbot scenarios
-OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE=gen_ai.conversation.id
-
-# Or emit both (comma-separated)
-OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE=session.id,gen_ai.conversation.id
-```
+- **GenAI-specific** — sits within the `gen_ai.*` namespace alongside other GenAI
+  conventions (`gen_ai.system`, `gen_ai.operation.name`, `gen_ai.request.model`)
+- **Unambiguous** — `session.id` is general-purpose and may conflict with web/mobile
+  session concepts in mixed telemetry pipelines
+- **Conversation-centric** — GenAI interactions are fundamentally conversational;
+  the attribute name directly reflects its semantic meaning
+- **Upstream alignment** — follows the naming pattern established by the GenAI SIG
 
 ---
 
@@ -189,8 +179,8 @@ OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE=session.id,gen_ai.conversation.id
 
 1. **Comment on [#2883](https://github.com/open-telemetry/semantic-conventions/issues/2883)** with the concrete scenarios above (specifically Scenarios 1–4)
 2. **Reference this proposal** and the SDOT reference implementation
-3. **Align with [#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418)** on the entry span proposal which also recommends `session.id`
-4. If consensus forms, open a PR modifying the GenAI semconv YAML to add `session.id` as RECOMMENDED
+3. **Align with [#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418)** on the entry span proposal which also recommends session attributes
+4. If consensus forms, open a PR modifying the GenAI semconv YAML to add `gen_ai.conversation.id` as RECOMMENDED
 
 ---
 
@@ -201,8 +191,8 @@ OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE=session.id,gen_ai.conversation.id
 Based on [semantic-conventions CONTRIBUTING.md](https://github.com/open-telemetry/semantic-conventions/blob/main/CONTRIBUTING.md):
 
 1. **Modify the YAML model** under `model/{namespace}/registry.yaml`
-   - For `session.id` in GenAI: modify `model/gen-ai/registry.yaml` to reference the existing `session.id` attribute
-   - Add `session.id` as RECOMMENDED on relevant span types
+   - For GenAI session conventions: modify `model/gen-ai/registry.yaml` to add `gen_ai.conversation.id`
+   - Add `gen_ai.conversation.id` as RECOMMENDED on relevant span types
 
 2. **Generate markdown** via `make generate-all`
    - This generates the human-readable convention docs from the YAML model
@@ -229,20 +219,13 @@ Based on [semantic-conventions CONTRIBUTING.md](https://github.com/open-telemetr
 groups:
   - id: gen_ai.client
     attributes:
-      - ref: session.id
-        requirement_level: recommended
-        note: >
-          Session identifier for grouping related GenAI interactions
-          across turns (traces). Each turn SHOULD produce one trace;
-          session.id groups traces into a session. Configurable:
-          deployments may use gen_ai.conversation.id instead.
       - ref: gen_ai.conversation.id
         requirement_level: recommended
         note: >
-          Conversation thread identifier. In single-thread chatbot
-          scenarios this serves as the session grouping key. When
-          both session.id and gen_ai.conversation.id are present,
-          session.id is the broader grouping.
+          Conversation/session identifier for grouping related GenAI
+          interactions across turns (traces). Each turn SHOULD produce
+          one trace; gen_ai.conversation.id groups traces into a
+          conversation/session.
       - ref: enduser.id
         requirement_level: recommended
         note: >
@@ -262,12 +245,12 @@ proposal is to **reference and recommend** them in GenAI span conventions:
 
 | Attribute | Type | Requirement | Description | Example |
 |-----------|------|-------------|-------------|---------|
-| `session.id` | string | Recommended | Session/conversation identifier grouping related GenAI interactions | `"conv-abc123"` |
+| `gen_ai.conversation.id` | string | Recommended | Conversation/session identifier grouping related GenAI interactions across turns | `"conv-abc123"` |
 | `enduser.id` | string | Recommended | End-user identifier | `"user-456"` |
 
 ### Optional Extension Attributes
 
-These are used in SDOT but may be proposed later once `session.id` is accepted:
+These are used in SDOT but may be proposed later once `gen_ai.conversation.id` is accepted:
 
 | Attribute | Type | Requirement | Description | Example |
 |-----------|------|-------------|-------------|---------|
@@ -275,12 +258,12 @@ These are used in SDOT but may be proposed later once `session.id` is accepted:
 
 ### Relationship to Existing Conventions
 
-| Existing Attribute | Relationship to `session.id` |
+| Existing Attribute | Relationship to `gen_ai.conversation.id` |
 |---|---|
-| `gen_ai.conversation.id` | Conversation within a session; a session may span multiple conversations |
-| `mcp.session.id` | MCP protocol-level session (transport layer); distinct from application-level `session.id` |
-| `gen_ai.agent.id` | Agent instance ID (per-invocation); orthogonal to session |
-| `enduser.id` | User who owns the session |
+| `session.id` | General-purpose session attribute (web, mobile); `gen_ai.conversation.id` is the GenAI-specific equivalent |
+| `mcp.session.id` | MCP protocol-level session (transport layer); distinct from application-level `gen_ai.conversation.id` |
+| `gen_ai.agent.id` | Agent instance ID (per-invocation); orthogonal to conversation |
+| `enduser.id` | User who owns the conversation/session |
 
 ---
 
@@ -335,7 +318,7 @@ class GenAI:
     # Session/User Context (association properties for session tracking)
     session_id: Optional[str] = field(
         default=None,
-        metadata={"semconv": "session.id"},
+        metadata={"semconv": "gen_ai.conversation.id"},
     )
     user_id: Optional[str] = field(
         default=None,
@@ -356,12 +339,10 @@ class GenAI:
 
 **Key design decisions:**
 
-- Uses `metadata={"semconv": "session.id"}` pattern for automatic attribute emission
+- Uses `metadata={"semconv": "gen_ai.conversation.id"}` pattern for automatic attribute emission
   via the `semantic_convention_attributes()` method
 - Session fields flow through all GenAI types: `LLMInvocation`, `AgentInvocation`,
   `Workflow`, `ToolCall`, `EmbeddingInvocation`
-- The session attribute is configurable — can emit as `session.id`,
-  `gen_ai.conversation.id`, or both (via `OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE`)
 - `association_properties` supports arbitrary custom key-value pairs, emitted
   with a configurable prefix (default: `genai.association.*`)
 
@@ -395,7 +376,7 @@ class SessionContext:
         """Convert to OTel baggage context for cross-service propagation."""
         ctx = ctx or context.get_current()
         if self.session_id:
-            ctx = baggage.set_baggage("session.id", self.session_id, ctx)
+            ctx = baggage.set_baggage("gen_ai.conversation.id", self.session_id, ctx)
         if self.user_id:
             ctx = baggage.set_baggage("enduser.id", self.user_id, ctx)
         if self.customer_id:
@@ -457,8 +438,7 @@ def set_session(
     """Set session context for current execution scope.
 
     Args:
-        session_id: Session/conversation identifier (emitted as the
-            configured session attribute — session.id or
+        session_id: Session/conversation identifier (emitted as
             gen_ai.conversation.id)
         user_id: End-user identifier (emitted as enduser.id)
         customer_id: Customer/tenant identifier
@@ -554,7 +534,7 @@ across service boundaries using the standard W3C Baggage header alongside
 HTTP Header:
   traceparent: 00-abc123def456...
   tracestate: vendor=splunk
-  baggage: session.id=conv-123,enduser.id=user-456,genai.association.chat_id=chat-789,genai.association.department=engineering
+  baggage: gen_ai.conversation.id=conv-123,enduser.id=user-456,genai.association.chat_id=chat-789,genai.association.department=engineering
 ```
 
 Each turn starts a new trace (`traceparent` has a fresh `trace_id`), but the
@@ -584,7 +564,7 @@ session attributes, user identity, and association properties:
 carrier = {}
 propagate.inject(carrier)
 # carrier = {"traceparent": "00-...", "tracestate": "...",
-#            "baggage": "session.id=conv-123,enduser.id=user-456,..."}
+#            "baggage": "gen_ai.conversation.id=conv-123,enduser.id=user-456,..."}
 
 # Server side — standard OTel extraction
 ctx = propagate.extract(carrier)
@@ -621,15 +601,15 @@ reinforces this:
 > third-party APIs. This is because automatic instrumentation includes Baggage
 > in most of your service's network requests.
 
-#### When `session.id` Crosses Trust Boundaries
+#### When `gen_ai.conversation.id` Crosses Trust Boundaries
 
 | Scenario | Risk | Recommended Action |
 |----------|------|--------------------|
 | Internal service → internal service | Low | Propagate normally |
 | Internal service → third-party LLM API (OpenAI, Anthropic) | **Medium** | Clear baggage before outbound call |
-| Internal service → public MCP server | **High** | Reject incoming baggage; do not propagate `session.id` |
+| Internal service → public MCP server | **High** | Reject incoming baggage; do not propagate `gen_ai.conversation.id` |
 | Public-facing gateway → internal services | **High** | Validate and sanitize incoming baggage |
-| Multi-tenant service receiving baggage from tenant A | **High** | Never trust incoming `session.id`; assign server-side |
+| Multi-tenant service receiving baggage from tenant A | **High** | Never trust incoming `gen_ai.conversation.id`; assign server-side |
 
 #### OTel Baggage API: Clear Before Untrusted Calls
 
@@ -649,7 +629,7 @@ def call_third_party_llm(prompt: str) -> str:
     clean_ctx = baggage.clear(context.get_current())
 
     # Or selectively remove session attributes
-    clean_ctx = baggage.remove_baggage("session.id", context.get_current())
+    clean_ctx = baggage.remove_baggage("gen_ai.conversation.id", context.get_current())
     clean_ctx = baggage.remove_baggage("enduser.id", clean_ctx)
 
     # Make the call with the clean context
@@ -670,10 +650,10 @@ states:
 > applicable privacy laws and regulations [and] protecting sensitive
 > information in your telemetry data.
 
-`session.id` and `enduser.id` may constitute Personally Identifiable
+`gen_ai.conversation.id` and `enduser.id` may constitute Personally Identifiable
 Information (PII) under GDPR, CCPA, and other regulations, especially when:
 
-- `session.id` contains user-derived data (e.g., email hashes, JWT claims)
+- `gen_ai.conversation.id` contains user-derived data (e.g., email hashes, JWT claims)
 - `enduser.id` is a real user identifier (email, username)
 - These values are stored in telemetry backends with long retention periods
 
@@ -702,14 +682,14 @@ processors:
                 SHA256(attributes["enduser.id"]))
           - delete_key(attributes, "enduser.id")
 
-  # Redact session.id entirely for external-facing exports
+  # Redact gen_ai.conversation.id entirely for external-facing exports
   redaction/external:
     allow_all_keys: false
     allowed_keys:
       - gen_ai.system
       - gen_ai.operation.name
       - gen_ai.request.model
-      # session.id intentionally excluded
+      # gen_ai.conversation.id intentionally excluded
 ```
 
 ### 3. Session Propagation Restriction Policies
@@ -717,7 +697,7 @@ processors:
 #### The Problem
 
 Not all services should accept or forward session context. A public-facing
-MCP server should not trust `session.id` from an unknown client, as:
+MCP server should not trust `gen_ai.conversation.id` from an unknown client, as:
 
 - A malicious client could inject arbitrary session IDs to pollute telemetry
 - Cross-tenant session ID leakage in multi-tenant systems
@@ -793,16 +773,16 @@ class SessionPropagator:
 
 ### 4. When to Disable Propagation Entirely
 
-#### Scenarios Where `session.id` Should NOT Be Propagated
+#### Scenarios Where `gen_ai.conversation.id` Should NOT Be Propagated
 
 | Scenario | Reason | Action |
 |----------|--------|--------|
-| **Batch processing / offline jobs** | No interactive session exists | Do not set `session.id` at all |
+| **Batch processing / offline jobs** | No interactive session exists | Do not set `gen_ai.conversation.id` at all |
 | **Async background workers** | Worker may process items from different sessions | Clear inherited context; assign per-item if needed |
 | **Calls to third-party LLM providers** | Baggage visible in HTTP headers | Clear baggage before outbound HTTP call |
 | **Shared/pooled connections** | Session leaks between unrelated requests | Clear context on connection reuse |
 | **Serverless functions (Lambda, Cloud Functions)** | Execution context reuse across invocations | Always set fresh context per invocation |
-| **Load testing / synthetic traffic** | Synthetic sessions pollute production metrics | Use distinct `session.id` prefix or exclude via sampling |
+| **Load testing / synthetic traffic** | Synthetic sessions pollute production metrics | Use distinct `gen_ai.conversation.id` prefix or exclude via sampling |
 
 #### Implementation Pattern: Disable Baggage Propagation
 
@@ -835,7 +815,7 @@ MAY drop entries **without notification**.
 
 | Risk | Mitigation |
 |------|------------|
-| Excessive baggage entries from multiple instrumentation layers | Limit to essential session attributes only (`session.id`, `enduser.id`) |
+| Excessive baggage entries from multiple instrumentation layers | Limit to essential session attributes only (`gen_ai.conversation.id`, `enduser.id`) |
 | Long session IDs (e.g., JWTs used as session IDs) | Use short opaque IDs; store full context server-side |
 | Accumulation across deep call chains | Clear non-essential baggage at service boundaries |
 
@@ -860,8 +840,8 @@ intermediary can:
 
 | Risk | Mitigation |
 |------|------------|
-| Session ID spoofing by malicious client | Server-side validation: verify `session.id` exists in session store |
-| Session ID injection in multi-tenant system | Server assigns `session.id`; ignore client-provided value |
+| Session ID spoofing by malicious client | Server-side validation: verify `gen_ai.conversation.id` exists in session store |
+| Session ID injection in multi-tenant system | Server assigns `gen_ai.conversation.id`; ignore client-provided value |
 | Eavesdropping on session metadata | Use TLS for all inter-service communication |
 | Tampering with `enduser.id` | Verify against authentication context (OAuth token, JWT) |
 
@@ -882,7 +862,7 @@ def validate_incoming_session(
         if not stored_session:
             # Session doesn't exist — possible spoofing
             logger.warning(
-                "Unknown session.id received: %s",
+                "Unknown gen_ai.conversation.id received: %s",
                 incoming_session.session_id,
             )
             return SessionContext()  # Return empty context
@@ -928,14 +908,14 @@ def handle_untrusted_request(request):
     ) as span:
         # Assign server-side session (don't trust incoming)
         server_session = create_or_lookup_session(request.auth_token)
-        span.set_attribute("session.id", server_session.id)
+        span.set_attribute("gen_ai.conversation.id", server_session.id)
 
         return process_request(request)
 ```
 
 ### 8. Summary: Decision Matrix for Propagation
 
-| Environment | Propagate `session.id`? | Propagate `enduser.id`? | Policy |
+| Environment | Propagate `gen_ai.conversation.id`? | Propagate `enduser.id`? | Policy |
 |-------------|------------------------|------------------------|--------|
 | Internal microservices (same trust zone) | ✅ Yes, via Baggage | ✅ Yes, via Baggage | `ACCEPT_ALL` |
 | Internal → third-party LLM API | ❌ No, clear baggage | ❌ No, clear baggage | Clear context |
@@ -956,7 +936,7 @@ def handle_untrusted_request(request):
 |--------|-----|----------------------|------------------|---------|
 | **Turn model** | 1 turn = 1 trace | 1 turn = 1 trace (workflow decorator) | 1 turn = 1 trace | 1 turn = 1 trace |
 | **Session storage** | GenAI types + ContextVar | ContextVar (association_properties) | ContextVar (using_session) | OTel Baggage |
-| **Session attribute** | Configurable (`session.id` or `gen_ai.conversation.id`) | `traceloop.association.properties.session_id` | `session.id` (OpenInference) | `langfuse.session.id` |
+| **Session attribute** | `gen_ai.conversation.id` (standard upstream convention) | `traceloop.association.properties.session_id` | `session.id` (OpenInference) | `langfuse.session.id` |
 | **User propagation** | `enduser.id` via Baggage | `traceloop.association.properties.user_id` | `user.id` via ContextVar | `langfuse.user.id` |
 | **Custom association attrs** | `genai.association.*` via Baggage | `traceloop.association.properties.*` | `using_metadata({...})` | Custom span attributes |
 | **Child propagation** | Handler context stack | SpanProcessor.on_start | OTel context + SpanProcessor | BaggageSpanProcessor |
@@ -975,7 +955,7 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
    to our `session_scope()` approach
 3. **Langfuse** is the most OTel-native, using `BaggageSpanProcessor` for automatic
    attribute propagation, with `as_baggage=False` to opt out of cross-service propagation
-4. **All platforms** converge on `session.id` as the attribute name (with vendor prefixes)
+4. **All platforms** converge on a session/conversation attribute (with vendor prefixes)
 5. **All platforms** implement the turn = trace model (one trace per user interaction)
 6. **Only SDOT** proposes cross-service propagation of custom association attributes via Baggage
 
@@ -985,10 +965,9 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 
 ### Phase 1: Core Session & Association API *(mostly complete in SDOT)*
 
-- [x] `session.id`, `user.id`, `customer.id` in GenAI base type (`types.py`)
+- [x] `gen_ai.conversation.id`, `user.id`, `customer.id` in GenAI base type (`types.py`)
 - [x] `semantic_convention_attributes()` auto-emission
 - [x] `SessionContext` dataclass in `handler.py`
-- [ ] Configurable session attribute (`session.id` vs `gen_ai.conversation.id` via env var)
 - [ ] `set_session()`, `get_session()`, `session_scope()` public API
 - [ ] `set_association_properties()` — Traceloop-compatible custom attribute API
 - [ ] `association_properties` field on `GenAI` base type
@@ -1007,16 +986,16 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 
 - [ ] Comment on [#2883](https://github.com/open-telemetry/semantic-conventions/issues/2883) with concrete scenarios (incl. turn=trace model)
 - [ ] Align with [#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418) entry span proposal
-- [ ] PR to add `session.id` + `gen_ai.conversation.id` as RECOMMENDED on GenAI spans
+- [ ] PR to add `gen_ai.conversation.id` as RECOMMENDED on GenAI spans
 - [ ] Propose `genai.association.*` prefix for custom association attributes
 - [ ] Document security edge cases in semconv (this proposal's §Edge Cases)
 
 ### Phase 4: Framework Integration
 
-- [ ] LangChain: Extract from `config.metadata.session_id` → configurable session attr
+- [ ] LangChain: Extract from `config.metadata.session_id` → `gen_ai.conversation.id`
 - [ ] LangChain: Extract from `config.metadata` → association properties
 - [ ] CrewAI: Extract from crew/task context
-- [ ] OpenAI Agents: Extract from `thread_id` → session attribute
+- [ ] OpenAI Agents: Extract from `thread_id` → `gen_ai.conversation.id`
 - [ ] LlamaIndex: Extract from service context
 
 ---
@@ -1025,13 +1004,13 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 
 | # | Question | SDOT Recommendation | SIG Status |
 |---|----------|---------------------|------------|
-| 1 | Should the session attribute be configurable (`session.id` vs `gen_ai.conversation.id`)? | Yes, via `OTEL_INSTRUMENTATION_GENAI_SESSION_ATTRIBUTE` env var | Not yet discussed |
-| 2 | Should both `session.id` and `gen_ai.conversation.id` be RECOMMENDED? | Yes, with guidance on when to use which | lmolkova leans toward documenting, not mandating |
+| 1 | Should `gen_ai.conversation.id` be RECOMMENDED on GenAI spans? | Yes, as the standard session/conversation grouping attribute | Not yet discussed |
+| 2 | Should `gen_ai.conversation.id` coexist with `session.id` on the same span? | Optional — `session.id` can be added for correlation with non-GenAI telemetry | lmolkova leans toward documenting, not mandating |
 | 3 | Should the "turn = trace" model be documented in GenAI semconv? | Yes, as a RECOMMENDED practice | Not yet discussed |
 | 4 | Should custom association attributes use `genai.association.*` prefix? | Yes, for vendor-neutral interop with Traceloop-style patterns | Not yet discussed |
 | 5 | Should `enduser.id` propagation via Baggage be RECOMMENDED? | Yes, with security caveats from W3C §4 | Not yet discussed |
 | 6 | Should GenAI semconv define security guidance for baggage propagation? | Yes, reference W3C §4 and OTel sensitive data guide | Not yet discussed |
-| 7 | Should the entry span proposal ([#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418)) be the vehicle for `session.id`? | Yes, natural fit | Needs alignment discussion |
+| 7 | Should the entry span proposal ([#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418)) be the vehicle for `gen_ai.conversation.id`? | Yes, natural fit | Needs alignment discussion |
 | 8 | Should restriction policies be standardized or left to implementations? | Standardize env var naming; leave policy logic to SDKs | Not yet discussed |
 | 9 | Default policy for public services? | `ACCEPT_NONE` (reject incoming session context) | Not yet discussed |
 
