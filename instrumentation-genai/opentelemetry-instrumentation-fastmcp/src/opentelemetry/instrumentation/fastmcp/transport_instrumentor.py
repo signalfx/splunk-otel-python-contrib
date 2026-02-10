@@ -21,9 +21,8 @@ server processes using the standard OTel Propagation API.
 
 Approach:
 - Client side: Wrap BaseSession.send_request to inject context via propagate.inject()
-  into the MCP params._meta carrier (analogous to HTTP headers)
-- Server side: Wrap ServerSession._received_request to extract from params._meta
-  via propagate.extract() and restore session context from baggage
+- Server side: Wrap Server._handle_request to extract context via propagate.extract()
+  and restore session context from baggage
 """
 
 import logging

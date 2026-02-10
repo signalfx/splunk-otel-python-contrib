@@ -17,8 +17,7 @@ Session propagation for MCP protocol via OTel Baggage.
 
 Session context (gen_ai.conversation.id, user.id, customer.id) is propagated
 via the standard W3C Baggage header format, using the standard OTel Propagation
-API (``propagate.inject()`` / ``propagate.extract()``). The MCP ``params._meta``
-object serves as the carrier — analogous to HTTP headers.
+API (``propagate.inject()`` / ``propagate.extract()``).
 
 When baggage propagation is enabled
 (``OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage``), session values
@@ -28,10 +27,9 @@ extracted on the server side to restore session context for GenAI operations.
 
 Trace context injection/extraction itself is handled directly by
 ``TransportInstrumentor`` (in ``transport_instrumentor.py``) which calls
-``propagate.inject()`` / ``propagate.extract()`` with the pydantic Meta object
-as the carrier. This module provides only the session-specific
-``restore_session_from_context`` helper used by the server-side transport
-wrapper.
+``propagate.inject()`` / ``propagate.extract()`` with the protocol carrier.
+This module provides only the session-specific ``restore_session_from_context``
+helper used by the server-side transport wrapper.
 """
 
 import logging

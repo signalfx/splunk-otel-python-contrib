@@ -561,53 +561,39 @@ Each turn starts a new trace (`traceparent` has a fresh `trace_id`), but the
 `baggage` header carries the same session, user, and association attributes
 across all turns and service boundaries.
 
-### MCP Transport: Standard OTel Propagation
+### Non-HTTP Protocols (MCP, gRPC, etc.)
 
-MCP does not use HTTP headers, so context propagation requires a
-protocol-appropriate carrier. The MCP protocol's `params._meta` object serves
-as the carrier — analogous to HTTP headers — for standard OTel propagation
-(`propagate.inject()` / `propagate.extract()`).
+The propagation mechanism is always OTel Baggage — the same
+`propagate.inject()` / `propagate.extract()` API used by HTTP instrumentations.
+Each protocol simply provides its own carrier:
 
-**This is not a custom mechanism.** The SDOT FastMCP instrumentor simply calls
-the same OTel Propagation API used by every HTTP instrumentation, with `_meta`
-as the carrier dictionary instead of HTTP headers:
+| Protocol | Carrier |
+|----------|--------|
+| HTTP | Request headers |
+| gRPC | Metadata |
+| MCP | `params.meta` object |
+
+The SDOT FastMCP instrumentor calls `propagate.inject(carrier)` on the client
+side and `propagate.extract(carrier)` on the server side. The standard
+`CompositePropagator` handles both W3C TraceContext and Baggage propagators,
+so a single inject/extract round-trip carries **all** context — trace identity,
+session attributes, user identity, and association properties:
 
 ```python
-# Client side (transport_instrumentor.py) — inject into _meta carrier
+# Client side — standard OTel propagation (protocol-agnostic)
 carrier = {}
-propagate.inject(carrier)        # Standard OTel propagation API
-for key, value in carrier.items():
-    setattr(params.meta, key, value)  # _meta is the MCP carrier
+propagate.inject(carrier)
+# carrier = {"traceparent": "00-...", "tracestate": "...",
+#            "baggage": "session.id=conv-123,enduser.id=user-456,..."}
 
-# Server side — extract from _meta carrier
-carrier = {key: getattr(request_meta, key) for key in ("traceparent", "tracestate", "baggage")}
-ctx = propagate.extract(carrier)  # Standard OTel propagation API
-context.attach(ctx)
+# Server side — standard OTel extraction
+ctx = propagate.extract(carrier)
+context.attach(ctx)  # Restores trace context + baggage
 ```
 
-Because the standard `CompositePropagator` handles both W3C TraceContext and
-Baggage propagators, a single `propagate.inject()` call carries **all** context
-— trace identity, session attributes, user identity, and association properties
-— in one `baggage` entry alongside `traceparent`/`tracestate`:
-
-```json
-{
-    "method": "tools/call",
-    "params": {
-        "name": "search",
-        "arguments": {"query": "OpenTelemetry"},
-        "_meta": {
-            "traceparent": "00-abc123def456...",
-            "tracestate": "vendor=splunk",
-            "baggage": "session.id=conv-123,enduser.id=user-456,genai.association.chat_id=chat-789"
-        }
-    }
-}
-```
-
-> **Key point:** No MCP-specific propagation logic is needed. Any OTel-instrumented
-> protocol that supports a metadata carrier can propagate session context
-> identically via standard Baggage.
+> **Key point:** No protocol-specific propagation logic is needed. Any
+> OTel-instrumented protocol that provides a metadata carrier can propagate
+> session context identically via standard Baggage.
 
 ---
 

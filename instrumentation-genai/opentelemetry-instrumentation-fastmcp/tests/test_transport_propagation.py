@@ -17,7 +17,7 @@
 The MCP protocol supports multiple transports (stdio, SSE, streamable-http).
 Trace context and baggage are injected/extracted at the MCP SDK session layer
 (BaseSession.send_request / Server._handle_request), which is *above* the
-transport layer. This means the same _meta-based propagation works identically
+transport layer. This means the same OTel Baggage propagation works identically
 for all transports.
 
 These tests verify the full inject→extract→restore round-trip using the actual
@@ -170,11 +170,11 @@ class TestRoundTripPropagation:
 
 
 class TestTransportAgnostic:
-    """Verify propagation is transport-agnostic: same meta format works for all.
+    """Verify propagation is transport-agnostic: same carrier format works for all.
 
-    The MCP protocol carries _meta identically regardless of transport (stdio,
+    The MCP protocol carries context identically regardless of transport (stdio,
     SSE, streamable-http). The inject/extract hooks operate on pydantic Meta
-    objects, not on the transport wire format. These tests confirm the meta
+    objects, not on the transport wire format. These tests confirm the carrier
     format works with various transport-like scenarios.
     """
 
