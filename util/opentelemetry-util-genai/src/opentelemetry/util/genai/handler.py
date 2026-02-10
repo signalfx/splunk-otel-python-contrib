@@ -130,7 +130,8 @@ class SessionContext:
     when using the TelemetryHandler's session context management.
 
     Attributes:
-        session_id: Unique identifier for the session/conversation.
+        session_id: Unique identifier for the session/conversation
+            (propagated as ``gen_ai.conversation.id``).
         user_id: Identifier for the user making the request.
         customer_id: Identifier for the customer/tenant.
     """
@@ -154,10 +155,55 @@ _session_context: ContextVar[SessionContext] = ContextVar(
 )
 
 
+def _is_baggage_propagation_enabled() -> bool:
+    """Check if baggage-based session propagation is enabled."""
+    from .environment_variables import (  # noqa: I001
+        OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION,
+    )
+
+    mode = os.environ.get(
+        OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION, "contextvar"
+    ).lower()
+    return mode == "baggage"
+
+
+def _set_session_baggage(
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    customer_id: Optional[str] = None,
+) -> None:
+    """Set session context values as OTel Baggage for cross-service propagation."""
+    from opentelemetry import baggage, context
+
+    ctx = context.get_current()
+    if session_id:
+        ctx = baggage.set_baggage("gen_ai.conversation.id", session_id, ctx)
+    if user_id:
+        ctx = baggage.set_baggage("user.id", user_id, ctx)
+    if customer_id:
+        ctx = baggage.set_baggage("customer.id", customer_id, ctx)
+    context.attach(ctx)
+
+
+def _get_session_from_baggage() -> SessionContext:
+    """Extract session context from OTel Baggage (if any)."""
+    from opentelemetry import baggage
+
+    session_id = baggage.get_baggage("gen_ai.conversation.id")
+    user_id = baggage.get_baggage("user.id")
+    customer_id = baggage.get_baggage("customer.id")
+    return SessionContext(
+        session_id=session_id,
+        user_id=user_id,
+        customer_id=customer_id,
+    )
+
+
 def set_session_context(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
     customer_id: Optional[str] = None,
+    propagate_via_baggage: Optional[bool] = None,
 ) -> None:
     """Set session context that propagates to all nested GenAI operations.
 
@@ -166,10 +212,17 @@ def set_session_context(
     started within the current context. The context is thread-safe and async-safe
     using Python's contextvars.
 
+    When baggage propagation is enabled (via ``propagate_via_baggage=True`` or
+    ``OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage``), the session
+    values are also set as OTel Baggage entries, which propagate across service
+    boundaries (e.g. MCP client → server via _meta field).
+
     Args:
         session_id: Unique identifier for the session/conversation.
         user_id: Identifier for the user making the request.
         customer_id: Identifier for the customer/tenant.
+        propagate_via_baggage: Whether to also set OTel Baggage. If None,
+            uses the OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION env var.
 
     Example:
         >>> from opentelemetry.util.genai import set_session_context
@@ -183,6 +236,15 @@ def set_session_context(
         customer_id=customer_id,
     )
     _session_context.set(ctx)
+
+    # Also set OTel Baggage if requested
+    use_baggage = (
+        propagate_via_baggage
+        if propagate_via_baggage is not None
+        else _is_baggage_propagation_enabled()
+    )
+    if use_baggage:
+        _set_session_baggage(session_id, user_id, customer_id)
 
 
 def get_session_context() -> SessionContext:
@@ -217,16 +279,22 @@ def session_context(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
     customer_id: Optional[str] = None,
+    propagate_via_baggage: Optional[bool] = None,
 ) -> Iterator[SessionContext]:
     """Context manager for session context that auto-clears on exit.
 
     This is the recommended way to set session context for a request or
     operation, as it automatically restores the previous context on exit.
 
+    When baggage propagation is enabled, session values are also set as
+    OTel Baggage entries for cross-service propagation.
+
     Args:
         session_id: Unique identifier for the session/conversation.
         user_id: Identifier for the user making the request.
         customer_id: Identifier for the customer/tenant.
+        propagate_via_baggage: Whether to also set OTel Baggage. If None,
+            uses the OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION env var.
 
     Yields:
         The SessionContext object for the duration of the context.
@@ -244,6 +312,16 @@ def session_context(
         customer_id=customer_id,
     )
     token = _session_context.set(ctx)
+
+    # Also set OTel Baggage if requested
+    use_baggage = (
+        propagate_via_baggage
+        if propagate_via_baggage is not None
+        else _is_baggage_propagation_enabled()
+    )
+    if use_baggage:
+        _set_session_baggage(session_id, user_id, customer_id)
+
     try:
         yield ctx
     finally:
@@ -257,7 +335,8 @@ def _apply_session_context(invocation: GenAI) -> None:
     invocation object. Priority order for each field:
     1. Explicit value set on invocation object
     2. Value from contextvars session context
-    3. Value from environment variable
+    3. Value from OTel Baggage (if baggage propagation is enabled)
+    4. Value from environment variable
 
     Args:
         invocation: The GenAI invocation to apply context to.
@@ -270,28 +349,47 @@ def _apply_session_context(invocation: GenAI) -> None:
 
     ctx = _session_context.get()
 
-    # Apply session_id: invocation > contextvars > env
-    if not invocation.session_id:
-        if ctx.session_id:
-            invocation.session_id = ctx.session_id
-        else:
-            env_session = os.environ.get(OTEL_INSTRUMENTATION_GENAI_SESSION_ID)
-            if env_session:
-                invocation.session_id = env_session
+    # Get baggage context if propagation is enabled
+    baggage_ctx = None
+    if _is_baggage_propagation_enabled():
+        baggage_ctx = _get_session_from_baggage()
 
-    # Apply user_id: invocation > contextvars > env
+    # Apply session/conversation_id: invocation > contextvars > baggage > env
+    # The canonical OTel semconv attribute is gen_ai.conversation.id,
+    # mapped via the conversation_id field. session_id is kept for backward
+    # compatibility.
+    resolved_session = (
+        invocation.session_id
+        or invocation.conversation_id
+        or (ctx.session_id if ctx.session_id else None)
+        or (
+            baggage_ctx.session_id
+            if baggage_ctx and baggage_ctx.session_id
+            else None
+        )
+        or os.environ.get(OTEL_INSTRUMENTATION_GENAI_SESSION_ID)
+    )
+    if resolved_session:
+        invocation.conversation_id = resolved_session
+        invocation.session_id = resolved_session
+
+    # Apply user_id: invocation > contextvars > baggage > env
     if not invocation.user_id:
         if ctx.user_id:
             invocation.user_id = ctx.user_id
+        elif baggage_ctx and baggage_ctx.user_id:
+            invocation.user_id = baggage_ctx.user_id
         else:
             env_user = os.environ.get(OTEL_INSTRUMENTATION_GENAI_USER_ID)
             if env_user:
                 invocation.user_id = env_user
 
-    # Apply customer_id: invocation > contextvars > env
+    # Apply customer_id: invocation > contextvars > baggage > env
     if not invocation.customer_id:
         if ctx.customer_id:
             invocation.customer_id = ctx.customer_id
+        elif baggage_ctx and baggage_ctx.customer_id:
+            invocation.customer_id = baggage_ctx.customer_id
         else:
             env_customer = os.environ.get(
                 OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID

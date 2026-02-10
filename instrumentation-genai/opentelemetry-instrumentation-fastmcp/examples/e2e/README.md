@@ -50,24 +50,27 @@ python run_demo.py --console
 This approach lets you see server-side and client-side telemetry separately,
 each with its own service name for proper attribution in your observability backend.
 
-The server runs in **SSE (Server-Sent Events) mode** to accept external connections.
+Three transports are supported:
+
+| Transport | Server flag | Client URL | Notes |
+|-----------|-------------|------------|-------|
+| **stdio** | *(default)* | *(default)* | Single process, subprocess spawning |
+| **SSE** | `--sse` | `http://host:port/sse` | Legacy HTTP, Server-Sent Events |
+| **Streamable HTTP** | `--http` | `http://host:port/mcp` | Modern HTTP transport (recommended) |
 
 #### Terminal 1 - Start the Instrumented Server
 
 ```bash
 cd instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/e2e
 
-# Set service name for the server
 export OTEL_SERVICE_NAME="mcp-calculator-server"
-
-# Enable metrics (optional)
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
 
-# For OTLP export (optional):
-# export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-
-# Start the instrumented server in SSE mode
+# SSE transport:
 python server_instrumented.py --sse --port 8000
+
+# Or Streamable HTTP transport:
+# python server_instrumented.py --http --port 8000
 ```
 
 You should see:
@@ -89,17 +92,14 @@ Press Ctrl+C to stop.
 ```bash
 cd instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/e2e
 
-# Set a DIFFERENT service name for the client
 export OTEL_SERVICE_NAME="mcp-calculator-client"
-
-# Enable metrics
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
 
-# For OTLP export (optional - same endpoint as server):
-# export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-
-# Connect to the SSE server
+# Connect to SSE server:
 python client.py --server-url http://localhost:8000/sse --console --wait 10
+
+# Or connect to Streamable HTTP server:
+# python client.py --server-url http://localhost:8000/mcp --console --wait 10
 ```
 
 #### What You'll See
@@ -149,6 +149,59 @@ export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
 python run_demo.py --wait 30
 ```
 
+## Session Propagation via OTel Baggage
+
+The instrumentation supports propagating session context (`gen_ai.conversation.id`, `user.id`, `customer.id`)
+across MCP client→server boundaries using [W3C Baggage](https://www.w3.org/TR/baggage/).
+
+### Enable Baggage Propagation
+
+```bash
+# Enable baggage-based session propagation
+export OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage"
+
+# Optionally include session attributes in metrics (⚠️ cardinality)
+export OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS="user.id"
+# Or include all: "all" or "gen_ai.conversation.id,user.id,customer.id"
+```
+
+### Run with Session Context
+
+```bash
+# Terminal 1: Start the server (SSE or Streamable HTTP)
+export OTEL_SERVICE_NAME="mcp-calculator-server"
+export OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage"
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
+python server_instrumented.py --sse --port 8000
+# or: python server_instrumented.py --http --port 8000
+
+# Terminal 2: Run client with session
+export OTEL_SERVICE_NAME="mcp-calculator-client"
+export OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage"
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
+python client.py --server-url http://localhost:8000/sse --console \
+    --session-id "conv-123" --user-id "user-456"
+# or for HTTP: --server-url http://localhost:8000/mcp
+```
+
+### How It Works
+
+1. **Client side**: `set_session_context()` stores session in both a `ContextVar` and
+   OTel Baggage. When making MCP calls, `propagate.inject()` writes the `baggage`
+   header into the `_meta` field alongside `traceparent`/`tracestate`.
+
+2. **Server side**: `propagate.extract()` restores both trace context and baggage.
+   The transport instrumentor then calls `restore_session_from_context()` to populate
+   the local session `ContextVar`, making `gen_ai.conversation.id`/`user.id` available to GenAI spans.
+
+3. **Span attributes**: Session fields (`gen_ai.conversation.id`, `user.id`, `customer.id`) appear
+   automatically on all GenAI spans via the `GenAI` base type's `semantic_convention_attributes()`.
+
+4. **Metric attributes**: Optionally controlled via
+   `OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS`.
+
+---
+
 ## What You'll See
 
 ### Traces
@@ -164,7 +217,7 @@ The instrumentation creates spans for:
      - `mcp.method.name`: "tools/call"
      - `gen_ai.tool.name`: Name of the tool
      - `gen_ai.operation.name`: "execute_tool"
-     - `network.transport`: "pipe" (for stdio)
+     - `network.transport`: Detected automatically (`"pipe"` for stdio, `"tcp"` for SSE/HTTP)
 
 3. **Admin Operations** (`step list_tools`)
    - Spans for listing available tools
@@ -210,14 +263,15 @@ MCP End-to-End Demo with OpenTelemetry Instrumentation
 ## Architecture
 
 ```
-┌─────────────────┐     stdio      ┌─────────────────────────┐
-│   MCP Client    │ ─────────────► │      MCP Server         │
-│  (client.py)    │ ◄───────────── │  (server_instrumented.py│
-│                 │                │   or server.py)         │
-│ Instrumented:   │                │                         │
+┌─────────────────┐  stdio / SSE / ┌─────────────────────────┐
+│   MCP Client    │  streamable-   │      MCP Server         │
+│  (client.py)    │     http       │  (server_instrumented.py│
+│                 │ ─────────────► │   or server.py)         │
+│ Instrumented:   │ ◄───────────── │                         │
 │ • Session spans │                │ Instrumented:           │
-│ • Tool calls    │                │ • Tool spans            │
-│ • Metrics       │                │ • Duration metrics      │
+│ • Tool calls    │   _meta:       │ • Tool spans            │
+│ • Metrics       │   traceparent  │ • Duration metrics      │
+│                 │   baggage      │                         │
 └─────────────────┘                └─────────────────────────┘
          │                                  │
          ▼                                  ▼
@@ -235,6 +289,158 @@ MCP End-to-End Demo with OpenTelemetry Instrumentation
 | `server_instrumented.py` | Server with OpenTelemetry setup included |
 | `client.py` | Instrumented client with telemetry setup |
 | `run_demo.py` | All-in-one demo orchestrator |
+
+## Running Tests
+
+### Unit Tests
+
+Run from the repository root:
+
+```bash
+# Install packages in editable mode
+pip install -e ./util/opentelemetry-util-genai
+pip install -e "./instrumentation-genai/opentelemetry-instrumentation-fastmcp[instruments,test]"
+
+# Run all FastMCP instrumentation tests (111 tests)
+pytest ./instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v
+
+# Run only transport detection tests
+pytest ./instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/test_utils.py -v -k "Transport"
+
+# Run propagation tests (trace context + baggage)
+pytest ./instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/test_transport_propagation.py -v
+
+# Run with coverage
+pytest ./instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v --cov=opentelemetry.instrumentation.fastmcp
+```
+
+### Lint
+
+```bash
+make lint
+```
+
+## Sending Telemetry to an OTel Collector
+
+### 1. Start a Local Collector + Jaeger
+
+Create a `docker-compose.yml`:
+
+```yaml
+version: '3'
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317"        # OTLP gRPC (internal)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+```
+
+Collector config (`otel-collector-config.yaml`):
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+```
+
+Start:
+
+```bash
+docker compose up -d
+```
+
+### 2. Set Service Names and Run
+
+Each process should have a **distinct `OTEL_SERVICE_NAME`** so spans are attributed
+correctly in the backend. The service name appears as `service.name` on every span.
+
+**Terminal 1 — MCP Server:**
+
+```bash
+export OTEL_SERVICE_NAME="mcp-calculator-server"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="true"
+
+# Streamable HTTP transport (recommended)
+python server_instrumented.py --http --port 8000
+```
+
+**Terminal 2 — MCP Client:**
+
+```bash
+export OTEL_SERVICE_NAME="mcp-calculator-client"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="true"
+
+python client.py --server-url http://localhost:8000/mcp --wait 10
+```
+
+### 3. View Traces
+
+Open Jaeger UI at **http://localhost:16686** → search for service `mcp-calculator-client`.
+
+You'll see a distributed trace spanning both services:
+
+```
+mcp-calculator-client: invoke_agent mcp.client
+  └── mcp-calculator-client: execute_tool add         (client span)
+        └── mcp-calculator-server: execute_tool add    (server span, same trace_id)
+```
+
+### Service Name Best Practices
+
+| Env Var | Purpose | Example |
+|---------|---------|-------|
+| `OTEL_SERVICE_NAME` | Sets `service.name` resource attribute | `mcp-calculator-server` |
+| `OTEL_RESOURCE_ATTRIBUTES` | Additional resource attributes | `deployment.environment=staging,service.version=1.0` |
+
+Use distinct service names per process:
+- `mcp-<app>-server` for the MCP server
+- `mcp-<app>-client` for the MCP client
+- `mcp-<app>-agent` for an AI agent that orchestrates MCP calls
+
+This ensures correct service topology in your observability backend.
 
 ## Troubleshooting
 

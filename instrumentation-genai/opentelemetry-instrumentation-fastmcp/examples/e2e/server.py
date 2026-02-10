@@ -101,6 +101,51 @@ def calculate_expression(expression: str) -> str:
         return f"Error evaluating '{expression}': {e}"
 
 
+@mcp.tool()
+def get_session_info() -> str:
+    """Return the current session context as seen by the server.
+
+    This tool validates that session context (gen_ai.conversation.id, user.id,
+    customer.id) is properly propagated from the client via OTel Baggage.
+
+    Returns:
+        JSON string with the session context values visible on the server side.
+    """
+    import json
+
+    result: dict[str, str | None] = {
+        "gen_ai.conversation.id": None,
+        "user.id": None,
+        "customer.id": None,
+    }
+
+    # Try reading from OTel Baggage (cross-service propagation)
+    try:
+        from opentelemetry import baggage
+
+        result["gen_ai.conversation.id"] = baggage.get_baggage("gen_ai.conversation.id")
+        result["user.id"] = baggage.get_baggage("user.id")
+        result["customer.id"] = baggage.get_baggage("customer.id")
+    except ImportError:
+        pass
+
+    # Try reading from GenAI session context (contextvar propagation)
+    try:
+        from opentelemetry.util.genai.handler import get_session_context
+
+        ctx = get_session_context()
+        if ctx.session_id and not result["gen_ai.conversation.id"]:
+            result["gen_ai.conversation.id"] = ctx.session_id
+        if ctx.user_id and not result["user.id"]:
+            result["user.id"] = ctx.user_id
+        if ctx.customer_id and not result["customer.id"]:
+            result["customer.id"] = ctx.customer_id
+    except ImportError:
+        pass
+
+    return json.dumps(result, indent=2)
+
+
 if __name__ == "__main__":
     # Run the server (stdio mode for MCP)
     mcp.run()

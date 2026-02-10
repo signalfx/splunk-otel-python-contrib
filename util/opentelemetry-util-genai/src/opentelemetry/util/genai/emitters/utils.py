@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from opentelemetry import trace
@@ -622,6 +624,85 @@ def _get_metric_attributes(
     if server_port:
         attributes[ServerAttributes.SERVER_PORT] = server_port
     return attributes
+
+
+# ---- Session metric attributes ----
+
+
+@lru_cache(maxsize=1)
+def _get_session_metric_include_set() -> frozenset[str]:
+    """Parse OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS.
+
+    Returns a frozenset of attribute keys to include
+    (e.g. {"gen_ai.conversation.id", "user.id"}).
+    Empty set means no session attributes on metrics.
+    """
+    from ..environment_variables import (
+        OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS,
+    )
+
+    raw = os.environ.get(
+        OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS, ""
+    )
+    if not raw:
+        return frozenset()
+
+    raw = raw.strip().lower()
+    if raw == "all":
+        return frozenset({"gen_ai.conversation.id", "user.id", "customer.id"})
+
+    # Parse comma-separated list
+    # Accept both legacy "session.id" and canonical "gen_ai.conversation.id"
+    allowed = {
+        "gen_ai.conversation.id",
+        "session.id",
+        "user.id",
+        "customer.id",
+    }
+    result = set()
+    for item in raw.split(","):
+        item = item.strip()
+        # Normalize legacy session.id to gen_ai.conversation.id
+        if item == "session.id":
+            item = "gen_ai.conversation.id"
+        if item in allowed:
+            result.add(item)
+    return frozenset(result)
+
+
+def get_session_metric_attributes(obj: Any) -> Dict[str, AttributeValue]:
+    """Get session-related metric attributes for a GenAI entity.
+
+    Returns a dict of session attributes to include in metrics based on the
+    OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS configuration.
+
+    Args:
+        obj: A GenAI entity (LLMInvocation, ToolCall, etc.) with session fields.
+
+    Returns:
+        Dict of session attributes to add to metric dimensions.
+    """
+    include = _get_session_metric_include_set()
+    if not include:
+        return {}
+
+    attrs: Dict[str, AttributeValue] = {}
+    if "gen_ai.conversation.id" in include:
+        # Read from conversation_id first (canonical), fall back to session_id
+        session_id = getattr(obj, "conversation_id", None) or getattr(
+            obj, "session_id", None
+        )
+        if session_id:
+            attrs["gen_ai.conversation.id"] = session_id
+    if "user.id" in include:
+        user_id = getattr(obj, "user_id", None)
+        if user_id:
+            attrs["user.id"] = user_id
+    if "customer.id" in include:
+        customer_id = getattr(obj, "customer_id", None)
+        if customer_id:
+            attrs["customer.id"] = customer_id
+    return attrs
 
 
 def _record_token_metrics(

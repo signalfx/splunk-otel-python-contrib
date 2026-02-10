@@ -201,7 +201,7 @@ class TestServerReceivedRequestWrapper:
         mock_responder = MagicMock()
         mock_responder.request_meta = mock_request_meta
 
-        wrapper_func = instrumentor._server_received_request_wrapper()
+        wrapper_func = instrumentor._server_handle_request_wrapper()
         mock_wrapped = AsyncMock(return_value="result")
 
         mock_ctx = MagicMock()
@@ -243,7 +243,7 @@ class TestServerReceivedRequestWrapper:
         mock_responder = MagicMock()
         mock_responder.request_meta = mock_request_meta
 
-        wrapper_func = instrumentor._server_received_request_wrapper()
+        wrapper_func = instrumentor._server_handle_request_wrapper()
         mock_wrapped = AsyncMock(return_value="result")
 
         mock_ctx = MagicMock()
@@ -271,7 +271,7 @@ class TestServerReceivedRequestWrapper:
         mock_responder = MagicMock()
         mock_responder.request_meta = None
 
-        wrapper_func = instrumentor._server_received_request_wrapper()
+        wrapper_func = instrumentor._server_handle_request_wrapper()
         mock_wrapped = AsyncMock(return_value="result")
 
         result = await wrapper_func(mock_wrapped, MagicMock(), (mock_responder,), {})
@@ -289,7 +289,7 @@ class TestServerReceivedRequestWrapper:
         mock_responder = MagicMock()
         mock_responder.request_meta = mock_request_meta
 
-        wrapper_func = instrumentor._server_received_request_wrapper()
+        wrapper_func = instrumentor._server_handle_request_wrapper()
         mock_wrapped = AsyncMock(return_value="result")
 
         with patch(
@@ -319,7 +319,7 @@ class TestServerReceivedRequestWrapper:
         mock_responder = MagicMock()
         mock_responder.request_meta = mock_request_meta
 
-        wrapper_func = instrumentor._server_received_request_wrapper()
+        wrapper_func = instrumentor._server_handle_request_wrapper()
         mock_wrapped = AsyncMock(side_effect=ValueError("test error"))
 
         mock_ctx = MagicMock()
