@@ -109,7 +109,7 @@ python client.py --server-url http://localhost:8000/sse --console --wait 10
 **In Terminal 2 (Client):** Client-side spans and metrics with `service.name: mcp-calculator-client`
 
 **Both share the same `trace_id`** - The instrumentation automatically propagates trace context
-from client to server via the MCP protocol's `_meta` field, enabling distributed tracing.
+from client to server via standard OTel Baggage, enabling distributed tracing.
 
 This separation is useful for:
 - Debugging client vs server issues
@@ -188,7 +188,7 @@ python client.py --server-url http://localhost:8000/sse --console \
 
 1. **Client side**: `set_session_context()` stores session in both a `ContextVar` and
    OTel Baggage. When making MCP calls, `propagate.inject()` writes the `baggage`
-   header into the `_meta` field alongside `traceparent`/`tracestate`.
+   header into the carrier alongside `traceparent`/`tracestate`.
 
 2. **Server side**: `propagate.extract()` restores both trace context and baggage.
    The transport instrumentor then calls `restore_session_from_context()` to populate
@@ -269,7 +269,7 @@ MCP End-to-End Demo with OpenTelemetry Instrumentation
 │                 │ ─────────────► │   or server.py)         │
 │ Instrumented:   │ ◄───────────── │                         │
 │ • Session spans │                │ Instrumented:           │
-│ • Tool calls    │   _meta:       │ • Tool spans            │
+│ • Tool calls    │   OTel Baggage: │ • Tool spans            │
 │ • Metrics       │   traceparent  │ • Duration metrics      │
 │                 │   baggage      │                         │
 └─────────────────┘                └─────────────────────────┘

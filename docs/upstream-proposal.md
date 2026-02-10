@@ -59,64 +59,43 @@ Benefits:
 Nested LLM calls automatically inherit parent agent context
 Works with Python's async/await via contextvars
 No manual threading of context required
-3. MCP Cross-RPC Propagation via Standard OTel Propagation
-SDOT implements trace context propagation for MCP using the standard OTel
-Propagation API (`propagate.inject()` / `propagate.extract()`), with the MCP
-`params._meta` object serving as the carrier (analogous to HTTP headers):
+3. Cross-RPC Propagation via OTel Baggage
+SDOT propagates trace context and session attributes across RPC boundaries using
+the standard OTel Propagation API (`propagate.inject()` / `propagate.extract()`).
+Each protocol provides its own carrier (HTTP headers, gRPC metadata, MCP meta object),
+but the propagation logic is identical and protocol-agnostic:
 
-# transport_instrumentor.py — uses standard OTel propagation
-
-# Client side: inject into _meta carrier
+# Standard OTel propagation — protocol-agnostic
+# Client side:
 carrier = {}
-propagate.inject(carrier)  # Standard API — injects traceparent, tracestate, baggage
-for key, value in carrier.items():
-    setattr(params.meta, key, value)  # _meta is the MCP carrier
+propagate.inject(carrier)
+# carrier = {"traceparent": "00-...", "tracestate": "...",
+#            "baggage": "session.id=session-123,user.id=user-456"}
 
-# Server side: extract from _meta carrier
-carrier = {key: getattr(request_meta, key) for key in ("traceparent", "tracestate", "baggage")}
-ctx = propagate.extract(carrier)  # Standard API
-
-Transport-level Integration:
-# transport_instrumentor.py - Client side
-async def traced_send_request(wrapped, instance, args, kwargs):
-    # Inject traceparent/tracestate into request.params.meta
-    carrier = {}
-    propagate.inject(carrier)
-    for key, value in carrier.items():
-        setattr(params.meta, key, value)
-    return await wrapped(*args, **kwargs)
-
-# Server side  
-async def traced_handle_request(wrapped, instance, args, kwargs):
-    # Extract from message.request_meta
-    carrier = {"traceparent": getattr(request_meta, "traceparent", None)}
-    ctx = propagate.extract(carrier)
-    token = context.attach(ctx)
-    try:
-        return await wrapped(*args, **kwargs)
-    finally:
-        context.detach(token)
+# Server side:
+ctx = propagate.extract(carrier)
+context.attach(ctx)  # Restores trace context + baggage
 
 
 Upstream Proposal: Session Propagation via OTel Baggage
 Approach: Standard OTel Baggage Propagation
-MCP uses `params._meta` as its metadata carrier (equivalent to HTTP headers).
 The standard OTel `propagate.inject()` call handles everything — trace context
-AND baggage — through the same mechanism. Requirements:
+AND baggage — through the same mechanism. Each protocol provides its own
+carrier (HTTP headers, gRPC metadata, etc.). Requirements:
 Propagate session.id via OTel Baggage alongside traceparent/tracestate
 Allow servers to restrict session propagation from untrusted clients
-Maintain compatibility with existing MCP implementations
+Maintain compatibility with existing protocol implementations
 Solution: Standard OTel Baggage
 1. OTel Baggage for Session Context
 Use OTel Baggage to carry session context alongside trace context:
 from opentelemetry import baggage
 from opentelemetry.propagate import inject, extract
 
-# Client: Set session in baggage before MCP call
+# Client: Set session in baggage before RPC call
 ctx = baggage.set_baggage("session.id", "session-123", context=current_ctx)
 ctx = baggage.set_baggage("user.id", "user-456", context=ctx)
 
-# Inject both trace context AND baggage into _meta
+# Inject both trace context AND baggage into carrier
 carrier = {}
 inject(carrier, context=ctx)
 # carrier now contains: {
@@ -125,41 +104,25 @@ inject(carrier, context=ctx)
 #   "baggage": "session.id=session-123,user.id=user-456"
 # }
 
-2. MCP Carrier Structure
-The MCP `_meta` carrier carries all OTel-propagated context:
-# MCP request with full context propagation
+2. Carrier Structure
+The carrier (HTTP headers, gRPC metadata, or any protocol carrier) contains
+all OTel-propagated context — trace context AND baggage — in a single
+inject/extract round-trip:
+# Carrier after inject() — same format regardless of protocol
 {
-    "method": "tools/call",
-    "params": {
-        "name": "search",
-        "arguments": {...},
-        "_meta": {
-            "traceparent": "00-abc123...",
-            "tracestate": "vendor=splunk",
-            "baggage": "session.id=conv-123,user.id=user-456"
-        }
-    }
+    "traceparent": "00-abc123...",
+    "tracestate": "vendor=splunk",
+    "baggage": "session.id=conv-123,user.id=user-456"
 }
 
 3. Server-Side Extraction
-def extract_mcp_context(params: dict) -> tuple[Context, dict[str, str]]:
-    """Extract trace context and session attributes from MCP _meta."""
-    meta = params.get("_meta", {})
-    
-    # Extract trace context (traceparent, tracestate)
-    trace_ctx = propagate.extract(meta)
-    
-    # Extract session from baggage
-    session_attrs = {}
-    if "baggage" in meta:
-        # Parse baggage header (key=value pairs)
-        baggage_ctx = extract({"baggage": meta["baggage"]})
-        session_attrs = {
-            "session.id": baggage.get_baggage("session.id", baggage_ctx),
-            "user.id": baggage.get_baggage("user.id", baggage_ctx),
-        }
-    
-    return trace_ctx, {k: v for k, v in session_attrs.items() if v}
+# Standard OTel extraction — protocol-agnostic
+ctx = propagate.extract(carrier)
+context.attach(ctx)
+
+# Session attributes available via OTel Baggage API
+session_id = baggage.get_baggage("session.id", ctx)
+user_id = baggage.get_baggage("user.id", ctx)
 
 Proposed SessionPropagator Component
 New reusable component for GenAI frameworks:
@@ -414,7 +377,7 @@ Recommendation: session.id for broader applicability
 Baggage vs custom header: Should session propagate via standard OTel baggage or custom header?
 Recommendation: OTel baggage for interoperability, but support custom for legacy
 MCP protocol standardization: Should session propagation be proposed to MCP spec?
-Recommendation: Yes, standardize OTel Baggage support in _meta carrier
+Recommendation: Yes, standardize OTel Baggage propagation support
 Restriction defaults: Should public-facing servers restrict by default?
 Recommendation: ACCEPT_ALL for development, ACCEPT_TRUSTED for production
 

@@ -33,7 +33,7 @@ from opentelemetry.util.genai.handler import (
 
 
 class TestBaggageInjection:
-    """Test that baggage is injected into MCP _meta via transport instrumentor."""
+    """Test that baggage is injected via OTel propagation in transport instrumentor."""
 
     @pytest.mark.asyncio
     async def test_inject_includes_baggage_when_set(self):
@@ -121,7 +121,7 @@ class TestBaggageInjection:
 
 
 class TestBaggageExtraction:
-    """Test that baggage is extracted from MCP _meta via transport instrumentor."""
+    """Test that baggage is extracted via OTel propagation in transport instrumentor."""
 
     @pytest.mark.asyncio
     async def test_extract_with_baggage_header(self):
