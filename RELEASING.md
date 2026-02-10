@@ -19,7 +19,7 @@ How to release a new version of the GenAI packages:
 | splunk-otel-util-genai-translator-openlit | `util/opentelemetry-util-genai-openlit-translator` | 0.1.1           | `genai-translator-openlit-v0.Y.Z` |
 | splunk-otel-instrumentation-langchain | `instrumentation-genai/opentelemetry-instrumentation-langchain` | 0.1.7           | `instrumentation-langchain-v0.Y.Z`  |
 | splunk-otel-instrumentation-llamaindex | `instrumentation-genai/opentelemetry-instrumentation-llamaindex` | 0.1.0           | `instrumentation-llamaindex-v0.Y.Z`  |
-| splunk-otel-instrumentation-aidefense | `instrumentation-genai/opentelemetry-instrumentation-aidefense` | 0.2.0           | `instrumentation-aidefense-v0.Y.Z`  |
+| splunk-otel-instrumentation-aidefense | `instrumentation-genai/opentelemetry-instrumentation-aidefense` | 0.2.1           | `instrumentation-aidefense-v0.Y.Z`  |
 | splunk-otel-instrumentation-weaviate | `instrumentation-genai/opentelemetry-instrumentation-weaviate` | 0.1.0           | `instrumentation-weaviate-v0.Y.Z`  |
 | splunk-otel-instrumentation-crewai | `instrumentation-genai/opentelemetry-instrumentation-crewai` | 0.1.2           | `instrumentation-crewai-v0.Y.Z`  |
 | splunk-otel-instrumentation-openai-agents | `instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2` | 0.1.2           | `instrumentation-openai-agents-v0.Y.Z`  |
