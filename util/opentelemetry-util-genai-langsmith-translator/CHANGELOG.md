@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.1.1 - 2026-02-06
+- Resolved issue with missing Agent evaluations.
+- Removed redundant calls which was causing duplicate metrics & evaluations.
+
 ## [0.1.0] - 2025-01-29
 
 ### Added
