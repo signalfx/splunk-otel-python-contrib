@@ -16,6 +16,10 @@ Usage:
     export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
     python client.py --server-url http://localhost:8000/sse --console
 
+    # Alternative: Run with Streamable HTTP transport
+    python server_instrumented.py --http --port 8000
+    python client.py --server-url http://localhost:8000/mcp --console
+
     # Alternative: Run in stdio mode (for subprocess spawning)
     python server_instrumented.py
 
@@ -211,26 +215,77 @@ def calculate_expression(expression: str) -> str:
         return f"Error evaluating '{expression}': {e}"
 
 
+@mcp.tool()
+def get_session_info() -> str:
+    """Return the current session context as seen by the server.
+
+    This tool validates that session context (gen_ai.conversation.id, user.id,
+    customer.id) is properly propagated from the client via OTel Baggage.
+
+    Returns:
+        JSON string with the session context values visible on the server side.
+    """
+    import json
+
+    result: dict[str, str | None] = {
+        "gen_ai.conversation.id": None,
+        "user.id": None,
+        "customer.id": None,
+    }
+
+    # Try reading from OTel Baggage (cross-service propagation)
+    try:
+        from opentelemetry import baggage
+
+        result["gen_ai.conversation.id"] = baggage.get_baggage("gen_ai.conversation.id")
+        result["user.id"] = baggage.get_baggage("user.id")
+        result["customer.id"] = baggage.get_baggage("customer.id")
+    except ImportError:
+        pass
+
+    # Try reading from GenAI session context (contextvar propagation)
+    try:
+        from opentelemetry.util.genai.handler import get_session_context
+
+        ctx = get_session_context()
+        if ctx.session_id and not result["gen_ai.conversation.id"]:
+            result["gen_ai.conversation.id"] = ctx.session_id
+        if ctx.user_id and not result["user.id"]:
+            result["user.id"] = ctx.user_id
+        if ctx.customer_id and not result["customer.id"]:
+            result["customer.id"] = ctx.customer_id
+    except ImportError:
+        pass
+
+    return json.dumps(result, indent=2)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="MCP Calculator Server with OpenTelemetry Instrumentation"
     )
-    parser.add_argument(
+    transport_group = parser.add_mutually_exclusive_group()
+    transport_group.add_argument(
         "--sse",
         action="store_true",
         help="Run in SSE mode for external client connections (default: stdio)",
+    )
+    transport_group.add_argument(
+        "--http",
+        action="store_true",
+        help="Run in Streamable HTTP mode (default: stdio)",
     )
     parser.add_argument(
         "--host",
         type=str,
         default="localhost",
-        help="Host to bind to in SSE mode (default: localhost)",
+        help="Host to bind to in SSE/HTTP mode (default: localhost)",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8000,
-        help="Port to listen on in SSE mode (default: 8000)",
+        help="Port to listen on in SSE/HTTP mode (default: 8000)",
     )
     args = parser.parse_args()
 
@@ -250,9 +305,25 @@ if __name__ == "__main__":
         )
         print("\nPress Ctrl+C to stop.\n", file=sys.stderr)
         mcp.run(transport="sse", host=args.host, port=args.port)
+    elif args.http:
+        print(
+            f"\n🌐 Starting Streamable HTTP server at "
+            f"http://{args.host}:{args.port}/mcp",
+            file=sys.stderr,
+        )
+        print(
+            "   Connect with: python client.py --server-url "
+            + f"http://{args.host}:{args.port}/mcp --console",
+            file=sys.stderr,
+        )
+        print("\nPress Ctrl+C to stop.\n", file=sys.stderr)
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         print("\n📡 Running in stdio mode (for subprocess spawning)", file=sys.stderr)
-        print("   Use --sse flag for external client connections", file=sys.stderr)
+        print(
+            "   Use --sse or --http flag for external client connections",
+            file=sys.stderr,
+        )
         print("\nServer is ready. Waiting for client connections...", file=sys.stderr)
         print("Press Ctrl+C to stop.\n", file=sys.stderr)
         mcp.run()

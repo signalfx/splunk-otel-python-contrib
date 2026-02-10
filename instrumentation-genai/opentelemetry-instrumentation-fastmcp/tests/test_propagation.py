@@ -12,171 +12,127 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for propagation module."""
+"""Tests for propagation module (restore_session_from_context)."""
 
-from unittest.mock import MagicMock, patch
-from dataclasses import dataclass
+import os
+from unittest.mock import patch
+
+from opentelemetry import baggage
 
 from opentelemetry.instrumentation.fastmcp.propagation import (
-    inject_trace_context,
-    extract_trace_context,
-    ContextManager,
+    restore_session_from_context,
+)
+from opentelemetry.util.genai.handler import (
+    clear_session_context,
+    get_session_context,
 )
 
 
-class TestInjectTraceContext:
-    """Tests for inject_trace_context function."""
+class TestRestoreSessionFromContext:
+    """Tests for restore_session_from_context function."""
 
-    def test_none_params(self):
-        """Test that None params are returned unchanged."""
-        result = inject_trace_context(None)
-        assert result is None
+    def setup_method(self):
+        clear_session_context()
 
-    def test_dict_params_creates_meta(self):
-        """Test that _meta is created in dict params."""
-        params = {"key": "value"}
-        result = inject_trace_context(params)
-        assert "_meta" in result
-        assert result["key"] == "value"
+    def teardown_method(self):
+        clear_session_context()
 
-    def test_dict_params_preserves_existing_meta(self):
-        """Test that existing _meta content is preserved."""
-        params = {"key": "value", "_meta": {"existing": "data"}}
-        result = inject_trace_context(params)
-        assert result["_meta"]["existing"] == "data"
+    def test_restores_all_session_fields(self):
+        """gen_ai.conversation.id, user.id, and customer.id are restored from baggage."""
+        with patch.dict(
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION": "baggage"},
+        ):
+            ctx = baggage.set_baggage("gen_ai.conversation.id", "sess-1")
+            ctx = baggage.set_baggage("user.id", "user-1", ctx)
+            ctx = baggage.set_baggage("customer.id", "cust-1", ctx)
 
-    def test_object_with_dict(self):
-        """Test injection into object with __dict__."""
+            restore_session_from_context(ctx)
 
-        @dataclass
-        class Params:
-            key: str
-            _meta: dict = None
+            session = get_session_context()
+            assert session.session_id == "sess-1"
+            assert session.user_id == "user-1"
+            assert session.customer_id == "cust-1"
 
-            def __post_init__(self):
-                if self._meta is None:
-                    self._meta = {}
+    def test_restores_partial_session(self):
+        """Only the fields present in baggage are restored."""
+        with patch.dict(
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION": "baggage"},
+        ):
+            # Build context from scratch using Context() to avoid inheriting
+            # leaked baggage from other tests
+            from opentelemetry.context import Context
 
-        params = Params(key="value")
-        result = inject_trace_context(params)
-        assert hasattr(result, "_meta")
+            clean_ctx = Context()
+            ctx = baggage.set_baggage("user.id", "only-user", clean_ctx)
 
-    @patch("opentelemetry.instrumentation.fastmcp.propagation.propagate")
-    def test_propagate_inject_called(self, mock_propagate):
-        """Test that propagate.inject is called with meta dict."""
-        params = {}
-        inject_trace_context(params)
-        mock_propagate.inject.assert_called_once()
+            restore_session_from_context(ctx)
 
+            session = get_session_context()
+            assert session.session_id is None
+            assert session.user_id == "only-user"
+            assert session.customer_id is None
 
-class TestExtractTraceContext:
-    """Tests for extract_trace_context function."""
+    def test_no_restore_when_propagation_disabled(self):
+        """Session is NOT restored when propagation mode is contextvar."""
+        with patch.dict(
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION": "contextvar"},
+        ):
+            ctx = baggage.set_baggage("gen_ai.conversation.id", "should-not-appear")
+            restore_session_from_context(ctx)
 
-    def test_none_params(self):
-        """Test that None params returns None."""
-        result = extract_trace_context(None)
-        assert result is None
+            session = get_session_context()
+            assert session.session_id is None
 
-    def test_dict_without_meta(self):
-        """Test dict without _meta returns None."""
-        params = {"key": "value"}
-        result = extract_trace_context(params)
-        assert result is None
+    def test_no_restore_when_env_not_set(self):
+        """Session is NOT restored when env var is absent (default=contextvar)."""
+        env = os.environ.copy()
+        env.pop("OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION", None)
+        with patch.dict(os.environ, env, clear=True):
+            ctx = baggage.set_baggage("gen_ai.conversation.id", "should-not-appear")
+            restore_session_from_context(ctx)
 
-    def test_dict_with_meta(self):
-        """Test dict with _meta calls extract."""
-        params = {
-            "_meta": {
-                "traceparent": "00-1234567890abcdef1234567890abcdef-1234567890abcdef-01"
-            }
-        }
-        with patch(
-            "opentelemetry.instrumentation.fastmcp.propagation.propagate"
-        ) as mock_propagate:
-            mock_propagate.extract.return_value = MagicMock()
-            _result = extract_trace_context(params)
-            mock_propagate.extract.assert_called_once()
+            session = get_session_context()
+            assert session.session_id is None
 
-    def test_object_with_meta_attribute(self):
-        """Test extraction from object with _meta attribute."""
+    def test_no_error_on_none_context(self):
+        """None context does not raise."""
+        with patch.dict(
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION": "baggage"},
+        ):
+            restore_session_from_context(None)
+            # Should not raise
 
-        @dataclass
-        class Params:
-            _meta: dict
+    def test_no_error_on_empty_baggage(self):
+        """Empty baggage context does not raise and does not set session."""
+        with patch.dict(
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION": "baggage"},
+        ):
+            # Use a clean context with no baggage entries
+            from opentelemetry.context import Context
 
-        params = Params(_meta={"traceparent": "00-abc-def-01"})
-        with patch(
-            "opentelemetry.instrumentation.fastmcp.propagation.propagate"
-        ) as mock_propagate:
-            mock_propagate.extract.return_value = MagicMock()
-            _result = extract_trace_context(params)
-            mock_propagate.extract.assert_called_once()
+            ctx = Context()
+            restore_session_from_context(ctx)
 
-    def test_mapping_like_object(self):
-        """Test extraction from mapping-like object with get method."""
+            session = get_session_context()
+            assert session.session_id is None
 
-        class MappingParams:
-            def get(self, key, default=None):
-                if key == "_meta":
-                    return {"traceparent": "00-abc-def-01"}
-                return default
+    def test_does_not_re_propagate_via_baggage(self):
+        """Restored session should NOT re-inject into OTel Baggage (avoids loops)."""
+        with patch.dict(
+            os.environ,
+            {"OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION": "baggage"},
+        ):
+            ctx = baggage.set_baggage("gen_ai.conversation.id", "no-loop")
 
-        params = MappingParams()
-        with patch(
-            "opentelemetry.instrumentation.fastmcp.propagation.propagate"
-        ) as mock_propagate:
-            mock_propagate.extract.return_value = MagicMock()
-            _result = extract_trace_context(params)
-            mock_propagate.extract.assert_called_once()
-
-
-class TestContextManager:
-    """Tests for ContextManager class."""
-
-    def test_attach_none_context(self):
-        """Test attach with None context returns False."""
-        cm = ContextManager()
-        result = cm.attach(None)
-        assert result is False
-
-    def test_attach_valid_context(self):
-        """Test attach with valid context returns True."""
-        mock_ctx = MagicMock()
-        with patch(
-            "opentelemetry.instrumentation.fastmcp.propagation.context"
-        ) as mock_context:
-            mock_context.attach.return_value = "token"
-            cm = ContextManager()
-            result = cm.attach(mock_ctx)
-            assert result is True
-            mock_context.attach.assert_called_once_with(mock_ctx)
-
-    def test_detach_without_attach(self):
-        """Test detach without prior attach does nothing."""
-        cm = ContextManager()
-        cm.detach()  # Should not raise
-
-    def test_detach_after_attach(self):
-        """Test detach after attach calls context.detach."""
-        mock_ctx = MagicMock()
-        with patch(
-            "opentelemetry.instrumentation.fastmcp.propagation.context"
-        ) as mock_context:
-            mock_context.attach.return_value = "token"
-            cm = ContextManager()
-            cm.attach(mock_ctx)
-            cm.detach()
-            mock_context.detach.assert_called_once_with("token")
-
-    def test_context_manager_protocol(self):
-        """Test ContextManager works as context manager."""
-        mock_ctx = MagicMock()
-        with patch(
-            "opentelemetry.instrumentation.fastmcp.propagation.context"
-        ) as mock_context:
-            mock_context.attach.return_value = "token"
-            cm = ContextManager()
-            cm.attach(mock_ctx)
-            with cm:
-                pass
-            mock_context.detach.assert_called_once_with("token")
+            with patch(
+                "opentelemetry.util.genai.handler.set_session_context"
+            ) as mock_set:
+                restore_session_from_context(ctx)
+                mock_set.assert_called_once()
+                # propagate_via_baggage should be False
+                assert mock_set.call_args.kwargs["propagate_via_baggage"] is False

@@ -142,6 +142,91 @@ def is_instrumentation_enabled() -> bool:
     return env_value in ("true", "1", "yes", "on")
 
 
+def detect_client_network_transport(client_instance: Any) -> str:
+    """Detect the OTel network.transport value from a FastMCP Client instance.
+
+    Maps FastMCP transport classes to OTel semantic convention values:
+    - StdioTransport (and subclasses) -> "pipe"
+    - SSETransport -> "tcp"
+    - StreamableHttpTransport -> "tcp"
+    - FastMCPTransport (in-memory) -> "inproc"
+    - Unknown -> "pipe" (safe default)
+
+    Args:
+        client_instance: A FastMCP Client instance
+
+    Returns:
+        OTel network.transport value string
+    """
+    try:
+        transport = getattr(client_instance, "transport", None)
+        if transport is None:
+            return "pipe"
+
+        transport_type = type(transport).__name__
+
+        # SSE and StreamableHttp use TCP
+        if "SSE" in transport_type or "Sse" in transport_type:
+            return "tcp"
+        if "Http" in transport_type or "HTTP" in transport_type:
+            return "tcp"
+        # In-memory transport
+        if transport_type == "FastMCPTransport":
+            return "inproc"
+        # Stdio variants (StdioTransport, PythonStdioTransport, etc.) -> pipe
+        if "Stdio" in transport_type or "stdio" in transport_type:
+            return "pipe"
+
+        return "pipe"
+    except Exception:
+        return "pipe"
+
+
+def detect_server_network_transport() -> str:
+    """Detect the OTel network.transport value from the server-side FastMCP context.
+
+    Attempts multiple detection strategies in order:
+    1. FastMCP's ``_current_transport`` ContextVar (available in newer versions)
+    2. FastMCP's ``request_ctx`` ContextVar — inspect the session/request for
+       HTTP-related attributes (mcp-session-id header → tcp transport)
+
+    Returns:
+        OTel network.transport value string
+    """
+    try:
+        # Strategy 1: Check _current_transport ContextVar (FastMCP >= 3.x)
+        try:
+            from fastmcp.server.context import _current_transport
+
+            transport_type = _current_transport.get(None)
+            if transport_type == "stdio":
+                return "pipe"
+            if transport_type in ("sse", "streamable-http"):
+                return "tcp"
+            # If ContextVar exists but is None, fall through to strategy 2
+            if transport_type is not None:
+                return "pipe"
+        except (ImportError, AttributeError):
+            pass
+
+        # Strategy 2: Check request_ctx for HTTP session indicators
+        try:
+            from fastmcp.server.context import request_ctx
+
+            req_ctx = request_ctx.get(None)
+            if req_ctx is not None:
+                # If we have a request context with an HTTP request, it's TCP
+                request = getattr(req_ctx, "request", None)
+                if request is not None and hasattr(request, "headers"):
+                    return "tcp"
+        except (ImportError, AttributeError, LookupError):
+            pass
+
+        return "pipe"
+    except Exception:
+        return "pipe"
+
+
 def extract_tool_info(args: tuple, kwargs: dict) -> tuple[str, Any]:
     """Extract tool name and arguments from call_tool parameters.
 

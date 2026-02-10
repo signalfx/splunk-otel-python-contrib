@@ -69,7 +69,9 @@ SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
 
 # Session/User attributes (for multi-turn tracking)
-SESSION_ID = "session.id"
+# gen_ai.conversation.id is the canonical OTel GenAI semconv attribute.
+# SESSION_ID is kept as an alias for backward compatibility.
+SESSION_ID = "gen_ai.conversation.id"
 USER_ID = "user.id"
 CUSTOMER_ID = "customer.id"
 

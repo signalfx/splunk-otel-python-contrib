@@ -277,6 +277,50 @@ Burst capacity for evaluation rate limiting token bucket. Default: 4.
 """
 
 # ---- Session Context ----
+OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION = (
+    "OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION
+
+Controls how session context (gen_ai.conversation.id, user.id, customer.id)
+is propagated.
+Accepted case-insensitive values:
+
+``contextvar`` (default) – session context propagated only within the same
+process via Python contextvars. No cross-service propagation.
+
+``baggage`` – session context is also set as OTel Baggage entries, which
+are propagated across service boundaries (e.g. via MCP _meta, HTTP headers).
+On the receiving side, baggage values are extracted and applied to GenAI
+invocations when no explicit session context is set.
+
+Note: OTel Baggage is propagated in cleartext. Do not use ``baggage`` mode
+if session/user identifiers are considered sensitive and services cross
+trust boundaries.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS = (
+    "OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS
+
+Comma-separated list of session attributes to include as metric dimensions.
+Accepted values: ``gen_ai.conversation.id``, ``user.id``, ``customer.id``.
+The legacy value ``session.id`` is also accepted and normalized to
+``gen_ai.conversation.id``.
+
+Example: ``user.id,customer.id``
+
+Default: empty (no session attributes on metrics — they are high-cardinality).
+Set to ``all`` to include all three. Set to specific attributes for selective
+inclusion.
+
+⚠️  Including ``gen_ai.conversation.id`` in metrics may cause high-cardinality
+issues. Use ``user.id`` and ``customer.id`` for lower cardinality.
+"""
+
 OTEL_INSTRUMENTATION_GENAI_SESSION_ID = "OTEL_INSTRUMENTATION_GENAI_SESSION_ID"
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_ID
@@ -285,9 +329,9 @@ Static session ID to apply to all GenAI operations. This is useful for simple
 deployments where all requests share a single session context. For multi-tenant
 or multi-session scenarios, use the programmatic session context APIs instead.
 
-When set, this value is applied as the default ``session.id`` attribute on all
-GenAI spans unless explicitly overridden via the invocation object or the
-session context API.
+When set, this value is applied as the default ``gen_ai.conversation.id``
+attribute on all GenAI spans unless explicitly overridden via the invocation
+object or the session context API.
 """
 
 OTEL_INSTRUMENTATION_GENAI_USER_ID = "OTEL_INSTRUMENTATION_GENAI_USER_ID"
@@ -345,6 +389,8 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
     # session context
+    "OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION",
+    "OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_SESSION_ID",
     "OTEL_INSTRUMENTATION_GENAI_USER_ID",
     "OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID",

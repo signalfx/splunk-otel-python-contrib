@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release of Splunk OpenTelemetry instrumentation for FastMCP (Model Context Protocol)
 - Server-side instrumentation for FastMCP server initialization and tool execution
 - Client-side instrumentation for FastMCP client session lifecycle and tool calls
-- Automatic W3C TraceContext propagation between MCP client and server processes via `_meta` field
+- Automatic W3C TraceContext and Baggage propagation between MCP client and server processes via standard OTel Propagation API
 - Support for all MCP transports: stdio, SSE, and streamable-http
 - Span generation for server operations (`mcp.server`), tool execution (`{tool_name}.tool`), and client sessions (`mcp.client`)
 - Metrics collection with `gen_ai.mcp.tool.duration` histogram for tool execution duration

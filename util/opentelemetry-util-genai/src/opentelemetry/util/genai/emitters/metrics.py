@@ -26,6 +26,7 @@ from .utils import (
     _get_metric_attributes,
     _record_duration,
     _record_token_metrics,
+    get_session_metric_attributes,
 )
 
 
@@ -102,6 +103,9 @@ class MetricsEmitter(EmitterMeta):
             if llm_invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = llm_invocation.agent_id
 
+            # Add session context if configured
+            metric_attrs.update(get_session_metric_attributes(llm_invocation))
+
             _record_token_metrics(
                 self._token_histogram,
                 llm_invocation.input_tokens,
@@ -132,6 +136,9 @@ class MetricsEmitter(EmitterMeta):
                 )
             if tool_invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
+
+            # Add session context if configured
+            metric_attrs.update(get_session_metric_attributes(tool_invocation))
 
             _record_duration(
                 self._duration_histogram,

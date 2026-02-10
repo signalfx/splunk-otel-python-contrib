@@ -28,6 +28,7 @@ from opentelemetry.util.genai.types import (
     Error,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    detect_server_network_transport,
     extract_tool_info,
     extract_result_content,
     should_capture_content,
@@ -115,6 +116,9 @@ class ServerInstrumentor:
             # Extract tool information
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
 
+            # Detect transport type from server-side context
+            network_transport = detect_server_network_transport()
+
             # Create MCPToolCall entity with MCP semantic convention attributes
             tool_call = MCPToolCall(
                 name=tool_name,
@@ -127,7 +131,7 @@ class ServerInstrumentor:
                 tool_type="extension",
                 # MCP semantic convention fields
                 mcp_method_name="tools/call",  # Per OTel semconv for tool calls
-                network_transport="pipe",  # stdio transport = pipe
+                network_transport=network_transport,
                 mcp_server_name=instrumentor._server_name,  # Server name from init
                 is_client=False,  # This is server-side
             )

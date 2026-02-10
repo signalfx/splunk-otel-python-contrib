@@ -3,7 +3,8 @@
 MCP Client for Calculator Server
 
 Connects to the calculator server and demonstrates tool calls
-with OpenTelemetry instrumentation capturing traces and metrics.
+with OpenTelemetry instrumentation capturing traces, metrics,
+and session context propagation via OTel Baggage.
 
 Usage:
     # Option 1: Spawn server as subprocess (single terminal)
@@ -17,9 +18,16 @@ Usage:
     # With metrics enabled
     OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric" python client.py --console
 
-    # OTLP export
-    export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-    python client.py --wait 30
+    # With session propagation via baggage
+    OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage" \\
+    OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS="user.id" \\
+    python client.py --console --session-id "conv-123" --user-id "user-456"
+
+    # OTLP export (default endpoint http://localhost:4317)
+    python client.py --otlp --wait 10
+
+    # OTLP export with custom endpoint
+    OTEL_EXPORTER_OTLP_ENDPOINT="http://collector:4317" python client.py --wait 10
 """
 
 import argparse
@@ -29,8 +37,17 @@ import sys
 from pathlib import Path
 
 
-def setup_telemetry(console_output: bool = False):
-    """Set up OpenTelemetry with tracing and metrics."""
+def setup_telemetry(console_output: bool = False, otlp_enabled: bool = False):
+    """Set up OpenTelemetry with tracing and metrics.
+
+    Args:
+        console_output: Enable console span/metric exporters for debugging.
+        otlp_enabled: Enable OTLP gRPC exporters. Uses OTEL_EXPORTER_OTLP_ENDPOINT
+            env var if set, otherwise defaults to http://localhost:4317.
+
+    Returns:
+        Tuple of (TracerProvider, MeterProvider | None) for shutdown.
+    """
     from opentelemetry import trace, metrics
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.metrics import MeterProvider
@@ -50,6 +67,7 @@ def setup_telemetry(console_output: bool = False):
 
     # Set up metric readers
     metric_readers = []
+    meter_provider = None
 
     if console_output:
         from opentelemetry.sdk.trace.export import (
@@ -70,9 +88,11 @@ def setup_telemetry(console_output: bool = False):
         )
         print("✅ Console exporters enabled (traces + metrics)", file=sys.stderr)
 
-    # Check for OTLP endpoint
-    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if otlp_endpoint:
+    # OTLP export: enabled via --otlp flag or OTEL_EXPORTER_OTLP_ENDPOINT env var
+    otlp_endpoint = os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
+    )
+    if otlp_enabled or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
         try:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
                 OTLPSpanExporter,
@@ -107,19 +127,47 @@ def setup_telemetry(console_output: bool = False):
     FastMCPInstrumentor().instrument()
     print("✅ FastMCP instrumentation applied", file=sys.stderr)
 
+    return trace_provider, meter_provider
 
-async def run_calculator_demo(server_url: str | None = None):
+
+async def run_calculator_demo(
+    server_url: str | None = None,
+    session_id: str | None = None,
+    user_id: str | None = None,
+):
     """Connect to calculator server and demonstrate tool calls.
 
     Args:
         server_url: Optional URL of external MCP server (e.g., http://localhost:8000/sse).
                    If not provided, spawns server.py as a subprocess.
+        session_id: Optional session ID to propagate via OTel Baggage.
+        user_id: Optional user ID to propagate via OTel Baggage.
     """
     from fastmcp import Client
 
     print("\n" + "=" * 60)
     print("MCP Calculator Client - OpenTelemetry Instrumentation Demo")
     print("=" * 60)
+
+    # Set session context if provided — this propagates via OTel Baggage
+    # when OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage
+    if session_id or user_id:
+        from opentelemetry.util.genai.handler import set_session_context
+
+        set_session_context(
+            session_id=session_id,
+            user_id=user_id,
+        )
+        print("\n🔑 Session context set:", file=sys.stderr)
+        if session_id:
+            print(f"   gen_ai.conversation.id = {session_id}", file=sys.stderr)
+        if user_id:
+            print(f"   user.id                = {user_id}", file=sys.stderr)
+
+        propagation_mode = os.environ.get(
+            "OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION", "contextvar"
+        )
+        print(f"   propagation = {propagation_mode}", file=sys.stderr)
 
     if server_url:
         # Connect to external server
@@ -185,19 +233,50 @@ async def run_calculator_demo(server_url: str | None = None):
         except Exception as e:
             print(f"   divide(10, 0) = ❌ Error handled: {type(e).__name__}")
 
+        # Test session propagation (if session context was set)
+        if session_id or user_id:
+            print("\n🔗 Testing Session Propagation:")
+            print("-" * 40)
+            try:
+                result = await client.call_tool("get_session_info", {})
+                if hasattr(result, "content") and result.content:
+                    content = result.content[0]
+                    value = content.text if hasattr(content, "text") else str(content)
+                else:
+                    value = str(result)
+                print(f"   Server sees: {value}")
+            except Exception as e:
+                print(f"   get_session_info = ❌ Error: {e}")
+                print(
+                    "   (Ensure the server has the get_session_info tool)",
+                    file=sys.stderr,
+                )
+
     print("\n" + "=" * 60)
     print("✅ Demo completed!")
     print("=" * 60)
 
 
 async def main(
-    console_output: bool = False, wait_seconds: int = 0, server_url: str | None = None
+    console_output: bool = False,
+    otlp_enabled: bool = False,
+    wait_seconds: int = 0,
+    server_url: str | None = None,
+    session_id: str | None = None,
+    user_id: str | None = None,
 ):
     """Main entry point."""
     # Set up telemetry before anything else
-    setup_telemetry(console_output=console_output)
+    trace_provider, meter_provider = setup_telemetry(
+        console_output=console_output, otlp_enabled=otlp_enabled
+    )
 
     try:
+        await run_calculator_demo(
+            server_url=server_url,
+            session_id=session_id,
+            user_id=user_id,
+        )
         await run_calculator_demo(server_url=server_url)
     except KeyboardInterrupt:
         print("\n\n⏹️  Demo interrupted")
@@ -206,12 +285,17 @@ async def main(
         import traceback
 
         traceback.print_exc()
-
-    # Wait for telemetry to flush
-    if wait_seconds > 0:
-        print(f"\n⏳ Waiting {wait_seconds}s for telemetry to flush...")
-        await asyncio.sleep(wait_seconds)
-        print("✅ Done")
+    finally:
+        # Shutdown providers to flush pending telemetry (BatchSpanProcessor,
+        # PeriodicExportingMetricReader) before the process exits.
+        if wait_seconds > 0:
+            print(f"\n⏳ Waiting {wait_seconds}s for telemetry to flush...")
+            await asyncio.sleep(wait_seconds)
+        print("🔄 Shutting down telemetry providers...", file=sys.stderr)
+        trace_provider.shutdown()
+        if meter_provider:
+            meter_provider.shutdown()
+        print("✅ Telemetry flushed", file=sys.stderr)
 
 
 if __name__ == "__main__":
@@ -222,6 +306,12 @@ if __name__ == "__main__":
         "--console",
         action="store_true",
         help="Enable console exporters for debugging",
+    )
+    parser.add_argument(
+        "--otlp",
+        action="store_true",
+        help="Enable OTLP gRPC exporters (default endpoint: http://localhost:4317, "
+        "override with OTEL_EXPORTER_OTLP_ENDPOINT)",
     )
     parser.add_argument(
         "--wait",
@@ -238,12 +328,33 @@ if __name__ == "__main__":
         help="URL of external MCP server (e.g., http://localhost:8000/sse). "
         "If not provided, spawns server.py as subprocess.",
     )
+    parser.add_argument(
+        "--session-id",
+        "--session",
+        type=str,
+        default=None,
+        metavar="ID",
+        help="Session ID (gen_ai.conversation.id) to propagate via OTel Baggage "
+        "to the MCP server. "
+        "Requires OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage.",
+    )
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        metavar="ID",
+        help="User ID to propagate via OTel Baggage to the MCP server. "
+        "Requires OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage.",
+    )
     args = parser.parse_args()
 
     asyncio.run(
         main(
             console_output=args.console,
+            otlp_enabled=args.otlp,
             wait_seconds=args.wait,
             server_url=args.server_url,
+            session_id=args.session_id,
+            user_id=args.user_id,
         )
     )

@@ -404,7 +404,9 @@ class TestSemanticConventionAttributes:
         """Test that None values are excluded from semconv attributes."""
         inv = LLMInvocation(request_model="gpt-4")
         attrs = inv.semantic_convention_attributes()
+        # Neither session.id nor gen_ai.conversation.id should appear
         assert "session.id" not in attrs
+        assert "gen_ai.conversation.id" not in attrs
         assert "user.id" not in attrs
         assert "customer.id" not in attrs
 

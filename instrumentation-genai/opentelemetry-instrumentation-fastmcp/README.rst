@@ -73,8 +73,12 @@ Client-side:
 Transport-level:
 ~~~~~~~~~~~~~~~~
 
-- Automatic trace context propagation via ``_meta`` field
+- Automatic trace context propagation via standard OTel Propagation API
 - Works for all MCP transports: stdio, SSE, streamable-http
+- ``network.transport`` attribute is detected dynamically:
+  - ``"pipe"`` for stdio
+  - ``"tcp"`` for SSE and streamable-http
+  - ``"inproc"`` for in-memory (FastMCPTransport)
 
 Trace Context Propagation
 -------------------------

@@ -13,149 +13,78 @@
 # limitations under the License.
 
 """
-Trace context propagation for MCP protocol.
+Session propagation for MCP protocol via OTel Baggage.
 
-This module handles injecting trace context into outgoing MCP requests (client-side)
-and extracting trace context from incoming MCP requests (server-side).
+Session context (gen_ai.conversation.id, user.id, customer.id) is propagated
+via the standard W3C Baggage header format, using the standard OTel Propagation
+API (``propagate.inject()`` / ``propagate.extract()``). The MCP ``params._meta``
+object serves as the carrier — analogous to HTTP headers.
 
-The trace context is propagated via the `_meta` field in MCP request parameters,
-following the W3C TraceContext format (traceparent, tracestate).
+When baggage propagation is enabled
+(``OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage``), session values
+set via ``set_session_context()`` are injected as OTel Baggage entries by the
+standard ``propagate.inject()`` call in the transport instrumentor, and
+extracted on the server side to restore session context for GenAI operations.
+
+Trace context injection/extraction itself is handled directly by
+``TransportInstrumentor`` (in ``transport_instrumentor.py``) which calls
+``propagate.inject()`` / ``propagate.extract()`` with the pydantic Meta object
+as the carrier. This module provides only the session-specific
+``restore_session_from_context`` helper used by the server-side transport
+wrapper.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
-from opentelemetry import context, propagate
 from opentelemetry.context import Context
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def inject_trace_context(params: Any) -> Any:
-    """Inject trace context into MCP request parameters.
+def restore_session_from_context(ctx: Optional[Context] = None) -> None:
+    """Restore session context from OTel Baggage in the given context.
 
-    Injects the current trace context (traceparent, tracestate) into the
-    `_meta` field of the request parameters.
+    This function reads gen_ai.conversation.id, user.id, and customer.id from
+    OTel Baggage and sets them in the local session context (ContextVar),
+    making them available to GenAI instrumentation on the server side.
 
-    Args:
-        params: MCP request parameters (can be dict or object with __dict__)
-
-    Returns:
-        The modified params with trace context injected into _meta
-    """
-    try:
-        if params is None:
-            return params
-
-        # Handle dict-like params
-        if isinstance(params, dict):
-            meta = params.setdefault("_meta", {})
-            propagate.inject(meta)
-            return params
-
-        # Handle object with __dict__ (e.g., dataclass, pydantic model)
-        if hasattr(params, "__dict__"):
-            params_dict = params.__dict__
-            if "_meta" not in params_dict:
-                params_dict["_meta"] = {}
-            meta = params_dict["_meta"]
-            if isinstance(meta, dict):
-                propagate.inject(meta)
-
-        return params
-    except Exception as e:
-        _LOGGER.debug(f"Failed to inject trace context: {e}")
-        return params
-
-
-def extract_trace_context(params: Any) -> Optional[Context]:
-    """Extract trace context from MCP request parameters.
-
-    Extracts trace context (traceparent, tracestate) from the `_meta` field
-    of the request parameters.
+    This is called automatically by the transport instrumentor when
+    baggage propagation is enabled.
 
     Args:
-        params: MCP request parameters (can be dict or object with attributes)
-
-    Returns:
-        Extracted context, or None if no trace context found
+        ctx: OTel context containing baggage. If None, uses current context.
     """
     try:
-        if params is None:
-            return None
+        from opentelemetry import baggage
 
-        meta = None
+        from opentelemetry.util.genai.handler import (
+            _is_baggage_propagation_enabled,
+            set_session_context,
+        )
 
-        # Handle dict-like params
-        if isinstance(params, dict):
-            meta = params.get("_meta")
-        # Handle object with _meta attribute
-        elif hasattr(params, "_meta"):
-            meta = params._meta
-        # Handle object with __dict__
-        elif hasattr(params, "__dict__") and "_meta" in params.__dict__:
-            meta = params.__dict__["_meta"]
-        # Handle object with get method (Mapping-like)
-        elif hasattr(params, "get"):
-            meta = params.get("_meta")
+        if not _is_baggage_propagation_enabled():
+            return
 
-        if meta is None:
-            return None
+        session_id = baggage.get_baggage("gen_ai.conversation.id", ctx)
+        user_id = baggage.get_baggage("user.id", ctx)
+        customer_id = baggage.get_baggage("customer.id", ctx)
 
-        # Extract trace context from meta
-        # meta could be a dict or an object with attributes
-        if isinstance(meta, dict):
-            ctx = propagate.extract(meta)
-            return ctx
-        elif hasattr(meta, "__dict__"):
-            # Some MCP frameworks return meta as an object
-            ctx = propagate.extract(meta.__dict__)
-            return ctx
-
-        return None
+        if session_id or user_id or customer_id:
+            # Set local session context without re-propagating via baggage
+            # (it's already in the context from extraction)
+            set_session_context(
+                session_id=session_id,
+                user_id=user_id,
+                customer_id=customer_id,
+                propagate_via_baggage=False,
+            )
+            _LOGGER.debug(
+                f"Restored session from baggage: "
+                f"gen_ai.conversation.id={session_id}, user.id={user_id}, "
+                f"customer.id={customer_id}"
+            )
+    except ImportError:
+        _LOGGER.debug("opentelemetry.util.genai not available for session restore")
     except Exception as e:
-        _LOGGER.debug(f"Failed to extract trace context: {e}")
-        return None
-
-
-class ContextManager:
-    """Manages context attachment and detachment for trace propagation."""
-
-    def __init__(self):
-        self._token: Optional[object] = None
-
-    def attach(self, ctx: Optional[Context]) -> bool:
-        """Attach extracted context to the current context.
-
-        Args:
-            ctx: Context to attach (from extract_trace_context)
-
-        Returns:
-            True if context was attached, False otherwise
-        """
-        if ctx is None:
-            return False
-
-        try:
-            self._token = context.attach(ctx)
-            return True
-        except Exception as e:
-            _LOGGER.debug(f"Failed to attach context: {e}")
-            return False
-
-    def detach(self) -> None:
-        """Detach previously attached context."""
-        if self._token is not None:
-            try:
-                context.detach(self._token)
-            except Exception as e:
-                _LOGGER.debug(f"Failed to detach context: {e}")
-            finally:
-                self._token = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.detach()
-        return False
+        _LOGGER.debug(f"Failed to restore session from baggage: {e}")

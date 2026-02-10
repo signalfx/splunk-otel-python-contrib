@@ -13,14 +13,17 @@
 # limitations under the License.
 
 """
-MCP Transport layer instrumentation for trace context propagation.
+MCP Transport layer instrumentation for trace context and session propagation.
 
 This module instruments the low-level MCP SDK transport to ensure trace context
-(traceparent, tracestate) is propagated between client and server processes.
+(traceparent, tracestate) and session baggage are propagated between client and
+server processes using the standard OTel Propagation API.
 
 Approach:
-- Client side: Wrap BaseSession.send_request to inject trace context into _meta
-- Server side: Wrap ServerSession._received_request to extract from request_meta
+- Client side: Wrap BaseSession.send_request to inject context via propagate.inject()
+  into the MCP params._meta carrier (analogous to HTTP headers)
+- Server side: Wrap ServerSession._received_request to extract from params._meta
+  via propagate.extract() and restore session context from baggage
 """
 
 import logging
@@ -82,16 +85,19 @@ class TransportInstrumentor:
         self._instrumented = False
 
     def _send_request_wrapper(self):
-        """Wrapper for BaseSession.send_request to inject trace context.
+        """Wrapper for BaseSession.send_request to inject trace context and baggage.
 
         This runs on the client side before sending any MCP request.
-        Injects traceparent/tracestate into the request's params.meta field.
+        Injects traceparent/tracestate and baggage into the request's params.meta field.
+
+        The baggage header carries session context (gen_ai.conversation.id, user.id, customer.id)
+        when baggage propagation is enabled via OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage.
 
         The MCP SDK request structure:
         - ClientRequest is a discriminated union with a 'root' attribute
         - request.root contains the actual request (CallToolRequest, etc.)
         - request.root.params.meta (aliased as _meta in JSON) is a Meta object
-        - Meta has extra='allow', so we can add traceparent/tracestate
+        - Meta has extra='allow', so we can add traceparent/tracestate/baggage
         """
 
         async def traced_send_request(wrapped, instance, args, kwargs) -> Any:
@@ -149,9 +155,13 @@ class TransportInstrumentor:
         return traced_send_request
 
     def _server_handle_request_wrapper(self):
-        """Wrapper for Server._handle_request to extract trace context.
+        """Wrapper for Server._handle_request to extract trace context and session.
 
         This runs on the server side when handling an MCP request.
+        Extracts trace context (traceparent/tracestate) and baggage from
+        the request metadata, then restores session context from baggage
+        for GenAI instrumentation.
+
         The method signature is:
             _handle_request(self, message, req, session, lifespan_context, raise_exceptions)
 
@@ -169,25 +179,22 @@ class TransportInstrumentor:
                     request_meta = message.request_meta
 
                     if request_meta is not None:
-                        # Extract trace context from request_meta
-                        # The meta object may have traceparent/tracestate as attributes
+                        # Extract trace context and baggage from request_meta
+                        # The meta object may have traceparent/tracestate/baggage as attributes
                         carrier = {}
 
-                        # Try to get traceparent and tracestate from meta
+                        # Try to get traceparent, tracestate, and baggage from meta
                         # First check as attribute (getattr handles pydantic properly)
-                        traceparent = getattr(request_meta, "traceparent", None)
-                        if traceparent:
-                            carrier["traceparent"] = traceparent
-
-                        tracestate = getattr(request_meta, "tracestate", None)
-                        if tracestate:
-                            carrier["tracestate"] = tracestate
+                        for key in ("traceparent", "tracestate", "baggage"):
+                            value = getattr(request_meta, key, None)
+                            if value:
+                                carrier[key] = value
 
                         # Also try model_extra for pydantic v2 extra fields
                         if not carrier and hasattr(request_meta, "model_extra"):
                             extra = request_meta.model_extra
                             if extra:
-                                for key in ["traceparent", "tracestate"]:
+                                for key in ("traceparent", "tracestate", "baggage"):
                                     if key in extra:
                                         carrier[key] = extra[key]
 
@@ -198,6 +205,16 @@ class TransportInstrumentor:
                                 f"Attached trace context in _handle_request: "
                                 f"carrier={carrier}"
                             )
+
+                            # Restore session context from baggage if enabled
+                            try:
+                                from .propagation import restore_session_from_context
+
+                                restore_session_from_context(ctx)
+                            except Exception as e:
+                                _LOGGER.debug(
+                                    f"Failed to restore session from baggage: {e}"
+                                )
 
             except Exception as e:
                 _LOGGER.debug(f"Error extracting trace context: {e}", exc_info=True)
@@ -214,8 +231,3 @@ class TransportInstrumentor:
                         pass
 
         return traced_handle_request
-
-    # Keep old wrapper for backwards compatibility / tests
-    def _server_received_request_wrapper(self):
-        """Legacy wrapper - replaced by _server_handle_request_wrapper."""
-        return self._server_handle_request_wrapper()

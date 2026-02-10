@@ -27,6 +27,7 @@ from opentelemetry.util.genai.types import (
     MCPToolCall,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    detect_client_network_transport,
     safe_serialize,
     should_capture_content,
     truncate_if_needed,
@@ -180,6 +181,9 @@ class ClientInstrumentor:
             # Get parent agent invocation for context
             parent_session = instrumentor._active_sessions.get(id(instance))
 
+            # Detect transport type from the client instance
+            network_transport = detect_client_network_transport(instance)
+
             # Create a MCPToolCall for proper MCP metrics emission
             tool_call = MCPToolCall(
                 name=tool_name,
@@ -192,7 +196,7 @@ class ClientInstrumentor:
                 tool_type="extension",
                 # MCP semantic convention fields for metrics
                 mcp_method_name="tools/call",
-                network_transport="pipe",  # stdio = pipe
+                network_transport=network_transport,
                 is_client=True,  # This is client-side
             )
 
@@ -253,6 +257,9 @@ class ClientInstrumentor:
         async def traced_list_tools(wrapped, instance, args, kwargs):
             # Create a Step to represent the list_tools operation
             # Using MCP semantic convention attribute names
+            # Detect transport type from the client instance
+            network_transport = detect_client_network_transport(instance)
+
             step = Step(
                 name="list_tools",
                 step_type="admin",
@@ -261,7 +268,7 @@ class ClientInstrumentor:
                 system="mcp",
             )
             step.attributes["mcp.method.name"] = "tools/list"
-            step.attributes["network.transport"] = "pipe"  # stdio = pipe
+            step.attributes["network.transport"] = network_transport
 
             handler.start_step(step)
 

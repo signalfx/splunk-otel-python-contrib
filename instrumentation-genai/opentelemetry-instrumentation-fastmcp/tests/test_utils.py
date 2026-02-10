@@ -24,6 +24,8 @@ from opentelemetry.instrumentation.fastmcp.utils import (
     is_instrumentation_enabled,
     extract_tool_info,
     extract_result_content,
+    detect_client_network_transport,
+    detect_server_network_transport,
 )
 
 
@@ -233,3 +235,137 @@ class TestExtractResultContent:
         result = extract_result_content(MockResult())
         assert result is not None
         assert "item_value" in result
+
+
+class TestDetectClientNetworkTransport:
+    """Tests for detect_client_network_transport function."""
+
+    def test_no_transport_attribute(self):
+        """Test client with no transport attribute returns default 'pipe'."""
+        client = object()  # plain object, no .transport
+        assert detect_client_network_transport(client) == "pipe"
+
+    def test_none_transport(self):
+        """Test client with None transport returns default 'pipe'."""
+
+        class MockClient:
+            transport = None
+
+        assert detect_client_network_transport(MockClient()) == "pipe"
+
+    def test_stdio_transport(self):
+        """Test StdioTransport is detected as 'pipe'."""
+
+        class StdioTransport:
+            pass
+
+        class MockClient:
+            transport = StdioTransport()
+
+        assert detect_client_network_transport(MockClient()) == "pipe"
+
+    def test_python_stdio_transport(self):
+        """Test PythonStdioTransport (subclass name) is detected as 'pipe'."""
+
+        class PythonStdioTransport:
+            pass
+
+        class MockClient:
+            transport = PythonStdioTransport()
+
+        assert detect_client_network_transport(MockClient()) == "pipe"
+
+    def test_sse_transport(self):
+        """Test SSETransport is detected as 'tcp'."""
+
+        class SSETransport:
+            pass
+
+        class MockClient:
+            transport = SSETransport()
+
+        assert detect_client_network_transport(MockClient()) == "tcp"
+
+    def test_streamable_http_transport(self):
+        """Test StreamableHttpTransport is detected as 'tcp'."""
+
+        class StreamableHttpTransport:
+            pass
+
+        class MockClient:
+            transport = StreamableHttpTransport()
+
+        assert detect_client_network_transport(MockClient()) == "tcp"
+
+    def test_fastmcp_transport_inproc(self):
+        """Test FastMCPTransport (in-memory) is detected as 'inproc'."""
+
+        class FastMCPTransport:
+            pass
+
+        class MockClient:
+            transport = FastMCPTransport()
+
+        assert detect_client_network_transport(MockClient()) == "inproc"
+
+    def test_unknown_transport_defaults_to_pipe(self):
+        """Test unknown transport type returns 'pipe'."""
+
+        class CustomTransport:
+            pass
+
+        class MockClient:
+            transport = CustomTransport()
+
+        assert detect_client_network_transport(MockClient()) == "pipe"
+
+    def test_transport_attribute_error(self):
+        """Test exception during detection returns 'pipe'."""
+
+        class BadClient:
+            @property
+            def transport(self):
+                raise RuntimeError("broken")
+
+        assert detect_client_network_transport(BadClient()) == "pipe"
+
+
+class TestDetectServerNetworkTransport:
+    """Tests for detect_server_network_transport function."""
+
+    def test_default_returns_pipe(self):
+        """Test that default (no context set) returns 'pipe'."""
+        # With no ContextVar set and no request_ctx, should default to pipe
+        assert detect_server_network_transport() == "pipe"
+
+    def test_http_request_context_returns_tcp(self):
+        """Test that an HTTP request context is detected as 'tcp'."""
+        from fastmcp.server.context import request_ctx
+        from unittest.mock import MagicMock
+
+        mock_ctx = MagicMock()
+        mock_ctx.request = MagicMock()
+        mock_ctx.request.headers = {"mcp-session-id": "test-123"}
+
+        token = request_ctx.set(mock_ctx)
+        try:
+            assert detect_server_network_transport() == "tcp"
+        finally:
+            request_ctx.reset(token)
+
+    def test_no_request_in_context_returns_pipe(self):
+        """Test that a request context without HTTP request returns 'pipe'."""
+        from fastmcp.server.context import request_ctx
+        from unittest.mock import MagicMock
+
+        mock_ctx = MagicMock(spec=[])  # no attributes at all
+        token = request_ctx.set(mock_ctx)
+        try:
+            assert detect_server_network_transport() == "pipe"
+        finally:
+            request_ctx.reset(token)
+
+    def test_import_error_defaults_to_pipe(self):
+        """Test that import error returns 'pipe' gracefully."""
+        with patch.dict("sys.modules", {"fastmcp.server.context": None}):
+            assert detect_server_network_transport() == "pipe"

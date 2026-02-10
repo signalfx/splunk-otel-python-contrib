@@ -166,3 +166,62 @@ class TestClientInstrumentor:
         assert step.step_type == "admin"
         assert step.attributes["mcp.method.name"] == "tools/list"
         assert step.attributes["network.transport"] == "pipe"
+
+    @pytest.mark.asyncio
+    async def test_client_call_tool_detects_sse_transport(self, mock_telemetry_handler):
+        """Test that call_tool detects SSE transport as 'tcp'."""
+        instrumentor = ClientInstrumentor(mock_telemetry_handler)
+        wrapper = instrumentor._client_call_tool_wrapper()
+
+        # Create a mock client with SSETransport
+        class SSETransport:
+            pass
+
+        mock_instance = MagicMock()
+        mock_instance.transport = SSETransport()
+        mock_wrapped = AsyncMock(return_value=MagicMock())
+
+        await wrapper(mock_wrapped, mock_instance, ("my_tool",), {})
+
+        tool_call = mock_telemetry_handler.start_tool_call.call_args[0][0]
+        assert tool_call.network_transport == "tcp"
+
+    @pytest.mark.asyncio
+    async def test_client_call_tool_detects_http_transport(
+        self, mock_telemetry_handler
+    ):
+        """Test that call_tool detects StreamableHttpTransport as 'tcp'."""
+        instrumentor = ClientInstrumentor(mock_telemetry_handler)
+        wrapper = instrumentor._client_call_tool_wrapper()
+
+        class StreamableHttpTransport:
+            pass
+
+        mock_instance = MagicMock()
+        mock_instance.transport = StreamableHttpTransport()
+        mock_wrapped = AsyncMock(return_value=MagicMock())
+
+        await wrapper(mock_wrapped, mock_instance, ("my_tool",), {})
+
+        tool_call = mock_telemetry_handler.start_tool_call.call_args[0][0]
+        assert tool_call.network_transport == "tcp"
+
+    @pytest.mark.asyncio
+    async def test_client_list_tools_detects_sse_transport(
+        self, mock_telemetry_handler
+    ):
+        """Test that list_tools detects SSE transport as 'tcp'."""
+        instrumentor = ClientInstrumentor(mock_telemetry_handler)
+        wrapper = instrumentor._client_list_tools_wrapper()
+
+        class SSETransport:
+            pass
+
+        mock_instance = MagicMock()
+        mock_instance.transport = SSETransport()
+        mock_wrapped = AsyncMock(return_value=MagicMock(tools=[]))
+
+        await wrapper(mock_wrapped, mock_instance, (), {})
+
+        step = mock_telemetry_handler.start_step.call_args[0][0]
+        assert step.attributes["network.transport"] == "tcp"

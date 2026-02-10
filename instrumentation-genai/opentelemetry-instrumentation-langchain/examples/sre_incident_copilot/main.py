@@ -248,7 +248,9 @@ def _generate_postmortem_draft(state: IncidentState) -> str:
     return postmortem
 
 
-def run_scenario(scenario_id: str, config: Config, session_id: str | None = None) -> IncidentState:
+def run_scenario(
+    scenario_id: str, config: Config, session_id: str | None = None
+) -> IncidentState:
     """Run a scenario end-to-end."""
     data_loader = DataLoader(data_dir=config.data_dir)
 
@@ -322,7 +324,9 @@ def run_scenario(scenario_id: str, config: Config, session_id: str | None = None
                     print(f"   → Routing to action_planner (service: {service_id})")
                 else:
                     print(f"   → Routing to action_planner (service: {service_id})")
-                    print("   ⚠️  Warning: Investigation not completed via agent-as-tool")
+                    print(
+                        "   ⚠️  Warning: Investigation not completed via agent-as-tool"
+                    )
             elif node_name == "action_planner":
                 action_plan = node_state.get("action_plan", {})
                 mitigation_plan = (
