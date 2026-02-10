@@ -2,6 +2,18 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.13 - 2026-02-09
+
+### Added
+- **DeepEval Bootstrap** - `_configure_deepeval.py` sets DeepEval environment variables early and imports the external package to prevent module shadowing.
+- **Output Suppression Utilities** - `suppress_output.py` provides helpers to quiet DeepEval/LiteLLM logs, stdout, and rich console output.
+
+### Changed
+- **Import Ordering** - DeepEval runner/adapter/metrics now import configuration and suppression helpers to avoid noisy startup warnings.
+
+### Fixed
+- **Module Shadowing** - Ensures local `deepeval.py` does not shadow the external `deepeval` package via early import ordering.
+
 ## Version 0.1.12 - 2026-01-30
 
 ### Fixed

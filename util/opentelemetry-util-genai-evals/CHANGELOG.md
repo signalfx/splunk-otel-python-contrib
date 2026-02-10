@@ -2,6 +2,19 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.8 - 2026-02-09
+
+### Added
+
+- **Evaluation Manager Status APIs** - New `Manager` queue/worker monitoring helpers and `get_status()` summary with error counts.
+- **Progress-Aware Waiting** - `Manager.wait_for_all_with_progress()` to poll evaluation completion with optional callback.
+- **Edge Case Test Script** - `scripts/test_edge_cases.py` to validate process separation, worker recovery, backpressure, IPC overhead, and shutdown.
+
+### Changed
+
+- **Separate Process Evaluation** - New IPC proxy/serialization/worker components and bootstrap updates for isolated evaluation execution.
+
+
 ## Version 0.1.7 - 2026-01-28
 
 ### Added
