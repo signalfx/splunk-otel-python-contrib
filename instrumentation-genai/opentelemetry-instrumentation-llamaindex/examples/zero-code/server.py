@@ -9,8 +9,8 @@ Run with: opentelemetry-instrument python server.py
 
 import json
 import os
-import base64
-import time
+import sys
+from pathlib import Path
 from typing import Any
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -22,56 +22,21 @@ from llama_index.core.llms.callbacks import llm_chat_callback
 from llama_index.llms.openai import OpenAI
 
 
-class OAuth2TokenManager:
-    """Simple OAuth2 client-credentials token manager for custom LLM gateways."""
+def create_oauth2_token_manager(
+    *, token_url: str, client_id: str, client_secret: str, scope: str | None
+) -> Any:
+    """Create shared OAuth2 token manager from examples/util."""
+    util_path = str(Path(__file__).resolve().parent.parent)
+    if util_path not in sys.path:
+        sys.path.insert(0, util_path)
+    from util import OAuth2TokenManager
 
-    def __init__(
-        self,
-        *,
-        token_url: str,
-        client_id: str,
-        client_secret: str,
-        scope: str | None = None,
-        token_refresh_buffer_seconds: int = 300,
-    ) -> None:
-        self.token_url = token_url
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.scope = scope
-        self.token_refresh_buffer = token_refresh_buffer_seconds
-        self._token: str | None = None
-        self._token_expiry = 0.0
-
-    def get_token(self) -> str:
-        if self._token and time.time() < (
-            self._token_expiry - self.token_refresh_buffer
-        ):
-            return self._token
-        return self._refresh_token()
-
-    def _refresh_token(self) -> str:
-        credentials = base64.b64encode(
-            f"{self.client_id}:{self.client_secret}".encode()
-        ).decode()
-        data = {"grant_type": "client_credentials"}
-        if self.scope:
-            data["scope"] = self.scope
-        response = requests.post(
-            self.token_url,
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": f"Basic {credentials}",
-            },
-            data=data,
-            timeout=30,
-        )
-        response.raise_for_status()
-        token_data = response.json()
-        self._token = str(token_data["access_token"])
-        expires_in = int(token_data.get("expires_in", 3600))
-        self._token_expiry = time.time() + expires_in
-        return self._token
+    return OAuth2TokenManager(
+        token_url=token_url,
+        client_id=client_id,
+        client_secret=client_secret,
+        scope=scope,
+    )
 
 
 # =============================================================================
@@ -85,9 +50,9 @@ LLM_APP_KEY = os.environ.get("LLM_APP_KEY")
 USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
 
 # Initialize token manager if OAuth2 credentials are present
-token_manager: OAuth2TokenManager | None = None
+token_manager: Any | None = None
 if USE_OAUTH2:
-    token_manager = OAuth2TokenManager(
+    token_manager = create_oauth2_token_manager(
         token_url=os.environ.get("LLM_TOKEN_URL", ""),
         client_id=os.environ.get("LLM_CLIENT_ID", ""),
         client_secret=os.environ.get("LLM_CLIENT_SECRET", ""),
@@ -100,7 +65,7 @@ class CircuITLLM(CustomLLM):
     """Custom LLM implementation for Cisco CircuIT gateway."""
 
     api_url: str
-    token_manager: OAuth2TokenManager
+    token_manager: Any
     app_key: str | None = None
     model_name: str = "gpt-4o-mini"
     temperature: float = 0.0
