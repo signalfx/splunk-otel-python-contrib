@@ -23,7 +23,10 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     Error,
@@ -31,6 +34,7 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
+    Workflow,
 )
 
 STABILITY_EXPERIMENTAL: dict[str, str] = {}
@@ -401,6 +405,116 @@ class TestMetricsEmission(unittest.TestCase):
         self.assertTrue(
             inherited,
             "Expected metrics to inherit agent identity from active agent context",
+        )
+
+    def test_cross_handler_parent_context_propagates_agent_and_workflow(self):
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            if hasattr(get_telemetry_handler, "_default_handler"):
+                delattr(get_telemetry_handler, "_default_handler")
+            parent_handler = TelemetryHandler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            child_handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+
+            workflow = Workflow(
+                name="crew_workflow",
+                workflow_type="crewai.crew",
+                framework="crewai",
+                system="crewai",
+            )
+            parent_handler.start_workflow(workflow)
+            agent = AgentInvocation(
+                name="crew_agent",
+                model="agent-model",
+                framework="crewai",
+                system="crewai",
+            )
+            parent_handler.start_agent(agent)
+
+            inv = LLMInvocation(
+                request_model="m3",
+                input_messages=[
+                    InputMessage(role="user", parts=[Text(content="hello")])
+                ],
+            )
+            child_handler.start_llm(inv)
+            time.sleep(0.01)
+            inv.output_messages = [
+                OutputMessage(
+                    role="assistant",
+                    parts=[Text(content="hi")],
+                    finish_reason="stop",
+                )
+            ]
+            inv.input_tokens = 3
+            inv.output_tokens = 4
+            child_handler.stop_llm(inv)
+
+            parent_handler.stop_agent(agent)
+            parent_handler.stop_workflow(workflow)
+
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            self.metric_reader.collect()
+
+        self.assertEqual(inv.agent_name, "crew_agent")
+        self.assertEqual(inv.agent_id, str(agent.run_id))
+        self.assertEqual(
+            inv.attributes.get("gen_ai.workflow.name"), "crew_workflow"
+        )
+
+        spans = self.span_exporter.get_finished_spans()
+        llm_span = next((s for s in spans if s.name == "chat m3"), None)
+        self.assertIsNotNone(llm_span, "Expected child LLM span to be emitted")
+        attrs = llm_span.attributes if llm_span is not None else {}
+        self.assertEqual(attrs.get("gen_ai.agent.name"), "crew_agent")
+        self.assertEqual(attrs.get("gen_ai.agent.id"), str(agent.run_id))
+        self.assertEqual(attrs.get("gen_ai.workflow.name"), "crew_workflow")
+
+        metrics_list = self._collect_metrics()
+        saw_duration = False
+        saw_tokens = False
+        for metric in metrics_list:
+            if metric.name not in (
+                "gen_ai.client.token.usage",
+                "gen_ai.client.operation.duration",
+            ):
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                metric_attrs = getattr(dp, "attributes", {}) or {}
+                if (
+                    metric_attrs.get("gen_ai.agent.name") == "crew_agent"
+                    and metric_attrs.get("gen_ai.agent.id")
+                    == str(agent.run_id)
+                    and metric_attrs.get("gen_ai.workflow.name")
+                    == "crew_workflow"
+                ):
+                    if metric.name == "gen_ai.client.token.usage":
+                        saw_tokens = True
+                    else:
+                        saw_duration = True
+        self.assertTrue(
+            saw_duration,
+            "Expected duration metric to include inherited agent/workflow context",
+        )
+        self.assertTrue(
+            saw_tokens,
+            "Expected token usage metric to include inherited agent/workflow context",
         )
 
     def test_llm_duration_metric_includes_error_type_on_failure(self):

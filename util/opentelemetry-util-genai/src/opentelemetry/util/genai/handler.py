@@ -77,6 +77,11 @@ from opentelemetry.trace import (
 from opentelemetry.util.genai.emitters.configuration import (
     build_emitter_pipeline,
 )
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_AGENT_ID,
+    GEN_AI_AGENT_NAME,
+    GEN_AI_WORKFLOW_NAME,
+)
 from opentelemetry.util.genai.span_context import (
     extract_span_context,
     span_context_hex_ids,
@@ -254,6 +259,8 @@ class TelemetryHandler:
         self._evaluation_manager = None
         # Active agent identity stack (name, id) for implicit propagation to nested operations
         self._agent_context_stack: list[tuple[str, str]] = []
+        # Active workflow name stack for implicit propagation to nested operations
+        self._workflow_context_stack: list[str] = []
         # Span registry (run_id -> Span) to allow parenting even after original invocation ended.
         # We intentionally retain ended parent spans to preserve trace linkage for late children
         # (e.g., final LLM call after agent/workflow termination). A lightweight size cap can be
@@ -340,6 +347,51 @@ class TelemetryHandler:
         except Exception:
             pass
 
+    @staticmethod
+    def _get_current_span_attribute(key: str) -> Optional[Any]:
+        """Best-effort extraction of an attribute from the active span."""
+        try:
+            current_span = _trace_mod.get_current_span()
+        except Exception:
+            return None
+        if current_span is None:
+            return None
+        attributes = getattr(current_span, "attributes", None)
+        if attributes is None:
+            attributes = getattr(current_span, "_attributes", None)
+        if not attributes:
+            return None
+        try:
+            return attributes.get(key)
+        except Exception:
+            return None
+
+    def _inherit_parent_context_attributes(self, invocation: GenAI) -> None:
+        """Propagate agent/workflow identity from active parent span context."""
+        if not invocation.agent_name:
+            parent_agent_name = self._get_current_span_attribute(
+                GEN_AI_AGENT_NAME
+            )
+            if isinstance(parent_agent_name, str) and parent_agent_name:
+                invocation.agent_name = parent_agent_name
+
+        if not invocation.agent_id:
+            parent_agent_id = self._get_current_span_attribute(GEN_AI_AGENT_ID)
+            if isinstance(parent_agent_id, str) and parent_agent_id:
+                invocation.agent_id = parent_agent_id
+
+        if GEN_AI_WORKFLOW_NAME not in invocation.attributes:
+            parent_workflow_name = self._get_current_span_attribute(
+                GEN_AI_WORKFLOW_NAME
+            )
+            if (
+                isinstance(parent_workflow_name, str)
+                and parent_workflow_name
+            ):
+                invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                    parent_workflow_name
+                )
+
     def start_llm(
         self,
         invocation: LLMInvocation,
@@ -357,6 +409,14 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
+        if (
+            GEN_AI_WORKFLOW_NAME not in invocation.attributes
+            and self._workflow_context_stack
+        ):
+            invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                self._workflow_context_stack[-1]
+            )
+        self._inherit_parent_context_attributes(invocation)
         # Start invocation span; tracer context propagation handles parent/child links
         self._emitter.on_start(invocation)
         # Register span if created
@@ -475,6 +535,14 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
+        if (
+            GEN_AI_WORKFLOW_NAME not in invocation.attributes
+            and self._workflow_context_stack
+        ):
+            invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                self._workflow_context_stack[-1]
+            )
+        self._inherit_parent_context_attributes(invocation)
         invocation.start_time = time.time()
         self._emitter.on_start(invocation)
         span = getattr(invocation, "span", None)
@@ -541,6 +609,14 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
+        if (
+            GEN_AI_WORKFLOW_NAME not in invocation.attributes
+            and self._workflow_context_stack
+        ):
+            invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                self._workflow_context_stack[-1]
+            )
+        self._inherit_parent_context_attributes(invocation)
         invocation.start_time = time.time()
         self._emitter.on_start(invocation)
         span = getattr(invocation, "span", None)
@@ -603,6 +679,14 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
+        if (
+            GEN_AI_WORKFLOW_NAME not in invocation.attributes
+            and self._workflow_context_stack
+        ):
+            invocation.attributes[GEN_AI_WORKFLOW_NAME] = (
+                self._workflow_context_stack[-1]
+            )
+        self._inherit_parent_context_attributes(invocation)
         self._emitter.on_start(invocation)
         span = getattr(invocation, "span", None)
         if span is not None:
@@ -643,6 +727,8 @@ class TelemetryHandler:
         if span is not None:
             self._span_registry[str(workflow.run_id)] = span
         self._entity_registry[str(workflow.run_id)] = workflow
+        if workflow.name:
+            self._workflow_context_stack.append(workflow.name)
         return workflow
 
     def _handle_evaluation_results(
@@ -784,6 +870,14 @@ class TelemetryHandler:
                 self._meter_provider.force_flush()  # type: ignore[attr-defined]
             except Exception:
                 pass
+        try:
+            if (
+                self._workflow_context_stack
+                and self._workflow_context_stack[-1] == workflow.name
+            ):
+                self._workflow_context_stack.pop()
+        except Exception:
+            pass
         return workflow
 
     def fail_workflow(self, workflow: Workflow, error: Error) -> Workflow:
@@ -800,6 +894,14 @@ class TelemetryHandler:
                 self._meter_provider.force_flush()  # type: ignore[attr-defined]
             except Exception:
                 pass
+        try:
+            if (
+                self._workflow_context_stack
+                and self._workflow_context_stack[-1] == workflow.name
+            ):
+                self._workflow_context_stack.pop()
+        except Exception:
+            pass
         return workflow
 
     # Agent lifecycle -----------------------------------------------------
@@ -808,6 +910,14 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
+        if (
+            GEN_AI_WORKFLOW_NAME not in agent.attributes
+            and self._workflow_context_stack
+        ):
+            agent.attributes[GEN_AI_WORKFLOW_NAME] = (
+                self._workflow_context_stack[-1]
+            )
+        self._inherit_parent_context_attributes(agent)
         self._emitter.on_start(agent)
         span = getattr(agent, "span", None)
         if span is not None:
