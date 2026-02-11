@@ -9,8 +9,6 @@ Run with: opentelemetry-instrument python server.py
 
 import json
 import os
-import sys
-from pathlib import Path
 from typing import Any
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -20,24 +18,6 @@ from llama_index.core.base.llms.types import ChatMessage, ChatResponse, MessageR
 from llama_index.core.llms import CustomLLM, CompletionResponse, LLMMetadata
 from llama_index.core.llms.callbacks import llm_chat_callback
 from llama_index.llms.openai import OpenAI
-
-
-def create_oauth2_token_manager(
-    *, token_url: str, client_id: str, client_secret: str, scope: str | None
-) -> Any:
-    """Create shared OAuth2 token manager from examples/util."""
-    util_path = str(Path(__file__).resolve().parent.parent)
-    if util_path not in sys.path:
-        sys.path.insert(0, util_path)
-    from util import OAuth2TokenManager
-
-    return OAuth2TokenManager(
-        token_url=token_url,
-        client_id=client_id,
-        client_secret=client_secret,
-        scope=scope,
-    )
-
 
 # =============================================================================
 # LLM Configuration - OAuth2 Provider
@@ -52,7 +32,15 @@ USE_OAUTH2 = bool(os.environ.get("LLM_CLIENT_ID"))
 # Initialize token manager if OAuth2 credentials are present
 token_manager: Any | None = None
 if USE_OAUTH2:
-    token_manager = create_oauth2_token_manager(
+    try:
+        from util import OAuth2TokenManager
+    except ImportError as exc:
+        raise RuntimeError(
+            "OAuth2TokenManager import failed. Ensure examples/util is on PYTHONPATH "
+            "(e.g., export PYTHONPATH=.. when running from examples/zero-code)."
+        ) from exc
+
+    token_manager = OAuth2TokenManager(
         token_url=os.environ.get("LLM_TOKEN_URL", ""),
         client_id=os.environ.get("LLM_CLIENT_ID", ""),
         client_secret=os.environ.get("LLM_CLIENT_SECRET", ""),
