@@ -1,0 +1,13 @@
+# OpenAI and LiteLLM
+openai>=1.0.0
+litellm>=1.0.0
+
+# Splunk GenAI utilities and emitters
+splunk-otel-instrumentation-crewai>=0.1.2
+splunk-otel-util-genai>=0.1.9
+splunk-otel-genai-emitters-splunk>=0.1.6
+splunk-otel-util-genai-evals>=0.1.7
+splunk-otel-genai-evals-deepeval>=0.1.6
+
+# DeepEval for evaluations
+deepeval>=3.0.0
