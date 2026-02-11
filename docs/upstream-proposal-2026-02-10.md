@@ -38,7 +38,7 @@ The core goals are:
 
 1. **Standardized session attribute** — Use `gen_ai.conversation.id` as the standard upstream convention for session/conversation tracking in GenAI observability
 2. **Turn = Trace model** — Each conversational turn maps to a single trace ID; `gen_ai.conversation.id` is the grouping key across turns
-3. **User and custom attribute propagation** — Propagate `enduser.id` and arbitrary association attributes (Traceloop-style) via OTel Baggage
+3. **User and custom attribute propagation** — Propagate `user.id` and arbitrary association attributes (Traceloop-style) via OTel Baggage
 4. **Cross-RPC propagation** — Via W3C Baggage header for MCP and agent-to-agent protocols
 5. **Restriction mechanisms** — Policies for disabling propagation at trust boundaries
 
@@ -48,7 +48,7 @@ The core goals are:
 |----------|-----------|
 | Use `gen_ai.conversation.id` as the standard session attribute | Aligns with GenAI semconv namespace; unambiguous GenAI-specific grouping key |
 | Each turn = one trace ID | The session/conversation attribute groups traces across turns; within a turn, trace context provides correlation |
-| Use existing `enduser.id` (not `gen_ai.user.id`) | lmolkova confirmed in [#1872](https://github.com/open-telemetry/semantic-conventions/issues/1872): existing semconv attribute is sufficient |
+| Use existing `user.id` (not `gen_ai.user.id` or `enduser.id`) | lmolkova confirmed in [#1872](https://github.com/open-telemetry/semantic-conventions/issues/1872): existing semconv attribute is sufficient. SDOT implementation uses `user.id` (not the deprecated `enduser.id`) |
 | Support custom association attributes | Traceloop's `set_association_properties()` pattern is widely adopted; support arbitrary key-value propagation |
 | Propagate via standard OTel Baggage | W3C standard, supported across all OTel SDKs |
 
@@ -71,7 +71,7 @@ invocations — are child spans. `gen_ai.conversation.id` is the grouping key ac
 
 ```
 Session attribute: gen_ai.conversation.id = "conv-abc123"
-User attribute:    enduser.id             = "user-456"
+User attribute:    user.id                = "user-456"
 
 ├─ Turn 1: "What is observability?"
 │  └─ Trace A (trace_id=aaa...)        ← one trace per turn
@@ -109,7 +109,7 @@ within it. The session attribute and user identity propagate via Baggage:
 Turn: user asks "Analyze the latest security incidents"
 Trace ID: xxx-yyy-zzz (single trace for this turn)
 Session:  gen_ai.conversation.id = "conv-xyz789"
-User:     enduser.id = "user-456"
+User:     user.id = "user-456"
 Custom:   genai.association.department = "security"
 
 ├─ Orchestrator Agent (Service A)
@@ -167,7 +167,7 @@ observability is **`gen_ai.conversation.id`**. This attribute:
 |-------|-------|--------|----------------|
 | [#2883](https://github.com/open-telemetry/semantic-conventions/issues/2883) | Add `session.id` attribute to GenAI semantic conventions | `triage:deciding:needs-info` | lmolkova requests concrete scenarios; 91pavan has working PoC |
 | [#1872](https://github.com/open-telemetry/semantic-conventions/issues/1872) | Add Gen AI user and session Semantic Conventions | Todo (GenAI SIG project) | lmolkova confirmed: use existing `session.id`, document in GenAI conventions |
-| [#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418) | Enhancing OTel GenAI Semantic Conventions with a User-Centric Entry Span | Open | Proposes `gen_ai.operation.name = enter` with `session.id` and `enduser.id` as RECOMMENDED |
+| [#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418) | Enhancing OTel GenAI Semantic Conventions with a User-Centric Entry Span | Open | Proposes `gen_ai.operation.name = enter` with `session.id` and `user.id` as RECOMMENDED |
 
 ### Closed PRs
 
@@ -226,7 +226,7 @@ groups:
           interactions across turns (traces). Each turn SHOULD produce
           one trace; gen_ai.conversation.id groups traces into a
           conversation/session.
-      - ref: enduser.id
+      - ref: user.id
         requirement_level: recommended
         note: >
           User identifier for attributing GenAI interactions to a
@@ -246,7 +246,7 @@ proposal is to **reference and recommend** them in GenAI span conventions:
 | Attribute | Type | Requirement | Description | Example |
 |-----------|------|-------------|-------------|---------|
 | `gen_ai.conversation.id` | string | Recommended | Conversation/session identifier grouping related GenAI interactions across turns | `"conv-abc123"` |
-| `enduser.id` | string | Recommended | End-user identifier | `"user-456"` |
+| `user.id` | string | Recommended | End-user identifier | `"user-456"` |
 
 ### Optional Extension Attributes
 
@@ -263,7 +263,7 @@ These are used in SDOT but may be proposed later once `gen_ai.conversation.id` i
 | `session.id` | General-purpose session attribute (web, mobile); `gen_ai.conversation.id` is the GenAI-specific equivalent |
 | `mcp.session.id` | MCP protocol-level session (transport layer); distinct from application-level `gen_ai.conversation.id` |
 | `gen_ai.agent.id` | Agent instance ID (per-invocation); orthogonal to conversation |
-| `enduser.id` | User who owns the conversation/session |
+| `user.id` | User who owns the conversation/session |
 
 ---
 
@@ -278,7 +278,7 @@ lifecycle handler.
 ```
 ┌─────────────────────────────────────────────────┐
 │  Application Code                               │
-│  with session_scope(session_id="conv-123"):     │
+│  with session_context(session_id="conv-123"):    │
 │      result = chain.invoke(...)                  │
 └───────────────────┬─────────────────────────────┘
                     │
@@ -372,21 +372,10 @@ class SessionContext:
         return not any([self.session_id, self.user_id, self.customer_id,
                         self.association_properties])
 
-    def to_baggage(self, ctx: Context | None = None) -> Context:
-        """Convert to OTel baggage context for cross-service propagation."""
-        ctx = ctx or context.get_current()
-        if self.session_id:
-            ctx = baggage.set_baggage("gen_ai.conversation.id", self.session_id, ctx)
-        if self.user_id:
-            ctx = baggage.set_baggage("enduser.id", self.user_id, ctx)
-        if self.customer_id:
-            ctx = baggage.set_baggage("customer.id", self.customer_id, ctx)
-        # Propagate custom association properties
-        for key, value in self.association_properties.items():
-            ctx = baggage.set_baggage(
-                f"genai.association.{key}", value, ctx
-            )
-        return ctx
+# Baggage is set by the standalone _set_session_baggage() function
+# in handler.py, called from set_session_context() and session_context().
+# The implementation sets these baggage keys:
+#   gen_ai.conversation.id, user.id, customer.id, genai.association.<key>
 ```
 
 ### Agent Context Stack for Child Span Propagation
@@ -415,49 +404,68 @@ class TelemetryHandler:
                 invocation.agent_id = top_id
 ```
 
-### Proposed SessionPropagator API
+### Session Context API (Implemented)
+
+The actual public API uses `set_session_context()` and `session_context()` (context manager),
+exported from `opentelemetry.util.genai.handler`:
 
 ```python
-# Proposed: opentelemetry-util-genai session.py
+# util/opentelemetry-util-genai/src/opentelemetry/util/genai/handler.py
 
-from contextvars import ContextVar
-from contextlib import contextmanager
-from opentelemetry import baggage, context
+from opentelemetry.util.genai.handler import set_session_context, session_context
 
-_session_context: ContextVar[SessionContext] = ContextVar(
-    "genai_session", default=SessionContext()
+# Imperative API — set session for current execution scope
+set_session_context(
+    session_id="conv-123",
+    user_id="user-456",
+    customer_id="customer-789",
+    association_properties={"tenant": "acme", "env": "staging"},
+    propagate_via_baggage=True,  # default: controlled by env var
 )
 
-def set_session(
+# Context manager API — auto-restores previous session on exit
+with session_context(
+    session_id="conv-123",
+    user_id="user-456",
+    association_properties={"tenant": "acme"},
+) as ctx:
+    # ctx is the SessionContext; all GenAI spans within this
+    # scope automatically inherit session + association attributes
+    result = chain.invoke(...)
+```
+
+Under the hood, `set_session_context()` and `session_context()` call the internal
+`_set_session_baggage()` function which sets baggage keys:
+
+```python
+# Internal: _set_session_baggage() in handler.py
+def _set_session_baggage(
     session_id: str | None = None,
     user_id: str | None = None,
     customer_id: str | None = None,
     association_properties: dict[str, str] | None = None,
-    propagate_via_baggage: bool = True,
-) -> object:
-    """Set session context for current execution scope.
+) -> None:
+    ctx = context.get_current()
+    if session_id:
+        ctx = baggage.set_baggage("gen_ai.conversation.id", session_id, ctx)
+    if user_id:
+        ctx = baggage.set_baggage("user.id", user_id, ctx)
+    if customer_id:
+        ctx = baggage.set_baggage("customer.id", customer_id, ctx)
+    if association_properties:
+        for key, value in association_properties.items():
+            ctx = baggage.set_baggage(f"genai.association.{key}", value, ctx)
+    context.attach(ctx)
+```
 
-    Args:
-        session_id: Session/conversation identifier (emitted as
-            gen_ai.conversation.id)
-        user_id: End-user identifier (emitted as enduser.id)
-        customer_id: Customer/tenant identifier
-        association_properties: Custom key-value pairs propagated to
-            all spans in scope (Traceloop-style). Emitted with
-            configurable prefix (default: genai.association.*)
-        propagate_via_baggage: Whether to propagate via OTel Baggage
-            for cross-service visibility (default: True)
-    """
-    session = SessionContext(
-        session_id, user_id, customer_id,
-        association_properties=association_properties or {},
-    )
-    token = _session_context.set(session)
-    if propagate_via_baggage:
-        ctx = session.to_baggage()
-        context.attach(ctx)
-    return token
+### Proposed Extension: `set_association_properties()` (Not Yet Implemented)
 
+A standalone Traceloop-compatible API that merges association properties with
+the existing session context. Currently, users pass `association_properties` as
+a dict to `set_session_context()` or `session_context()`.
+
+```python
+# Proposed API (not yet implemented)
 def set_association_properties(
     properties: dict[str, str],
     propagate_via_baggage: bool = True,
@@ -476,48 +484,14 @@ def set_association_properties(
     """
     current = _session_context.get()
     merged = {**current.association_properties, **properties}
-    return set_session(
+    return set_session_context(
         session_id=current.session_id,
         user_id=current.user_id,
         customer_id=current.customer_id,
         association_properties=merged,
         propagate_via_baggage=propagate_via_baggage,
     )
-
-@contextmanager
-def session_scope(
-    session_id: str | None = None,
-    user_id: str | None = None,
-    association_properties: dict[str, str] | None = None,
-    propagate_via_baggage: bool = True,
-):
-    """Context manager for scoped session tracking.
-
-    Usage:
-        # Basic session with user
-        with session_scope(session_id="conv-123", user_id="user-456"):
-            result = chain.invoke(...)
-
-        # With custom association properties
-        with session_scope(
-            session_id="conv-123",
-            user_id="user-456",
-            association_properties={
-                "chat_id": "chat-789",
-                "department": "engineering",
-            },
-        ):
-            result = chain.invoke(...)
-    """
-    token = set_session(
-        session_id, user_id,
-        association_properties=association_properties,
-        propagate_via_baggage=propagate_via_baggage,
-    )
-    try:
-        yield get_session()
-    finally:
-        clear_session(token)
+```
 ```
 
 ---
@@ -534,7 +508,7 @@ across service boundaries using the standard W3C Baggage header alongside
 HTTP Header:
   traceparent: 00-abc123def456...
   tracestate: vendor=splunk
-  baggage: gen_ai.conversation.id=conv-123,enduser.id=user-456,genai.association.chat_id=chat-789,genai.association.department=engineering
+  baggage: gen_ai.conversation.id=conv-123,user.id=user-456,genai.association.chat_id=chat-789,genai.association.department=engineering
 ```
 
 Each turn starts a new trace (`traceparent` has a fresh `trace_id`), but the
@@ -564,7 +538,7 @@ session attributes, user identity, and association properties:
 carrier = {}
 propagate.inject(carrier)
 # carrier = {"traceparent": "00-...", "tracestate": "...",
-#            "baggage": "gen_ai.conversation.id=conv-123,enduser.id=user-456,..."}
+#            "baggage": "gen_ai.conversation.id=conv-123,user.id=user-456,..."}
 
 # Server side — standard OTel extraction
 ctx = propagate.extract(carrier)
@@ -630,7 +604,7 @@ def call_third_party_llm(prompt: str) -> str:
 
     # Or selectively remove session attributes
     clean_ctx = baggage.remove_baggage("gen_ai.conversation.id", context.get_current())
-    clean_ctx = baggage.remove_baggage("enduser.id", clean_ctx)
+    clean_ctx = baggage.remove_baggage("user.id", clean_ctx)
 
     # Make the call with the clean context
     with context.use_context(clean_ctx):
@@ -650,11 +624,11 @@ states:
 > applicable privacy laws and regulations [and] protecting sensitive
 > information in your telemetry data.
 
-`gen_ai.conversation.id` and `enduser.id` may constitute Personally Identifiable
+`gen_ai.conversation.id` and `user.id` may constitute Personally Identifiable
 Information (PII) under GDPR, CCPA, and other regulations, especially when:
 
 - `gen_ai.conversation.id` contains user-derived data (e.g., email hashes, JWT claims)
-- `enduser.id` is a real user identifier (email, username)
+- `user.id` is a real user identifier (email, username)
 - These values are stored in telemetry backends with long retention periods
 
 #### Data Minimization Recommendations
@@ -664,7 +638,7 @@ Following OTel's [data minimization principle](https://opentelemetry.io/docs/sec
 | Recommendation | Implementation |
 |----------------|----------------|
 | Use opaque session IDs | Generate UUIDs, not user-derived values |
-| Hash `enduser.id` before emission | Use SHA-256 of actual user ID |
+| Hash `user.id` before emission | Use SHA-256 of actual user ID |
 | Do not propagate when unnecessary | Set `propagate_via_baggage=False` for local-only sessions |
 | Use Collector processors to redact | Configure `redaction` processor for telemetry pipeline |
 
@@ -678,9 +652,9 @@ processors:
     trace_statements:
       - context: span
         statements:
-          - set(attributes["enduser.hash"],
-                SHA256(attributes["enduser.id"]))
-          - delete_key(attributes, "enduser.id")
+          - set(attributes["user.hash"],
+                SHA256(attributes["user.id"]))
+          - delete_key(attributes, "user.id")
 
   # Redact gen_ai.conversation.id entirely for external-facing exports
   redaction/external:
@@ -703,73 +677,88 @@ MCP server should not trust `gen_ai.conversation.id` from an unknown client, as:
 - Cross-tenant session ID leakage in multi-tenant systems
 - Session fixation attacks where an attacker pre-sets a session ID
 
-#### Proposed `SessionRestrictionPolicy`
+#### Implemented: Baggage Key Allowlist (`OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS`)
 
-```python
-from enum import Enum
-
-class SessionRestrictionPolicy(Enum):
-    """Policy for handling incoming session context at trust boundaries."""
-
-    ACCEPT_ALL = "accept_all"
-    # Accept all incoming session context.
-    # Use ONLY in fully trusted internal environments.
-
-    ACCEPT_NONE = "reject_all"
-    # Reject all incoming session context; use local-only.
-    # Recommended for public-facing services.
-
-    ACCEPT_TRUSTED = "trusted_only"
-    # Accept from trusted origins only (allowlist).
-    # Recommended for semi-trusted environments (partner APIs).
-
-    ACCEPT_BAGGAGE_ONLY = "baggage_only"
-    # Accept only from OTel Baggage (not from application-level metadata).
-    # Ensures session was propagated through OTel-instrumented services.
-```
-
-#### Configuration via Environment Variables
+Instead of the originally proposed `SessionRestrictionPolicy` enum, SDOT implements
+a simpler, environment-variable-driven **baggage key allowlist**. This gives server
+operators fine-grained control over which incoming baggage keys are extracted into
+the local session context.
 
 ```bash
-# Restriction policy for session propagation
-OTEL_INSTRUMENTATION_GENAI_SESSION_POLICY=reject_all
+# Configuration via environment variable (server-side only)
 
-# Trusted origins allowlist (comma-separated)
-OTEL_INSTRUMENTATION_GENAI_SESSION_TRUSTED_ORIGINS=service-a.internal,service-b.internal
+# Default — accept only core session keys (safest)
+unset OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS
+# Equivalent to: gen_ai.conversation.id,user.id,customer.id
+
+# Accept session keys + all association properties
+export OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS="gen_ai.conversation.id,user.id,customer.id,genai.association.*"
+
+# Accept session keys + only specific association properties
+export OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS="gen_ai.conversation.id,user.id,genai.association.tenant"
+
+# Accept everything (development/trusted environments only)
+export OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS="*"
+
+# Block everything (disable baggage extraction entirely)
+export OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS="none"
 ```
+
+| Value | Behaviour |
+|-------|-----------|
+| *(unset / empty)* | **Default** — only accept `gen_ai.conversation.id`, `user.id`, `customer.id` |
+| `*` | Accept **all** baggage keys (**not recommended** across trust boundaries) |
+| Comma-separated list | Accept only the listed keys. Use `genai.association.*` as a wildcard to accept all association properties |
+| `none` | Reject all incoming baggage (disable extraction) |
 
 #### Implementation
 
+The allowlist is enforced in `restore_session_from_context()` which is called by
+the server-side transport instrumentor after `propagate.extract(carrier)`:
+
 ```python
-class SessionPropagator:
-    """Handles session propagation with restriction policies."""
+# instrumentation-genai/opentelemetry-instrumentation-fastmcp/src/.../propagation.py
 
-    def __init__(
-        self,
-        policy: SessionRestrictionPolicy = SessionRestrictionPolicy.ACCEPT_ALL,
-        trusted_origins: set[str] | None = None,
-    ):
-        self.policy = policy
-        self.trusted_origins = trusted_origins or set()
+_ASSOCIATION_PREFIX = "genai.association."
+_DEFAULT_ALLOWED_KEYS = frozenset({"gen_ai.conversation.id", "user.id", "customer.id"})
 
-    def extract_session(
-        self,
-        carrier: dict,
-        origin: str | None = None,
-    ) -> SessionContext | None:
-        """Extract session with policy enforcement.
+def _get_allowed_keys() -> frozenset[str] | None:
+    """Return the set of allowed baggage keys, or None if all keys are allowed."""
+    raw = os.environ.get(OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS, "").strip()
+    if not raw:
+        return _DEFAULT_ALLOWED_KEYS
+    if raw == "*":
+        return None  # accept everything
+    keys = {k.strip() for k in raw.split(",") if k.strip()}
+    return frozenset(keys) if keys else _DEFAULT_ALLOWED_KEYS
 
-        Returns None if the policy rejects the incoming session.
-        """
-        if self.policy == SessionRestrictionPolicy.ACCEPT_NONE:
-            return None
+def _is_key_allowed(key: str, allowed: frozenset[str] | None) -> bool:
+    if allowed is None:
+        return True  # wildcard – accept all
+    if key in allowed:
+        return True
+    # Check wildcard prefix: "genai.association.*" matches any association key
+    if key.startswith(_ASSOCIATION_PREFIX) and f"{_ASSOCIATION_PREFIX}*" in allowed:
+        return True
+    return False
 
-        if self.policy == SessionRestrictionPolicy.ACCEPT_TRUSTED:
-            if origin not in self.trusted_origins:
-                return None
-
-        return SessionContext.from_baggage(propagate.extract(carrier))
+def restore_session_from_context(ctx: Context) -> None:
+    """Extract session from baggage, filtered by allowlist."""
+    allowed = _get_allowed_keys()
+    # Only extract keys that pass the allowlist
+    session_id = baggage.get_baggage("gen_ai.conversation.id", ctx) \
+        if _is_key_allowed("gen_ai.conversation.id", allowed) else None
+    user_id = baggage.get_baggage("user.id", ctx) \
+        if _is_key_allowed("user.id", allowed) else None
+    # ... same pattern for customer_id and association properties
 ```
+
+> **Design rationale:** A key-level allowlist is simpler to configure and more
+> flexible than a policy enum. It covers the same use cases:
+> - `ACCEPT_ALL` = `BAGGAGE_ALLOWED_KEYS=*`
+> - `ACCEPT_NONE` = `BAGGAGE_ALLOWED_KEYS=none`
+> - `ACCEPT_TRUSTED` = explicit key list (e.g., `gen_ai.conversation.id` only)
+> - Fine-grained control over which association properties to accept
 
 ### 4. When to Disable Propagation Entirely
 
@@ -787,10 +776,10 @@ class SessionPropagator:
 #### Implementation Pattern: Disable Baggage Propagation
 
 ```python
-from opentelemetry.util.genai.session import session_scope
+from opentelemetry.util.genai.handler import session_context
 
 # Local-only session — NOT propagated via baggage
-with session_scope(
+with session_context(
     session_id="batch-job-123",
     propagate_via_baggage=False,  # ← Key: disables cross-service propagation
 ):
@@ -815,7 +804,7 @@ MAY drop entries **without notification**.
 
 | Risk | Mitigation |
 |------|------------|
-| Excessive baggage entries from multiple instrumentation layers | Limit to essential session attributes only (`gen_ai.conversation.id`, `enduser.id`) |
+| Excessive baggage entries from multiple instrumentation layers | Limit to essential session attributes only (`gen_ai.conversation.id`, `user.id`) |
 | Long session IDs (e.g., JWTs used as session IDs) | Use short opaque IDs; store full context server-side |
 | Accumulation across deep call chains | Clear non-essential baggage at service boundaries |
 
@@ -843,7 +832,7 @@ intermediary can:
 | Session ID spoofing by malicious client | Server-side validation: verify `gen_ai.conversation.id` exists in session store |
 | Session ID injection in multi-tenant system | Server assigns `gen_ai.conversation.id`; ignore client-provided value |
 | Eavesdropping on session metadata | Use TLS for all inter-service communication |
-| Tampering with `enduser.id` | Verify against authentication context (OAuth token, JWT) |
+| Tampering with `user.id` | Verify against authentication context (OAuth token, JWT) |
 
 #### Server-Side Validation Pattern
 
@@ -915,16 +904,16 @@ def handle_untrusted_request(request):
 
 ### 8. Summary: Decision Matrix for Propagation
 
-| Environment | Propagate `gen_ai.conversation.id`? | Propagate `enduser.id`? | Policy |
+| Environment | Propagate `gen_ai.conversation.id`? | Propagate `user.id`? | Mechanism |
 |-------------|------------------------|------------------------|--------|
-| Internal microservices (same trust zone) | ✅ Yes, via Baggage | ✅ Yes, via Baggage | `ACCEPT_ALL` |
-| Internal → third-party LLM API | ❌ No, clear baggage | ❌ No, clear baggage | Clear context |
-| Internal → partner MCP server | ⚠️ Yes, if trusted | ❌ No | `ACCEPT_TRUSTED` |
-| Public gateway → internal services | ⚠️ Validate, then assign | ⚠️ Derive from auth | `ACCEPT_NONE` + server-assign |
-| Public MCP server (open internet) | ❌ No, reject incoming | ❌ No, reject incoming | `ACCEPT_NONE` |
+| Internal microservices (same trust zone) | ✅ Yes, via Baggage | ✅ Yes, via Baggage | `BAGGAGE_ALLOWED_KEYS=*` |
+| Internal → third-party LLM API | ❌ No, clear baggage | ❌ No, clear baggage | Clear context before call |
+| Internal → partner MCP server | ⚠️ Yes, if trusted | ❌ No | `BAGGAGE_ALLOWED_KEYS=gen_ai.conversation.id` |
+| Public gateway → internal services | ⚠️ Validate, then assign | ⚠️ Derive from auth | `BAGGAGE_ALLOWED_KEYS=none` + server-assign |
+| Public MCP server (open internet) | ❌ No, reject incoming | ❌ No, reject incoming | `BAGGAGE_ALLOWED_KEYS=none` |
 | Batch / async processing | 🔧 Conditional | 🔧 Conditional | `propagate_via_baggage=False` |
-| Multi-tenant platform | ✅ Server-assigned only | ✅ Server-assigned only | `ACCEPT_NONE` + server-assign |
-| Development / local testing | ✅ Yes | ✅ Yes | `ACCEPT_ALL` |
+| Multi-tenant platform | ✅ Server-assigned only | ✅ Server-assigned only | `BAGGAGE_ALLOWED_KEYS=none` + server-assign |
+| Development / local testing | ✅ Yes | ✅ Yes | `BAGGAGE_ALLOWED_KEYS=*` |
 
 ---
 
@@ -937,13 +926,13 @@ def handle_untrusted_request(request):
 | **Turn model** | 1 turn = 1 trace | 1 turn = 1 trace (workflow decorator) | 1 turn = 1 trace | 1 turn = 1 trace |
 | **Session storage** | GenAI types + ContextVar | ContextVar (association_properties) | ContextVar (using_session) | OTel Baggage |
 | **Session attribute** | `gen_ai.conversation.id` (standard upstream convention) | `traceloop.association.properties.session_id` | `session.id` (OpenInference) | `langfuse.session.id` |
-| **User propagation** | `enduser.id` via Baggage | `traceloop.association.properties.user_id` | `user.id` via ContextVar | `langfuse.user.id` |
+| **User propagation** | `user.id` via Baggage | `traceloop.association.properties.user_id` | `user.id` via ContextVar | `langfuse.user.id` |
 | **Custom association attrs** | `genai.association.*` via Baggage | `traceloop.association.properties.*` | `using_metadata({...})` | Custom span attributes |
 | **Child propagation** | Handler context stack | SpanProcessor.on_start | OTel context + SpanProcessor | BaggageSpanProcessor |
 | **Cross-RPC mechanism** | OTel Baggage (standard propagation) | TraceContext propagator | TraceContext propagator | W3C Baggage header |
 | **Cross-RPC association attrs** | ✅ Via Baggage | ❌ Not propagated | ❌ Not propagated | ❌ Not propagated |
-| **Restriction/Security** | SessionRestrictionPolicy (env var) | Content allow lists | N/A | `as_baggage=False` flag |
-| **Trust boundary handling** | Policy-based (4 levels) | N/A | N/A | Binary (on/off) |
+| **Restriction/Security** | `BAGGAGE_ALLOWED_KEYS` env var (allowlist) | Content allow lists | N/A | `as_baggage=False` flag |
+| **Trust boundary handling** | Baggage allowlist (key-level filtering) | N/A | N/A | Binary (on/off) |
 
 ### Key Architectural Insights from Research
 
@@ -952,7 +941,7 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 1. **Traceloop** uses a SpanProcessor that copies `association_properties` to every
    span at creation time — simple but no trust boundary controls
 2. **Phoenix** leverages `using_session()` context manager with ContextVar — similar
-   to our `session_scope()` approach
+   to our `session_context()` approach
 3. **Langfuse** is the most OTel-native, using `BaggageSpanProcessor` for automatic
    attribute propagation, with `as_baggage=False` to opt out of cross-service propagation
 4. **All platforms** converge on a session/conversation attribute (with vendor prefixes)
@@ -963,24 +952,26 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 
 ## Implementation Roadmap
 
-### Phase 1: Core Session & Association API *(mostly complete in SDOT)*
+### Phase 1: Core Session & Association API *(complete in SDOT)*
 
 - [x] `gen_ai.conversation.id`, `user.id`, `customer.id` in GenAI base type (`types.py`)
-- [x] `semantic_convention_attributes()` auto-emission
-- [x] `SessionContext` dataclass in `handler.py`
-- [ ] `set_session()`, `get_session()`, `session_scope()` public API
-- [ ] `set_association_properties()` — Traceloop-compatible custom attribute API
-- [ ] `association_properties` field on `GenAI` base type
-- [ ] Handler auto-population from ContextVar (session + user + association attrs)
+- [x] `semantic_convention_attributes()` auto-emission with `semconv` and `semconv_prefix` metadata
+- [x] `SessionContext` dataclass in `handler.py` with `association_properties` field
+- [x] `set_session_context()`, `session_context()` public API (exported from `handler.py`)
+- [x] `association_properties` field on `GenAI` base type with `semconv_prefix: "genai.association."` metadata
+- [x] Handler auto-population from ContextVar (session + user + association attrs)
+- [ ] `set_association_properties()` — standalone Traceloop-compatible API (currently users pass `association_properties` dict to `set_session_context()`)
 
-### Phase 2: User & Association Propagation *(partially complete)*
+### Phase 2: Cross-Service Propagation *(complete in SDOT)*
 
 - [x] MCP trace context propagation via standard OTel propagation API (FastMCP instrumentor)
-- [ ] `enduser.id` propagation via OTel Baggage
-- [ ] `genai.association.*` custom attributes propagation via Baggage
-- [ ] Baggage propagation alongside `traceparent`
-- [ ] `SessionRestrictionPolicy` for public servers
-- [ ] Environment variable configuration
+- [x] `user.id` propagation via OTel Baggage (uses `user.id`, not the deprecated `enduser.id`)
+- [x] `genai.association.*` custom attributes propagation via Baggage
+- [x] Baggage propagation alongside `traceparent` (single `propagate.inject()`/`propagate.extract()` round-trip)
+- [x] Server-side baggage allowlist via `OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS` env var
+- [x] Default allowlist: `gen_ai.conversation.id`, `user.id`, `customer.id`
+- [x] Wildcard support: `*` (all), `genai.association.*` (all association properties)
+- [x] End-to-end demo: agentic client with `--property KEY=VALUE` flag + instrumented server with allowlist filtering
 
 ### Phase 3: Upstream Contribution
 
@@ -988,7 +979,9 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 - [ ] Align with [#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418) entry span proposal
 - [ ] PR to add `gen_ai.conversation.id` as RECOMMENDED on GenAI spans
 - [ ] Propose `genai.association.*` prefix for custom association attributes
+- [ ] Propose `user.id` (not `enduser.id`) as the user attribute for GenAI spans
 - [ ] Document security edge cases in semconv (this proposal's §Edge Cases)
+- [ ] Document `OTEL_INSTRUMENTATION_GENAI_BAGGAGE_ALLOWED_KEYS` pattern for other implementations
 
 ### Phase 4: Framework Integration
 
@@ -1008,11 +1001,11 @@ From [ARCHITECTURE.comparison.md](docs/research/ARCHITECTURE.comparison.md):
 | 2 | Should `gen_ai.conversation.id` coexist with `session.id` on the same span? | Optional — `session.id` can be added for correlation with non-GenAI telemetry | lmolkova leans toward documenting, not mandating |
 | 3 | Should the "turn = trace" model be documented in GenAI semconv? | Yes, as a RECOMMENDED practice | Not yet discussed |
 | 4 | Should custom association attributes use `genai.association.*` prefix? | Yes, for vendor-neutral interop with Traceloop-style patterns | Not yet discussed |
-| 5 | Should `enduser.id` propagation via Baggage be RECOMMENDED? | Yes, with security caveats from W3C §4 | Not yet discussed |
+| 5 | Should `user.id` propagation via Baggage be RECOMMENDED? | Yes, with security caveats from W3C §4. SDOT uses `user.id` (not the deprecated `enduser.id`) | Not yet discussed |
 | 6 | Should GenAI semconv define security guidance for baggage propagation? | Yes, reference W3C §4 and OTel sensitive data guide | Not yet discussed |
 | 7 | Should the entry span proposal ([#3418](https://github.com/open-telemetry/semantic-conventions/issues/3418)) be the vehicle for `gen_ai.conversation.id`? | Yes, natural fit | Needs alignment discussion |
-| 8 | Should restriction policies be standardized or left to implementations? | Standardize env var naming; leave policy logic to SDKs | Not yet discussed |
-| 9 | Default policy for public services? | `ACCEPT_NONE` (reject incoming session context) | Not yet discussed |
+| 8 | Should restriction policies be standardized or left to implementations? | Standardize `BAGGAGE_ALLOWED_KEYS` env var pattern; leave filtering logic to SDKs | Not yet discussed |
+| 9 | Default policy for public services? | Default allowlist (`gen_ai.conversation.id,user.id,customer.id`) with `BAGGAGE_ALLOWED_KEYS=none` for public servers | Not yet discussed |
 
 ---
 
