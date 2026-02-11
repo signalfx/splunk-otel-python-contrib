@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "splunk-otel-instrumentation-openai-agents"
 dynamic = ["version"]
 description = "Splunk OpenTelemetry OpenAI Agents instrumentation"
-readme = "README.rst"
+readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 classifiers = [
