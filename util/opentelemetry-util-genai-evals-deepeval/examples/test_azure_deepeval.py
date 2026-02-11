@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 import os
 
+from opentelemetry.util.evaluator.deepeval import DeepevalEvaluator
+from opentelemetry.util.genai.types import (
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+)
+
 """This script can be used to verify DEEPEVAL_* env vars for different LLM setups
 
 Set the env var and python test_azure_deepeval.py
@@ -29,14 +37,6 @@ os.environ["DEEPEVAL_LLM_API_KEY"] = "<YOUR_API_KEY>"
 # os.environ["DEEPEVAL_LLM_API_KEY"] = (
 #     "<YOUR_API_KEY>"
 # )
-
-from opentelemetry.util.evaluator.deepeval import DeepevalEvaluator
-from opentelemetry.util.genai.types import (
-    LLMInvocation,
-    InputMessage,
-    OutputMessage,
-    Text,
-)
 
 evaluator = DeepevalEvaluator(
     metrics=["bias"], invocation_type="LLMInvocation"
