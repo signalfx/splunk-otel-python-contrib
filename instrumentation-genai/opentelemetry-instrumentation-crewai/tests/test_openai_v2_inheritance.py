@@ -13,7 +13,12 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.semconv._incubating.metrics import gen_ai_metrics
 from opentelemetry.util.genai.handler import get_telemetry_handler
-from opentelemetry.util.genai.types import InputMessage, LLMInvocation, OutputMessage, Text
+from opentelemetry.util.genai.types import (
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+)
 
 import opentelemetry.instrumentation.crewai.instrumentation as crewai_module
 
@@ -42,9 +47,7 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
     def _agent_exec_side_effect(*_args, **_kwargs):
         llm = LLMInvocation(
             request_model="gpt-4o-mini",
-            input_messages=[
-                InputMessage(role="user", parts=[Text(content="hello")])
-            ],
+            input_messages=[InputMessage(role="user", parts=[Text(content="hello")])],
             provider="openai",
             framework="openai-sdk",
             system="openai",
@@ -117,8 +120,7 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
         if (
             attrs.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
             == GenAIAttributes.GenAiOperationNameValues.CHAT.value
-            and attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME)
-            == "Crew Router Agent"
+            and attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME) == "Crew Router Agent"
             and attrs.get(GenAIAttributes.GEN_AI_AGENT_ID) == inherited_agent_id
         ):
             found_duration_with_agent = True
@@ -135,8 +137,7 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
         ):
             continue
         if (
-            attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME)
-            != "Crew Router Agent"
+            attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME) != "Crew Router Agent"
             or attrs.get(GenAIAttributes.GEN_AI_AGENT_ID) != inherited_agent_id
         ):
             continue
