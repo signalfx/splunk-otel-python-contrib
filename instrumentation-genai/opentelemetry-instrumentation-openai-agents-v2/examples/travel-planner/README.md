@@ -217,7 +217,7 @@ travel-planner/
 | `LLM_CLIENT_SECRET` | OAuth2 client secret | Yes (OAuth2) |
 | `LLM_TOKEN_URL` | OAuth2 token endpoint | Yes (OAuth2) |
 | `LLM_BASE_URL` | LLM gateway base URL | Yes (OAuth2) |
-| `OPENAI_API_KEY` | OpenAI API key | Yes (OpenAI) |
+| `OPENAI_API_KEY` | OpenAI API key | No (only when using OpenAI endpoint) |
 
 **GenAI Instrumentation:**
 
