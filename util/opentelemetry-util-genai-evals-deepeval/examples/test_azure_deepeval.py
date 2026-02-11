@@ -38,11 +38,15 @@ from opentelemetry.util.genai.types import (
     Text,
 )
 
-evaluator = DeepevalEvaluator(metrics=["bias"], invocation_type="LLMInvocation")
+evaluator = DeepevalEvaluator(
+    metrics=["bias"], invocation_type="LLMInvocation"
+)
 
 invocation = LLMInvocation(request_model="gpt-4o-mini")
 invocation.input_messages.append(
-    InputMessage(role="user", parts=[Text(content="What is the capital of France?")])
+    InputMessage(
+        role="user", parts=[Text(content="What is the capital of France?")]
+    )
 )
 invocation.output_messages.append(
     OutputMessage(
