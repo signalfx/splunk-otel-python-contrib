@@ -64,14 +64,14 @@ class TestTelemetryHandlerSingleton:
             "opentelemetry.instrumentation.crewai.instrumentation.wrap_function_wrapper"
         ):
             with mock.patch(
-                "opentelemetry.instrumentation.crewai.instrumentation.TelemetryHandler"
-            ) as MockHandler:
+                "opentelemetry.instrumentation.crewai.instrumentation.get_telemetry_handler"
+            ) as mock_get_handler:
                 instrumentor.instrument(
                     tracer_provider=tracer_provider,
                     meter_provider=meter_provider,
                 )
 
-                MockHandler.assert_called_once_with(
+                mock_get_handler.assert_called_once_with(
                     tracer_provider=tracer_provider,
                     meter_provider=meter_provider,
                 )
@@ -96,12 +96,12 @@ class TestTelemetryHandlerSingleton:
                 mock_get_tracer.return_value = mock_tracer_provider
 
                 with mock.patch(
-                    "opentelemetry.instrumentation.crewai.instrumentation.TelemetryHandler"
-                ) as MockHandler:
+                    "opentelemetry.instrumentation.crewai.instrumentation.get_telemetry_handler"
+                ) as mock_get_handler:
                     instrumentor.instrument(meter_provider=meter_provider)
 
-                    MockHandler.assert_called_once()
-                    call_kwargs = MockHandler.call_args[1]
+                    mock_get_handler.assert_called_once()
+                    call_kwargs = mock_get_handler.call_args[1]
                     assert call_kwargs["tracer_provider"] == mock_tracer_provider
 
         # Cleanup
@@ -124,12 +124,12 @@ class TestTelemetryHandlerSingleton:
                 mock_get_meter.return_value = mock_meter_provider
 
                 with mock.patch(
-                    "opentelemetry.instrumentation.crewai.instrumentation.TelemetryHandler"
-                ) as MockHandler:
+                    "opentelemetry.instrumentation.crewai.instrumentation.get_telemetry_handler"
+                ) as mock_get_handler:
                     instrumentor.instrument(tracer_provider=tracer_provider)
 
-                    MockHandler.assert_called_once()
-                    call_kwargs = MockHandler.call_args[1]
+                    mock_get_handler.assert_called_once()
+                    call_kwargs = mock_get_handler.call_args[1]
                     assert call_kwargs["meter_provider"] == mock_meter_provider
 
         # Cleanup
