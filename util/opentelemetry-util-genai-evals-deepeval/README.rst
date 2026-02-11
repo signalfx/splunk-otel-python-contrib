@@ -52,6 +52,9 @@ returned by Deepeval. Metrics that cannot run because required inputs are missin
 ``label="skipped"`` and carry a ``deepeval.error`` attribute so you can wire the
 necessary data or disable that metric explicitly.
 
+NOTE: gpt-5 models (including gpt-5-codex) don't support temperature=0.0. Only temperature=1 is supported. Set
+environment variable ``TEMPERATURE`` as ``1``
+
 GEval Metric Scoring
 --------------------
 

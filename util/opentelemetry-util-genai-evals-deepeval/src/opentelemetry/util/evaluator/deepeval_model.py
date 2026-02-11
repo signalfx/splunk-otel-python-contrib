@@ -126,6 +126,12 @@ def create_eval_model() -> Any | None:
     """
     Create LiteLLM-based eval model from environment variables.
 
+    Note: gpt-5 models (including gpt-5-codex) don't support temperature=0.0. Only temperature=1 is supported.
+    For gpt-5.1, temperature is supported when reasoning_effort='none'
+
+    Environment Variables:
+        TEMPERATURE: 1
+
     If DEEPEVAL_LLM_BASE_URL is set, creates a LiteLLMModel configured
     for the custom endpoint. Supports both static API keys and OAuth2
     token-based authentication.
@@ -255,7 +261,6 @@ def create_eval_model() -> Any | None:
         model=f"{provider}/{model}",
         base_url=base_url,
         api_key=api_key or "placeholder",
-        temperature=0,
         generation_kwargs=generation_kwargs if generation_kwargs else None,
     )
 

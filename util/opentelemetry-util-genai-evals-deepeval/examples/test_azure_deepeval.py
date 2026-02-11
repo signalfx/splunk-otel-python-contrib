@@ -38,6 +38,11 @@ os.environ["DEEPEVAL_LLM_API_KEY"] = "<YOUR_API_KEY>"
 #     "<YOUR_API_KEY>"
 # )
 
+# GPT 5 models
+# os.environ["DEEPEVAL_LLM_MODEL"] = "gpt-5-nano"
+# os.environ["DEEPEVAL_LLM_PROVIDER"] = "openai"
+# os.environ["TEMPERATURE"] = "1"
+
 evaluator = DeepevalEvaluator(
     metrics=["bias"], invocation_type="LLMInvocation"
 )
