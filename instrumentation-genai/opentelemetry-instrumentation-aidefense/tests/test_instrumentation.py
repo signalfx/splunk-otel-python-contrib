@@ -47,10 +47,10 @@ class TestAIDefenseInstrumentor:
     """Test AIDefenseInstrumentor class."""
 
     def test_instrumentation_dependencies(self):
-        """Test that instrumentation dependencies are correctly specified."""
+        """Test that instrumentation dependencies are empty (SDK is optional)."""
         instrumentor = AIDefenseInstrumentor()
         deps = instrumentor.instrumentation_dependencies()
-        assert "cisco-aidefense-sdk >= 2.0.0" in deps
+        assert len(deps) == 0
 
     def test_instrument_uninstrument(self):
         """Test that instrument and uninstrument don't raise errors."""

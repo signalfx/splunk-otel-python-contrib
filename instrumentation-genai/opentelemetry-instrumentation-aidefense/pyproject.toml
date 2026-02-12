@@ -32,9 +32,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-instruments = [
-  "cisco-aidefense-sdk >= 2.0.0",
-]
+instruments = []  # SDK is optional - Gateway Mode works without it
 test = [
   "cisco-aidefense-sdk >= 2.0.0",
   "pytest >= 7.0.0",

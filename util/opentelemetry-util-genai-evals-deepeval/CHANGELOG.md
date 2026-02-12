@@ -2,6 +2,22 @@
 
 All notable changes to this repository are documented in this file.
 
+### Fixed
+- Remove hard-coded temperature argument from LiteLLMModel
+- Support temperature via environment variables for GPT 5 models as those require `TEMPERATURE=1.0`
+
+## Version 0.1.13 - 2026-02-09
+
+### Added
+- **DeepEval Bootstrap** - `_configure_deepeval.py` sets DeepEval environment variables early and imports the external package to prevent module shadowing.
+- **Output Suppression Utilities** - `suppress_output.py` provides helpers to quiet DeepEval/LiteLLM logs, stdout, and rich console output.
+
+### Changed
+- **Import Ordering** - DeepEval runner/adapter/metrics now import configuration and suppression helpers to avoid noisy startup warnings.
+
+### Fixed
+- **Module Shadowing** - Ensures local `deepeval.py` does not shadow the external `deepeval` package via early import ordering.
+
 ## Version 0.1.12 - 2026-01-30
 
 ### Fixed
