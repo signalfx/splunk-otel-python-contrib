@@ -3,30 +3,20 @@ model_list:
     litellm_params:
       model: gpt-4-turbo-preview
       api_key: os.environ/OPENAI_API_KEY
-  
-  # - model_name: ollama/llama3.2:latest
-  #   litellm_params:
-  #     model: ollama/llama3.2:latest
-  #     api_base: http://localhost:11434
-  #     input_cost_per_token: 0.00001
-  #     output_cost_per_token: 0.00002
-
-  # - model_name: "deepseek-r1"
-  #   litellm_params:
-  #     model: openai/deepseek-r1-0528-qwen3-8b  # Use openai/ prefix for OpenAI-compatible endpoints like LM Studio
-  #     api_key: api-key                 # api key to send your model
-  #     api_base: "http://localhost:1234/v1"
-  #     custom_llm_provider: openai
-  #     input_cost_per_token: 0.000001
-  #     output_cost_per_token: 0.000002
+  - model_name: "cisco-llm"
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_base: "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini"
+      api_key: os.environ/CISCO_API_TOKEN  # Token fetched via OAuth2
+      custom_llm_provider: openai
 
 litellm_settings:
-  callbacks: ["otel"]
+  callbacks: ["otel", "cisco_callback.cisco_handler"]
   success_callback: ["otel"]
   failure_callback: ["otel"]
 
 general_settings:
-  master_key: sk-1234  # Change this to a secure key in production
+  master_key: os.environ/LITELLM_PROXY_KEY  # Change this to a secure key in production
   otel: true  # Enable OpenTelemetry logging
-  # Optional: database_url can be set if using UI features
-  # database_url: "postgresql://litellm_user:your_strong_password@localhost:5432/litellm_db"
+  disable_spend_logs: true
+  allow_user_auth: false

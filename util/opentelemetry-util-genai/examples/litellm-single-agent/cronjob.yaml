@@ -3,7 +3,7 @@ kind: CronJob
 metadata:
   name: litellm-poem-generator
 spec:
-  suspend: true  # Set to false to resume
+  suspend: false  
   schedule: " 0,30 16-23,0-2 * * 1-5"  # Every 30 min, 8am-6pm PST Mon-Fri (16:00-02:00 UTC)
   jobTemplate:
     spec:
@@ -16,8 +16,11 @@ spec:
             env:
             - name: LITELLM_PROXY_URL
               value: "http://litellm.litellm-kdecker.svc.cluster.local:4000/v1"
-            - name: LITELLM_MASTER_KEY
-              value: "sk-1234"
+            - name: LITELLM_PROXY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: LITELLM_PROXY_KEY
             command:
             - /bin/sh
             - -c
@@ -27,37 +30,36 @@ spec:
               import openai
               from datetime import datetime
 
-              def generate_poem_with_litellm_proxy():
-                  """Generate a poem using OpenAI via LiteLLM proxy."""
-                  client = openai.OpenAI(
-                      api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
-                      base_url=os.getenv("LITELLM_PROXY_URL", "http://localhost:4000/v1")
-                  )
+              def generate_poem_with_cisco():
+                """Generate a poem using Cisco LLM via LiteLLM proxy."""
+                api_key = os.getenv("LITELLM_PROXY_KEY", "sk-1234")
+                client = openai.OpenAI(
+                  api_key=api_key,
+                  base_url=os.getenv("LITELLM_PROXY_URL", "http://localhost:4000/v1")
+                )
 
-                  messages = [
-                      {"role": "system", "content": "You are a poetic assistant, skilled in crafting beautiful poems about technical topics."},
-                      {"role": "user", "content": "Write a short, creative poem about OpenTelemetry, the open-source observability framework. Focus on its ability to provide insights and visibility into distributed systems."}
-                  ]
+                messages = [
+                    {"role": "system", "content": "You are a poetic assistant, skilled in crafting beautiful poems about technical topics."},
+                    {"role": "user", "content": "Write a short, creative poem about OpenTelemetry, the open-source observability framework. Focus on its ability to provide insights and visibility into distributed systems."}
+                ]
 
-                  try:
+                try:
                       response = client.chat.completions.create(
-                          model="gpt-4.1",
-                          messages=messages,
-                          stream=True
+                        model="cisco-llm",
+                        messages=messages,
+                        stream=False
                       )
-                      poem = ""
-                      for chunk in response:
-                          if chunk.choices[0].delta.content:
-                              poem += chunk.choices[0].delta.content
-                      return poem
-                  except Exception as e:
-                      return f"Error generating poem via LiteLLM proxy: {str(e)}"
+                      return response.choices[0].message.content
+                except Exception as e:
+                      return f"Error generating poem with Cisco: {str(e)}"
 
               def main():
                   timestamp = datetime.utcnow().isoformat()
+                  master_key = os.getenv("LITELLM_PROXY_KEY", "sk-1234")
                   print(f"[{timestamp}] === OpenTelemetry Poetry Generator (via LiteLLM Proxy) ===")
-                  print(f"[{timestamp}] === Poem (GPT-4) ===")
-                  poem = generate_poem_with_litellm_proxy()
+                  print(f"[{timestamp}] Using master key ({master_key[:10]}...)")
+                  print(f"[{timestamp}] === Poem (Cisco) ===")
+                  poem = generate_poem_with_cisco()
                   print(poem)
                   print(f"\n[{timestamp}] " + "="*50 + "\n")
 

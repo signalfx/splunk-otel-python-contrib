@@ -7,16 +7,25 @@ data:
     model_list:
       - model_name: gpt-4.1
         litellm_params:
-          model: gpt-4.1
+          model: gpt-4-turbo-preview
           api_key: os.environ/OPENAI_API_KEY
+      - model_name: "cisco-llm"
+        litellm_params:
+          model: openai/gpt-4o-mini
+          api_base: "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini"
+          api_key: os.environ/CISCO_API_TOKEN  # Token fetched via OAuth2
+          custom_llm_provider: openai
+
     litellm_settings:
-      callbacks: ["otel"]
+      callbacks: ["otel", "cisco_callback.cisco_handler"]
       success_callback: ["otel"]
       failure_callback: ["otel"]
 
     general_settings:
-      master_key: sk-1234  # Change this to a secure key in production
+      master_key: os.environ/LITELLM_PROXY_KEY  # Change this to a secure key in production
       otel: true  # Enable OpenTelemetry logging
+      disable_spend_logs: true
+      allow_user_auth: false
 ---
 apiVersion: v1
 kind: Service
@@ -49,7 +58,7 @@ spec:
       containers:
       - name: litellm
         # image: docker.litellm.ai/berriai/litellm:main-stable 
-        image: keitdeck245/kdecker-litellm:v1.81.0 # updates otel integration to 1.38
+        image: keitdeck245/kdecker-litellm:cisco-provider # updates otel integration to 1.38, and adds cisco-llm model
         args:
           - "--config"
           - "/app/proxy_server_config.yaml"
