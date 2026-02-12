@@ -11,8 +11,9 @@ metadata:
 data:
   AZURE_EMBEDDING_DEPLOYMENT: text-embedding-3-large
   AZURE_OPENAI_API_VERSION: 2024-12-01-preview
-  AZURE_OPENAI_ENDPOINT: https://etser-mf7gfr7m-eastus2.openai.azure.com/
-  OPENAI_BASE_URL: https://o11y-for-ai-test.openai.azure.com/openai/v1/
+  AZURE_OPENAI_ENDPOINT: https://o11y-for-ai-test.cognitiveservices.azure.com/
+  CIRCUIT_BASE_URL: https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini
+  CIRCUIT_TOKEN_URL: https://id.cisco.com/oauth2/default/v1/token
   DEPLOYMENT_ENV: o11y-for-ai
   MCP_SERVER_URL: http://sre-copilot-mcp.sre-copilot-platform.svc.cluster.local:8081
   OPENAI_MODEL: gpt-4o-mini
