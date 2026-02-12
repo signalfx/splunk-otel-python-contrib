@@ -15,17 +15,116 @@ data:
           api_base: "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini"
           api_key: os.environ/CISCO_API_TOKEN  # Token fetched via OAuth2
           custom_llm_provider: openai
+          input_cost_per_token: 0.00001
+          output_cost_per_token: 0.00002
 
     litellm_settings:
       callbacks: ["otel", "cisco_callback.cisco_handler"]
       success_callback: ["otel"]
       failure_callback: ["otel"]
+      drop_params: true
 
     general_settings:
-      master_key: os.environ/LITELLM_PROXY_KEY  # Change this to a secure key in production
+      master_key: os.environ/LITELLM_PROXY_KEY
       otel: true  # Enable OpenTelemetry logging
-      disable_spend_logs: true
-      allow_user_auth: false
+      database_url: os.environ/DATABASE_URL
+      
+    team_list:
+      - team_name: "team-a"
+        team_id: "team-a-id-001"
+        members: ["user-a1", "user-a2"]
+        spend_logs_db: false
+        
+      - team_name: "team-b"
+        team_id: "team-b-id-002"
+        members: ["user-b1", "user-b2"]
+        spend_logs_db: false
+
+    key_management_settings:
+      write_to_db: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: litellm
+        - name: POSTGRES_USER
+          value: litellm_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+          subPath: postgres
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U litellm_user -d litellm
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U litellm_user -d litellm
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      storageClassName: gp2
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
 ---
 apiVersion: v1
 kind: Service
@@ -69,10 +168,16 @@ spec:
           value: "true"
         - name: LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS
           value: "true"
+        - name: LITELLM_DEBUG
+          value: "false"
         - name: OTEL_SERVICE_NAME
           value: "litellm-proxy-server"
         - name: OTEL_RESOURCE_ATTRIBUTES
-          value: "deployment.environment=o11y-inframon-ai"
+          value: "deployment.environment=o11y-inframon-ai,service.version=1.81.0"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+          value: "Delta"
         - name: SPLUNK_OTEL_AGENT
           valueFrom:
             fieldRef:
@@ -81,6 +186,28 @@ spec:
           value: "http://$(SPLUNK_OTEL_AGENT):4317"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
           value: "grpc"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: litellm-secrets
+              key: DATABASE_URL
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litellm-secrets
+              key: LITELLM_PROXY_KEY
+        - name: TEAM_A_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litellm-secrets
+              key: LITELLM_TEAM_A_KEY
+        - name: TEAM_B_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litellm-secrets
+              key: LITELLM_TEAM_B_KEY
+        - name: PYTHONPATH
+          value: "/app"
         volumeMounts:
         - name: config-volume
           mountPath: /app/proxy_server_config.yaml

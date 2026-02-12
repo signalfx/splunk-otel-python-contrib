@@ -16,23 +16,42 @@ spec:
             env:
             - name: LITELLM_PROXY_URL
               value: "http://litellm.litellm-kdecker.svc.cluster.local:4000/v1"
-            - name: LITELLM_PROXY_KEY
+            - name: LITELLM_TEAM_A_KEY
               valueFrom:
                 secretKeyRef:
                   name: litellm-secrets
-                  key: LITELLM_PROXY_KEY
+                  key: LITELLM_TEAM_A_KEY
+            - name: LITELLM_TEAM_B_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: LITELLM_TEAM_B_KEY
             command:
             - /bin/sh
             - -c
             - |
               pip install openai --quiet && python3 << 'EOF'
               import os
+              import random
               import openai
               from datetime import datetime
 
+              # Team API keys from environment variables
+              TEAM_KEYS = {
+                  "team-a": os.getenv("LITELLM_TEAM_A_KEY", "sk-team-a-default"),
+                  "team-b": os.getenv("LITELLM_TEAM_B_KEY", "sk-team-b-default"),
+              }
+
+              def get_random_team_key():
+                  """Get a random team API key for load distribution."""
+                  team = random.choice(list(TEAM_KEYS.keys()))
+                  key = TEAM_KEYS[team]
+                  return team, key
+
               def generate_poem_with_cisco():
-                """Generate a poem using Cisco LLM via LiteLLM proxy."""
-                api_key = os.getenv("LITELLM_PROXY_KEY", "sk-1234")
+                """Generate a poem using Cisco LLM via LiteLLM proxy with streaming."""
+                team, api_key = get_random_team_key()
+                
                 client = openai.OpenAI(
                   api_key=api_key,
                   base_url=os.getenv("LITELLM_PROXY_URL", "http://localhost:4000/v1")
@@ -47,19 +66,22 @@ spec:
                       response = client.chat.completions.create(
                         model="cisco-llm",
                         messages=messages,
-                        stream=False
+                        stream=True
                       )
-                      return response.choices[0].message.content
+                      poem = ""
+                      for chunk in response:
+                        if chunk.choices[0].delta.content:
+                          poem += chunk.choices[0].delta.content
+                      return team, api_key, poem
                 except Exception as e:
-                      return f"Error generating poem with Cisco: {str(e)}"
+                      return team, api_key, f"Error generating poem with Cisco: {str(e)}"
 
               def main():
                   timestamp = datetime.utcnow().isoformat()
-                  master_key = os.getenv("LITELLM_PROXY_KEY", "sk-1234")
+                  team, api_key, poem = generate_poem_with_cisco()
                   print(f"[{timestamp}] === OpenTelemetry Poetry Generator (via LiteLLM Proxy) ===")
-                  print(f"[{timestamp}] Using master key ({master_key[:10]}...)")
+                  print(f"[{timestamp}] Using {team} ({api_key[:10]}...)")
                   print(f"[{timestamp}] === Poem (Cisco) ===")
-                  poem = generate_poem_with_cisco()
                   print(poem)
                   print(f"\n[{timestamp}] " + "="*50 + "\n")
 
