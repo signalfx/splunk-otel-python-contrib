@@ -59,31 +59,50 @@ spec:
                 name: llamaindex-server-config
 
           env:
-            - name: CIRCUIT_BASE_URL
+            - name: LLM_BASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: circuit-credentials
+                  name: llm-credentials
                   key: base-url
-            - name: CIRCUIT_TOKEN_URL
+                  optional: true
+            - name: LLM_TOKEN_URL
               valueFrom:
                 secretKeyRef:
-                  name: circuit-credentials
+                  name: llm-credentials
                   key: token-url
-            - name: CIRCUIT_CLIENT_ID
+                  optional: true
+            - name: LLM_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: circuit-credentials
+                  name: llm-credentials
                   key: client-id
-            - name: CIRCUIT_CLIENT_SECRET
+                  optional: true
+            - name: LLM_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: circuit-credentials
+                  name: llm-credentials
                   key: client-secret
-            - name: CIRCUIT_APP_KEY
+                  optional: true
+            - name: LLM_APP_KEY
               valueFrom:
                 secretKeyRef:
-                  name: circuit-credentials
+                  name: llm-credentials
                   key: app-key
+                  optional: true
+            - name: LLM_SCOPE
+              valueFrom:
+                secretKeyRef:
+                  name: llm-credentials
+                  key: scope
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-credentials
+                  key: api-key
+                  optional: true
+            - name: OPENAI_MODEL_NAME
+              value: "gpt-4o-mini"
             - name: OTEL_SERVICE_NAME
               value: "llamaindex-zero-code-server"
             - name: OTEL_RESOURCE_ATTRIBUTES
