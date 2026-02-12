@@ -61,6 +61,3 @@ target
 
 # Benchmark result files
 *-benchmark.json
-
-# research docs
-docs/research/
