@@ -15,7 +15,7 @@ if _PACKAGE_SRC.exists():
 from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: E402
     LangchainCallbackHandler,
 )
-from opentelemetry.util.genai.types import Step, ToolCall  # noqa: E402
+from opentelemetry.util.genai.types import Step, ToolCall, Workflow  # noqa: E402
 
 try:  # pragma: no cover - optional dependency in CI
     from langchain_core.messages import HumanMessage, AIMessage  # noqa: E402
@@ -411,3 +411,104 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_workflow_output_fallback_when_no_ai_messages(handler_with_stub):
+    """Root workflow span should capture state fields as output
+    when no AIMessages are present (common LangGraph pattern)."""
+    handler, stub = handler_with_stub
+
+    wf_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "LangGraph"},
+        inputs={"messages": [HumanMessage(content="Investigate alert")]},
+        run_id=wf_run_id,
+        # No agent tags -> creates Workflow, not AgentInvocation
+    )
+
+    assert stub.started_workflows, "Workflow was not started"
+    wf = stub.started_workflows[-1]
+    assert isinstance(wf, Workflow)
+    assert wf.input_messages and len(wf.input_messages) == 1
+    assert "Investigate alert" in wf.input_messages[0].parts[0].content
+
+    # End with state that has no AI messages (only structured fields)
+    handler.on_chain_end(
+        outputs={
+            "messages": [HumanMessage(content="Investigate alert")],
+            "triage_result": {"service_id": "svc-123"},
+            "confidence_score": 0.85,
+        },
+        run_id=wf_run_id,
+    )
+
+    assert stub.stopped_workflows, "Workflow was not stopped"
+    stopped_wf = stub.stopped_workflows[-1]
+    assert stopped_wf.output_messages and len(stopped_wf.output_messages) == 1
+    output_text = stopped_wf.output_messages[0].parts[0].content
+    assert "triage_result" in output_text
+    assert "svc-123" in output_text
+    assert "confidence_score" in output_text
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_workflow_output_captures_last_ai_message(handler_with_stub):
+    """Root workflow span should capture only the last AIMessage,
+    not all intermediate ones."""
+    handler, stub = handler_with_stub
+
+    wf_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "LangGraph"},
+        inputs={"messages": [HumanMessage(content="help me")]},
+        run_id=wf_run_id,
+    )
+
+    handler.on_chain_end(
+        outputs={
+            "messages": [
+                HumanMessage(content="help me"),
+                AIMessage(content="Let me call a tool"),
+                AIMessage(content="Here is the final answer"),
+            ],
+        },
+        run_id=wf_run_id,
+    )
+
+    assert stub.stopped_workflows
+    stopped_wf = stub.stopped_workflows[-1]
+    assert len(stopped_wf.output_messages) == 1
+    assert "final answer" in stopped_wf.output_messages[0].parts[0].content
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_agent_output_captures_last_ai_message(handler_with_stub):
+    """Agent span should capture only the last AIMessage output."""
+    handler, stub = handler_with_stub
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="do something")]},
+        run_id=agent_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "test_agent"},
+    )
+
+    handler.on_chain_end(
+        outputs={
+            "messages": [
+                HumanMessage(content="do something"),
+                AIMessage(content="I will call a tool first"),
+                AIMessage(content="Tool result processed"),
+                AIMessage(content="Here is your answer"),
+            ],
+        },
+        run_id=agent_run_id,
+    )
+
+    assert stub.stopped_agents
+    stopped = stub.stopped_agents[-1]
+    assert len(stopped.output_messages) == 1
+    assert "Here is your answer" in stopped.output_messages[0].parts[0].content
