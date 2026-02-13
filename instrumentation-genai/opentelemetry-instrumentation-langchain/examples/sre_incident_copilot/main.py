@@ -4,12 +4,16 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
+
+# Session context for telemetry correlation
+from opentelemetry.util.genai.handler import session_context
 
 from agents import (
     action_planner_agent,
@@ -244,7 +248,9 @@ def _generate_postmortem_draft(state: IncidentState) -> str:
     return postmortem
 
 
-def run_scenario(scenario_id: str, config: Config) -> IncidentState:
+def run_scenario(
+    scenario_id: str, config: Config, session_id: str | None = None
+) -> IncidentState:
     """Run a scenario end-to-end."""
     data_loader = DataLoader(data_dir=config.data_dir)
 
@@ -253,8 +259,8 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
     if not alert:
         raise ValueError(f"Scenario {scenario_id} not found")
 
-    # Initialize state
-    session_id = str(uuid4())
+    # Initialize state - use provided session_id or generate new one
+    session_id = session_id or str(uuid4())
     initial_state: IncidentState = {
         "messages": [HumanMessage(content=f"Investigate alert: {alert['title']}")],
         "alert_id": alert["id"],
@@ -284,72 +290,76 @@ def run_scenario(scenario_id: str, config: Config) -> IncidentState:
         "recursion_limit": 20,
     }
 
-    # Execute workflow
-    final_state: IncidentState = initial_state
-    nodes_executed = []
-    previous_node = None
+    # Execute workflow with session context for telemetry correlation
+    # All GenAI spans created within this context will include session.id attribute
+    with session_context(session_id=session_id):
+        final_state: IncidentState = initial_state
+        nodes_executed = []
+        previous_node = None
 
-    for step in app.stream(initial_state, config_dict):
-        node_name, node_state = next(iter(step.items()))
-        final_state = node_state
-        nodes_executed.append(node_name)
+        for step in app.stream(initial_state, config_dict):
+            node_name, node_state = next(iter(step.items()))
+            final_state = node_state
+            nodes_executed.append(node_name)
 
-        # Print routing decision AFTER previous node (if applicable)
-        if previous_node:
-            # Routing decision was already made, just show it was executed
-            pass
+            # Print routing decision AFTER previous node (if applicable)
+            if previous_node:
+                # Routing decision was already made, just show it was executed
+                pass
 
-        # Print node execution
-        print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
-        if node_state.get("current_agent"):
-            print(f"   Status: {node_state['current_agent']}")
+            # Print node execution
+            print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
+            if node_state.get("current_agent"):
+                print(f"   Status: {node_state['current_agent']}")
 
-        # Print routing decision AFTER node execution
-        if node_name == "triage":
-            service_id = node_state.get("service_id", "unknown")
-            hypotheses = node_state.get("hypotheses", [])
-            investigation_result = node_state.get("investigation_result", {})
-            if hypotheses or investigation_result:
-                print(
-                    f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)"
+            # Print routing decision AFTER node execution
+            if node_name == "triage":
+                service_id = node_state.get("service_id", "unknown")
+                hypotheses = node_state.get("hypotheses", [])
+                investigation_result = node_state.get("investigation_result", {})
+                if hypotheses or investigation_result:
+                    print(
+                        f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)"
+                    )
+                    print(f"   → Routing to action_planner (service: {service_id})")
+                else:
+                    print(f"   → Routing to action_planner (service: {service_id})")
+                    print(
+                        "   ⚠️  Warning: Investigation not completed via agent-as-tool"
+                    )
+            elif node_name == "action_planner":
+                action_plan = node_state.get("action_plan", {})
+                mitigation_plan = (
+                    action_plan.get("mitigation_plan", []) if action_plan else []
                 )
-                print(f"   → Routing to action_planner (service: {service_id})")
-            else:
-                print(f"   → Routing to action_planner (service: {service_id})")
-                print("   ⚠️  Warning: Investigation not completed via agent-as-tool")
-        elif node_name == "action_planner":
-            action_plan = node_state.get("action_plan", {})
-            mitigation_plan = (
-                action_plan.get("mitigation_plan", []) if action_plan else []
+                print(f"   → Routing to quality_gate ({len(mitigation_plan)} actions)")
+            elif node_name == "quality_gate":
+                quality_result = node_state.get("quality_gate_result") or {}
+                validation_passed = quality_result.get("validation_passed", False)
+                confidence_score = node_state.get("confidence_score", 0.0)
+                if validation_passed:
+                    print(
+                        f"   → Quality gate passed (confidence: {confidence_score:.2f}), ending workflow"
+                    )
+                else:
+                    print(
+                        f"   → Quality gate failed (confidence: {confidence_score:.2f}), ending workflow"
+                    )
+
+            previous_node = node_name
+
+        print("\n📋 Workflow execution summary:")
+        print(f"   Nodes executed: {nodes_executed}")
+        expected_nodes = ["triage", "action_planner", "quality_gate"]
+        missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
+        if missing_nodes:
+            print(f"   ⚠️  Missing nodes: {missing_nodes}")
+
+        # Check if investigation was done via agent-as-tool
+        if final_state.get("hypotheses") or final_state.get("investigation_result"):
+            print(
+                "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
             )
-            print(f"   → Routing to quality_gate ({len(mitigation_plan)} actions)")
-        elif node_name == "quality_gate":
-            quality_result = node_state.get("quality_gate_result") or {}
-            validation_passed = quality_result.get("validation_passed", False)
-            confidence_score = node_state.get("confidence_score", 0.0)
-            if validation_passed:
-                print(
-                    f"   → Quality gate passed (confidence: {confidence_score:.2f}), ending workflow"
-                )
-            else:
-                print(
-                    f"   → Quality gate failed (confidence: {confidence_score:.2f}), ending workflow"
-                )
-
-        previous_node = node_name
-
-    print("\n📋 Workflow execution summary:")
-    print(f"   Nodes executed: {nodes_executed}")
-    expected_nodes = ["triage", "action_planner", "quality_gate"]
-    missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
-    if missing_nodes:
-        print(f"   ⚠️  Missing nodes: {missing_nodes}")
-
-    # Check if investigation was done via agent-as-tool
-    if final_state.get("hypotheses") or final_state.get("investigation_result"):
-        print(
-            "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
-        )
 
     return final_state
 
@@ -366,6 +376,18 @@ def main():
         "--manual-instrumentation",
         action="store_true",
         help="Enable manual OpenTelemetry instrumentation",
+    )
+    parser.add_argument(
+        "--session-id",
+        type=str,
+        default=None,
+        help="Session ID for tracing (default: auto-generated UUID)",
+    )
+    parser.add_argument(
+        "--wait-after-completion",
+        type=int,
+        default=0,
+        help="Session ID for tracing (default: auto-generated UUID)",
     )
     args = parser.parse_args()
 
@@ -393,10 +415,13 @@ def main():
     )
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
+    session_id = args.session_id or str(uuid4())
+
     print("🚨 SRE Incident Copilot")
     print("=" * 60)
     print(f"Scenario: {config.scenario_id}")
     print(f"Service: {config.otel_service_name}")
+    print(f"Session ID: {session_id}")
     print()
 
     # Run scenario
@@ -404,7 +429,7 @@ def main():
         f"{config.scenario_id}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     )
     try:
-        final_state = run_scenario(config.scenario_id, config)
+        final_state = run_scenario(config.scenario_id, config, session_id)
 
         # Save artifacts
         save_artifacts(final_state, config, run_id)
@@ -447,6 +472,13 @@ def main():
         )
         action_val = validation_report["validations"]["action_safety"]
         print(f"   Action Safety: {action_val.get('action_safety_validated', False)}")
+
+        # Wait after completion if requested (for evaluator to evalute invocations)
+        if args.wait_after_completion > 0:
+            print(
+                f"\n⏳ Waiting for {args.wait_after_completion} seconds before exit..."
+            )
+            time.sleep(args.wait_after_completion)
 
     except Exception as e:
         print(f"\n❌ Error: {e}")

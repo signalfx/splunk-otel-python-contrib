@@ -49,6 +49,12 @@ class RunbookSearch:
             openai_kwargs = {}
             if os.environ.get("OPENAI_BASE_URL"):
                 openai_kwargs["openai_api_base"] = os.environ.get("OPENAI_BASE_URL")
+                # Disable tokenization for local LLM providers (e.g., LM Studio)
+                # that expect raw strings instead of token arrays
+                openai_kwargs["check_embedding_ctx_length"] = False
+            # Allow custom embedding model name (useful for LM Studio)
+            if os.environ.get("OPENAI_EMBEDDING_MODEL"):
+                openai_kwargs["model"] = os.environ.get("OPENAI_EMBEDDING_MODEL")
             self.embeddings = OpenAIEmbeddings(**openai_kwargs)
         else:
             raise ValueError(
