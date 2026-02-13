@@ -81,6 +81,38 @@ def _make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
     return output_messages
 
 
+def _make_last_output_message(data: dict[str, Any]) -> list[OutputMessage]:
+    """Extract only the last AI message as the output.
+
+    For Workflow and AgentInvocation spans, the final AI message best represents
+    the actual output. Intermediate AI messages (e.g., tool-call decisions) are
+    already captured in child LLM invocation spans.
+    """
+    all_messages = _make_output_message(data)
+    if all_messages:
+        return [all_messages[-1]]
+    return []
+
+
+def _make_workflow_output_fallback(data: dict[str, Any]) -> Optional[str]:
+    """Create output summary from non-message state fields.
+
+    Fallback for when workflow output doesn't contain AI messages.
+    This is common in LangGraph where agent nodes update structured
+    state fields rather than the message list.
+    """
+    if not data:
+        return None
+    # Exclude messages and internal fields that don't represent output
+    exclude_keys = {"messages", "intermediate_steps"}
+    output_data = {
+        k: v for k, v in data.items() if k not in exclude_keys and v is not None
+    }
+    if not output_data:
+        return None
+    return _serialize(output_data)
+
+
 def _resolve_agent_name(
     tags: Optional[list[str]], metadata: Optional[dict[str, Any]]
 ) -> Optional[str]:
@@ -373,10 +405,21 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if entity is None:
             return
         if isinstance(entity, Workflow):
-            entity.output_messages = _make_output_message(outputs)
+            output_msgs = _make_last_output_message(outputs)
+            if output_msgs:
+                entity.output_messages = output_msgs
+            else:
+                # Fallback: serialize non-message state fields as output.
+                # Common in LangGraph where nodes update structured state
+                # fields rather than the message list.
+                fallback = _make_workflow_output_fallback(outputs)
+                if fallback:
+                    entity.output_messages = [
+                        OutputMessage(role="assistant", parts=[Text(fallback)])
+                    ]
             self._handler.stop_workflow(entity)
         elif isinstance(entity, AgentInvocation):
-            entity.output_messages = _make_output_message(outputs)
+            entity.output_messages = _make_last_output_message(outputs)
             self._handler.stop_agent(entity)
         elif isinstance(entity, Step):
             self._handler.stop_step(entity)
