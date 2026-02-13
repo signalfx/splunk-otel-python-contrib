@@ -177,8 +177,10 @@ class LangchainInstrumentor(BaseInstrumentor):
         def _start_embedding(instance, texts):
             """Start an embedding invocation."""
             # Detect model name
+            # For Azure deployments, prefer deployment name over the default model
             request_model = (
-                getattr(instance, "model", None)
+                getattr(instance, "deployment", None)
+                or getattr(instance, "model", None)
                 or getattr(instance, "model_name", None)
                 or getattr(instance, "_model", None)
                 or "unknown-model"
