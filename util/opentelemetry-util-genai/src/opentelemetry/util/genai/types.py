@@ -69,6 +69,8 @@ class GenAI:
     context_token: Optional[ContextToken] = None
     span: Optional[Span] = None
     span_context: Optional[SpanContext] = None
+    # Parent span for proper parent-child trace linking
+    parent_span: Optional[Span] = None
     trace_id: Optional[int] = None
     span_id: Optional[int] = None
     trace_flags: Optional[int] = None
