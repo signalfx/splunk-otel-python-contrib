@@ -206,7 +206,6 @@ class LangchainInstrumentor(BaseInstrumentor):
 
             # Create embedding invocation
             embedding = UtilEmbeddingInvocation(
-                operation_name="embedding",
                 request_model=request_model,
                 input_texts=texts if isinstance(texts, list) else [texts],
                 provider=provider,
