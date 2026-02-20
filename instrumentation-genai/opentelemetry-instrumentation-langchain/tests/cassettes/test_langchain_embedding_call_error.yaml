@@ -1,0 +1,71 @@
+interactions:
+- request:
+    body: |-
+      {
+        "input": [
+          "What is the capital of France?"
+        ],
+        "model": "text-embedding-ada-002",
+        "encoding_format": "float"
+      }
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      authorization:
+      - Bearer test_openai_api_key
+      connection:
+      - keep-alive
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      user-agent:
+      - OpenAI/Python 1.108.1
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.108.1
+      x-stainless-raw-response:
+      - 'true'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.10
+    method: POST
+    uri: https://api.openai.com/v1/embeddings
+  response:
+    body:
+      string: |-
+        {
+          "error": {
+            "message": "Incorrect API key provided: test-api-****. You can find your API key at https://platform.openai.com/account/api-keys.",
+            "type": "invalid_request_error",
+            "param": null,
+            "code": "invalid_api_key"
+          }
+        }
+    headers:
+      content-type:
+      - application/json
+      date:
+      - Sun, 21 Sep 2025 04:09:41 GMT
+      openai-organization:
+      - test_openai_org_id
+      x-request-id:
+      - emb-err-50308e7e-2aac-4167-a8fb-03f9f5ed8169
+      content-length:
+      - '256'
+    status:
+      code: 401
+      message: Unauthorized
+version: 1
