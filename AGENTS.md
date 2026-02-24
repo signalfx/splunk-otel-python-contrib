@@ -8,7 +8,7 @@
 
 **Status**: Alpha preview - breaking changes expected.
 
-**Core Purpose of Splunk Distro for OpenTelemetry(SDOT)**: Provides util libraries to separate *instrumentation capture* from *telemetry emission* so:
+**Core Purpose of Splunk Distro for OpenTelemetry (SDOT)**: Provides util libraries to separate *instrumentation capture* from *telemetry emission* so:
 
 - Instrumentation authors create neutral GenAI data objects once
 - Pluggable emitters produce different telemetry flavors (spans, metrics, events)
@@ -23,7 +23,10 @@
 │   ├── opentelemetry-util-genai-evals/     # Async evaluation manager & registry
 │   ├── opentelemetry-util-genai-evals-deepeval/  # Deepeval metrics integration
 │   ├── opentelemetry-util-genai-emitters-splunk/ # Splunk-specific emitters
-│   └── opentelemetry-util-genai-traceloop-translator/ # Traceloop span translation
+│   ├── opentelemetry-util-genai-emitters-test/   # Test/perf harness emitters
+│   ├── opentelemetry-util-genai-traceloop-translator/ # Traceloop span translation
+│   ├── opentelemetry-util-genai-openlit-translator/   # OpenLIT span translation
+│   └── opentelemetry-util-genai-langsmith-translator/ # LangSmith span translation
 │
 ├── instrumentation-genai/                   # Framework instrumentations
 │   ├── opentelemetry-instrumentation-langchain/   # LangChain/LangGraph
@@ -31,7 +34,9 @@
 │   ├── opentelemetry-instrumentation-openai-v2/   # OpenAI SDK
 │   ├── opentelemetry-instrumentation-openai-agents-v2/ # OpenAI Agents
 │   ├── opentelemetry-instrumentation-llamaindex/  # LlamaIndex
-│   └── opentelemetry-instrumentation-aidefense/   # AI Defense
+│   ├── opentelemetry-instrumentation-aidefense/   # AI Defense
+│   ├── opentelemetry-instrumentation-fastmcp/     # FastMCP
+│   └── opentelemetry-instrumentation-weaviate/    # Weaviate
 ```
 
 ## Quick Reference
@@ -39,7 +44,7 @@
 ### Development Commands
 
 ```bash
-# Setup virtual environment (macOS)
+# Setup virtual environment (macOS/Linux)
 python -m venv .venv && source .venv/bin/activate
 
 # Install dev dependencies
@@ -71,7 +76,7 @@ ruff check --fix . && ruff format .
 
 | File | Purpose |
 |------|---------|
-| `types.py` | Core dataclasses: `GenAI`, `LLMInvocation`, `AgentInvocation`, `Workflow`, `ToolCall`, `EvaluationResult` |
+| `types.py` | Core dataclasses: `GenAI`, `LLMInvocation`, `AgentInvocation`, `AgentCreation`, `Workflow`, `Step`, `ToolCall`, `MCPToolCall`, `EmbeddingInvocation`, `RetrievalInvocation`, `EvaluationResult`, `Error` |
 | `handler.py` | `TelemetryHandler` - lifecycle facade (`start_llm`, `stop_llm`, `fail_llm`, etc.) |
 | `interfaces.py` | `EmitterProtocol`, `CompletionCallback`, `Evaluator` protocols |
 | `emitters/composite.py` | `CompositeEmitter` - chains emitters by category |
@@ -83,10 +88,10 @@ ruff check --fix . && ruff format .
 
 ```python
 class EmitterProtocol(Protocol):
-    def on_start(self, obj: GenAI) -> None: ...
-    def on_end(self, obj: GenAI) -> None: ...
-    def on_error(self, error: Exception, obj: GenAI) -> None: ...
-    def on_evaluation_results(self, results: list[EvaluationResult], obj: GenAI | None) -> None: ...
+    def on_start(self, obj: Any) -> None: ...
+    def on_end(self, obj: Any) -> None: ...
+    def on_error(self, error: Error, obj: Any) -> None: ...
+    def on_evaluation_results(self, results: Sequence[EvaluationResult], obj: Any | None = None) -> None: ...
 ```
 
 ### Plugin Registration (pyproject.toml)
@@ -107,7 +112,7 @@ my_evaluator = "my_package:register"
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Capture message content | `false` |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN`, `EVENT`, `SPAN_AND_EVENT` | `SPAN` |
 | `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Emitter selection | `span` |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` | Evaluator configuration | "default value" |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` | Evaluator configuration | unset (enables all registered evaluators) |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE` | Evaluation sampling (0.0-1.0) | `1.0` |
 
 ## Code Style
@@ -121,9 +126,9 @@ my_evaluator = "my_package:register"
 
 ## Testing
 
-- Tests in `tests/` subdirectory of each package and requires this package installed in development mode locally, like ```bash pip install -e ./util/opentelemetry-util-genai```
+- Tests in `tests/` subdirectory of each package; install the package in development mode first, e.g. `pip install -e ./util/opentelemetry-util-genai`
 - Use pytest with fixtures
-- Mock external services (LLM providers, etternal APIs, etc.). Do not mock instrumented frameworks unless absolutely necessary.
+- Mock external services (LLM providers, external APIs, etc.). Do not mock instrumented frameworks unless absolutely necessary.
 
 ```bash
 # Run with coverage
@@ -139,7 +144,6 @@ For detailed information, see these files in the repository:
 | [README.md](README.md) | Core concepts, emitter architecture, evaluation system |
 | [README.packages.architecture.md](README.packages.architecture.md) | Package architecture, interfaces, lifecycle diagrams |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines, PR process |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Detailed development setup for macOS |
 
 ## Common Tasks
 
@@ -168,7 +172,7 @@ For detailed information, see these files in the repository:
 
 ## Debugging
 
-VS Code launch configurations are in `.vscode/launch.json` for debugging examples.
+Example VS Code launch configuration for debugging:
 
 ```json
 {
@@ -209,14 +213,14 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 - Tests are required for all new features
 - Environment variables should have `OTEL_INSTRUMENTATION_GENAI_` prefix
 - Use semantic conventions from OpenTelemetry GenAI spec where applicable
-- Update README.md and README.arhcitecture.md if needed.
-- Update CHANGELOG.md to document changes
-- Update version.py, only update the minor version unless backward-incompatible changes are introduced. Always communicate with human when the breaking changes are introduced.
-- Always keep backward compatibility in mind when refactoring existing
+- Update README.md and README.packages.architecture.md if needed.
+- Update the per-package `CHANGELOG.md` to document changes (each package has its own changelog)
+- Update the per-package `version.py`; only update the minor version unless backward-incompatible changes are introduced. Always communicate with human when breaking changes are introduced.
+- Always keep backward compatibility in mind when refactoring existing code
 - Follow DRY and SOLID software engineering principles when readability and maintainability is not compromised.
 
 ## Common Pitfalls to Avoid
 
 - Do not try to mock libraries if import in the current env fail. If in doubt - clearly communicate the problem to user
 - Always refer to README.md and README.packages.architecture.md
-- avoid creating multiple copies of example apps, when can introduce parameters and reuse the same demo app
+- Avoid creating multiple copies of example apps; introduce parameters and reuse the same demo app instead
