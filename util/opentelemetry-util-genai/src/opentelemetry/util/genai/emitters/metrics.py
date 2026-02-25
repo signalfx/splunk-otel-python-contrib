@@ -11,6 +11,7 @@ from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
 
+from ..attributes import GEN_AI_WORKFLOW_NAME
 from ..instruments import Instruments
 from ..interfaces import EmitterMeta
 from ..types import (
@@ -101,6 +102,13 @@ class MetricsEmitter(EmitterMeta):
                 )
             if llm_invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = llm_invocation.agent_id
+            workflow_name = (
+                llm_invocation.attributes.get(GEN_AI_WORKFLOW_NAME)
+                if llm_invocation.attributes
+                else None
+            )
+            if workflow_name:
+                metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
 
             _record_token_metrics(
                 self._token_histogram,
@@ -132,6 +140,13 @@ class MetricsEmitter(EmitterMeta):
                 )
             if tool_invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
+            workflow_name = (
+                tool_invocation.attributes.get(GEN_AI_WORKFLOW_NAME)
+                if tool_invocation.attributes
+                else None
+            )
+            if workflow_name:
+                metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
 
             _record_duration(
                 self._duration_histogram,
@@ -163,6 +178,13 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = (
                     embedding_invocation.agent_id
                 )
+            workflow_name = (
+                embedding_invocation.attributes.get(GEN_AI_WORKFLOW_NAME)
+                if embedding_invocation.attributes
+                else None
+            )
+            if workflow_name:
+                metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
 
             _record_duration(
                 self._duration_histogram,
@@ -203,6 +225,13 @@ class MetricsEmitter(EmitterMeta):
                 )
             if llm_invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = llm_invocation.agent_id
+            workflow_name = (
+                llm_invocation.attributes.get(GEN_AI_WORKFLOW_NAME)
+                if llm_invocation.attributes
+                else None
+            )
+            if workflow_name:
+                metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
             if getattr(error, "type", None) is not None:
                 metric_attrs[ErrorAttributes.ERROR_TYPE] = (
                     error.type.__qualname__
@@ -228,6 +257,13 @@ class MetricsEmitter(EmitterMeta):
                 )
             if tool_invocation.agent_id:
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
+            workflow_name = (
+                tool_invocation.attributes.get(GEN_AI_WORKFLOW_NAME)
+                if tool_invocation.attributes
+                else None
+            )
+            if workflow_name:
+                metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
             if getattr(error, "type", None) is not None:
                 metric_attrs[ErrorAttributes.ERROR_TYPE] = (
                     error.type.__qualname__
@@ -260,6 +296,13 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_ID] = (
                     embedding_invocation.agent_id
                 )
+            workflow_name = (
+                embedding_invocation.attributes.get(GEN_AI_WORKFLOW_NAME)
+                if embedding_invocation.attributes
+                else None
+            )
+            if workflow_name:
+                metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
             if getattr(error, "type", None) is not None:
                 metric_attrs[ErrorAttributes.ERROR_TYPE] = (
                     error.type.__qualname__
@@ -362,6 +405,13 @@ class MetricsEmitter(EmitterMeta):
             metric_attrs[GenAI.GEN_AI_AGENT_NAME] = retrieval.agent_name
         if retrieval.agent_id:
             metric_attrs[GenAI.GEN_AI_AGENT_ID] = retrieval.agent_id
+        workflow_name = (
+            retrieval.attributes.get(GEN_AI_WORKFLOW_NAME)
+            if retrieval.attributes
+            else None
+        )
+        if workflow_name:
+            metric_attrs[GEN_AI_WORKFLOW_NAME] = workflow_name
         # Add error type if present
         if error is not None and getattr(error, "type", None) is not None:
             metric_attrs[ErrorAttributes.ERROR_TYPE] = error.type.__qualname__
