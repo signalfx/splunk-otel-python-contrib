@@ -53,7 +53,7 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import TelemetryHandler
 
 
 def _fully_unwrap_callback_manager():
@@ -130,7 +130,7 @@ def environment():
         os.environ["OPENAI_API_KEY"] = "test_openai_api_key"
     os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
     os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric_event"
-    setattr(get_telemetry_handler, "_default_handler", None)
+    TelemetryHandler._reset_for_testing()
 
     yield
 
@@ -149,7 +149,7 @@ def environment():
     else:
         os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = original_emitters
 
-    setattr(get_telemetry_handler, "_default_handler", None)
+    TelemetryHandler._reset_for_testing()
 
 
 @pytest.fixture
@@ -211,10 +211,7 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
     set_prompt_capture_enabled(True)
 
     # Reset util-genai singleton handler to ensure clean state
-    import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
-
-    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
-        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+    TelemetryHandler._reset_for_testing()
 
     # Use class-level check to prevent double instrumentation
     instrumentor = LangChainInstrumentor()
@@ -237,8 +234,7 @@ def instrument_with_content(tracer_provider, event_logger_provider, meter_provid
         # Fully unwrap to handle multiple test runs
         _fully_unwrap_callback_manager()
 
-        if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
-            setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+        TelemetryHandler._reset_for_testing()
 
 
 @pytest.fixture(scope="function")
@@ -281,10 +277,7 @@ def instrument_with_content_util(
     )
 
     # Reset singleton so new env vars are applied
-    import opentelemetry.util.genai.handler as _util_handler_mod  # noqa: PLC0415
-
-    if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
-        setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+    TelemetryHandler._reset_for_testing()
 
     # Use class-level check to prevent double instrumentation
     instrumentor = LangChainInstrumentor()
@@ -309,8 +302,7 @@ def instrument_with_content_util(
         # Fully unwrap to handle multiple test runs
         _fully_unwrap_callback_manager()
 
-        if hasattr(_util_handler_mod.get_telemetry_handler, "_default_handler"):
-            setattr(_util_handler_mod.get_telemetry_handler, "_default_handler", None)
+        TelemetryHandler._reset_for_testing()
 
 
 class LiteralBlockScalar(str):

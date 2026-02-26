@@ -42,7 +42,7 @@ from wrapt import wrap_function_wrapper
 from opentelemetry import trace
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
-from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
@@ -215,7 +215,7 @@ class AIDefenseInstrumentor(BaseInstrumentor):
 
             meter_provider = metrics.get_meter_provider()
 
-        _handler = TelemetryHandler(
+        _handler = get_telemetry_handler(
             tracer_provider=tracer_provider, meter_provider=meter_provider
         )
 

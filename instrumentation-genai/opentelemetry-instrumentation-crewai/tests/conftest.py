@@ -44,22 +44,20 @@ def meter_provider(metric_reader):
 def reset_global_handler():
     """Reset the global handler before and after each test."""
     import opentelemetry.instrumentation.crewai.instrumentation as crewai_module
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler
 
     # Store original value
     original_handler = crewai_module._handler
 
     # Reset before test
     crewai_module._handler = None
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     yield
 
     # Reset after test
     crewai_module._handler = original_handler
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
 
 @pytest.fixture(autouse=True)

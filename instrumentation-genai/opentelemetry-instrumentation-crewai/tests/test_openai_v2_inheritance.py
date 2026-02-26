@@ -12,7 +12,7 @@ from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
 )
 from opentelemetry.semconv._incubating.metrics import gen_ai_metrics
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
@@ -27,8 +27,7 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
     tracer_provider, meter_provider, metric_reader, span_exporter
 ):
     # Ensure fresh singleton with test providers.
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     handler = get_telemetry_handler(
         tracer_provider=tracer_provider,

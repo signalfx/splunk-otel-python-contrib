@@ -23,7 +23,10 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     Error,
@@ -31,6 +34,8 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
+    ToolCall,
+    Workflow,
 )
 
 STABILITY_EXPERIMENTAL: dict[str, str] = {}
@@ -53,11 +58,7 @@ class TestMetricsEmission(unittest.TestCase):
             metric_readers=[self.metric_reader]
         )
         # Reset handler singleton
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
-        # Reset handler singleton
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
     def _invoke(
         self,
@@ -85,8 +86,7 @@ class TestMetricsEmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -142,8 +142,7 @@ class TestMetricsEmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -340,8 +339,7 @@ class TestMetricsEmission(unittest.TestCase):
             OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
         }
         with patch.dict(os.environ, env, clear=False):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -427,6 +425,216 @@ class TestMetricsEmission(unittest.TestCase):
         self.assertTrue(
             has_error_attr,
             f"Expected duration metric datapoint to include {error_key}",
+        )
+
+    def test_singleton_identity(self):
+        """TelemetryHandler() and get_telemetry_handler() return the same instance."""
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            TelemetryHandler._reset_for_testing()
+            h1 = TelemetryHandler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            h2 = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            h3 = TelemetryHandler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+        self.assertIs(
+            h1,
+            h2,
+            "get_telemetry_handler must return the same object as TelemetryHandler()",
+        )
+        self.assertIs(
+            h1,
+            h3,
+            "Repeated TelemetryHandler() calls must return the singleton",
+        )
+
+    def test_non_genai_span_same_handler_propagation(self):
+        """A non-GenAI span between GenAI spans must not break propagation
+        when the *same* handler instance is used throughout.
+
+        trace-A
+          span1 - HTTP server span
+            span2 - GenAI workflow (root GenAI Span)
+              span3 - GenAI Agent
+                span3b - GenAI Tool Call
+                  span4 - custom span (non GenAI, developer in-app)
+                    span5 - LLM tool
+        """
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            TelemetryHandler._reset_for_testing()
+            handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+
+            tracer = self.tracer_provider.get_tracer("test-app")
+            with tracer.start_as_current_span("HTTP GET /api/chat"):
+                workflow = Workflow(
+                    name="my_workflow",
+                    workflow_type="sequential",
+                    framework="custom",
+                    system="custom",
+                )
+                handler.start_workflow(workflow)
+
+                agent = AgentInvocation(
+                    name="my_agent",
+                    model="gpt-4",
+                    framework="custom",
+                    system="custom",
+                )
+                handler.start_agent(agent)
+
+                tool = ToolCall(name="search_tool")
+                handler.start_tool_call(tool)
+
+                # Non-GenAI span in between
+                with tracer.start_as_current_span("custom_processing"):
+                    llm = LLMInvocation(
+                        request_model="gpt-4",
+                        input_messages=[
+                            InputMessage(
+                                role="user", parts=[Text(content="hello")]
+                            )
+                        ],
+                    )
+                    handler.start_llm(llm)
+                    time.sleep(0.01)
+                    llm.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content="hi there")],
+                            finish_reason="stop",
+                        )
+                    ]
+                    llm.input_tokens = 5
+                    llm.output_tokens = 3
+                    handler.stop_llm(llm)
+
+                handler.stop_tool_call(tool)
+                handler.stop_agent(agent)
+                handler.stop_workflow(workflow)
+
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            self.metric_reader.collect()
+
+        spans = self.span_exporter.get_finished_spans()
+        llm_span = next((s for s in spans if s.name == "chat gpt-4"), None)
+        self.assertIsNotNone(llm_span, "LLM span should exist")
+        llm_attrs = dict(llm_span.attributes) if llm_span else {}
+        self.assertEqual(llm_attrs.get("gen_ai.agent.name"), "my_agent")
+        self.assertEqual(llm_attrs.get("gen_ai.agent.id"), str(agent.run_id))
+
+    def test_non_genai_span_cross_handler_singleton_propagation(self):
+        """With the singleton fix, even separately-constructed TelemetryHandler
+        instances share the same internal stacks, so a non-GenAI span in
+        between must NOT break propagation.
+        """
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            TelemetryHandler._reset_for_testing()
+
+            # Simulate two instrumentations constructing handlers independently
+            parent_handler = TelemetryHandler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            child_handler = TelemetryHandler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+
+            # Should be the same instance thanks to singleton
+            self.assertIs(parent_handler, child_handler)
+
+            tracer = self.tracer_provider.get_tracer("test-app")
+
+            workflow = Workflow(
+                name="cross_workflow",
+                workflow_type="sequential",
+                framework="custom",
+                system="custom",
+            )
+            parent_handler.start_workflow(workflow)
+
+            agent = AgentInvocation(
+                name="cross_agent",
+                model="gpt-4",
+                framework="custom",
+                system="custom",
+            )
+            parent_handler.start_agent(agent)
+
+            # Non-GenAI span breaks the OTel attribute chain
+            with tracer.start_as_current_span("middleware_processing"):
+                llm = LLMInvocation(
+                    request_model="gpt-4",
+                    input_messages=[
+                        InputMessage(role="user", parts=[Text(content="test")])
+                    ],
+                )
+                child_handler.start_llm(llm)
+                time.sleep(0.01)
+                llm.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content="response")],
+                        finish_reason="stop",
+                    )
+                ]
+                llm.input_tokens = 3
+                llm.output_tokens = 2
+                child_handler.stop_llm(llm)
+
+            parent_handler.stop_agent(agent)
+            parent_handler.stop_workflow(workflow)
+
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            self.metric_reader.collect()
+
+        spans = self.span_exporter.get_finished_spans()
+        llm_span = next((s for s in spans if s.name == "chat gpt-4"), None)
+        self.assertIsNotNone(llm_span, "LLM span should exist")
+        llm_attrs = dict(llm_span.attributes) if llm_span else {}
+
+        # With the singleton, both handlers share the same stacks so
+        # agent context propagates even through a non-GenAI span.
+        self.assertEqual(
+            llm_attrs.get("gen_ai.agent.name"),
+            "cross_agent",
+            "Singleton ensures cross-handler agent propagation works",
+        )
+        self.assertEqual(
+            llm_attrs.get("gen_ai.agent.id"),
+            str(agent.run_id),
+            "Singleton ensures cross-handler agent id propagation works",
         )
 
 

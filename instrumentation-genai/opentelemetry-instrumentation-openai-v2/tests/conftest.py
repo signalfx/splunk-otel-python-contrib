@@ -12,10 +12,10 @@ from opentelemetry.instrumentation.openai_v2.utils import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
 )
 from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.util.genai import handler as genai_handler
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
+from opentelemetry.util.genai.handler import TelemetryHandler
 
 # Backward compatibility for InMemoryLogExporter -> InMemoryLogRecordExporter rename
 try:
@@ -126,8 +126,7 @@ def instrument_no_content(tracer_provider, logger_provider, meter_provider):
     )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
-    if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
-        delattr(genai_handler.get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     instrumentor = OpenAIInstrumentor()
     instrumentor.instrument(
@@ -152,8 +151,7 @@ def instrument_with_content(tracer_provider, logger_provider, meter_provider):
     )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
-    if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
-        delattr(genai_handler.get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     instrumentor = OpenAIInstrumentor()
     instrumentor.instrument(
@@ -183,8 +181,7 @@ def instrument_with_content_unsampled(
     tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
 
     # Clear cached handler so instrument() creates a fresh one with test providers
-    if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
-        delattr(genai_handler.get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     instrumentor = OpenAIInstrumentor()
     instrumentor.instrument(
