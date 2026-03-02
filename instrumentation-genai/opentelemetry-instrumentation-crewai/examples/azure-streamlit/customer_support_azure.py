@@ -98,7 +98,10 @@ def create_llm():
     # ChatCompletionsClient appends /chat/completions to this URL.
     endpoint = f"{base}/openai/deployments/{deployment}"
 
-    _log("LLM", f"Azure deployment: {deployment}  endpoint: {endpoint}  api_version: {api_version}")
+    _log(
+        "LLM",
+        f"Azure deployment: {deployment}  endpoint: {endpoint}  api_version: {api_version}",
+    )
     return LLM(
         model=f"azure/{deployment}",
         api_key=api_key,
@@ -235,10 +238,10 @@ def create_crew(agents: list, tasks: list):
         verbose=False,
         memory=True,
         embedder={
-            "provider": "azure",           # crewai 1.6+ uses "azure" (not "azure_openai")
+            "provider": "azure",  # crewai 1.6+ uses "azure" (not "azure_openai")
             "config": {
                 "deployment_id": embedding_deployment,  # required field in crewai 1.6+
-                "model_name": embedding_deployment,     # optional display name
+                "model_name": embedding_deployment,  # optional display name
                 "api_key": api_key,
                 "api_base": api_base,
                 "api_version": embedding_api_version,

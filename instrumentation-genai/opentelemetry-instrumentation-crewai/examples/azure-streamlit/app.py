@@ -37,6 +37,7 @@ Why the sys.modules guard:
 try:
     __import__("pysqlite3")
     import sys
+
     sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 except ImportError:
     pass  # macOS / modern Linux already has a recent enough sqlite3
@@ -51,6 +52,7 @@ if _OTEL_INIT_KEY not in sys.modules:
     sys.modules[_OTEL_INIT_KEY] = True  # set flag before initialize() in case of error
     try:
         from opentelemetry.instrumentation.auto_instrumentation import initialize
+
         initialize()
     except Exception:
         pass  # SDK not installed — safe to ignore
@@ -141,7 +143,9 @@ with st.form("support_form"):
         help="The support question or docs query the crew will research and answer.",
     )
 
-    submitted = st.form_submit_button("Submit", use_container_width=True, type="primary")
+    submitted = st.form_submit_button(
+        "Submit", use_container_width=True, type="primary"
+    )
 
 # =============================================================================
 # Execution
