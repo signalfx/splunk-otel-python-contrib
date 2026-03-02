@@ -55,8 +55,8 @@ if _OTEL_INIT_KEY not in sys.modules:
     except Exception:
         pass  # SDK not installed — safe to ignore
 
-import streamlit as st
-from dotenv import load_dotenv
+import streamlit as st  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
 
 # Load .env file so credentials are available when running locally.
 # In production, set env vars directly in your shell or container.
