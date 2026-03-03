@@ -201,22 +201,6 @@ def check_security(agent_name: str, request: str) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-def emit_blocked_agent_span(agent_name: str, event_id: str) -> None:
-    """Emit an invoke_agent span for a blocked agent so it appears in the agents table."""
-    with tracer.start_as_current_span(
-        name=f"invoke_agent {agent_name}",
-        kind=SpanKind.CLIENT,
-        attributes={
-            "gen_ai.operation.name": "invoke_agent",
-            "gen_ai.agent.name": agent_name,
-            "gen_ai.framework": "langchain",
-            "gen_ai.security.blocked": True,
-            "gen_ai.security.event_id": event_id,
-        },
-    ) as span:
-        span.set_status(trace.StatusCode.ERROR, f"Blocked by AI Defense: {event_id}")
-
-
 # ============================================================================
 # LangGraph Nodes
 # ============================================================================
@@ -228,7 +212,6 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
 
     is_safe, event_id = check_security("flight_specialist", request)
     if not is_safe:
-        emit_blocked_agent_span("flight_specialist", event_id)
         state["blocked_by_security"] = True
         state["security_event_id"] = event_id
         state["flight_summary"] = "[BLOCKED]"
@@ -282,7 +265,6 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
 
     is_safe, event_id = check_security("hotel_specialist", request)
     if not is_safe:
-        emit_blocked_agent_span("hotel_specialist", event_id)
         state["blocked_by_security"] = True
         state["security_event_id"] = event_id
         state["hotel_summary"] = "[BLOCKED]"
@@ -338,7 +320,6 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
 
     is_safe, event_id = check_security("activity_specialist", request)
     if not is_safe:
-        emit_blocked_agent_span("activity_specialist", event_id)
         state["blocked_by_security"] = True
         state["security_event_id"] = event_id
         state["activities_summary"] = "[BLOCKED - HARMFUL CONTENT]"
