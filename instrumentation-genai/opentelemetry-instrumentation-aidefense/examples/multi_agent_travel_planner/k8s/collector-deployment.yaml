@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-defense-collector
+  namespace: ai-defense
+  labels:
+    app: ai-defense-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-defense-collector
+  template:
+    metadata:
+      labels:
+        app: ai-defense-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.144.0
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 13133
+          name: health
+        env:
+        - name: LAB0_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-defense-collector-secrets
+              key: LAB0_ACCESS_TOKEN
+        - name: RC0_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-defense-collector-secrets
+              key: RC0_ACCESS_TOKEN
+        - name: LAB0_HEC_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-defense-collector-secrets
+              key: LAB0_HEC_TOKEN
+        - name: RC0_HEC_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-defense-collector-secrets
+              key: RC0_HEC_TOKEN
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otelcol-contrib/config.yaml
+          subPath: relay.yaml
+      volumes:
+      - name: config
+        configMap:
+          name: ai-defense-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-defense-collector
+  namespace: ai-defense
+  labels:
+    app: ai-defense-collector
+spec:
+  selector:
+    app: ai-defense-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
