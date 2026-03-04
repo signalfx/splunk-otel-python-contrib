@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Defense Integration - Meeting Prep</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e1a; color: #e0e0e0; padding: 40px; line-height: 1.6; }
+  h1 { color: #fff; font-size: 28px; margin-bottom: 10px; }
+  h2 { color: #64b5f6; font-size: 22px; margin: 40px 0 20px; border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; }
+  h3 { color: #81c784; font-size: 16px; margin: 15px 0 8px; }
+  .subtitle { color: #888; font-size: 14px; margin-bottom: 40px; }
+  .diagram { background: #111827; border: 1px solid #1e3a5f; border-radius: 12px; padding: 30px; margin: 20px 0; overflow-x: auto; }
+  .diagram svg { display: block; margin: 0 auto; }
+  .note { background: #1a1a2e; border-left: 4px solid #f59e0b; padding: 12px 16px; margin: 15px 0; border-radius: 0 8px 8px 0; font-size: 14px; }
+  .note.red { border-left-color: #ef4444; }
+  .note.green { border-left-color: #22c55e; }
+  .note.blue { border-left-color: #3b82f6; }
+  .gap { background: #2d1b1b; border: 1px solid #7f1d1d; border-radius: 8px; padding: 12px 16px; margin: 8px 0; font-size: 14px; }
+  .working { background: #1b2d1b; border: 1px solid #166534; border-radius: 8px; padding: 12px 16px; margin: 8px 0; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; }
+  th { background: #1e293b; color: #94a3b8; text-align: left; padding: 10px 14px; font-weight: 600; }
+  td { padding: 10px 14px; border-bottom: 1px solid #1e293b; }
+  tr:hover td { background: #111827; }
+  code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #f59e0b; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; margin: 2px; }
+  .tag.ok { background: #166534; color: #bbf7d0; }
+  .tag.fail { background: #7f1d1d; color: #fecaca; }
+  .tag.warn { background: #78350f; color: #fde68a; }
+</style>
+</head>
+<body>
+
+<h1>AI Defense Integration - Meeting Prep</h1>
+<p class="subtitle">Jason's cheat sheet &mdash; O11y for AI + Cisco AI Defense</p>
+
+<!-- ============================================================ -->
+<h2>1. Two Modes of AI Defense</h2>
+<!-- ============================================================ -->
+
+<div class="diagram">
+<svg viewBox="0 0 900 340" width="900" height="340">
+  <!-- API Mode -->
+  <rect x="10" y="10" width="420" height="320" rx="12" fill="#111827" stroke="#3b82f6" stroke-width="2"/>
+  <text x="220" y="40" text-anchor="middle" fill="#3b82f6" font-weight="bold" font-size="16">API Mode (current)</text>
+
+  <rect x="30" y="60" width="160" height="40" rx="8" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="110" y="85" text-anchor="middle" fill="#e0e0e0" font-size="13">1. check_security()</text>
+
+  <line x1="190" y1="80" x2="230" y2="80" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <rect x="230" y="60" width="180" height="40" rx="8" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="320" y="85" text-anchor="middle" fill="#fde68a" font-size="13">AI Defense API</text>
+
+  <!-- Decision -->
+  <polygon points="110,120 160,150 110,180 60,150" fill="#1e293b" stroke="#94a3b8"/>
+  <text x="110" y="155" text-anchor="middle" fill="#e0e0e0" font-size="12">Safe?</text>
+
+  <!-- Yes path -->
+  <line x1="160" y1="150" x2="250" y2="150" stroke="#22c55e" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="200" y="143" text-anchor="middle" fill="#22c55e" font-size="11">Yes</text>
+  <rect x="250" y="130" width="160" height="40" rx="8" fill="#14532d" stroke="#22c55e"/>
+  <text x="330" y="155" text-anchor="middle" fill="#bbf7d0" font-size="13">2. Call LLM</text>
+
+  <!-- No path -->
+  <line x1="110" y1="180" x2="110" y2="220" stroke="#ef4444" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <text x="125" y="205" fill="#ef4444" font-size="11">No</text>
+  <rect x="30" y="220" width="160" height="40" rx="8" fill="#450a0a" stroke="#ef4444"/>
+  <text x="110" y="245" text-anchor="middle" fill="#fecaca" font-size="13">BLOCKED</text>
+
+  <!-- Pros/Cons -->
+  <text x="30" y="290" fill="#94a3b8" font-size="12">&#10003; Blocks before LLM (saves tokens)</text>
+  <text x="30" y="310" fill="#94a3b8" font-size="12">&#10003; App controls block/monitor logic</text>
+
+  <!-- Gateway Mode -->
+  <rect x="460" y="10" width="420" height="320" rx="12" fill="#111827" stroke="#a855f7" stroke-width="2"/>
+  <text x="670" y="40" text-anchor="middle" fill="#a855f7" font-weight="bold" font-size="16">Gateway Mode (previous)</text>
+
+  <rect x="480" y="60" width="160" height="40" rx="8" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="560" y="85" text-anchor="middle" fill="#e0e0e0" font-size="13">1. Call LLM</text>
+
+  <line x1="640" y1="80" x2="680" y2="80" stroke="#a855f7" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+  <rect x="680" y="55" width="180" height="50" rx="8" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="770" y="75" text-anchor="middle" fill="#fde68a" font-size="12">AI Defense Gateway</text>
+  <text x="770" y="93" text-anchor="middle" fill="#94a3b8" font-size="11">(transparent proxy)</text>
+
+  <line x1="770" y1="105" x2="770" y2="140" stroke="#a855f7" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+  <rect x="680" y="140" width="180" height="40" rx="8" fill="#14532d" stroke="#22c55e"/>
+  <text x="770" y="165" text-anchor="middle" fill="#bbf7d0" font-size="13">OpenAI / LLM</text>
+
+  <line x1="770" y1="180" x2="770" y2="215" stroke="#a855f7" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+  <rect x="680" y="215" width="180" height="40" rx="8" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="770" y="237" text-anchor="middle" fill="#fde68a" font-size="12">+ event_id in header</text>
+
+  <text x="480" y="290" fill="#94a3b8" font-size="12">&#10003; Transparent - no code changes</text>
+  <text x="480" y="310" fill="#94a3b8" font-size="12">&#10007; LLM always called (uses tokens)</text>
+
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#60a5fa"/></marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#22c55e"/></marker>
+    <marker id="arrow-red" markerWidth="8" markerHeight="8" refX="4" refY="8" orient="auto"><path d="M0,0 L4,8 L8,0" fill="#ef4444"/></marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="4" refY="8" orient="auto"><path d="M0,0 L4,8 L8,0" fill="#a855f7"/></marker>
+  </defs>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>2. End-to-End Data Flow</h2>
+<!-- ============================================================ -->
+
+<div class="diagram">
+<svg viewBox="0 0 960 420" width="960" height="420">
+  <!-- App Box -->
+  <rect x="10" y="10" width="280" height="400" rx="12" fill="#0f172a" stroke="#3b82f6" stroke-width="2"/>
+  <text x="150" y="35" text-anchor="middle" fill="#3b82f6" font-weight="bold" font-size="14">ai-defense namespace</text>
+  <text x="150" y="52" text-anchor="middle" fill="#64748b" font-size="11">o11y-for-ai cluster</text>
+
+  <!-- CronJob -->
+  <rect x="25" y="65" width="250" height="35" rx="6" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="150" y="87" text-anchor="middle" fill="#e0e0e0" font-size="12">CronJob: ai-defense-otel-travel-api</text>
+
+  <!-- App -->
+  <rect x="25" y="110" width="250" height="130" rx="6" fill="#111827" stroke="#475569"/>
+  <text x="150" y="130" text-anchor="middle" fill="#e0e0e0" font-weight="bold" font-size="12">Travel Planner v2.5.0</text>
+  <text x="40" y="152" fill="#94a3b8" font-size="11">1. flight_specialist &#8594; LLM &#10003;</text>
+  <text x="40" y="170" fill="#94a3b8" font-size="11">2. hotel_specialist &#8594; LLM &#10003;</text>
+  <text x="40" y="188" fill="#94a3b8" font-size="11">3. activity_specialist &#8594; AI Defense</text>
+  <text x="55" y="206" fill="#ef4444" font-size="11">&#8594; BLOCKED (security/privacy)</text>
+  <text x="40" y="228" fill="#64748b" font-size="10">Alternates: Tokyo/security &amp; Paris/privacy</text>
+
+  <!-- External APIs -->
+  <rect x="25" y="250" width="120" height="55" rx="6" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="85" y="272" text-anchor="middle" fill="#fde68a" font-size="10">Cisco LLM Gateway</text>
+  <text x="85" y="288" text-anchor="middle" fill="#94a3b8" font-size="9">chat-ai.cisco.com</text>
+  <text x="85" y="300" text-anchor="middle" fill="#94a3b8" font-size="9">gpt-4o-mini</text>
+
+  <rect x="155" y="250" width="120" height="55" rx="6" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="215" y="272" text-anchor="middle" fill="#fde68a" font-size="10">AI Defense API</text>
+  <text x="215" y="288" text-anchor="middle" fill="#94a3b8" font-size="9">inspect_prompt()</text>
+  <text x="215" y="300" text-anchor="middle" fill="#94a3b8" font-size="9">&#8594; event_id</text>
+
+  <!-- Dedicated Collector -->
+  <rect x="25" y="320" width="250" height="75" rx="6" fill="#14532d" stroke="#22c55e"/>
+  <text x="150" y="345" text-anchor="middle" fill="#bbf7d0" font-weight="bold" font-size="12">Dedicated OTel Collector</text>
+  <text x="150" y="363" text-anchor="middle" fill="#94a3b8" font-size="10">ai-defense-collector (in-namespace)</text>
+  <text x="150" y="380" text-anchor="middle" fill="#94a3b8" font-size="10">spanmetrics, resourcedetection, batch</text>
+
+  <!-- Arrow app to collector -->
+  <line x1="150" y1="240" x2="150" y2="320" stroke="#22c55e" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="165" y="280" fill="#22c55e" font-size="10">OTLP :4317</text>
+
+  <!-- Destinations -->
+  <rect x="370" y="10" width="580" height="400" rx="12" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+  <text x="660" y="35" text-anchor="middle" fill="#94a3b8" font-weight="bold" font-size="14">External Destinations</text>
+
+  <!-- Arrow collector to destinations -->
+  <line x1="275" y1="358" x2="390" y2="100" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <line x1="275" y1="358" x2="390" y2="190" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <line x1="275" y1="358" x2="390" y2="280" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- lab0 -->
+  <rect x="390" y="55" width="240" height="80" rx="8" fill="#111827" stroke="#22c55e"/>
+  <text x="510" y="78" text-anchor="middle" fill="#22c55e" font-weight="bold" font-size="13">lab0</text>
+  <text x="510" y="96" text-anchor="middle" fill="#94a3b8" font-size="10">private-ingest.lab0.signalfx.com</text>
+  <text x="510" y="112" text-anchor="middle" fill="#94a3b8" font-size="10">org: o11y-for-ai-platform-test</text>
+  <text x="510" y="128" text-anchor="middle" fill="#94a3b8" font-size="10">(G_yXEGYAIAI)</text>
+
+  <!-- rc0 -->
+  <rect x="390" y="150" width="240" height="80" rx="8" fill="#111827" stroke="#22c55e"/>
+  <text x="510" y="173" text-anchor="middle" fill="#22c55e" font-weight="bold" font-size="13">rc0</text>
+  <text x="510" y="191" text-anchor="middle" fill="#94a3b8" font-size="10">private-ingest.rc0.signalfx.com</text>
+  <text x="510" y="207" text-anchor="middle" fill="#94a3b8" font-size="10">org: o11y-for-ai-platform-test</text>
+  <text x="510" y="223" text-anchor="middle" fill="#94a3b8" font-size="10">(G_NZj8yAIBs)</text>
+
+  <!-- svc-eval-processor -->
+  <rect x="660" y="55" width="270" height="175" rx="8" fill="#1a1a2e" stroke="#a855f7"/>
+  <text x="795" y="78" text-anchor="middle" fill="#a855f7" font-weight="bold" font-size="13">svc-eval-processor</text>
+  <text x="795" y="96" text-anchor="middle" fill="#94a3b8" font-size="10">(backend enrichment)</text>
+
+  <text x="680" y="120" fill="#94a3b8" font-size="11">1. Reads spans from Iceberg</text>
+  <text x="680" y="138" fill="#94a3b8" font-size="11">2. Finds gen_ai.security.event_id</text>
+  <text x="680" y="156" fill="#94a3b8" font-size="11">3. Calls AI Defense API for details</text>
+  <text x="680" y="174" fill="#94a3b8" font-size="11">4. Extracts risk_name, risk_action</text>
+  <text x="680" y="192" fill="#94a3b8" font-size="11">5. Emits gen_ai.security metrics</text>
+  <text x="680" y="215" fill="#ef4444" font-size="11">&#9888; No credentials configured!</text>
+
+  <!-- Arrows to eval processor -->
+  <line x1="630" y1="95" x2="660" y2="95" stroke="#a855f7" stroke-width="2" stroke-dasharray="4,3"/>
+  <line x1="630" y1="190" x2="660" y2="190" stroke="#a855f7" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Shared Collector (faded) -->
+  <rect x="390" y="260" width="240" height="65" rx="8" fill="#111827" stroke="#475569" opacity="0.5"/>
+  <text x="510" y="283" text-anchor="middle" fill="#64748b" font-size="12">Shared OTel Collector</text>
+  <text x="510" y="300" text-anchor="middle" fill="#64748b" font-size="10">(otel namespace - other apps)</text>
+  <text x="510" y="315" text-anchor="middle" fill="#64748b" font-size="10">NOT used by ai-defense</text>
+
+  <!-- O11y UI -->
+  <rect x="660" y="260" width="270" height="65" rx="8" fill="#111827" stroke="#f59e0b"/>
+  <text x="795" y="283" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="13">Splunk O11y UI</text>
+  <text x="795" y="300" text-anchor="middle" fill="#94a3b8" font-size="10">Traces &#10003; | Agents Table &#10003;</text>
+  <text x="795" y="315" text-anchor="middle" fill="#ef4444" font-size="10">Risks Column &#10007; (needs credentials)</text>
+
+  <!-- Arrow eval to UI -->
+  <line x1="795" y1="230" x2="795" y2="260" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-blue)"/>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>3. Span Attributes (What the App Emits)</h2>
+<!-- ============================================================ -->
+
+<table>
+  <tr><th>Attribute</th><th>Example</th><th>Where Used</th></tr>
+  <tr><td><code>gen_ai.security.event_id</code></td><td>830920f6-5b91-4be4-...</td><td>Links to AI Defense event; used by svc-eval-processor</td></tr>
+  <tr><td><code>gen_ai.agent.name</code></td><td>flight_specialist</td><td>Agents table, metric dimensions</td></tr>
+  <tr><td><code>gen_ai.operation.name</code></td><td>invoke_agent, chat, execute_tool</td><td>Span type identification</td></tr>
+  <tr><td><code>gen_ai.request.model</code></td><td>gpt-4o-mini, cisco-ai-defense</td><td>Model tracking</td></tr>
+  <tr><td><code>gen_ai.provider.name</code></td><td>openai</td><td>Provider tracking</td></tr>
+  <tr><td><code>gen_ai.usage.input_tokens</code></td><td>89</td><td>Cost tracking</td></tr>
+  <tr><td><code>gen_ai.usage.output_tokens</code></td><td>31</td><td>Cost tracking</td></tr>
+  <tr><td><code>gen_ai.framework</code></td><td>langchain, aidefense</td><td>Framework identification</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>4. Trace Structure (API Mode)</h2>
+<!-- ============================================================ -->
+
+<div class="diagram" style="font-family: monospace; font-size: 13px; line-height: 1.8; white-space: pre; color: #94a3b8;">
+<span style="color:#f59e0b">POST /travel/plan</span> (root span, SpanKind.SERVER)
+<span style="color:#64748b">  │</span>
+<span style="color:#64748b">  └─</span> <span style="color:#a855f7">workflow LangGraph</span> (gen_ai.operation.name=invoke_workflow)
+<span style="color:#64748b">      │</span>
+<span style="color:#64748b">      ├─</span> step __start__
+<span style="color:#64748b">      ├─</span> step should_continue
+<span style="color:#64748b">      ├─</span> step flight_specialist
+<span style="color:#64748b">      │   ├─</span> <span style="color:#f59e0b">chat cisco-ai-defense</span>  ← inspect_prompt (is_safe=true)
+<span style="color:#64748b">      │   └─</span> <span style="color:#22c55e">invoke_agent flight_specialist</span>  ← gen_ai.agent.name &#10003;
+<span style="color:#64748b">      │       ├─</span> step model → <span style="color:#3b82f6">chat gpt-4o-mini</span> (tokens: 89→31)
+<span style="color:#64748b">      │       ├─</span> step tools → execute_tool mock_search_flights
+<span style="color:#64748b">      │       └─</span> step model → <span style="color:#3b82f6">chat gpt-4o-mini</span> (tokens: 160→50)
+<span style="color:#64748b">      │</span>
+<span style="color:#64748b">      ├─</span> step hotel_specialist
+<span style="color:#64748b">      │   ├─</span> <span style="color:#f59e0b">chat cisco-ai-defense</span>  ← inspect_prompt (is_safe=true)
+<span style="color:#64748b">      │   └─</span> <span style="color:#22c55e">invoke_agent hotel_specialist</span>  ← gen_ai.agent.name &#10003;
+<span style="color:#64748b">      │       ├─</span> step model → <span style="color:#3b82f6">chat gpt-4o-mini</span>
+<span style="color:#64748b">      │       ├─</span> step tools → execute_tool mock_search_hotels
+<span style="color:#64748b">      │       └─</span> step model → <span style="color:#3b82f6">chat gpt-4o-mini</span>
+<span style="color:#64748b">      │</span>
+<span style="color:#64748b">      ├─</span> step activity_specialist
+<span style="color:#64748b">      │   ├─</span> <span style="color:#ef4444">chat cisco-ai-defense</span>  ← inspect_prompt (<span style="color:#ef4444">is_safe=false, event_id=xxx</span>)
+<span style="color:#64748b">      │   └─</span> <span style="color:#ef4444">&#10007; NO invoke_agent</span>  ← blocked before LLM call
+<span style="color:#64748b">      │</span>
+<span style="color:#64748b">      └─</span> step should_continue → END
+</div>
+
+<!-- ============================================================ -->
+<h2>5. What's Working vs What's Not</h2>
+<!-- ============================================================ -->
+
+<div class="cols">
+<div>
+<h3>&#10003; Working</h3>
+<div class="working">Demo app running every 5 min on o11y-for-ai cluster</div>
+<div class="working">Both security &amp; privacy scenarios detected by AI Defense</div>
+<div class="working">Dedicated OTel collector in ai-defense namespace</div>
+<div class="working">Traces flowing to o11y-for-ai-platform-test (lab0 + rc0)</div>
+<div class="working">gen_ai.security.event_id on all AI Defense spans</div>
+<div class="working">gen_ai.agent.name on invoke_agent spans</div>
+<div class="working">spanmetrics connector generating RED metrics from spans</div>
+</div>
+<div>
+<h3>&#10007; Not Working / Needs Action</h3>
+<div class="gap"><strong>AI Defense credentials</strong> not provisioned in Metabase for o11y-for-ai-platform-test on lab0/rc0 &rarr; svc-eval-processor can't enrich spans</div>
+<div class="gap"><strong>InstrumentationEvals</strong> not enabled for o11y-for-ai-platform-test org</div>
+<div class="gap"><strong>Risks column</strong> empty &mdash; depends on svc-eval-processor enrichment</div>
+<div class="gap"><strong>No MeterProvider</strong> in app &mdash; gen_ai.client.operation.duration histograms not emitted from app side</div>
+<div class="gap"><strong>Blocked agents</strong> don't produce invoke_agent spans (by design in API mode)</div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>6. Key Orgs &amp; Infrastructure</h2>
+<!-- ============================================================ -->
+
+<table>
+  <tr><th>Realm</th><th>Org</th><th>Org ID</th><th>Data?</th><th>Instr. Evals?</th><th>Status</th></tr>
+  <tr><td>rc0</td><td>o11y-for-ai-platform-test</td><td><code>G_NZj8yAIBs</code></td><td><span class="tag ok">Yes (new)</span></td><td><span class="tag fail">No</span></td><td>Our target org</td></tr>
+  <tr><td>lab0</td><td>o11y-for-ai-platform-test</td><td><code>G_yXEGYAIAI</code></td><td><span class="tag ok">Yes (new)</span></td><td><span class="tag fail">No</span></td><td>Our target org</td></tr>
+  <tr><td>rc0</td><td>o11y-for-ai-test</td><td><code>G_IjzVoAIAE</code></td><td><span class="tag ok">Yes</span></td><td><span class="tag ok">Yes</span></td><td>Gateway mode worked here</td></tr>
+  <tr><td>rc0</td><td>psr-o11y-for-ai</td><td><code>G7HbpCtAAAA</code></td><td><span class="tag ok">Yes</span></td><td><span class="tag fail">No</span></td><td>Old target (no creds)</td></tr>
+  <tr><td>us1</td><td>ShowPlayground</td><td>&mdash;</td><td><span class="tag ok">Yes</span></td><td><span class="tag ok">Yes</span></td><td>Working</td></tr>
+</table>
+
+<table>
+  <tr><th>Cluster</th><th>Account</th><th>Auth</th><th>Used For</th></tr>
+  <tr><td>o11y-for-ai</td><td>875228160670</td><td>duo-sso</td><td>Demo app (API mode) + dedicated collector</td></tr>
+  <tr><td>o11y-inframon-ai</td><td>875228160670</td><td>duo-sso</td><td>Other demo apps (travel-planner, etc.)</td></tr>
+  <tr><td>lab0</td><td>134183635603</td><td>okta-aws-setup</td><td>svc-eval-processor, O11y platform</td></tr>
+  <tr><td>rc0</td><td>134183635603</td><td>okta-aws-setup</td><td>svc-eval-processor, O11y platform</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>7. For the AI Assistant Team</h2>
+<!-- ============================================================ -->
+
+<div class="note blue">
+<strong>To integrate with AI Defense, they need:</strong><br>
+1. <code>pip install cisco-aidefense-sdk</code><br>
+2. Choose API mode or Gateway mode<br>
+3. Add <code>AIDefenseInstrumentor().instrument()</code> for auto spans<br>
+4. Set env vars: <code>AI_DEFENSE_API_KEY</code> (API) or <code>AI_DEFENSE_GATEWAY_URL</code> (Gateway)<br>
+5. Reference: <code>examples/multi_agent_travel_planner/</code> (API mode) or <code>examples/gateway/multi_agent_travel_planner/</code> (Gateway mode)
+</div>
+
+<div class="note green">
+<strong>What AI Defense SDK returns (InspectResponse):</strong><br>
+&bull; <code>event_id</code> &mdash; for correlation<br>
+&bull; <code>is_safe</code> &mdash; boolean<br>
+&bull; <code>action</code> &mdash; Allow / Block<br>
+&bull; <code>classifications</code> &mdash; SECURITY_VIOLATION, PRIVACY_VIOLATION, SAFETY_VIOLATION<br>
+&bull; <code>rules</code> &mdash; Prompt Injection, PII, Violence, etc.<br>
+&bull; <code>severity</code> &mdash; NONE, LOW, MEDIUM, HIGH
+</div>
+
+<div class="note red">
+<strong>Key gotcha:</strong> In API mode, the app decides what to do with <code>is_safe=false</code>. 
+Even if the AI Defense policy is set to "monitor" (not "block"), the app can choose to block. 
+The policy mode only matters in Gateway mode where the gateway enforces it.
+</div>
+
+</body>
+</html>

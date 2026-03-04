@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adding AI Defense to Your App</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e1a; color: #e0e0e0; padding: 40px; line-height: 1.7; }
+  h1 { color: #fff; font-size: 28px; margin-bottom: 6px; }
+  h2 { color: #64b5f6; font-size: 20px; margin: 50px 0 16px; border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; }
+  .subtitle { color: #888; font-size: 14px; margin-bottom: 40px; }
+  .diagram { background: #111827; border: 1px solid #1e3a5f; border-radius: 12px; padding: 24px; margin: 16px 0; overflow-x: auto; }
+  .explain { color: #94a3b8; font-size: 14px; margin: 12px 0; max-width: 800px; }
+  .explain strong { color: #e0e0e0; }
+  .callout { background: #1a1a2e; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 16px 0; border-radius: 0 8px 8px 0; font-size: 14px; }
+  .callout.blue { border-left-color: #3b82f6; }
+  .callout.green { border-left-color: #22c55e; }
+  .callout.red { border-left-color: #ef4444; }
+  .callout.purple { border-left-color: #a855f7; }
+  code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #f59e0b; }
+  .code-block { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 18px; margin: 14px 0; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.8; overflow-x: auto; white-space: pre; color: #e0e0e0; }
+  .kw { color: #ff7b72; }
+  .str { color: #a5d6ff; }
+  .cmt { color: #8b949e; }
+  .fn { color: #d2a8ff; }
+  .var { color: #ffa657; }
+  .added { background: #1b3a1b; display: inline; }
+  .removed { background: #3a1b1b; display: inline; text-decoration: line-through; opacity: 0.6; }
+  .highlight { background: #2d2006; border-left: 3px solid #f59e0b; padding-left: 8px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .badge.easy { background: #14532d; color: #86efac; }
+  .badge.medium { background: #78350f; color: #fde68a; }
+  .step-grid { display: grid; grid-template-columns: 50px 1fr; gap: 0; margin: 16px 0; }
+  .step-num { display: flex; align-items: flex-start; justify-content: center; padding-top: 14px; }
+  .step-circle { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 15px; }
+  .step-content { border-left: 2px solid #1e3a5f; padding: 10px 0 20px 20px; }
+  .step-content h3 { font-size: 15px; margin-bottom: 6px; }
+  .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+  @media (max-width: 900px) { .vs { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Adding AI Defense to Your App</h1>
+<p class="subtitle">A guide for integrating Cisco AI Defense — from zero to working</p>
+
+<!-- ============================================================ -->
+<h2>1. Your App Today (No AI Defense)</h2>
+<!-- ============================================================ -->
+
+<p class="explain">This is a typical GenAI app. It takes user input, sends it to an LLM, and returns a response. No security checks.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 130" width="800" height="130">
+  <circle cx="50" cy="65" r="28" fill="#1e3a5f" stroke="#60a5fa" stroke-width="2"/>
+  <text x="50" y="60" text-anchor="middle" fill="#93c5fd" font-size="18">👤</text>
+  <text x="50" y="78" text-anchor="middle" fill="#93c5fd" font-size="10">User</text>
+
+  <line x1="78" y1="65" x2="180" y2="65" stroke="#60a5fa" stroke-width="2" marker-end="url(#a1)"/>
+  <text x="130" y="55" text-anchor="middle" fill="#94a3b8" font-size="10">"Help me plan</text>
+  <text x="130" y="67" text-anchor="middle" fill="#94a3b8" font-size="10">a trip"</text>
+
+  <rect x="180" y="35" width="180" height="60" rx="10" fill="#111827" stroke="#f59e0b" stroke-width="2"/>
+  <text x="270" y="60" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="14">Your App</text>
+  <text x="270" y="78" text-anchor="middle" fill="#94a3b8" font-size="10">LangChain / OpenAI / etc.</text>
+
+  <line x1="360" y1="65" x2="470" y2="65" stroke="#a855f7" stroke-width="2" marker-end="url(#a1)"/>
+  <text x="415" y="55" text-anchor="middle" fill="#94a3b8" font-size="10">prompt</text>
+
+  <rect x="470" y="35" width="150" height="60" rx="10" fill="#3b0764" stroke="#a855f7" stroke-width="2"/>
+  <text x="545" y="60" text-anchor="middle" fill="#d8b4fe" font-weight="bold" font-size="14">🤖 LLM</text>
+  <text x="545" y="78" text-anchor="middle" fill="#94a3b8" font-size="10">GPT-4o-mini</text>
+
+  <line x1="620" y1="65" x2="700" y2="65" stroke="#a855f7" stroke-width="2" marker-end="url(#a1)"/>
+  <text x="660" y="55" text-anchor="middle" fill="#94a3b8" font-size="10">response</text>
+
+  <rect x="695" y="45" width="90" height="40" rx="8" fill="#111827" stroke="#475569"/>
+  <text x="740" y="70" text-anchor="middle" fill="#94a3b8" font-size="11">result</text>
+
+  <text x="400" y="120" text-anchor="middle" fill="#ef4444" font-size="12">⚠️ No security — any prompt goes straight to the LLM</text>
+
+  <defs><marker id="a1" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#60a5fa"/></marker></defs>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>2. Two Ways to Add AI Defense</h2>
+<!-- ============================================================ -->
+
+<div class="vs">
+<div class="diagram" style="border-color: #a855f7;">
+<svg viewBox="0 0 370 300" width="370" height="300">
+  <text x="185" y="22" text-anchor="middle" fill="#a855f7" font-weight="bold" font-size="15">Gateway Mode</text>
+  <text x="185" y="40" text-anchor="middle" fill="#94a3b8" font-size="11">Change the URL, that's it</text>
+
+  <!-- User -->
+  <rect x="10" y="60" width="100" height="40" rx="8" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="60" y="84" text-anchor="middle" fill="#93c5fd" font-size="11">Your App</text>
+
+  <!-- Arrow to gateway -->
+  <line x1="110" y1="80" x2="150" y2="80" stroke="#a855f7" stroke-width="2" marker-end="url(#a2p)"/>
+  <text x="130" y="72" text-anchor="middle" fill="#94a3b8" font-size="9">prompt</text>
+
+  <!-- Gateway -->
+  <rect x="150" y="55" width="130" height="50" rx="8" fill="#1a1a2e" stroke="#f59e0b" stroke-width="2"/>
+  <text x="215" y="75" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="11">🛡️ AI Defense</text>
+  <text x="215" y="92" text-anchor="middle" fill="#fde68a" font-size="10">Gateway</text>
+
+  <!-- Arrow to LLM -->
+  <line x1="280" y1="80" x2="310" y2="80" stroke="#a855f7" stroke-width="2" marker-end="url(#a2p)"/>
+
+  <!-- LLM -->
+  <rect x="310" y="60" width="50" height="40" rx="8" fill="#3b0764" stroke="#a855f7"/>
+  <text x="335" y="84" text-anchor="middle" fill="#d8b4fe" font-size="10">LLM</text>
+
+  <!-- What you change -->
+  <rect x="10" y="125" width="350" height="95" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="20" y="148" fill="#22c55e" font-weight="bold" font-size="12">What you change:</text>
+  <text x="20" y="170" fill="#8b949e" font-size="11" font-family="monospace"><tspan fill="#3a1b1b; text-decoration: line-through" opacity="0.5">base_url = "https://api.openai.com/v1"</tspan></text>
+  <text x="20" y="190" fill="#86efac" font-size="11" font-family="monospace">base_url = "https://us.gateway.ai</text>
+  <text x="20" y="206" fill="#86efac" font-size="11" font-family="monospace">  defense...cisco.com/.../v1"</text>
+
+  <!-- Pros -->
+  <text x="20" y="242" fill="#22c55e" font-size="11">✓ Almost zero code changes</text>
+  <text x="20" y="258" fill="#22c55e" font-size="11">✓ Gateway enforces the security policy</text>
+  <text x="20" y="274" fill="#22c55e" font-size="11">✓ Works with any LLM SDK (OpenAI, etc.)</text>
+  <text x="20" y="290" fill="#ef4444" font-size="11">✗ LLM always called (uses tokens even if blocked)</text>
+</svg>
+
+<defs><marker id="a2p" markerWidth="7" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="#a855f7"/></marker></defs>
+</div>
+
+<div class="diagram" style="border-color: #3b82f6;">
+<svg viewBox="0 0 370 300" width="370" height="300">
+  <text x="185" y="22" text-anchor="middle" fill="#3b82f6" font-weight="bold" font-size="15">API Mode</text>
+  <text x="185" y="40" text-anchor="middle" fill="#94a3b8" font-size="11">Add security checks in your code</text>
+
+  <!-- App -->
+  <rect x="10" y="55" width="140" height="55" rx="8" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="80" y="75" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">Your App</text>
+  <text x="80" y="92" text-anchor="middle" fill="#93c5fd" font-size="10">inspect_prompt()</text>
+  <text x="80" y="104" text-anchor="middle" fill="#93c5fd" font-size="9">↑ you add this call</text>
+
+  <!-- AI Defense API -->
+  <line x1="150" y1="75" x2="200" y2="60" stroke="#ef4444" stroke-width="2" marker-end="url(#a2r)"/>
+  <rect x="200" y="40" width="120" height="40" rx="8" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="260" y="57" text-anchor="middle" fill="#fde68a" font-size="10">🛡️ AI Defense</text>
+  <text x="260" y="72" text-anchor="middle" fill="#fde68a" font-size="10">API</text>
+  <line x1="200" y1="70" x2="150" y2="85" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="3,2"/>
+  <text x="175" y="62" fill="#94a3b8" font-size="8">check</text>
+  <text x="175" y="90" fill="#22c55e" font-size="8">safe?</text>
+
+  <!-- LLM (only if safe) -->
+  <line x1="150" y1="90" x2="200" y2="105" stroke="#a855f7" stroke-width="2" marker-end="url(#a2p)"/>
+  <rect x="200" y="90" width="120" height="35" rx="8" fill="#3b0764" stroke="#a855f7"/>
+  <text x="260" y="112" text-anchor="middle" fill="#d8b4fe" font-size="10">LLM (only if safe)</text>
+
+  <!-- What you change -->
+  <rect x="10" y="140" width="350" height="80" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="20" y="162" fill="#22c55e" font-weight="bold" font-size="12">What you add:</text>
+  <text x="20" y="182" fill="#86efac" font-size="11" font-family="monospace">result = client.inspect_prompt(input)</text>
+  <text x="20" y="200" fill="#86efac" font-size="11" font-family="monospace"><tspan fill="#ff7b72">if not</tspan> result.is_safe: block()</text>
+  <text x="20" y="213" fill="#64748b" font-size="10">+ pip install cisco-aidefense-sdk</text>
+
+  <!-- Pros -->
+  <text x="20" y="242" fill="#22c55e" font-size="11">✓ Blocks BEFORE LLM (saves tokens + money)</text>
+  <text x="20" y="258" fill="#22c55e" font-size="11">✓ You control what "block" means</text>
+  <text x="20" y="274" fill="#22c55e" font-size="11">✓ Can log/warn instead of hard block</text>
+  <text x="20" y="290" fill="#ef4444" font-size="11">✗ Requires code changes at each check point</text>
+</svg>
+
+<defs><marker id="a2r" markerWidth="7" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="#ef4444"/></marker></defs>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>3. Gateway Mode — Step by Step</h2>
+<!-- ============================================================ -->
+
+<p class="explain"><span class="badge easy">EASY</span> &nbsp;Minimal changes. Best starting point.</p>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#14532d; color:#86efac;">1</div></div>
+  <div class="step-content">
+    <h3 style="color:#86efac;">Add one line of instrumentation</h3>
+    <div class="code-block"><span class="cmt"># Add this BEFORE importing your LLM framework</span>
+<span class="kw">from</span> opentelemetry.instrumentation.aidefense <span class="kw">import</span> <span class="fn">AIDefenseInstrumentor</span>
+<span class="fn">AIDefenseInstrumentor</span>().<span class="fn">instrument</span>()
+
+<span class="cmt"># Then import your framework as usual</span>
+<span class="kw">from</span> langchain_openai <span class="kw">import</span> ChatOpenAI</div>
+    <p class="explain">This auto-captures the <code>X-Cisco-AI-Defense-Event-Id</code> header from gateway responses and adds it to your existing spans.</p>
+  </div>
+</div>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#14532d; color:#86efac;">2</div></div>
+  <div class="step-content">
+    <h3 style="color:#86efac;">Change the base_url to the AI Defense Gateway</h3>
+    <div class="code-block"><span class="cmt"># Before (direct to OpenAI)</span>
+llm = ChatOpenAI(
+    model=<span class="str">"gpt-4o-mini"</span>,
+    <span class="removed">base_url=<span class="str">"https://api.openai.com/v1"</span>,</span>
+    api_key=<span class="str">"sk-..."</span>,
+)
+
+<span class="cmt"># After (through AI Defense Gateway)</span>
+llm = ChatOpenAI(
+    model=<span class="str">"gpt-4o-mini"</span>,
+    <span class="added">base_url=os.environ[<span class="str">"AI_DEFENSE_GATEWAY_URL"</span>],</span>
+    api_key=<span class="str">"sk-..."</span>,  <span class="cmt"># same key, gateway forwards it</span>
+)</div>
+  </div>
+</div>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#14532d; color:#86efac;">3</div></div>
+  <div class="step-content">
+    <h3 style="color:#86efac;">Set the environment variable</h3>
+    <div class="code-block"><span class="kw">export</span> AI_DEFENSE_GATEWAY_URL=<span class="str">"https://us.gateway.aidefense.security.cisco.com/{tenant}/connections/{conn}/v1"</span></div>
+    <p class="explain">Get this URL from the AI Defense management portal. That's it — you're done.</p>
+  </div>
+</div>
+
+<div class="callout green">
+<strong>That's the entire integration for Gateway mode.</strong> Two lines of code + one env var. Your app now has AI security, and every LLM span in Splunk O11y will have a <code>gen_ai.security.event_id</code> when a violation is detected.
+</div>
+
+<div class="diagram">
+<svg viewBox="0 0 800 180" width="800" height="180">
+  <text x="400" y="20" text-anchor="middle" fill="#94a3b8" font-weight="bold" font-size="13">Gateway Mode — What happens at runtime</text>
+
+  <rect x="10" y="40" width="120" height="50" rx="8" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="70" y="60" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">Your App</text>
+  <text x="70" y="78" text-anchor="middle" fill="#94a3b8" font-size="9">llm.invoke(prompt)</text>
+
+  <line x1="130" y1="65" x2="200" y2="65" stroke="#a855f7" stroke-width="2" marker-end="url(#a3)"/>
+  <text x="165" y="57" text-anchor="middle" fill="#94a3b8" font-size="9">prompt</text>
+
+  <rect x="200" y="35" width="200" height="110" rx="10" fill="#1a1a2e" stroke="#f59e0b" stroke-width="2"/>
+  <text x="300" y="55" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="12">🛡️ AI Defense Gateway</text>
+
+  <rect x="215" y="65" width="170" height="25" rx="4" fill="#14532d" stroke="#22c55e"/>
+  <text x="300" y="82" text-anchor="middle" fill="#86efac" font-size="10">1. Inspect prompt</text>
+
+  <rect x="215" y="95" width="170" height="25" rx="4" fill="#3b0764" stroke="#a855f7"/>
+  <text x="300" y="112" text-anchor="middle" fill="#d8b4fe" font-size="10">2. Forward to LLM</text>
+
+  <rect x="215" y="125" width="170" height="15" rx="4" fill="#1e293b" stroke="#475569"/>
+  <text x="300" y="137" text-anchor="middle" fill="#94a3b8" font-size="9">3. Add event_id to response header</text>
+
+  <line x1="400" y1="107" x2="470" y2="107" stroke="#a855f7" stroke-width="2" marker-end="url(#a3)"/>
+
+  <rect x="470" y="82" width="100" height="50" rx="8" fill="#3b0764" stroke="#a855f7"/>
+  <text x="520" y="104" text-anchor="middle" fill="#d8b4fe" font-size="11">🤖 LLM</text>
+  <text x="520" y="120" text-anchor="middle" fill="#94a3b8" font-size="9">GPT-4o-mini</text>
+
+  <line x1="470" y1="100" x2="400" y2="80" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <line x1="200" y1="80" x2="130" y2="80" stroke="#22c55e" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="165" y="93" text-anchor="middle" fill="#22c55e" font-size="9">response +</text>
+  <text x="165" y="103" text-anchor="middle" fill="#22c55e" font-size="9">event_id header</text>
+
+  <rect x="600" y="40" width="190" height="100" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="695" y="60" text-anchor="middle" fill="#f59e0b" font-weight="bold" font-size="11">Auto-captured by</text>
+  <text x="695" y="76" text-anchor="middle" fill="#f59e0b" font-size="11">AIDefenseInstrumentor:</text>
+  <text x="610" y="100" fill="#94a3b8" font-size="10">• Sees gateway URL in request</text>
+  <text x="610" y="116" fill="#94a3b8" font-size="10">• Extracts event_id from header</text>
+  <text x="610" y="132" fill="#94a3b8" font-size="10">• Adds to current span</text>
+
+  <defs><marker id="a3" markerWidth="7" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="#a855f7"/></marker></defs>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>4. API Mode — Step by Step</h2>
+<!-- ============================================================ -->
+
+<p class="explain"><span class="badge medium">MORE CONTROL</span> &nbsp;More code changes, but you control the blocking behavior.</p>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#78350f; color:#fde68a;">1</div></div>
+  <div class="step-content">
+    <h3 style="color:#fde68a;">Install the AI Defense SDK</h3>
+    <div class="code-block">pip install cisco-aidefense-sdk</div>
+  </div>
+</div>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#78350f; color:#fde68a;">2</div></div>
+  <div class="step-content">
+    <h3 style="color:#fde68a;">Add instrumentation (same as Gateway)</h3>
+    <div class="code-block"><span class="kw">from</span> opentelemetry.instrumentation.aidefense <span class="kw">import</span> <span class="fn">AIDefenseInstrumentor</span>
+<span class="fn">AIDefenseInstrumentor</span>().<span class="fn">instrument</span>()  <span class="cmt"># auto-wraps inspect_prompt()</span></div>
+  </div>
+</div>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#78350f; color:#fde68a;">3</div></div>
+  <div class="step-content">
+    <h3 style="color:#fde68a;">Create the AI Defense client</h3>
+    <div class="code-block"><span class="kw">from</span> aidefense.runtime <span class="kw">import</span> <span class="fn">ChatInspectionClient</span>
+
+client = <span class="fn">ChatInspectionClient</span>(api_key=os.environ[<span class="str">"AI_DEFENSE_API_KEY"</span>])</div>
+  </div>
+</div>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#78350f; color:#fde68a;">4</div></div>
+  <div class="step-content">
+    <h3 style="color:#fde68a;">Add security checks before LLM calls</h3>
+    <div class="code-block"><span class="cmt"># Before (no security)</span>
+<span class="kw">def</span> <span class="fn">handle_user_input</span>(<span class="var">user_input</span>):
+    response = llm.invoke(user_input)
+    <span class="kw">return</span> response
+
+
+<span class="cmt"># After (with AI Defense)</span>
+<span class="kw">def</span> <span class="fn">handle_user_input</span>(<span class="var">user_input</span>):
+<span class="highlight">    <span class="cmt"># Check with AI Defense first</span>
+    result = client.<span class="fn">inspect_prompt</span>(user_input)
+
+    <span class="kw">if not</span> result.is_safe:
+        <span class="cmt"># You decide what to do:</span>
+        <span class="cmt"># - Block completely</span>
+        <span class="cmt"># - Return a warning</span>
+        <span class="cmt"># - Log and continue anyway</span>
+        <span class="kw">return</span> <span class="str">"Sorry, that request was flagged for security reasons."</span>
+</span>
+    <span class="cmt"># Only reaches LLM if AI Defense says it's safe</span>
+    response = llm.invoke(user_input)
+    <span class="kw">return</span> response</div>
+    <p class="explain">You add this check wherever you want security. Could be once at the top, or before every agent, or only for user-facing inputs.</p>
+  </div>
+</div>
+
+<div class="step-grid">
+  <div class="step-num"><div class="step-circle" style="background:#78350f; color:#fde68a;">5</div></div>
+  <div class="step-content">
+    <h3 style="color:#fde68a;">Set the environment variable</h3>
+    <div class="code-block"><span class="kw">export</span> AI_DEFENSE_API_KEY=<span class="str">"your-api-key-from-ai-defense-portal"</span></div>
+  </div>
+</div>
+
+<div class="diagram">
+<svg viewBox="0 0 800 220" width="800" height="220">
+  <text x="400" y="20" text-anchor="middle" fill="#94a3b8" font-weight="bold" font-size="13">API Mode — What happens at runtime</text>
+
+  <rect x="10" y="40" width="260" height="170" rx="10" fill="#1e3a5f" stroke="#60a5fa" stroke-width="2"/>
+  <text x="140" y="62" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="13">Your App (you control the flow)</text>
+
+  <!-- Step 1: inspect -->
+  <rect x="25" y="75" width="230" height="30" rx="6" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="140" y="95" text-anchor="middle" fill="#fde68a" font-size="11">1. client.inspect_prompt(input)</text>
+
+  <!-- Arrow to AI Defense -->
+  <line x1="270" y1="90" x2="370" y2="70" stroke="#f59e0b" stroke-width="2" marker-end="url(#a4)"/>
+  <rect x="370" y="45" width="160" height="50" rx="8" fill="#1a1a2e" stroke="#f59e0b"/>
+  <text x="450" y="65" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="11">🛡️ AI Defense API</text>
+  <text x="450" y="83" text-anchor="middle" fill="#94a3b8" font-size="9">returns is_safe + event_id</text>
+  <line x1="370" y1="80" x2="270" y2="100" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="3,2"/>
+
+  <!-- Decision -->
+  <polygon points="140,125 170,115 170,135" fill="#1e293b" stroke="#f59e0b" transform="rotate(90, 140, 125)"/>
+  <text x="140" y="129" text-anchor="middle" fill="#fde68a" font-size="9">safe?</text>
+
+  <!-- No path -->
+  <line x1="115" y1="125" x2="30" y2="125" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="70" y="120" text-anchor="middle" fill="#ef4444" font-size="9">No</text>
+  <rect x="25" y="140" width="100" height="25" rx="4" fill="#450a0a" stroke="#ef4444"/>
+  <text x="75" y="157" text-anchor="middle" fill="#fca5a5" font-size="10">BLOCK / WARN</text>
+  <text x="75" y="180" text-anchor="middle" fill="#ef4444" font-size="9">no LLM call</text>
+  <text x="75" y="192" text-anchor="middle" fill="#ef4444" font-size="9">no tokens used</text>
+
+  <!-- Yes path -->
+  <line x1="165" y1="125" x2="270" y2="155" stroke="#22c55e" stroke-width="2" marker-end="url(#a4)"/>
+  <text x="215" y="135" fill="#22c55e" font-size="9">Yes</text>
+
+  <!-- Step 2: LLM -->
+  <rect x="370" y="120" width="160" height="50" rx="8" fill="#3b0764" stroke="#a855f7"/>
+  <text x="450" y="140" text-anchor="middle" fill="#d8b4fe" font-weight="bold" font-size="11">🤖 LLM</text>
+  <text x="450" y="158" text-anchor="middle" fill="#94a3b8" font-size="9">only called if safe</text>
+
+  <line x1="270" y1="155" x2="370" y2="145" stroke="#a855f7" stroke-width="2" marker-end="url(#a4)"/>
+
+  <!-- Telemetry -->
+  <rect x="580" y="40" width="200" height="170" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="680" y="62" text-anchor="middle" fill="#22c55e" font-weight="bold" font-size="11">Auto-captured by</text>
+  <text x="680" y="78" text-anchor="middle" fill="#22c55e" font-size="11">AIDefenseInstrumentor:</text>
+
+  <text x="595" y="102" fill="#94a3b8" font-size="10">inspect_prompt() →</text>
+  <rect x="595" y="108" width="170" height="20" rx="4" fill="#14532d" stroke="#22c55e"/>
+  <text x="680" y="122" text-anchor="middle" fill="#86efac" font-size="9">chat cisco-ai-defense span</text>
+
+  <text x="595" y="148" fill="#94a3b8" font-size="10">Attributes captured:</text>
+  <text x="595" y="165" fill="#f59e0b" font-size="10" font-family="monospace">gen_ai.security.event_id</text>
+  <text x="595" y="180" fill="#f59e0b" font-size="10" font-family="monospace">gen_ai.request.model</text>
+  <text x="595" y="195" fill="#f59e0b" font-size="10" font-family="monospace">gen_ai.system: aidefense</text>
+
+  <defs><marker id="a4" markerWidth="7" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="#60a5fa"/></marker></defs>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>5. Which Mode Should I Pick?</h2>
+<!-- ============================================================ -->
+
+<div class="diagram">
+<svg viewBox="0 0 800 320" width="800" height="320">
+  <!-- Decision tree -->
+  <rect x="250" y="10" width="300" height="45" rx="10" fill="#1e3a5f" stroke="#60a5fa" stroke-width="2"/>
+  <text x="400" y="37" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="14">Do you need to block prompts BEFORE the LLM?</text>
+
+  <!-- No -->
+  <line x1="300" y1="55" x2="150" y2="100" stroke="#a855f7" stroke-width="2" marker-end="url(#a5)"/>
+  <text x="210" y="75" fill="#a855f7" font-weight="bold" font-size="13">No</text>
+
+  <rect x="30" y="100" width="250" height="80" rx="10" fill="#111827" stroke="#a855f7" stroke-width="2"/>
+  <text x="155" y="125" text-anchor="middle" fill="#d8b4fe" font-weight="bold" font-size="14">Use Gateway Mode</text>
+  <text x="155" y="145" text-anchor="middle" fill="#94a3b8" font-size="11">Just change the URL</text>
+  <text x="155" y="162" text-anchor="middle" fill="#94a3b8" font-size="11">Gateway monitors + logs everything</text>
+  <text x="155" y="175" text-anchor="middle" fill="#64748b" font-size="10">5 minutes to integrate</text>
+
+  <!-- Yes -->
+  <line x1="500" y1="55" x2="630" y2="100" stroke="#3b82f6" stroke-width="2" marker-end="url(#a5)"/>
+  <text x="580" y="75" fill="#3b82f6" font-weight="bold" font-size="13">Yes</text>
+
+  <rect x="510" y="100" width="280" height="80" rx="10" fill="#111827" stroke="#3b82f6" stroke-width="2"/>
+  <text x="650" y="125" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="14">Use API Mode</text>
+  <text x="650" y="145" text-anchor="middle" fill="#94a3b8" font-size="11">Add inspect_prompt() in your code</text>
+  <text x="650" y="162" text-anchor="middle" fill="#94a3b8" font-size="11">You control block/warn/log behavior</text>
+  <text x="650" y="175" text-anchor="middle" fill="#64748b" font-size="10">30-60 minutes to integrate</text>
+
+  <!-- Both -->
+  <line x1="155" y1="180" x2="400" y2="230" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="650" y1="180" x2="400" y2="230" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <rect x="240" y="225" width="320" height="80" rx="10" fill="#14532d" stroke="#22c55e" stroke-width="2"/>
+  <text x="400" y="252" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="14">Both modes produce the same telemetry</text>
+  <text x="400" y="272" text-anchor="middle" fill="#94a3b8" font-size="11">gen_ai.security.event_id on spans</text>
+  <text x="400" y="289" text-anchor="middle" fill="#94a3b8" font-size="11">Same Splunk O11y dashboards, same Risks column</text>
+  <text x="400" y="303" text-anchor="middle" fill="#64748b" font-size="10">Instrumentation is identical: AIDefenseInstrumentor().instrument()</text>
+
+  <defs><marker id="a5" markerWidth="8" markerHeight="8" refX="4" refY="8" orient="auto"><path d="M0,0 L4,8 L8,0" fill="#60a5fa"/></marker></defs>
+</svg>
+</div>
+
+<div class="callout">
+<strong>Recommendation for the AI Assistant team:</strong> Start with <strong>Gateway Mode</strong>. Get the URL from the AI Defense portal, change one line, add the instrumentor, and you'll have security + observability in 5 minutes. Switch to API Mode later if you need to block prompts before they reach the LLM.
+</div>
+
+</body>
+</html>

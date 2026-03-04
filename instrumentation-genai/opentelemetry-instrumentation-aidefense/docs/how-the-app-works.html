@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How the Demo App Works</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e1a; color: #e0e0e0; padding: 40px; line-height: 1.7; }
+  h1 { color: #fff; font-size: 28px; margin-bottom: 6px; }
+  h2 { color: #64b5f6; font-size: 20px; margin: 50px 0 16px; border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; }
+  .subtitle { color: #888; font-size: 14px; margin-bottom: 40px; }
+  .diagram { background: #111827; border: 1px solid #1e3a5f; border-radius: 12px; padding: 24px; margin: 16px 0; overflow-x: auto; }
+  .explain { color: #94a3b8; font-size: 14px; margin: 12px 0; max-width: 800px; }
+  .explain strong { color: #e0e0e0; }
+  .callout { background: #1a1a2e; border-left: 4px solid #f59e0b; padding: 12px 16px; margin: 16px 0; border-radius: 0 8px 8px 0; font-size: 14px; }
+  .callout.blue { border-left-color: #3b82f6; }
+  .callout.green { border-left-color: #22c55e; }
+  .callout.red { border-left-color: #ef4444; }
+  .callout.purple { border-left-color: #a855f7; }
+  code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #f59e0b; }
+  .code-block { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 12px 0; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.7; overflow-x: auto; white-space: pre; color: #e0e0e0; }
+  .kw { color: #ff7b72; }
+  .str { color: #a5d6ff; }
+  .cmt { color: #8b949e; }
+  .fn { color: #d2a8ff; }
+  .var { color: #ffa657; }
+</style>
+</head>
+<body>
+
+<h1>How the Demo App Works</h1>
+<p class="subtitle">A plain-English walkthrough of the Multi-Agent Travel Planner</p>
+
+<!-- ============================================================ -->
+<h2>1. What Is This App?</h2>
+<!-- ============================================================ -->
+
+<p class="explain">It's a <strong>trip planning app</strong> that uses 3 AI agents working together. You give it a destination, and it finds flights, hotels, and activities for you.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 160" width="800" height="160">
+  <!-- User -->
+  <circle cx="60" cy="80" r="30" fill="#1e3a5f" stroke="#60a5fa" stroke-width="2"/>
+  <text x="60" y="75" text-anchor="middle" fill="#93c5fd" font-size="11">You</text>
+  <text x="60" y="90" text-anchor="middle" fill="#93c5fd" font-size="20">👤</text>
+
+  <line x1="90" y1="80" x2="140" y2="80" stroke="#60a5fa" stroke-width="2" marker-end="url(#a1)"/>
+  <text x="115" y="72" text-anchor="middle" fill="#94a3b8" font-size="10">"Plan a trip</text>
+  <text x="115" y="83" text-anchor="middle" fill="#94a3b8" font-size="10">to Tokyo"</text>
+
+  <!-- App -->
+  <rect x="140" y="45" width="130" height="70" rx="10" fill="#111827" stroke="#f59e0b" stroke-width="2"/>
+  <text x="205" y="72" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="13">Travel</text>
+  <text x="205" y="90" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="13">Planner App</text>
+
+  <line x1="270" y1="60" x2="340" y2="40" stroke="#22c55e" stroke-width="2" marker-end="url(#a1)"/>
+  <line x1="270" y1="80" x2="340" y2="80" stroke="#22c55e" stroke-width="2" marker-end="url(#a1)"/>
+  <line x1="270" y1="100" x2="340" y2="120" stroke="#22c55e" stroke-width="2" marker-end="url(#a1)"/>
+
+  <!-- Agents -->
+  <rect x="340" y="15" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e"/>
+  <text x="440" y="35" text-anchor="middle" fill="#86efac" font-size="13">✈️ Flight Specialist</text>
+  <text x="440" y="51" text-anchor="middle" fill="#94a3b8" font-size="10">"Emirates $799, Delta $900"</text>
+
+  <rect x="340" y="68" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e"/>
+  <text x="440" y="88" text-anchor="middle" fill="#86efac" font-size="13">🏨 Hotel Specialist</text>
+  <text x="440" y="104" text-anchor="middle" fill="#94a3b8" font-size="10">"Grand Hotel $274/night"</text>
+
+  <rect x="340" y="121" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e"/>
+  <text x="440" y="141" text-anchor="middle" fill="#86efac" font-size="13">🎯 Activity Specialist</text>
+  <text x="440" y="157" text-anchor="middle" fill="#94a3b8" font-size="10">"Senso-ji Temple, Tsukiji market"</text>
+
+  <!-- LLM -->
+  <line x1="540" y1="37" x2="610" y2="80" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="540" y1="90" x2="610" y2="80" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="540" y1="143" x2="610" y2="80" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <rect x="610" y="55" width="170" height="50" rx="8" fill="#3b0764" stroke="#a855f7"/>
+  <text x="695" y="75" text-anchor="middle" fill="#d8b4fe" font-weight="bold" font-size="13">🤖 GPT-4o-mini</text>
+  <text x="695" y="93" text-anchor="middle" fill="#94a3b8" font-size="10">does the thinking</text>
+
+  <defs><marker id="a1" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#60a5fa"/></marker></defs>
+</svg>
+</div>
+
+<p class="explain">Each agent is a specialist — it has a specific job, a specific tool it can use, and an LLM (GPT-4o-mini) brain to reason with. The agents don't talk to each other directly — they share a common state (like a shared notepad).</p>
+
+<!-- ============================================================ -->
+<h2>2. What Is LangGraph?</h2>
+<!-- ============================================================ -->
+
+<p class="explain"><strong>LangGraph</strong> is a Python library that lets you build AI workflows as a <strong>flowchart (graph)</strong>. Instead of writing <code>if/else</code> chains, you define nodes and edges, and LangGraph executes them in order.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 250" width="800" height="250">
+  <!-- Concept: regular code vs LangGraph -->
+  <rect x="10" y="10" width="350" height="230" rx="10" fill="#0d1117" stroke="#475569"/>
+  <text x="185" y="35" text-anchor="middle" fill="#94a3b8" font-weight="bold" font-size="13">Regular Python Code</text>
+
+  <text x="30" y="65" fill="#8b949e" font-size="12" font-family="monospace"><tspan fill="#ff7b72">def</tspan> <tspan fill="#d2a8ff">plan_trip</tspan>():</text>
+  <text x="30" y="85" fill="#8b949e" font-size="12" font-family="monospace">  flights = <tspan fill="#d2a8ff">search_flights</tspan>()</text>
+  <text x="30" y="105" fill="#8b949e" font-size="12" font-family="monospace">  hotels = <tspan fill="#d2a8ff">search_hotels</tspan>()</text>
+  <text x="30" y="125" fill="#8b949e" font-size="12" font-family="monospace">  activities = <tspan fill="#d2a8ff">search_activities</tspan>()</text>
+  <text x="30" y="145" fill="#8b949e" font-size="12" font-family="monospace">  <tspan fill="#ff7b72">return</tspan> flights, hotels, activities</text>
+
+  <text x="30" y="180" fill="#64748b" font-size="11">Simple, but:</text>
+  <text x="30" y="198" fill="#64748b" font-size="11">• Can't pause/resume</text>
+  <text x="30" y="216" fill="#64748b" font-size="11">• Can't retry individual steps</text>
+  <text x="30" y="234" fill="#64748b" font-size="11">• Can't branch based on conditions</text>
+
+  <rect x="420" y="10" width="370" height="230" rx="10" fill="#0d1117" stroke="#3b82f6"/>
+  <text x="605" y="35" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="13">LangGraph</text>
+
+  <!-- Graph visual -->
+  <circle cx="470" cy="80" r="18" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="470" y="84" text-anchor="middle" fill="#93c5fd" font-size="10">START</text>
+
+  <line x1="488" y1="80" x2="530" y2="80" stroke="#60a5fa" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="530" y="65" width="80" height="30" rx="6" fill="#14532d" stroke="#22c55e"/>
+  <text x="570" y="84" text-anchor="middle" fill="#86efac" font-size="10">✈️ flight</text>
+
+  <line x1="610" y1="80" x2="640" y2="80" stroke="#60a5fa" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="640" y="65" width="80" height="30" rx="6" fill="#14532d" stroke="#22c55e"/>
+  <text x="680" y="84" text-anchor="middle" fill="#86efac" font-size="10">🏨 hotel</text>
+
+  <line x1="680" y1="95" x2="680" y2="115" stroke="#60a5fa" stroke-width="2" marker-end="url(#a2b)"/>
+
+  <rect x="640" y="115" width="80" height="30" rx="6" fill="#14532d" stroke="#22c55e"/>
+  <text x="680" y="134" text-anchor="middle" fill="#86efac" font-size="10">🎯 activity</text>
+
+  <line x1="640" y1="130" x2="570" y2="160" stroke="#60a5fa" stroke-width="2" marker-end="url(#a2)"/>
+
+  <circle cx="570" cy="175" r="18" fill="#450a0a" stroke="#ef4444"/>
+  <text x="570" y="179" text-anchor="middle" fill="#fca5a5" font-size="10">END</text>
+
+  <!-- Conditional -->
+  <polygon points="570,108 590,95 590,121" fill="#1e293b" stroke="#f59e0b" transform="rotate(90, 575, 108)"/>
+  <text x="557" y="113" text-anchor="middle" fill="#fde68a" font-size="8">blocked?</text>
+  <line x1="575" y1="118" x2="575" y2="160" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3"/>
+
+  <text x="440" y="210" fill="#64748b" font-size="11">• Each box = a Python function</text>
+  <text x="440" y="228" fill="#64748b" font-size="11">• Arrows = execution order</text>
+  <text x="660" y="210" fill="#64748b" font-size="11">• Diamond = decision point</text>
+  <text x="660" y="228" fill="#64748b" font-size="11">• All share a state dict</text>
+
+  <defs>
+    <marker id="a2" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#60a5fa"/></marker>
+    <marker id="a2b" markerWidth="8" markerHeight="8" refX="4" refY="8" orient="auto"><path d="M0,0 L4,8 L8,0" fill="#60a5fa"/></marker>
+  </defs>
+</svg>
+</div>
+
+<div class="callout blue">
+<strong>In code, building the graph looks like this:</strong><br><br>
+<code>graph = StateGraph(PlannerState)</code> — create a graph with shared state<br>
+<code>graph.add_node("flight_specialist", flight_specialist_node)</code> — register a function as a node<br>
+<code>graph.add_conditional_edges(START, should_continue)</code> — add decision logic between nodes<br>
+<code>compiled_app = graph.compile()</code> — compile it into a runnable app<br>
+<code>compiled_app.stream(initial_state)</code> — run it step by step
+</div>
+
+<!-- ============================================================ -->
+<h2>3. What Happens Inside Each Agent?</h2>
+<!-- ============================================================ -->
+
+<p class="explain">Every agent follows the same pattern. Here's what <strong>flight_specialist</strong> does when it's its turn:</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 520" width="800" height="520">
+  <!-- Step 1 -->
+  <rect x="10" y="10" width="780" height="85" rx="10" fill="#1a1a2e" stroke="#f59e0b"/>
+  <circle cx="40" cy="52" r="18" fill="#78350f" stroke="#f59e0b" stroke-width="2"/>
+  <text x="40" y="57" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="16">1</text>
+
+  <text x="70" y="35" fill="#fde68a" font-weight="bold" font-size="14">Security Check</text>
+  <text x="70" y="55" fill="#94a3b8" font-size="12">Sends the request to AI Defense: "Find flights from SF to Tokyo"</text>
+  <text x="70" y="72" fill="#94a3b8" font-size="12">AI Defense looks at it and says: <tspan fill="#22c55e" font-weight="bold">"This is safe" ✓</tspan></text>
+  <text x="70" y="88" fill="#64748b" font-size="11">HTTP POST → us.api.inspect.aidefense.security.cisco.com</text>
+
+  <!-- Step 2 -->
+  <rect x="10" y="105" width="780" height="85" rx="10" fill="#1a1a2e" stroke="#a855f7"/>
+  <circle cx="40" cy="147" r="18" fill="#3b0764" stroke="#a855f7" stroke-width="2"/>
+  <text x="40" y="152" text-anchor="middle" fill="#d8b4fe" font-weight="bold" font-size="16">2</text>
+
+  <text x="70" y="130" fill="#d8b4fe" font-weight="bold" font-size="14">Get an Auth Token</text>
+  <text x="70" y="150" fill="#94a3b8" font-size="12">The LLM is behind Cisco's gateway — needs a JWT token to access it</text>
+  <text x="70" y="167" fill="#94a3b8" font-size="12">OAuth2TokenManager sends client_id + client_secret → gets a JWT back</text>
+  <text x="70" y="183" fill="#64748b" font-size="11">HTTP POST → id.cisco.com/oauth2/default/v1/token</text>
+
+  <!-- Step 3 -->
+  <rect x="10" y="200" width="780" height="85" rx="10" fill="#1a1a2e" stroke="#3b82f6"/>
+  <circle cx="40" cy="242" r="18" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
+  <text x="40" y="247" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="16">3</text>
+
+  <text x="70" y="225" fill="#93c5fd" font-weight="bold" font-size="14">Create the Agent</text>
+  <text x="70" y="245" fill="#94a3b8" font-size="12">Wraps the LLM with a tool (<tspan fill="#fde68a">mock_search_flights</tspan>) and a personality prompt</text>
+  <text x="70" y="262" fill="#94a3b8" font-size="12">"You are a flight specialist. Find the best flight option concisely."</text>
+  <text x="70" y="278" fill="#64748b" font-size="11">LangChain's create_agent() — no HTTP call yet, just wiring things together</text>
+
+  <!-- Step 4 -->
+  <rect x="10" y="295" width="780" height="210" rx="10" fill="#1a1a2e" stroke="#22c55e"/>
+  <circle cx="40" cy="337" r="18" fill="#14532d" stroke="#22c55e" stroke-width="2"/>
+  <text x="40" y="342" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="16">4</text>
+
+  <text x="70" y="320" fill="#86efac" font-weight="bold" font-size="14">Run the Agent (agent.invoke)</text>
+  <text x="70" y="340" fill="#94a3b8" font-size="12">This is where the magic happens — multiple LLM round-trips:</text>
+
+  <!-- Sub-steps -->
+  <rect x="80" y="355" width="690" height="35" rx="6" fill="#0d1117" stroke="#30363d"/>
+  <text x="95" y="377" fill="#ffa657" font-size="12">4a.</text>
+  <text x="120" y="377" fill="#94a3b8" font-size="12">Send to GPT-4o-mini: "Find flights from SF to Tokyo on Apr 1"</text>
+  <text x="630" y="377" fill="#64748b" font-size="10">→ HTTP POST</text>
+
+  <rect x="80" y="395" width="690" height="35" rx="6" fill="#0d1117" stroke="#30363d"/>
+  <text x="95" y="417" fill="#ffa657" font-size="12">4b.</text>
+  <text x="120" y="417" fill="#94a3b8" font-size="12">GPT decides: "I need to call mock_search_flights tool"</text>
+  <text x="630" y="417" fill="#64748b" font-size="10">→ tool call</text>
+
+  <rect x="80" y="435" width="690" height="35" rx="6" fill="#0d1117" stroke="#30363d"/>
+  <text x="95" y="457" fill="#ffa657" font-size="12">4c.</text>
+  <text x="120" y="457" fill="#94a3b8" font-size="12">Tool returns: "Emirates $799, Delta $900" (mock data, no real API)</text>
+  <text x="630" y="457" fill="#64748b" font-size="10">→ Python fn</text>
+
+  <rect x="80" y="475" width="690" height="25" rx="6" fill="#14532d" stroke="#22c55e"/>
+  <text x="95" y="493" fill="#ffa657" font-size="12">4d.</text>
+  <text x="120" y="493" fill="#86efac" font-size="12">GPT summarizes: "Best option: Emirates at $799" → saved to state</text>
+  <text x="630" y="493" fill="#64748b" font-size="10">→ HTTP POST</text>
+</svg>
+</div>
+
+<p class="explain">Steps 4a through 4d are <strong>two separate HTTP calls to GPT-4o-mini</strong> — first to decide what tool to call, then to summarize the result. LangChain handles this automatically.</p>
+
+<!-- ============================================================ -->
+<h2>4. What Happens When AI Defense Blocks a Request?</h2>
+<!-- ============================================================ -->
+
+<p class="explain">The <strong>activity_specialist</strong> gets a malicious prompt injected. Here's how that plays out differently:</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 320" width="800" height="320">
+  <!-- Normal flow (faded) -->
+  <rect x="10" y="10" width="380" height="300" rx="10" fill="#111827" stroke="#22c55e" stroke-width="1" opacity="0.4"/>
+  <text x="200" y="35" text-anchor="middle" fill="#22c55e" font-weight="bold" font-size="13" opacity="0.5">Normal Agent (flight/hotel)</text>
+
+  <rect x="30" y="50" width="340" height="30" rx="4" fill="#14532d" stroke="#22c55e" opacity="0.4"/>
+  <text x="200" y="70" text-anchor="middle" fill="#86efac" font-size="11" opacity="0.5">1. Security check → SAFE ✓</text>
+  <rect x="30" y="90" width="340" height="30" rx="4" fill="#14532d" stroke="#22c55e" opacity="0.4"/>
+  <text x="200" y="110" text-anchor="middle" fill="#86efac" font-size="11" opacity="0.5">2. Get OAuth token</text>
+  <rect x="30" y="130" width="340" height="30" rx="4" fill="#14532d" stroke="#22c55e" opacity="0.4"/>
+  <text x="200" y="150" text-anchor="middle" fill="#86efac" font-size="11" opacity="0.5">3. Create agent</text>
+  <rect x="30" y="170" width="340" height="30" rx="4" fill="#14532d" stroke="#22c55e" opacity="0.4"/>
+  <text x="200" y="190" text-anchor="middle" fill="#86efac" font-size="11" opacity="0.5">4. agent.invoke() → LLM calls → result</text>
+  <rect x="30" y="210" width="340" height="30" rx="4" fill="#14532d" stroke="#22c55e" opacity="0.4"/>
+  <text x="200" y="230" text-anchor="middle" fill="#86efac" font-size="11" opacity="0.5">5. Save to state, continue</text>
+
+  <text x="200" y="270" text-anchor="middle" fill="#64748b" font-size="11">All 5 steps execute</text>
+  <text x="200" y="288" text-anchor="middle" fill="#64748b" font-size="11">~2 seconds, uses LLM tokens</text>
+
+  <!-- Blocked flow -->
+  <rect x="410" y="10" width="380" height="300" rx="10" fill="#111827" stroke="#ef4444" stroke-width="2"/>
+  <text x="600" y="35" text-anchor="middle" fill="#ef4444" font-weight="bold" font-size="13">Blocked Agent (activity)</text>
+
+  <rect x="430" y="50" width="340" height="55" rx="4" fill="#450a0a" stroke="#ef4444"/>
+  <text x="600" y="70" text-anchor="middle" fill="#fca5a5" font-weight="bold" font-size="11">1. Security check → UNSAFE ✗</text>
+  <text x="600" y="88" text-anchor="middle" fill="#fca5a5" font-size="10">"...hack airport...kill security..."</text>
+  <text x="600" y="100" text-anchor="middle" fill="#ef4444" font-size="10">AI Defense returns event_id</text>
+
+  <rect x="430" y="115" width="340" height="55" rx="4" fill="#7f1d1d" stroke="#ef4444"/>
+  <text x="600" y="137" text-anchor="middle" fill="#fca5a5" font-weight="bold" font-size="11">STOP. Return immediately.</text>
+  <text x="600" y="155" text-anchor="middle" fill="#fca5a5" font-size="10">state.blocked_by_security = True</text>
+  <text x="600" y="165" text-anchor="middle" fill="#fca5a5" font-size="10">state.security_event_id = "830920f6-..."</text>
+
+  <!-- Skipped steps -->
+  <rect x="430" y="180" width="340" height="30" rx="4" fill="#1e293b" stroke="#475569" stroke-dasharray="5,3"/>
+  <text x="600" y="200" text-anchor="middle" fill="#64748b" font-size="11">2. Get OAuth token — SKIPPED</text>
+  <rect x="430" y="215" width="340" height="30" rx="4" fill="#1e293b" stroke="#475569" stroke-dasharray="5,3"/>
+  <text x="600" y="235" text-anchor="middle" fill="#64748b" font-size="11">3. Create agent — SKIPPED</text>
+  <rect x="430" y="250" width="340" height="30" rx="4" fill="#1e293b" stroke="#475569" stroke-dasharray="5,3"/>
+  <text x="600" y="270" text-anchor="middle" fill="#64748b" font-size="11">4. agent.invoke() — SKIPPED (no LLM call)</text>
+
+  <text x="600" y="305" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="bold">Only step 1 executes (~50ms, no tokens used)</text>
+</svg>
+</div>
+
+<div class="callout red">
+<strong>Key point:</strong> When AI Defense blocks a request, the LLM is never called. No tokens are spent, no money is wasted. The harmful prompt never reaches GPT-4o-mini. This is the whole purpose of API mode.
+</div>
+
+<!-- ============================================================ -->
+<h2>5. The Full Run (Timeline)</h2>
+<!-- ============================================================ -->
+
+<p class="explain">Here's everything that happens from start to finish when the app runs the Tokyo/security scenario:</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 580" width="800" height="580">
+  <!-- Timeline -->
+  <line x1="60" y1="30" x2="60" y2="560" stroke="#475569" stroke-width="2"/>
+
+  <!-- T=0 -->
+  <circle cx="60" cy="40" r="6" fill="#f59e0b"/>
+  <text x="80" y="38" fill="#fde68a" font-weight="bold" font-size="12">T=0ms</text>
+  <text x="80" y="54" fill="#94a3b8" font-size="11">App starts. Sets up OpenTelemetry, instruments LangChain + AI Defense</text>
+
+  <!-- T=100 -->
+  <circle cx="60" cy="85" r="6" fill="#a855f7"/>
+  <text x="80" y="83" fill="#d8b4fe" font-weight="bold" font-size="12">T=100ms</text>
+  <text x="80" y="99" fill="#94a3b8" font-size="11">main() called. AI Defense client initialized. Workflow graph built.</text>
+  <text x="80" y="113" fill="#94a3b8" font-size="11">Picks scenario: Tokyo/security (based on minute)</text>
+
+  <!-- T=200 Root span -->
+  <circle cx="60" cy="140" r="6" fill="#3b82f6"/>
+  <text x="80" y="138" fill="#93c5fd" font-weight="bold" font-size="12">T=200ms</text>
+  <text x="80" y="154" fill="#94a3b8" font-size="11">Creates root span: <tspan fill="#f59e0b" font-family="monospace">POST /travel/plan</tspan></text>
+  <text x="80" y="168" fill="#94a3b8" font-size="11">Starts streaming the LangGraph workflow</text>
+
+  <!-- Flight agent -->
+  <rect x="90" y="185" width="690" height="90" rx="8" fill="#0d1117" stroke="#22c55e"/>
+  <circle cx="60" cy="210" r="6" fill="#22c55e"/>
+  <text x="110" y="203" fill="#86efac" font-weight="bold" font-size="12">✈️ flight_specialist (~2 sec)</text>
+  <text x="110" y="220" fill="#94a3b8" font-size="11">→ AI Defense: inspect "Find flights from SF to Tokyo" → <tspan fill="#22c55e">safe</tspan> (55ms)</text>
+  <text x="110" y="236" fill="#94a3b8" font-size="11">→ OAuth2: get JWT token from id.cisco.com (cached after first call)</text>
+  <text x="110" y="252" fill="#94a3b8" font-size="11">→ GPT-4o-mini: 2 round-trips (decide tool → summarize) via chat-ai.cisco.com (~1.8s)</text>
+  <text x="110" y="268" fill="#86efac" font-size="11">→ Result: "Best: Emirates $799, Delta $900"</text>
+
+  <!-- Hotel agent -->
+  <rect x="90" y="290" width="690" height="90" rx="8" fill="#0d1117" stroke="#22c55e"/>
+  <circle cx="60" cy="315" r="6" fill="#22c55e"/>
+  <text x="110" y="308" fill="#86efac" font-weight="bold" font-size="12">🏨 hotel_specialist (~2 sec)</text>
+  <text x="110" y="325" fill="#94a3b8" font-size="11">→ AI Defense: inspect "Find hotels in Tokyo" → <tspan fill="#22c55e">safe</tspan> (68ms)</text>
+  <text x="110" y="341" fill="#94a3b8" font-size="11">→ OAuth2: JWT still cached, no new request</text>
+  <text x="110" y="357" fill="#94a3b8" font-size="11">→ GPT-4o-mini: 2 round-trips (~1.8s)</text>
+  <text x="110" y="373" fill="#86efac" font-size="11">→ Result: "Grand Hotel $274/night, Boutique Inn $224/night"</text>
+
+  <!-- Activity agent (blocked) -->
+  <rect x="90" y="395" width="690" height="65" rx="8" fill="#0d1117" stroke="#ef4444"/>
+  <circle cx="60" cy="420" r="6" fill="#ef4444"/>
+  <text x="110" y="413" fill="#fca5a5" font-weight="bold" font-size="12">🎯 activity_specialist (~50ms) — BLOCKED</text>
+  <text x="110" y="430" fill="#94a3b8" font-size="11">→ AI Defense: inspect "...hack airport...kill..." → <tspan fill="#ef4444" font-weight="bold">UNSAFE</tspan> (50ms)</text>
+  <text x="110" y="446" fill="#ef4444" font-size="11">→ STOP. No LLM call. event_id = 830920f6-...</text>
+
+  <!-- End -->
+  <circle cx="60" cy="480" r="6" fill="#f59e0b"/>
+  <text x="80" y="478" fill="#fde68a" font-weight="bold" font-size="12">T=~4.5s</text>
+  <text x="80" y="494" fill="#94a3b8" font-size="11">should_continue() → blocked=true → END</text>
+  <text x="80" y="508" fill="#94a3b8" font-size="11">Root span gets travel.blocked=true, travel.security_event_id attributes</text>
+
+  <!-- Flush -->
+  <circle cx="60" cy="535" r="6" fill="#3b82f6"/>
+  <text x="80" y="533" fill="#93c5fd" font-weight="bold" font-size="12">T=~5s</text>
+  <text x="80" y="549" fill="#94a3b8" font-size="11">Flush all spans to OTLP collector → console output + network export</text>
+  <text x="80" y="563" fill="#94a3b8" font-size="11">App exits. Pod status: Completed (exit code 0)</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>6. Where Does the CronJob Come In?</h2>
+<!-- ============================================================ -->
+
+<p class="explain">The app itself is just a Python script — run it and it exits. The <strong>CronJob</strong> is a Kubernetes resource that we created separately to run it on a schedule.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 200" width="800" height="200">
+  <!-- K8s -->
+  <rect x="10" y="10" width="780" height="180" rx="10" fill="#0f172a" stroke="#3b82f6"/>
+  <text x="400" y="32" text-anchor="middle" fill="#3b82f6" font-weight="bold" font-size="13">Kubernetes does the scheduling — the Python code knows nothing about this</text>
+
+  <!-- CronJob -->
+  <rect x="30" y="50" width="150" height="55" rx="8" fill="#1e3a5f" stroke="#60a5fa"/>
+  <text x="105" y="72" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="12">CronJob</text>
+  <text x="105" y="90" text-anchor="middle" fill="#94a3b8" font-size="10">*/5 * * * *</text>
+  <text x="105" y="100" text-anchor="middle" fill="#64748b" font-size="9">(every 5 min)</text>
+
+  <line x1="180" y1="77" x2="220" y2="77" stroke="#60a5fa" stroke-width="2" marker-end="url(#a6)"/>
+  <text x="200" y="70" text-anchor="middle" fill="#64748b" font-size="9">creates</text>
+
+  <!-- Job -->
+  <rect x="220" y="50" width="120" height="55" rx="8" fill="#111827" stroke="#f59e0b"/>
+  <text x="280" y="72" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="12">Job</text>
+  <text x="280" y="90" text-anchor="middle" fill="#94a3b8" font-size="10">one-time task</text>
+
+  <line x1="340" y1="77" x2="380" y2="77" stroke="#f59e0b" stroke-width="2" marker-end="url(#a6)"/>
+  <text x="360" y="70" text-anchor="middle" fill="#64748b" font-size="9">creates</text>
+
+  <!-- Pod -->
+  <rect x="380" y="50" width="120" height="55" rx="8" fill="#111827" stroke="#22c55e"/>
+  <text x="440" y="72" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="12">Pod</text>
+  <text x="440" y="90" text-anchor="middle" fill="#94a3b8" font-size="10">container runs</text>
+
+  <line x1="500" y1="77" x2="540" y2="77" stroke="#22c55e" stroke-width="2" marker-end="url(#a6)"/>
+  <text x="520" y="70" text-anchor="middle" fill="#64748b" font-size="9">runs</text>
+
+  <!-- Python -->
+  <rect x="540" y="50" width="230" height="55" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="2"/>
+  <text x="655" y="72" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="13">python main.py</text>
+  <text x="655" y="92" text-anchor="middle" fill="#94a3b8" font-size="10">runs ~5 sec, then exits</text>
+
+  <!-- Repeat -->
+  <rect x="30" y="120" width="740" height="55" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="400" y="140" text-anchor="middle" fill="#94a3b8" font-size="12">⏰ Every 5 minutes: CronJob creates a new Job → new Pod → runs main.py → Pod exits (Completed)</text>
+  <text x="400" y="160" text-anchor="middle" fill="#64748b" font-size="11">Kubernetes keeps the last 3 successful + 3 failed pods for debugging, deletes the rest</text>
+
+  <defs><marker id="a6" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#60a5fa"/></marker></defs>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>7. What Are the "Mock Tools"?</h2>
+<!-- ============================================================ -->
+
+<p class="explain">The agents have <strong>tools</strong> — functions they can call to look up information. In a real app, these would call booking APIs. In our demo, they return <strong>fake data</strong>.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 220" width="800" height="220">
+  <rect x="10" y="10" width="250" height="200" rx="10" fill="#0d1117" stroke="#22c55e"/>
+  <text x="135" y="35" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="13">mock_search_flights</text>
+  <text x="30" y="60" fill="#94a3b8" font-size="11">Input: origin, destination, date</text>
+  <text x="30" y="80" fill="#94a3b8" font-size="11">Output: hardcoded flight data</text>
+  <text x="30" y="110" fill="#8b949e" font-size="11" font-family="monospace">"Emirates $799, Delta $900"</text>
+  <text x="30" y="145" fill="#64748b" font-size="10">• No real API call</text>
+  <text x="30" y="163" fill="#64748b" font-size="10">• Deterministic (seeded random)</text>
+  <text x="30" y="181" fill="#64748b" font-size="10">• GPT thinks it's real data</text>
+  <text x="30" y="199" fill="#64748b" font-size="10">• Decorated with @tool</text>
+
+  <rect x="275" y="10" width="250" height="200" rx="10" fill="#0d1117" stroke="#22c55e"/>
+  <text x="400" y="35" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="13">mock_search_hotels</text>
+  <text x="295" y="60" fill="#94a3b8" font-size="11">Input: destination, check-in/out</text>
+  <text x="295" y="80" fill="#94a3b8" font-size="11">Output: hardcoded hotel data</text>
+  <text x="295" y="110" fill="#8b949e" font-size="11" font-family="monospace">"Grand Hotel $274/night"</text>
+  <text x="295" y="128" fill="#8b949e" font-size="11" font-family="monospace">"Boutique Inn $224/night"</text>
+
+  <rect x="540" y="10" width="250" height="200" rx="10" fill="#0d1117" stroke="#22c55e"/>
+  <text x="665" y="35" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="13">mock_search_activities</text>
+  <text x="560" y="60" fill="#94a3b8" font-size="11">Input: destination</text>
+  <text x="560" y="80" fill="#94a3b8" font-size="11">Output: hardcoded activity list</text>
+  <text x="560" y="110" fill="#8b949e" font-size="11" font-family="monospace">"🏯 Senso-ji Temple"</text>
+  <text x="560" y="128" fill="#8b949e" font-size="11" font-family="monospace">"🍣 Tsukiji market tour"</text>
+  <text x="560" y="146" fill="#8b949e" font-size="11" font-family="monospace">"🎮 Akihabara exploration"</text>
+</svg>
+</div>
+
+<div class="callout">
+<strong>Why mock?</strong> The demo exists to show <em>AI Defense + OpenTelemetry integration</em>, not to actually book trips. Using mock tools means the demo is self-contained — no API keys for booking services, no cost, deterministic results every time.
+</div>
+
+<!-- ============================================================ -->
+<h2>8. What Actually Goes Over the Network?</h2>
+<!-- ============================================================ -->
+
+<p class="explain">Here's every HTTP call the app makes during one run:</p>
+
+<div class="diagram">
+<svg viewBox="0 0 800 350" width="800" height="350">
+  <!-- App -->
+  <rect x="10" y="10" width="100" height="330" rx="8" fill="#111827" stroke="#60a5fa"/>
+  <text x="60" y="35" text-anchor="middle" fill="#93c5fd" font-weight="bold" font-size="11">App</text>
+
+  <!-- AI Defense -->
+  <rect x="200" y="10" width="140" height="330" rx="8" fill="#111827" stroke="#ef4444"/>
+  <text x="270" y="30" text-anchor="middle" fill="#fca5a5" font-weight="bold" font-size="10">AI Defense</text>
+  <text x="270" y="42" text-anchor="middle" fill="#64748b" font-size="9">inspect API</text>
+
+  <!-- OAuth -->
+  <rect x="400" y="10" width="120" height="330" rx="8" fill="#111827" stroke="#f59e0b"/>
+  <text x="460" y="30" text-anchor="middle" fill="#fde68a" font-weight="bold" font-size="10">Cisco OAuth</text>
+  <text x="460" y="42" text-anchor="middle" fill="#64748b" font-size="9">id.cisco.com</text>
+
+  <!-- LLM -->
+  <rect x="580" y="10" width="130" height="330" rx="8" fill="#111827" stroke="#a855f7"/>
+  <text x="645" y="30" text-anchor="middle" fill="#d8b4fe" font-weight="bold" font-size="10">GPT-4o-mini</text>
+  <text x="645" y="42" text-anchor="middle" fill="#64748b" font-size="9">chat-ai.cisco.com</text>
+
+  <!-- Collector -->
+  <rect x="730" y="10" width="60" height="330" rx="8" fill="#111827" stroke="#22c55e"/>
+  <text x="760" y="30" text-anchor="middle" fill="#86efac" font-weight="bold" font-size="9">OTel</text>
+  <text x="760" y="42" text-anchor="middle" fill="#64748b" font-size="8">Collector</text>
+
+  <!-- Calls -->
+  <text x="15" y="72" fill="#64748b" font-size="9">flight</text>
+  <line x1="110" y1="70" x2="200" y2="70" stroke="#ef4444" stroke-width="1.5" marker-end="url(#a7r)"/>
+  <text x="155" y="65" text-anchor="middle" fill="#64748b" font-size="8">1. inspect</text>
+  <line x1="200" y1="78" x2="110" y2="78" stroke="#22c55e" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <line x1="110" y1="95" x2="400" y2="95" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#a7y)"/>
+  <text x="255" y="90" text-anchor="middle" fill="#64748b" font-size="8">2. get token</text>
+  <line x1="400" y1="103" x2="110" y2="103" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <line x1="110" y1="120" x2="580" y2="120" stroke="#a855f7" stroke-width="1.5" marker-end="url(#a7p)"/>
+  <text x="345" y="115" text-anchor="middle" fill="#64748b" font-size="8">3. chat (decide tool)</text>
+  <line x1="580" y1="128" x2="110" y2="128" stroke="#a855f7" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <text x="15" y="142" fill="#fde68a" font-size="8">tool call</text>
+  <text x="15" y="150" fill="#fde68a" font-size="8">(local)</text>
+
+  <line x1="110" y1="160" x2="580" y2="160" stroke="#a855f7" stroke-width="1.5" marker-end="url(#a7p)"/>
+  <text x="345" y="155" text-anchor="middle" fill="#64748b" font-size="8">4. chat (summarize)</text>
+  <line x1="580" y1="168" x2="110" y2="168" stroke="#a855f7" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- Hotel -->
+  <text x="15" y="195" fill="#64748b" font-size="9">hotel</text>
+  <line x1="110" y1="193" x2="200" y2="193" stroke="#ef4444" stroke-width="1.5" marker-end="url(#a7r)"/>
+  <text x="155" y="188" text-anchor="middle" fill="#64748b" font-size="8">5. inspect</text>
+  <line x1="200" y1="201" x2="110" y2="201" stroke="#22c55e" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <line x1="110" y1="215" x2="580" y2="215" stroke="#a855f7" stroke-width="1.5" marker-end="url(#a7p)"/>
+  <text x="345" y="210" text-anchor="middle" fill="#64748b" font-size="8">6. chat (decide tool)</text>
+  <line x1="580" y1="223" x2="110" y2="223" stroke="#a855f7" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <line x1="110" y1="240" x2="580" y2="240" stroke="#a855f7" stroke-width="1.5" marker-end="url(#a7p)"/>
+  <text x="345" y="235" text-anchor="middle" fill="#64748b" font-size="8">7. chat (summarize)</text>
+  <line x1="580" y1="248" x2="110" y2="248" stroke="#a855f7" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- Activity (blocked) -->
+  <text x="15" y="275" fill="#ef4444" font-size="9">activity</text>
+  <line x1="110" y1="273" x2="200" y2="273" stroke="#ef4444" stroke-width="2" marker-end="url(#a7r)"/>
+  <text x="155" y="268" text-anchor="middle" fill="#ef4444" font-size="8" font-weight="bold">8. inspect</text>
+  <line x1="200" y1="281" x2="110" y2="281" stroke="#ef4444" stroke-width="2" stroke-dasharray="3,2"/>
+  <text x="155" y="294" text-anchor="middle" fill="#ef4444" font-size="9" font-weight="bold">BLOCKED ✗</text>
+  <text x="345" y="285" text-anchor="middle" fill="#64748b" font-size="9" font-style="italic">no more LLM calls</text>
+
+  <!-- Flush -->
+  <line x1="110" y1="320" x2="730" y2="320" stroke="#22c55e" stroke-width="1.5" marker-end="url(#a7g)"/>
+  <text x="420" y="315" text-anchor="middle" fill="#86efac" font-size="8">9. flush spans (OTLP gRPC)</text>
+
+  <!-- Totals -->
+  <rect x="200" y="335" width="510" height="1" fill="#475569"/>
+
+  <defs>
+    <marker id="a7r" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#ef4444"/></marker>
+    <marker id="a7y" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#f59e0b"/></marker>
+    <marker id="a7p" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#a855f7"/></marker>
+    <marker id="a7g" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#22c55e"/></marker>
+  </defs>
+</svg>
+</div>
+
+<div class="callout purple">
+<strong>Total per run:</strong> 3 AI Defense calls + 1 OAuth token + 4 LLM calls + 1 OTLP flush = <strong>9 HTTP requests</strong><br>
+Token usage: ~400 input + ~180 output = ~580 tokens per run (~$0.0001 at GPT-4o-mini pricing)
+</div>
+
+</body>
+</html>
