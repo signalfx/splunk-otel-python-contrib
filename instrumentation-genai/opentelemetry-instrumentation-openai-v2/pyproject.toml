@@ -21,7 +21,7 @@ classifiers = [
 dependencies = [
   "opentelemetry-api >= 1.37",
   "opentelemetry-instrumentation >= 0.58b0",
-  "opentelemetry-semantic-conventions >= 0.58b0",
+  "opentelemetry-semantic-conventions >= 0.60b1",
   "splunk-otel-util-genai >= 0.1.9"
 
 ]
