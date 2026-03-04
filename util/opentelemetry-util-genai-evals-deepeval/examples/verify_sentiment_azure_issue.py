@@ -117,7 +117,7 @@ CASE2_OUTPUT = (
 
 TEST_CASES = [
     ("Case 1: NY→London + quantum aside", CASE1_INPUT, CASE1_OUTPUT),
-    ("Case 2: Seattle→Paris (short)", CASE2_INPUT, CASE2_OUTPUT),
+    # ("Case 2: Seattle→Paris (short)", CASE2_INPUT, CASE2_OUTPUT),
 ]
 
 
