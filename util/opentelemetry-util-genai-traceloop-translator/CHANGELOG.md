@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.2.0 - 2026-03-03
+
+### Changed
+- Upgraded `opentelemetry-semantic-conventions` dependency from `~= 0.52b1` to `>= 0.60b1` for compatibility with `splunk-otel-python >= 2.9.0`.
+
 ## Version 0.1.8 - 2026-02-06
 - Resolved issue with missing Agent evaluations & skip already instrumented spans.
 - Removed redundant calls which was causing duplicate metrics & evaluations.
