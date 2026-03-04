@@ -421,7 +421,7 @@ def main():
     departure = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
     return_date = (datetime.now() + timedelta(days=37)).strftime("%Y-%m-%d")
 
-    scenarios = [
+    all_scenarios = [
         {
             "name": "SECURITY exception (jailbreak + violence)",
             "destination": "Tokyo",
@@ -440,6 +440,10 @@ def main():
             ),
         },
     ]
+
+    scenario_index = (datetime.now().minute // 5) % len(all_scenarios)
+    scenarios = [all_scenarios[scenario_index]]
+    print(f"\n🎲 Selected scenario {scenario_index + 1}/{len(all_scenarios)}: {scenarios[0]['name']}")
 
     for scenario in scenarios:
         session_id = str(uuid4())
