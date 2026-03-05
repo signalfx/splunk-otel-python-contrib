@@ -276,6 +276,48 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
 Burst capacity for evaluation rate limiting token bucket. Default: 4.
 """
 
+# ---- GenAI Context ----
+OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS = (
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS
+
+Comma-separated list of GenAI context attribute keys to include as metric
+dimensions. Any association property key or ``gen_ai.conversation.id`` can be
+listed.
+
+Examples::
+
+    gen_ai.conversation.id
+    user.id,customer.id
+    all
+
+``all`` includes ``gen_ai.conversation.id`` plus all association properties set
+on the invocation.
+
+Default: empty (no context attributes on metrics — they are high-cardinality).
+
+⚠️  Including ``gen_ai.conversation.id`` in metrics may cause high-cardinality
+issues. Use selective property keys for lower cardinality.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID = (
+    "OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID
+
+Static conversation ID to apply to all GenAI operations. This is useful for
+simple deployments where all requests share a single conversation context.
+For multi-tenant or multi-conversation scenarios, use the programmatic
+GenAI context APIs instead (``set_genai_context`` / ``genai_context``).
+
+When set, this value is applied as the default ``gen_ai.conversation.id``
+attribute on all GenAI spans unless explicitly overridden via the invocation
+object or the GenAI context API.
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -305,4 +347,7 @@ __all__ = [
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
+    # genai context
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
+    "OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID",
 ]

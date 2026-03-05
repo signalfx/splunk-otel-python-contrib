@@ -15,3 +15,24 @@
 from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
+
+# Public API exports for GenAI context management
+from opentelemetry.util.genai.handler import (
+    GenAIContext,
+    clear_genai_context,
+    genai_context,
+    get_genai_context,
+    get_telemetry_handler,
+    set_genai_context,
+)
+
+__all__ = [
+    # GenAI context management
+    "GenAIContext",
+    "genai_context",
+    "set_genai_context",
+    "get_genai_context",
+    "clear_genai_context",
+    # Handler
+    "get_telemetry_handler",
+]

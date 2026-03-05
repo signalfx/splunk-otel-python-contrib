@@ -51,7 +51,10 @@ Usage:
 import logging
 import os
 import time
-from typing import Any, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Any, Iterator, Optional
 
 try:
     from opentelemetry.util.genai.debug import genai_debug_log
@@ -116,6 +119,186 @@ from .environment_variables import (
 _LOGGER = logging.getLogger(__name__)
 
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+@dataclass
+class GenAIContext:
+    """Holds conversation context and association properties for GenAI operations.
+
+    This dataclass stores a conversation identifier and arbitrary key-value
+    association properties that are automatically propagated to all nested
+    GenAI operations (LLM calls, agent invocations, tool calls, etc.).
+
+    Association properties are emitted on spans as
+    ``gen_ai.association.properties.<key>``.
+
+    Attributes:
+        conversation_id: Unique identifier for the conversation
+            (propagated as ``gen_ai.conversation.id``).
+        properties: Arbitrary key-value association properties
+            (e.g. ``{"user.id": "alice", "customer.id": "acme"}``).
+    """
+
+    conversation_id: Optional[str] = None
+    properties: dict[str, Any] = field(default_factory=dict)
+
+    def is_empty(self) -> bool:
+        """Return True if no context values are set."""
+        return self.conversation_id is None and not self.properties
+
+
+# Module-level context variable for GenAI context propagation
+_genai_context: ContextVar[GenAIContext] = ContextVar(
+    "genai_context", default=GenAIContext()
+)
+
+
+def set_genai_context(
+    conversation_id: Optional[str] = None,
+    properties: Optional[dict[str, Any]] = None,
+) -> None:
+    """Set GenAI context that propagates to all nested GenAI operations.
+
+    This function sets conversation context and association properties that
+    will be automatically applied to all GenAI invocations (LLM calls,
+    agent invocations, tool calls, etc.) started within the current context.
+    The context is thread-safe and async-safe using Python's contextvars.
+
+    Association properties are emitted on spans as
+    ``gen_ai.association.properties.<key>``.
+
+    Args:
+        conversation_id: Unique identifier for the conversation
+            (emitted as ``gen_ai.conversation.id``).
+        properties: Arbitrary key-value association properties
+            (e.g. ``{"user.id": "alice", "customer.id": "acme"}``).
+
+    Example:
+        >>> from opentelemetry.util.genai import set_genai_context
+        >>> set_genai_context(
+        ...     conversation_id="conv-123",
+        ...     properties={"user.id": "alice", "customer.id": "acme"},
+        ... )
+        >>> # All subsequent GenAI operations will have these attributes
+        >>> result = chain.invoke({"input": "Hello"})
+    """
+    ctx = GenAIContext(
+        conversation_id=conversation_id,
+        properties=dict(properties) if properties else {},
+    )
+    _genai_context.set(ctx)
+
+
+def get_genai_context() -> GenAIContext:
+    """Get the current GenAI context.
+
+    Returns:
+        The current GenAIContext, or an empty GenAIContext if none is set.
+
+    Example:
+        >>> ctx = get_genai_context()
+        >>> print(f"Conversation: {ctx.conversation_id}, Props: {ctx.properties}")
+    """
+    return _genai_context.get()
+
+
+def clear_genai_context() -> None:
+    """Clear the current GenAI context.
+
+    Resets the GenAI context to an empty state. Useful for cleanup
+    after processing a request.
+
+    Example:
+        >>> set_genai_context(conversation_id="conv-123")
+        >>> # ... process request ...
+        >>> clear_genai_context()
+    """
+    _genai_context.set(GenAIContext())
+
+
+@contextmanager
+def genai_context(
+    conversation_id: Optional[str] = None,
+    properties: Optional[dict[str, Any]] = None,
+) -> Iterator[GenAIContext]:
+    """Context manager for GenAI context that auto-restores on exit.
+
+    This is the recommended way to set GenAI context for a request or
+    operation, as it automatically restores the previous context on exit.
+
+    Association properties are emitted on spans as
+    ``gen_ai.association.properties.<key>``.
+
+    Args:
+        conversation_id: Unique identifier for the conversation
+            (emitted as ``gen_ai.conversation.id``).
+        properties: Arbitrary key-value association properties
+            (e.g. ``{"user.id": "alice", "customer.id": "acme"}``).
+
+    Yields:
+        The GenAIContext object for the duration of the context.
+
+    Example:
+        >>> from opentelemetry.util.genai import genai_context
+        >>> with genai_context(
+        ...     conversation_id="conv-123",
+        ...     properties={"user.id": "alice"},
+        ... ):
+        ...     # All GenAI operations here will have context attributes
+        ...     result = chain.invoke({"input": "Hello"})
+        >>> # Context is automatically restored after exiting
+    """
+    ctx = GenAIContext(
+        conversation_id=conversation_id,
+        properties=dict(properties) if properties else {},
+    )
+    token = _genai_context.set(ctx)
+
+    try:
+        yield ctx
+    finally:
+        _genai_context.reset(token)
+
+
+def _apply_genai_context(invocation: GenAI) -> None:
+    """Apply GenAI context to an invocation if not already set.
+
+    Internal helper that applies the current GenAI context to a GenAI
+    invocation object. Priority order:
+
+    1. Explicit value set on invocation object
+    2. Value from contextvars GenAI context
+    3. Value from environment variable (conversation_id only)
+
+    Association properties from the context are merged into the invocation's
+    ``association_properties`` dict. Invocation-level properties take
+    priority over context-level properties for the same key.
+
+    Args:
+        invocation: The GenAI invocation to apply context to.
+    """
+    from .environment_variables import (
+        OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID,
+    )
+
+    ctx = _genai_context.get()
+
+    # Apply conversation_id: invocation > contextvars > env
+    if not invocation.conversation_id:
+        if ctx.conversation_id:
+            invocation.conversation_id = ctx.conversation_id
+        else:
+            env_conv = os.environ.get(
+                OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID
+            )
+            if env_conv:
+                invocation.conversation_id = env_conv
+
+    # Merge association properties: context values, then invocation overrides
+    if ctx.properties:
+        merged = dict(ctx.properties)
+        merged.update(invocation.association_properties)
+        invocation.association_properties = merged
 
 
 class TelemetryHandler:
@@ -348,6 +531,8 @@ class TelemetryHandler:
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         # Implicit agent inheritance
         if (
             not invocation.agent_name or not invocation.agent_id
@@ -467,6 +652,8 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Start an embedding invocation and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -533,6 +720,8 @@ class TelemetryHandler:
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -595,6 +784,8 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -638,6 +829,8 @@ class TelemetryHandler:
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(workflow)
         self._emitter.on_start(workflow)
         span = getattr(workflow, "span", None)
         if span is not None:
@@ -808,6 +1001,8 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(agent)
         self._emitter.on_start(agent)
         span = getattr(agent, "span", None)
         if span is not None:
@@ -890,6 +1085,8 @@ class TelemetryHandler:
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
         self._refresh_capture_content()
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(step)
         self._emitter.on_start(step)
         span = getattr(step, "span", None)
         if span is not None:

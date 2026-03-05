@@ -68,6 +68,9 @@ GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
 
+# Association properties prefix
+GEN_AI_ASSOCIATION_PROPERTIES_PREFIX = "gen_ai.association.properties"
+
 # Security attributes (Cisco AI Defense)
 GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
 

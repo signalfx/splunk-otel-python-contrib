@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.10 - 2026-03-04
+
+### Added
+- **Conversation Context & Association Properties** — New APIs for conversation tracking and custom context propagation across GenAI operations:
+  - `genai_context()` — Context manager for automatic context propagation
+  - `set_genai_context()` / `get_genai_context()` / `clear_genai_context()` — Manual context management
+  - `GenAIContext` dataclass holding `conversation_id` and `properties` dict
+  - Added `conversation_id` and `association_properties` fields to `GenAI` base type
+  - Association properties emitted on spans as `gen_ai.association.properties.<key>`
+  - New environment variables:
+    - `OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID`
+    - `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS` (`all` or comma-separated keys)
+  - Priority order: explicit invocation value > contextvars > environment variables
+
 ## Version 0.1.9 - 2026-01-29
 
 - Release 0.1.9
