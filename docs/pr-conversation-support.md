@@ -5,8 +5,7 @@
 ## What
 
 Adds `gen_ai.conversation.id` and custom **association properties** that
-auto-propagate to all GenAI spans. Modeled after Traceloop association
-properties.
+auto-propagate to all GenAI spans.
 
 ## API
 

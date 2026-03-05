@@ -102,7 +102,7 @@ class GenAI:
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},
     )
-    # Association properties for context tracking (modeled after Traceloop).
+    # Association properties for context tracking.
     # Emitted on spans as gen_ai.association.properties.<key>.
     association_properties: Dict[str, Any] = field(default_factory=dict)
     sample_for_evaluation: Optional[bool] = field(default=True)

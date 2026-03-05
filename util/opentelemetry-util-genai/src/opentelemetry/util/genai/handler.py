@@ -132,9 +132,6 @@ class GenAIContext:
     Association properties are emitted on spans as
     ``gen_ai.association.properties.<key>``.
 
-    Modeled after `Traceloop association properties
-    <https://github.com/traceloop/openllmetry>`_.
-
     Attributes:
         conversation_id: Unique identifier for the conversation
             (propagated as ``gen_ai.conversation.id``).

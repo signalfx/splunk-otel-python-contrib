@@ -5,7 +5,7 @@ All notable changes to this repository are documented in this file.
 ## Version 0.1.10 - 2026-03-04
 
 ### Added
-- **Conversation Context & Association Properties** — New APIs for conversation tracking and custom context propagation across GenAI operations (modeled after Traceloop association properties):
+- **Conversation Context & Association Properties** — New APIs for conversation tracking and custom context propagation across GenAI operations:
   - `genai_context()` — Context manager for automatic context propagation
   - `set_genai_context()` / `get_genai_context()` / `clear_genai_context()` — Manual context management
   - `GenAIContext` dataclass holding `conversation_id` and `properties` dict

@@ -4,7 +4,6 @@
 
 - Adds `gen_ai.conversation.id` context attribute for multi-turn conversation correlation
 - Adds custom **association properties** (`gen_ai.association.properties.<key>`) for arbitrary context propagation
-- Modeled after [Traceloop association properties](https://github.com/traceloop/openllmetry)
 
 ## Public API
 
@@ -50,16 +49,6 @@ Association properties from context and invocation are merged:
 - Context-level properties are applied first
 - Invocation-level properties override same-key context properties
 
-## Comparison with Traceloop
-
-| Aspect | Traceloop | SDOT |
-|--------|-----------|------|
-| Storage | OTel Context (`attach`/`set_value`) | Python `contextvars.ContextVar` |
-| Application | `SpanProcessor.on_start` stamps every span | `_apply_genai_context()` called in `TelemetryHandler.start_*()` |
-| Attribute prefix | `traceloop.association.properties.<key>` | `gen_ai.association.properties.<key>` |
-| LangChain integration | Callback handler merges `config.metadata` | Roadmap |
-| Cross-service | `traceparent` via MCP `_meta` | Standard OTel `propagate.inject/extract` |
-
 ## Environment Variables
 
 | Variable | Purpose | Default |
@@ -85,8 +74,8 @@ Association properties from context and invocation are merged:
 
 ### LangChain Config Metadata Auto-propagation
 
-Traceloop automatically bridges LangChain `config.metadata` into association
-properties. SDOT should do the same in the LangChain instrumentation:
+Automatically bridge LangChain `config.metadata` into association
+properties in the LangChain instrumentation:
 
 ```python
 chain.invoke(
@@ -107,5 +96,4 @@ OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=true   (default: true)
 ## References
 
 - [OTel GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
-- [Traceloop association properties](https://github.com/traceloop/openllmetry)
 - [API reference](../util/opentelemetry-util-genai/docs/genai-context.md)
