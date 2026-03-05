@@ -68,6 +68,25 @@ the same key.
 | `gen_ai.conversation.id` | `conversation_id` param | `"conv-123"` |
 | `gen_ai.association.properties.<key>` | `properties` dict | `"alice"` |
 
+## Including Context Attributes in Metrics
+
+By default, **no** context attributes are added to metric dimensions (they are
+high-cardinality). To opt in, set `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS`:
+
+```bash
+# Include all context attributes (conversation_id + all association properties)
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS=all
+
+# Include only specific attributes (comma-separated keys)
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS=user.id,customer.id
+
+# Include only conversation_id in metrics
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS=gen_ai.conversation.id
+```
+
+Either the short property key (`user.id`) or the full prefixed attribute
+(`gen_ai.association.properties.user.id`) can be used when specifying specific keys.
+
 ## API Reference
 
 ### `genai_context(conversation_id=None, properties=None)`
