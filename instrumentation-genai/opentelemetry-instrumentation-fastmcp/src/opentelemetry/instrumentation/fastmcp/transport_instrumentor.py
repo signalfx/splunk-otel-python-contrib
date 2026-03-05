@@ -13,16 +13,20 @@
 # limitations under the License.
 
 """
-MCP Transport layer instrumentation for trace context and session propagation.
+MCP Transport layer instrumentation for trace context propagation.
 
 This module instruments the low-level MCP SDK transport to ensure trace context
-(traceparent, tracestate) and session baggage are propagated between client and
-server processes using the standard OTel Propagation API.
+(traceparent, tracestate) is propagated between client and server processes
+using the standard OTel Propagation API.
+
+This works over any MCP transport (stdio, SSE, streamable HTTP) because the
+trace context is injected into the MCP request's ``_meta`` field which is
+transport-agnostic. The OTel SDK handles the actual propagation format
+(W3C TraceContext by default).
 
 Approach:
 - Client side: Wrap BaseSession.send_request to inject context via propagate.inject()
 - Server side: Wrap Server._handle_request to extract context via propagate.extract()
-  and restore session context from baggage
 """
 
 import logging
@@ -84,19 +88,16 @@ class TransportInstrumentor:
         self._instrumented = False
 
     def _send_request_wrapper(self):
-        """Wrapper for BaseSession.send_request to inject trace context and baggage.
+        """Wrapper for BaseSession.send_request to inject trace context.
 
         This runs on the client side before sending any MCP request.
-        Injects traceparent/tracestate and baggage into the request's params.meta field.
-
-        The baggage header carries session context (gen_ai.conversation.id, user.id, customer.id)
-        when baggage propagation is enabled via OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage.
+        Injects traceparent/tracestate into the request's params.meta field.
 
         The MCP SDK request structure:
         - ClientRequest is a discriminated union with a 'root' attribute
         - request.root contains the actual request (CallToolRequest, etc.)
         - request.root.params.meta (aliased as _meta in JSON) is a Meta object
-        - Meta has extra='allow', so we can add traceparent/tracestate/baggage
+        - Meta has extra='allow', so we can add traceparent/tracestate
         """
 
         async def traced_send_request(wrapped, instance, args, kwargs) -> Any:
@@ -154,12 +155,11 @@ class TransportInstrumentor:
         return traced_send_request
 
     def _server_handle_request_wrapper(self):
-        """Wrapper for Server._handle_request to extract trace context and session.
+        """Wrapper for Server._handle_request to extract trace context.
 
         This runs on the server side when handling an MCP request.
-        Extracts trace context (traceparent/tracestate) and baggage from
-        the request metadata, then restores session context from baggage
-        for GenAI instrumentation.
+        Extracts trace context (traceparent/tracestate) from the request
+        metadata to correlate server-side spans with the client trace.
 
         The method signature is:
             _handle_request(self, message, req, session, lifespan_context, raise_exceptions)
@@ -204,16 +204,6 @@ class TransportInstrumentor:
                                 f"Attached trace context in _handle_request: "
                                 f"carrier={carrier}"
                             )
-
-                            # Restore session context from baggage if enabled
-                            try:
-                                from .propagation import restore_session_from_context
-
-                                restore_session_from_context(ctx)
-                            except Exception as e:
-                                _LOGGER.debug(
-                                    f"Failed to restore session from baggage: {e}"
-                                )
 
             except Exception as e:
                 _LOGGER.debug(f"Error extracting trace context: {e}", exc_info=True)

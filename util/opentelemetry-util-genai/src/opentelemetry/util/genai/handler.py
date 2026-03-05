@@ -53,7 +53,7 @@ import os
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional
 
 try:
@@ -122,280 +122,186 @@ _TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 
 @dataclass
-class SessionContext:
-    """Holds session/user context for propagation to GenAI operations.
+class GenAIContext:
+    """Holds conversation context and association properties for GenAI operations.
 
-    This dataclass stores session-related identifiers that are automatically
-    propagated to all nested GenAI operations (LLM calls, agent invocations, etc.)
-    when using the TelemetryHandler's session context management.
+    This dataclass stores a conversation identifier and arbitrary key-value
+    association properties that are automatically propagated to all nested
+    GenAI operations (LLM calls, agent invocations, tool calls, etc.).
+
+    Association properties are emitted on spans as
+    ``gen_ai.association.properties.<key>``.
+
+    Modeled after `Traceloop association properties
+    <https://github.com/traceloop/openllmetry>`_.
 
     Attributes:
-        session_id: Unique identifier for the session/conversation
+        conversation_id: Unique identifier for the conversation
             (propagated as ``gen_ai.conversation.id``).
-        user_id: Identifier for the user making the request.
-        customer_id: Identifier for the customer/tenant.
+        properties: Arbitrary key-value association properties
+            (e.g. ``{"user.id": "alice", "customer.id": "acme"}``).
     """
 
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
-    customer_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    properties: dict[str, Any] = field(default_factory=dict)
 
     def is_empty(self) -> bool:
         """Return True if no context values are set."""
-        return (
-            self.session_id is None
-            and self.user_id is None
-            and self.customer_id is None
-        )
+        return self.conversation_id is None and not self.properties
 
 
-# Module-level context variable for session context propagation
-_session_context: ContextVar[SessionContext] = ContextVar(
-    "genai_session_context", default=SessionContext()
+# Module-level context variable for GenAI context propagation
+_genai_context: ContextVar[GenAIContext] = ContextVar(
+    "genai_context", default=GenAIContext()
 )
 
 
-def _is_baggage_propagation_enabled() -> bool:
-    """Check if baggage-based session propagation is enabled."""
-    from .environment_variables import (  # noqa: I001
-        OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION,
-    )
-
-    mode = os.environ.get(
-        OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION, "contextvar"
-    ).lower()
-    return mode == "baggage"
-
-
-def _set_session_baggage(
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    customer_id: Optional[str] = None,
+def set_genai_context(
+    conversation_id: Optional[str] = None,
+    properties: Optional[dict[str, Any]] = None,
 ) -> None:
-    """Set session context values as OTel Baggage for cross-service propagation."""
-    from opentelemetry import baggage, context
+    """Set GenAI context that propagates to all nested GenAI operations.
 
-    ctx = context.get_current()
-    if session_id:
-        ctx = baggage.set_baggage("gen_ai.conversation.id", session_id, ctx)
-    if user_id:
-        ctx = baggage.set_baggage("user.id", user_id, ctx)
-    if customer_id:
-        ctx = baggage.set_baggage("customer.id", customer_id, ctx)
-    context.attach(ctx)
+    This function sets conversation context and association properties that
+    will be automatically applied to all GenAI invocations (LLM calls,
+    agent invocations, tool calls, etc.) started within the current context.
+    The context is thread-safe and async-safe using Python's contextvars.
 
-
-def _get_session_from_baggage() -> SessionContext:
-    """Extract session context from OTel Baggage (if any)."""
-    from opentelemetry import baggage
-
-    session_id = baggage.get_baggage("gen_ai.conversation.id")
-    user_id = baggage.get_baggage("user.id")
-    customer_id = baggage.get_baggage("customer.id")
-    return SessionContext(
-        session_id=session_id,
-        user_id=user_id,
-        customer_id=customer_id,
-    )
-
-
-def set_session_context(
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    customer_id: Optional[str] = None,
-    propagate_via_baggage: Optional[bool] = None,
-) -> None:
-    """Set session context that propagates to all nested GenAI operations.
-
-    This function sets session/user context that will be automatically applied
-    to all GenAI invocations (LLM calls, agent invocations, tool calls, etc.)
-    started within the current context. The context is thread-safe and async-safe
-    using Python's contextvars.
-
-    When baggage propagation is enabled (via ``propagate_via_baggage=True`` or
-    ``OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage``), the session
-    values are also set as OTel Baggage entries, which propagate across service
-    boundaries (e.g. MCP client → server via _meta field).
+    Association properties are emitted on spans as
+    ``gen_ai.association.properties.<key>``.
 
     Args:
-        session_id: Unique identifier for the session/conversation.
-        user_id: Identifier for the user making the request.
-        customer_id: Identifier for the customer/tenant.
-        propagate_via_baggage: Whether to also set OTel Baggage. If None,
-            uses the OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION env var.
+        conversation_id: Unique identifier for the conversation
+            (emitted as ``gen_ai.conversation.id``).
+        properties: Arbitrary key-value association properties
+            (e.g. ``{"user.id": "alice", "customer.id": "acme"}``).
 
     Example:
-        >>> from opentelemetry.util.genai import set_session_context
-        >>> set_session_context(session_id="conv-123", user_id="user-456")
+        >>> from opentelemetry.util.genai import set_genai_context
+        >>> set_genai_context(
+        ...     conversation_id="conv-123",
+        ...     properties={"user.id": "alice", "customer.id": "acme"},
+        ... )
         >>> # All subsequent GenAI operations will have these attributes
         >>> result = chain.invoke({"input": "Hello"})
     """
-    ctx = SessionContext(
-        session_id=session_id,
-        user_id=user_id,
-        customer_id=customer_id,
+    ctx = GenAIContext(
+        conversation_id=conversation_id,
+        properties=dict(properties) if properties else {},
     )
-    _session_context.set(ctx)
-
-    # Also set OTel Baggage if requested
-    use_baggage = (
-        propagate_via_baggage
-        if propagate_via_baggage is not None
-        else _is_baggage_propagation_enabled()
-    )
-    if use_baggage:
-        _set_session_baggage(session_id, user_id, customer_id)
+    _genai_context.set(ctx)
 
 
-def get_session_context() -> SessionContext:
-    """Get the current session context.
+def get_genai_context() -> GenAIContext:
+    """Get the current GenAI context.
 
     Returns:
-        The current SessionContext, or an empty SessionContext if none is set.
+        The current GenAIContext, or an empty GenAIContext if none is set.
 
     Example:
-        >>> ctx = get_session_context()
-        >>> print(f"Session: {ctx.session_id}, User: {ctx.user_id}")
+        >>> ctx = get_genai_context()
+        >>> print(f"Conversation: {ctx.conversation_id}, Props: {ctx.properties}")
     """
-    return _session_context.get()
+    return _genai_context.get()
 
 
-def clear_session_context() -> None:
-    """Clear the current session context.
+def clear_genai_context() -> None:
+    """Clear the current GenAI context.
 
-    Resets the session context to an empty state. Useful for cleanup
+    Resets the GenAI context to an empty state. Useful for cleanup
     after processing a request.
 
     Example:
-        >>> set_session_context(session_id="conv-123")
+        >>> set_genai_context(conversation_id="conv-123")
         >>> # ... process request ...
-        >>> clear_session_context()
+        >>> clear_genai_context()
     """
-    _session_context.set(SessionContext())
+    _genai_context.set(GenAIContext())
 
 
 @contextmanager
-def session_context(
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    customer_id: Optional[str] = None,
-    propagate_via_baggage: Optional[bool] = None,
-) -> Iterator[SessionContext]:
-    """Context manager for session context that auto-clears on exit.
+def genai_context(
+    conversation_id: Optional[str] = None,
+    properties: Optional[dict[str, Any]] = None,
+) -> Iterator[GenAIContext]:
+    """Context manager for GenAI context that auto-restores on exit.
 
-    This is the recommended way to set session context for a request or
+    This is the recommended way to set GenAI context for a request or
     operation, as it automatically restores the previous context on exit.
 
-    When baggage propagation is enabled, session values are also set as
-    OTel Baggage entries for cross-service propagation.
+    Association properties are emitted on spans as
+    ``gen_ai.association.properties.<key>``.
 
     Args:
-        session_id: Unique identifier for the session/conversation.
-        user_id: Identifier for the user making the request.
-        customer_id: Identifier for the customer/tenant.
-        propagate_via_baggage: Whether to also set OTel Baggage. If None,
-            uses the OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION env var.
+        conversation_id: Unique identifier for the conversation
+            (emitted as ``gen_ai.conversation.id``).
+        properties: Arbitrary key-value association properties
+            (e.g. ``{"user.id": "alice", "customer.id": "acme"}``).
 
     Yields:
-        The SessionContext object for the duration of the context.
+        The GenAIContext object for the duration of the context.
 
     Example:
-        >>> from opentelemetry.util.genai import session_context
-        >>> with session_context(session_id="conv-123", user_id="user-456"):
-        ...     # All GenAI operations here will have session attributes
+        >>> from opentelemetry.util.genai import genai_context
+        >>> with genai_context(
+        ...     conversation_id="conv-123",
+        ...     properties={"user.id": "alice"},
+        ... ):
+        ...     # All GenAI operations here will have context attributes
         ...     result = chain.invoke({"input": "Hello"})
-        >>> # Context is automatically cleared after exiting
+        >>> # Context is automatically restored after exiting
     """
-    ctx = SessionContext(
-        session_id=session_id,
-        user_id=user_id,
-        customer_id=customer_id,
+    ctx = GenAIContext(
+        conversation_id=conversation_id,
+        properties=dict(properties) if properties else {},
     )
-    token = _session_context.set(ctx)
-
-    # Also set OTel Baggage if requested
-    use_baggage = (
-        propagate_via_baggage
-        if propagate_via_baggage is not None
-        else _is_baggage_propagation_enabled()
-    )
-    if use_baggage:
-        _set_session_baggage(session_id, user_id, customer_id)
+    token = _genai_context.set(ctx)
 
     try:
         yield ctx
     finally:
-        _session_context.reset(token)
+        _genai_context.reset(token)
 
 
-def _apply_session_context(invocation: GenAI) -> None:
-    """Apply session context to an invocation if not already set.
+def _apply_genai_context(invocation: GenAI) -> None:
+    """Apply GenAI context to an invocation if not already set.
 
-    Internal helper that applies the current session context to a GenAI
-    invocation object. Priority order for each field:
+    Internal helper that applies the current GenAI context to a GenAI
+    invocation object. Priority order:
+
     1. Explicit value set on invocation object
-    2. Value from contextvars session context
-    3. Value from OTel Baggage (if baggage propagation is enabled)
-    4. Value from environment variable
+    2. Value from contextvars GenAI context
+    3. Value from environment variable (conversation_id only)
+
+    Association properties from the context are merged into the invocation's
+    ``association_properties`` dict. Invocation-level properties take
+    priority over context-level properties for the same key.
 
     Args:
         invocation: The GenAI invocation to apply context to.
     """
     from .environment_variables import (
-        OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID,
-        OTEL_INSTRUMENTATION_GENAI_SESSION_ID,
-        OTEL_INSTRUMENTATION_GENAI_USER_ID,
+        OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID,
     )
 
-    ctx = _session_context.get()
+    ctx = _genai_context.get()
 
-    # Get baggage context if propagation is enabled
-    baggage_ctx = None
-    if _is_baggage_propagation_enabled():
-        baggage_ctx = _get_session_from_baggage()
-
-    # Apply session/conversation_id: invocation > contextvars > baggage > env
-    # The canonical OTel semconv attribute is gen_ai.conversation.id,
-    # mapped via the conversation_id field. session_id is kept for backward
-    # compatibility.
-    resolved_session = (
-        invocation.session_id
-        or invocation.conversation_id
-        or (ctx.session_id if ctx.session_id else None)
-        or (
-            baggage_ctx.session_id
-            if baggage_ctx and baggage_ctx.session_id
-            else None
-        )
-        or os.environ.get(OTEL_INSTRUMENTATION_GENAI_SESSION_ID)
-    )
-    if resolved_session:
-        invocation.conversation_id = resolved_session
-        invocation.session_id = resolved_session
-
-    # Apply user_id: invocation > contextvars > baggage > env
-    if not invocation.user_id:
-        if ctx.user_id:
-            invocation.user_id = ctx.user_id
-        elif baggage_ctx and baggage_ctx.user_id:
-            invocation.user_id = baggage_ctx.user_id
+    # Apply conversation_id: invocation > contextvars > env
+    if not invocation.conversation_id:
+        if ctx.conversation_id:
+            invocation.conversation_id = ctx.conversation_id
         else:
-            env_user = os.environ.get(OTEL_INSTRUMENTATION_GENAI_USER_ID)
-            if env_user:
-                invocation.user_id = env_user
-
-    # Apply customer_id: invocation > contextvars > baggage > env
-    if not invocation.customer_id:
-        if ctx.customer_id:
-            invocation.customer_id = ctx.customer_id
-        elif baggage_ctx and baggage_ctx.customer_id:
-            invocation.customer_id = baggage_ctx.customer_id
-        else:
-            env_customer = os.environ.get(
-                OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID
+            env_conv = os.environ.get(
+                OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID
             )
-            if env_customer:
-                invocation.customer_id = env_customer
+            if env_conv:
+                invocation.conversation_id = env_conv
+
+    # Merge association properties: context values, then invocation overrides
+    if ctx.properties:
+        merged = dict(ctx.properties)
+        merged.update(invocation.association_properties)
+        invocation.association_properties = merged
 
 
 class TelemetryHandler:
@@ -628,8 +534,8 @@ class TelemetryHandler:
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
-        # Apply session context from contextvars if not already set
-        _apply_session_context(invocation)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         # Implicit agent inheritance
         if (
             not invocation.agent_name or not invocation.agent_id
@@ -749,8 +655,8 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Start an embedding invocation and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply session context from contextvars if not already set
-        _apply_session_context(invocation)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -817,8 +723,8 @@ class TelemetryHandler:
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply session context from contextvars if not already set
-        _apply_session_context(invocation)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -881,8 +787,8 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
-        # Apply session context from contextvars if not already set
-        _apply_session_context(invocation)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
@@ -926,8 +832,8 @@ class TelemetryHandler:
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply session context from contextvars if not already set
-        _apply_session_context(workflow)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(workflow)
         self._emitter.on_start(workflow)
         span = getattr(workflow, "span", None)
         if span is not None:
@@ -1098,8 +1004,8 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply session context from contextvars if not already set
-        _apply_session_context(agent)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(agent)
         self._emitter.on_start(agent)
         span = getattr(agent, "span", None)
         if span is not None:
@@ -1182,8 +1088,8 @@ class TelemetryHandler:
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply session context from contextvars if not already set
-        _apply_session_context(step)
+        # Apply GenAI context from contextvars if not already set
+        _apply_genai_context(step)
         self._emitter.on_start(step)
         span = getattr(step, "span", None)
         if span is not None:

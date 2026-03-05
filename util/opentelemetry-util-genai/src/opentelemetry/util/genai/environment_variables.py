@@ -276,87 +276,46 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
 Burst capacity for evaluation rate limiting token bucket. Default: 4.
 """
 
-# ---- Session Context ----
-OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION = (
-    "OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION"
+# ---- GenAI Context ----
+OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS = (
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS"
 )
 """
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS
 
-Controls how session context (gen_ai.conversation.id, user.id, customer.id)
-is propagated.
-Accepted case-insensitive values:
+Comma-separated list of GenAI context attribute keys to include as metric
+dimensions. Any association property key or ``gen_ai.conversation.id`` can be
+listed.
 
-``contextvar`` (default) – session context propagated only within the same
-process via Python contextvars. No cross-service propagation.
+Examples::
 
-``baggage`` – session context is also set as OTel Baggage entries, which
-are propagated across service boundaries (e.g. via MCP _meta, HTTP headers).
-On the receiving side, baggage values are extracted and applied to GenAI
-invocations when no explicit session context is set.
+    gen_ai.conversation.id
+    user.id,customer.id
+    all
 
-Note: OTel Baggage is propagated in cleartext. Do not use ``baggage`` mode
-if session/user identifiers are considered sensitive and services cross
-trust boundaries.
-"""
+``all`` includes ``gen_ai.conversation.id`` plus all association properties set
+on the invocation.
 
-OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS = (
-    "OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS"
-)
-"""
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS
-
-Comma-separated list of session attributes to include as metric dimensions.
-Accepted values: ``gen_ai.conversation.id``, ``user.id``, ``customer.id``.
-The legacy value ``session.id`` is also accepted and normalized to
-``gen_ai.conversation.id``.
-
-Example: ``user.id,customer.id``
-
-Default: empty (no session attributes on metrics — they are high-cardinality).
-Set to ``all`` to include all three. Set to specific attributes for selective
-inclusion.
+Default: empty (no context attributes on metrics — they are high-cardinality).
 
 ⚠️  Including ``gen_ai.conversation.id`` in metrics may cause high-cardinality
-issues. Use ``user.id`` and ``customer.id`` for lower cardinality.
+issues. Use selective property keys for lower cardinality.
 """
 
-OTEL_INSTRUMENTATION_GENAI_SESSION_ID = "OTEL_INSTRUMENTATION_GENAI_SESSION_ID"
+OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID = (
+    "OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID"
+)
 """
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_SESSION_ID
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID
 
-Static session ID to apply to all GenAI operations. This is useful for simple
-deployments where all requests share a single session context. For multi-tenant
-or multi-session scenarios, use the programmatic session context APIs instead.
+Static conversation ID to apply to all GenAI operations. This is useful for
+simple deployments where all requests share a single conversation context.
+For multi-tenant or multi-conversation scenarios, use the programmatic
+GenAI context APIs instead (``set_genai_context`` / ``genai_context``).
 
 When set, this value is applied as the default ``gen_ai.conversation.id``
 attribute on all GenAI spans unless explicitly overridden via the invocation
-object or the session context API.
-"""
-
-OTEL_INSTRUMENTATION_GENAI_USER_ID = "OTEL_INSTRUMENTATION_GENAI_USER_ID"
-"""
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_USER_ID
-
-Static user ID to apply to all GenAI operations. Similar to session ID, this
-is useful for simple single-user deployments. For multi-user scenarios, use
-the programmatic session context APIs.
-
-When set, this value is applied as the default ``user.id`` attribute on all
-GenAI spans unless explicitly overridden.
-"""
-
-OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID = (
-    "OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID"
-)
-"""
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID
-
-Static customer/tenant ID to apply to all GenAI operations. Useful for
-single-tenant deployments or when customer context is known at startup.
-
-When set, this value is applied as the default ``customer.id`` attribute on all
-GenAI spans unless explicitly overridden.
+object or the GenAI context API.
 """
 
 __all__ = [
@@ -388,10 +347,7 @@ __all__ = [
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
-    # session context
-    "OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION",
-    "OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS",
-    "OTEL_INSTRUMENTATION_GENAI_SESSION_ID",
-    "OTEL_INSTRUMENTATION_GENAI_USER_ID",
-    "OTEL_INSTRUMENTATION_GENAI_CUSTOMER_ID",
+    # genai context
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
+    "OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID",
 ]

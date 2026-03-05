@@ -68,12 +68,8 @@ GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
 
-# Session/User attributes (for multi-turn tracking)
-# gen_ai.conversation.id is the canonical OTel GenAI semconv attribute.
-# SESSION_ID is kept as an alias for backward compatibility.
-SESSION_ID = "gen_ai.conversation.id"
-USER_ID = "user.id"
-CUSTOMER_ID = "customer.id"
+# Association properties prefix (modeled after Traceloop)
+GEN_AI_ASSOCIATION_PROPERTIES_PREFIX = "gen_ai.association.properties"
 
 # Security attributes (Cisco AI Defense)
 GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"

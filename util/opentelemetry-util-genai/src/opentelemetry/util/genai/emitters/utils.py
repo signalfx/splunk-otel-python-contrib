@@ -626,82 +626,80 @@ def _get_metric_attributes(
     return attributes
 
 
-# ---- Session metric attributes ----
+# ---- GenAI context metric attributes ----
 
 
 @lru_cache(maxsize=1)
-def _get_session_metric_include_set() -> frozenset[str]:
-    """Parse OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS.
+def _get_context_metric_include_set() -> frozenset[str] | None:
+    """Parse OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS.
 
     Returns a frozenset of attribute keys to include
     (e.g. {"gen_ai.conversation.id", "user.id"}).
-    Empty set means no session attributes on metrics.
+    Empty frozenset means no context attributes on metrics.
+    ``None`` means "all" — include conversation_id + all association properties.
     """
     from ..environment_variables import (
-        OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS,
+        OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS,
     )
 
     raw = os.environ.get(
-        OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS, ""
+        OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS, ""
     )
     if not raw:
         return frozenset()
 
     raw = raw.strip().lower()
     if raw == "all":
-        return frozenset({"gen_ai.conversation.id", "user.id", "customer.id"})
+        return None  # sentinel: include everything
 
-    # Parse comma-separated list
-    # Accept both legacy "session.id" and canonical "gen_ai.conversation.id"
-    allowed = {
-        "gen_ai.conversation.id",
-        "session.id",
-        "user.id",
-        "customer.id",
-    }
+    # Parse comma-separated list of arbitrary keys
     result = set()
     for item in raw.split(","):
         item = item.strip()
-        # Normalize legacy session.id to gen_ai.conversation.id
-        if item == "session.id":
-            item = "gen_ai.conversation.id"
-        if item in allowed:
+        if item:
             result.add(item)
     return frozenset(result)
 
 
-def get_session_metric_attributes(obj: Any) -> Dict[str, AttributeValue]:
-    """Get session-related metric attributes for a GenAI entity.
+def get_context_metric_attributes(obj: Any) -> Dict[str, AttributeValue]:
+    """Get context-related metric attributes for a GenAI entity.
 
-    Returns a dict of session attributes to include in metrics based on the
-    OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS configuration.
+    Returns a dict of context attributes to include in metrics based on the
+    OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS configuration.
+
+    When set to ``all``, includes ``gen_ai.conversation.id`` plus all
+    association properties (prefixed with
+    ``gen_ai.association.properties.<key>``).
 
     Args:
-        obj: A GenAI entity (LLMInvocation, ToolCall, etc.) with session fields.
+        obj: A GenAI entity (LLMInvocation, ToolCall, etc.) with context fields.
 
     Returns:
-        Dict of session attributes to add to metric dimensions.
+        Dict of context attributes to add to metric dimensions.
     """
-    include = _get_session_metric_include_set()
-    if not include:
+    from ..attributes import GEN_AI_ASSOCIATION_PROPERTIES_PREFIX
+
+    include = _get_context_metric_include_set()
+    if include is not None and not include:
         return {}
 
     attrs: Dict[str, AttributeValue] = {}
-    if "gen_ai.conversation.id" in include:
-        # Read from conversation_id first (canonical), fall back to session_id
-        session_id = getattr(obj, "conversation_id", None) or getattr(
-            obj, "session_id", None
-        )
-        if session_id:
-            attrs["gen_ai.conversation.id"] = session_id
-    if "user.id" in include:
-        user_id = getattr(obj, "user_id", None)
-        if user_id:
-            attrs["user.id"] = user_id
-    if "customer.id" in include:
-        customer_id = getattr(obj, "customer_id", None)
-        if customer_id:
-            attrs["customer.id"] = customer_id
+
+    # conversation_id
+    include_all = include is None
+    if include_all or "gen_ai.conversation.id" in include:
+        conversation_id = getattr(obj, "conversation_id", None)
+        if conversation_id:
+            attrs["gen_ai.conversation.id"] = conversation_id
+
+    # association properties
+    association_properties = getattr(obj, "association_properties", None)
+    if association_properties and isinstance(association_properties, dict):
+        for key, value in association_properties.items():
+            attr_key = f"{GEN_AI_ASSOCIATION_PROPERTIES_PREFIX}.{key}"
+            if include_all or key in include or attr_key in include:
+                attrs[attr_key] = value
+
     return attrs
 
 

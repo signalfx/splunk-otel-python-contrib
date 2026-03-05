@@ -16,23 +16,23 @@ from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
 
-# Public API exports for session context management
+# Public API exports for GenAI context management
 from opentelemetry.util.genai.handler import (
-    SessionContext,
-    clear_session_context,
-    get_session_context,
+    GenAIContext,
+    clear_genai_context,
+    genai_context,
+    get_genai_context,
     get_telemetry_handler,
-    session_context,
-    set_session_context,
+    set_genai_context,
 )
 
 __all__ = [
-    # Session context management
-    "SessionContext",
-    "session_context",
-    "set_session_context",
-    "get_session_context",
-    "clear_session_context",
+    # GenAI context management
+    "GenAIContext",
+    "genai_context",
+    "set_genai_context",
+    "get_genai_context",
+    "clear_genai_context",
     # Handler
     "get_telemetry_handler",
 ]

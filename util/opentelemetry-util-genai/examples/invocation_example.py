@@ -14,9 +14,9 @@ Usage:
     python invocation_example.py llm --exporter otlp
     python invocation_example.py eval 10 --exporter otlp
 
-    # Set session context for telemetry correlation:
-    python invocation_example.py llm --session-id my-session-123
-    python invocation_example.py all --session-id conv-456 --exporter otlp
+    # Set conversation context for telemetry correlation:
+    python invocation_example.py llm --conversation-id my-conv-123
+    python invocation_example.py all --conversation-id conv-456 --exporter otlp
 
 This example shows:
 1. Simple LLM invocation with input/output messages
@@ -89,8 +89,8 @@ except ImportError:
     OTLP_AVAILABLE = False
 
 from opentelemetry.util.genai.handler import (
+    genai_context,
     get_telemetry_handler,
-    session_context,
 )
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -870,17 +870,17 @@ def main():
         )
         sys.exit(1)
 
-    # Extract --session-id option
-    session_id = None
-    if "--session-id" in args:
-        idx = args.index("--session-id")
+    # Extract --conversation-id option
+    conversation_id = None
+    if "--conversation-id" in args:
+        idx = args.index("--conversation-id")
         if idx + 1 < len(args):
-            session_id = args[idx + 1]
+            conversation_id = args[idx + 1]
             args = (
                 args[:idx] + args[idx + 2 :]
-            )  # Remove --session-id and value
+            )  # Remove --conversation-id and value
         else:
-            print("Error: --session-id requires a value")
+            print("Error: --conversation-id requires a value")
             sys.exit(1)
 
     # Parse invocation type
@@ -923,13 +923,15 @@ def main():
     # Set up telemetry
     setup_telemetry(exporter=exporter)
 
-    # Print session info if provided
-    if session_id:
-        print(f"Using session context: session_id={session_id}")
+    # Print context info if provided
+    if conversation_id:
+        print(f"Using genai context: conversation_id={conversation_id}")
 
-    # Run the requested example(s) with optional session context
+    # Run the requested example(s) with optional genai context
     ctx = (
-        session_context(session_id=session_id) if session_id else nullcontext()
+        genai_context(conversation_id=conversation_id)
+        if conversation_id
+        else nullcontext()
     )
     with ctx:
         if invocation_type == "llm":

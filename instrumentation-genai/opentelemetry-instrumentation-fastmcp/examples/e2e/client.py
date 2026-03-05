@@ -4,7 +4,7 @@ MCP Client for Calculator Server
 
 Connects to the calculator server and demonstrates tool calls
 with OpenTelemetry instrumentation capturing traces, metrics,
-and session context propagation via OTel Baggage.
+and conversation context propagation via OTel Baggage.
 
 Usage:
     # Option 1: Spawn server as subprocess (single terminal)
@@ -18,10 +18,8 @@ Usage:
     # With metrics enabled
     OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric" python client.py --console
 
-    # With session propagation via baggage
-    OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage" \\
-    OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS="user.id" \\
-    python client.py --console --session-id "conv-123" --user-id "user-456"
+    # With conversation context
+    python client.py --console --conversation-id "conv-123" --user-id "user-456"
 
     # OTLP export (default endpoint http://localhost:4317)
     python client.py --otlp --wait 10
@@ -132,7 +130,7 @@ def setup_telemetry(console_output: bool = False, otlp_enabled: bool = False):
 
 async def run_calculator_demo(
     server_url: str | None = None,
-    session_id: str | None = None,
+    conversation_id: str | None = None,
     user_id: str | None = None,
 ):
     """Connect to calculator server and demonstrate tool calls.
@@ -140,8 +138,8 @@ async def run_calculator_demo(
     Args:
         server_url: Optional URL of external MCP server (e.g., http://localhost:8000/sse).
                    If not provided, spawns server.py as a subprocess.
-        session_id: Optional session ID to propagate via OTel Baggage.
-        user_id: Optional user ID to propagate via OTel Baggage.
+        conversation_id: Optional conversation ID to set on GenAI spans.
+        user_id: Optional user ID to set as association property.
     """
     from fastmcp import Client
 
@@ -149,25 +147,22 @@ async def run_calculator_demo(
     print("MCP Calculator Client - OpenTelemetry Instrumentation Demo")
     print("=" * 60)
 
-    # Set session context if provided — this propagates via OTel Baggage
-    # when OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage
-    if session_id or user_id:
-        from opentelemetry.util.genai.handler import set_session_context
+    # Set conversation context if provided
+    if conversation_id or user_id:
+        from opentelemetry.util.genai.handler import set_genai_context
 
-        set_session_context(
-            session_id=session_id,
-            user_id=user_id,
+        props = {}
+        if user_id:
+            props["user.id"] = user_id
+        set_genai_context(
+            conversation_id=conversation_id,
+            properties=props,
         )
-        print("\n🔑 Session context set:", file=sys.stderr)
-        if session_id:
-            print(f"   gen_ai.conversation.id = {session_id}", file=sys.stderr)
+        print("\n🔑 GenAI context set:", file=sys.stderr)
+        if conversation_id:
+            print(f"   gen_ai.conversation.id = {conversation_id}", file=sys.stderr)
         if user_id:
             print(f"   user.id                = {user_id}", file=sys.stderr)
-
-        propagation_mode = os.environ.get(
-            "OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION", "contextvar"
-        )
-        print(f"   propagation = {propagation_mode}", file=sys.stderr)
 
     if server_url:
         # Connect to external server
@@ -233,8 +228,8 @@ async def run_calculator_demo(
         except Exception as e:
             print(f"   divide(10, 0) = ❌ Error handled: {type(e).__name__}")
 
-        # Test session propagation (if session context was set)
-        if session_id or user_id:
+        # Test session propagation (if conversation context was set)
+        if conversation_id or user_id:
             print("\n🔗 Testing Session Propagation:")
             print("-" * 40)
             try:
@@ -262,7 +257,7 @@ async def main(
     otlp_enabled: bool = False,
     wait_seconds: int = 0,
     server_url: str | None = None,
-    session_id: str | None = None,
+    conversation_id: str | None = None,
     user_id: str | None = None,
 ):
     """Main entry point."""
@@ -274,7 +269,7 @@ async def main(
     try:
         await run_calculator_demo(
             server_url=server_url,
-            session_id=session_id,
+            conversation_id=conversation_id,
             user_id=user_id,
         )
         await run_calculator_demo(server_url=server_url)
@@ -329,22 +324,19 @@ if __name__ == "__main__":
         "If not provided, spawns server.py as subprocess.",
     )
     parser.add_argument(
-        "--session-id",
-        "--session",
+        "--conversation-id",
+        "--conversation",
         type=str,
         default=None,
         metavar="ID",
-        help="Session ID (gen_ai.conversation.id) to propagate via OTel Baggage "
-        "to the MCP server. "
-        "Requires OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage.",
+        help="Conversation ID (gen_ai.conversation.id) to set on GenAI spans.",
     )
     parser.add_argument(
         "--user-id",
         type=str,
         default=None,
         metavar="ID",
-        help="User ID to propagate via OTel Baggage to the MCP server. "
-        "Requires OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION=baggage.",
+        help="User ID to set on GenAI spans.",
     )
     args = parser.parse_args()
 
@@ -354,7 +346,7 @@ if __name__ == "__main__":
             otlp_enabled=args.otlp,
             wait_seconds=args.wait,
             server_url=args.server_url,
-            session_id=args.session_id,
+            conversation_id=args.conversation_id,
             user_id=args.user_id,
         )
     )

@@ -149,56 +149,42 @@ export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
 python run_demo.py --wait 30
 ```
 
-## Session Propagation via OTel Baggage
+## Conversation Context Propagation
 
-The instrumentation supports propagating session context (`gen_ai.conversation.id`, `user.id`, `customer.id`)
-across MCP client→server boundaries using [W3C Baggage](https://www.w3.org/TR/baggage/).
+The instrumentation supports propagating conversation context (`gen_ai.conversation.id`, `user.id`, `customer.id`)
+across MCP client→server boundaries using standard OTel propagation (W3C TraceContext + [Baggage](https://www.w3.org/TR/baggage/)).
 
-### Enable Baggage Propagation
-
-```bash
-# Enable baggage-based session propagation
-export OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage"
-
-# Optionally include session attributes in metrics (⚠️ cardinality)
-export OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS="user.id"
-# Or include all: "all" or "gen_ai.conversation.id,user.id,customer.id"
-```
-
-### Run with Session Context
+### Run with Conversation Context
 
 ```bash
 # Terminal 1: Start the server (SSE or Streamable HTTP)
 export OTEL_SERVICE_NAME="mcp-calculator-server"
-export OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage"
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
 python server_instrumented.py --sse --port 8000
 # or: python server_instrumented.py --http --port 8000
 
-# Terminal 2: Run client with session
+# Terminal 2: Run client with conversation context
 export OTEL_SERVICE_NAME="mcp-calculator-client"
-export OTEL_INSTRUMENTATION_GENAI_SESSION_PROPAGATION="baggage"
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
 python client.py --server-url http://localhost:8000/sse --console \
-    --session-id "conv-123" --user-id "user-456"
+    --conversation-id "conv-123" --user-id "user-456"
 # or for HTTP: --server-url http://localhost:8000/mcp
 ```
 
 ### How It Works
 
-1. **Client side**: `set_session_context()` stores session in both a `ContextVar` and
-   OTel Baggage. When making MCP calls, `propagate.inject()` writes the `baggage`
-   header into the carrier alongside `traceparent`/`tracestate`.
+1. **Client side**: `set_genai_context()` stores context in a `ContextVar`.
+   When making MCP calls, `propagate.inject()` writes W3C `traceparent`,
+   `tracestate`, and `baggage` headers into the carrier.
 
-2. **Server side**: `propagate.extract()` restores both trace context and baggage.
-   The transport instrumentor then calls `restore_session_from_context()` to populate
-   the local session `ContextVar`, making `gen_ai.conversation.id`/`user.id` available to GenAI spans.
+2. **Server side**: `propagate.extract()` restores both trace context and baggage,
+   making `gen_ai.conversation.id`/`user.id` available to GenAI spans.
 
-3. **Span attributes**: Session fields (`gen_ai.conversation.id`, `user.id`, `customer.id`) appear
+3. **Span attributes**: Context fields (`gen_ai.conversation.id`, `user.id`, `customer.id`) appear
    automatically on all GenAI spans via the `GenAI` base type's `semantic_convention_attributes()`.
 
 4. **Metric attributes**: Optionally controlled via
-   `OTEL_INSTRUMENTATION_GENAI_SESSION_INCLUDE_IN_METRICS`.
+   `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS`.
 
 ---
 

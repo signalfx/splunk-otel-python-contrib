@@ -12,8 +12,8 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 
-# Session context for telemetry correlation
-from opentelemetry.util.genai.handler import session_context
+# Conversation context for telemetry correlation
+from opentelemetry.util.genai.handler import genai_context
 
 from agents import (
     action_planner_agent,
@@ -290,9 +290,9 @@ def run_scenario(
         "recursion_limit": 20,
     }
 
-    # Execute workflow with session context for telemetry correlation
-    # All GenAI spans created within this context will include session.id attribute
-    with session_context(session_id=session_id):
+    # Execute workflow with conversation context for telemetry correlation
+    # All GenAI spans created within this context will include gen_ai.conversation.id attribute
+    with genai_context(conversation_id=session_id):
         final_state: IncidentState = initial_state
         nodes_executed = []
         previous_node = None
@@ -378,16 +378,16 @@ def main():
         help="Enable manual OpenTelemetry instrumentation",
     )
     parser.add_argument(
-        "--session-id",
+        "--conversation-id",
         type=str,
         default=None,
-        help="Session ID for tracing (default: auto-generated UUID)",
+        help="Conversation ID for telemetry correlation (default: auto-generated UUID)",
     )
     parser.add_argument(
         "--wait-after-completion",
         type=int,
         default=0,
-        help="Session ID for tracing (default: auto-generated UUID)",
+        help="Seconds to wait after completion for telemetry flush",
     )
     args = parser.parse_args()
 
@@ -415,13 +415,13 @@ def main():
     )
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
-    session_id = args.session_id or str(uuid4())
+    session_id = args.conversation_id or str(uuid4())
 
-    print("🚨 SRE Incident Copilot")
+    print("\U0001f6a8 SRE Incident Copilot")
     print("=" * 60)
     print(f"Scenario: {config.scenario_id}")
     print(f"Service: {config.otel_service_name}")
-    print(f"Session ID: {session_id}")
+    print(f"Conversation ID: {session_id}")
     print()
 
     # Run scenario

@@ -129,17 +129,16 @@ def get_session_info() -> str:
     except ImportError:
         pass
 
-    # Try reading from GenAI session context (contextvar propagation)
+    # Try reading from GenAI context (contextvar propagation)
     try:
-        from opentelemetry.util.genai.handler import get_session_context
+        from opentelemetry.util.genai.handler import get_genai_context
 
-        ctx = get_session_context()
-        if ctx.session_id and not result["gen_ai.conversation.id"]:
-            result["gen_ai.conversation.id"] = ctx.session_id
-        if ctx.user_id and not result["user.id"]:
-            result["user.id"] = ctx.user_id
-        if ctx.customer_id and not result["customer.id"]:
-            result["customer.id"] = ctx.customer_id
+        ctx = get_genai_context()
+        if ctx.conversation_id and not result["gen_ai.conversation.id"]:
+            result["gen_ai.conversation.id"] = ctx.conversation_id
+        for key, value in ctx.properties.items():
+            if not result.get(key):
+                result[key] = value
     except ImportError:
         pass
 

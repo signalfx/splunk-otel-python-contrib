@@ -102,24 +102,21 @@ class GenAI:
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},
     )
-    # Session/User Context (association properties for session tracking)
-    session_id: Optional[str] = field(
-        default=None,
-        metadata={"semconv": "session.id"},
-    )
-    user_id: Optional[str] = field(
-        default=None,
-        metadata={"semconv": "user.id"},
-    )
-    customer_id: Optional[str] = field(
-        default=None,
-        metadata={"semconv": "customer.id"},
-    )
+    # Association properties for context tracking (modeled after Traceloop).
+    # Emitted on spans as gen_ai.association.properties.<key>.
+    association_properties: Dict[str, Any] = field(default_factory=dict)
     sample_for_evaluation: Optional[bool] = field(default=True)
     evaluation_error: Optional[str] = None
 
     def semantic_convention_attributes(self) -> dict[str, Any]:
-        """Return semantic convention attributes defined on this dataclass."""
+        """Return semantic convention attributes defined on this dataclass.
+
+        Includes association properties emitted as
+        ``gen_ai.association.properties.<key>``.
+        """
+        from opentelemetry.util.genai.attributes import (
+            GEN_AI_ASSOCIATION_PROPERTIES_PREFIX,
+        )
 
         result: dict[str, Any] = {}
         for data_field in dataclass_fields(self):
@@ -132,6 +129,11 @@ class GenAI:
             if isinstance(value, list) and not value:
                 continue
             result[semconv_key] = value
+
+        # Emit association properties with prefix
+        for key, value in self.association_properties.items():
+            result[f"{GEN_AI_ASSOCIATION_PROPERTIES_PREFIX}.{key}"] = value
+
         return result
 
 
