@@ -43,23 +43,28 @@ print(f"Conversation: {ctx.conversation_id}, Props: {ctx.properties}")
 clear_genai_context()
 ```
 
-### Environment Variable
-
-```bash
-export OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID="static-conversation-id"
-```
-
 ## Priority Order
 
 Context attributes are applied with the following priority (highest to lowest):
 
 1. **Explicit value on invocation** — set directly on the GenAI type
 2. **ContextVars** — set via `set_genai_context()` or `genai_context()`
-3. **Environment variable** — static fallback (conversation_id only)
 
 Association properties from context and invocation are **merged**: context
 properties are applied first, then invocation-level properties override for
 the same key.
+
+## Disabling Context Propagation
+
+By default, GenAI context propagates to all child spans. To disable:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=false
+```
+
+When disabled, only values explicitly set on each invocation object are
+emitted. Context set via `set_genai_context()` or `genai_context()` is
+ignored.
 
 ## Span Attributes
 

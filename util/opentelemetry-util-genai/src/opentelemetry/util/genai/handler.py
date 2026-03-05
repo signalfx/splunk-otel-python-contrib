@@ -264,11 +264,14 @@ def _apply_genai_context(invocation: GenAI) -> None:
     """Apply GenAI context to an invocation if not already set.
 
     Internal helper that applies the current GenAI context to a GenAI
-    invocation object. Priority order:
+    invocation object. Can be disabled via the
+    ``OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION`` environment variable
+    (default: ``true``).
+
+    Priority order:
 
     1. Explicit value set on invocation object
     2. Value from contextvars GenAI context
-    3. Value from environment variable (conversation_id only)
 
     Association properties from the context are merged into the invocation's
     ``association_properties`` dict. Invocation-level properties take
@@ -278,21 +281,22 @@ def _apply_genai_context(invocation: GenAI) -> None:
         invocation: The GenAI invocation to apply context to.
     """
     from .environment_variables import (
-        OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID,
+        OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION,
     )
+
+    # Check if context propagation is disabled
+    prop_val = os.environ.get(
+        OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION, "true"
+    )
+    if prop_val.strip().lower() not in _TRUTHY_VALUES:
+        return
 
     ctx = _genai_context.get()
 
-    # Apply conversation_id: invocation > contextvars > env
+    # Apply conversation_id: invocation > contextvars
     if not invocation.conversation_id:
         if ctx.conversation_id:
             invocation.conversation_id = ctx.conversation_id
-        else:
-            env_conv = os.environ.get(
-                OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID
-            )
-            if env_conv:
-                invocation.conversation_id = env_conv
 
     # Merge association properties: context values, then invocation overrides
     if ctx.properties:

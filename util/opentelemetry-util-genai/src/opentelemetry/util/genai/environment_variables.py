@@ -302,20 +302,26 @@ Default: empty (no context attributes on metrics — they are high-cardinality).
 issues. Use selective property keys for lower cardinality.
 """
 
-OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID = (
-    "OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID"
+OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION = (
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION"
 )
 """
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION
 
-Static conversation ID to apply to all GenAI operations. This is useful for
-simple deployments where all requests share a single conversation context.
-For multi-tenant or multi-conversation scenarios, use the programmatic
-GenAI context APIs instead (``set_genai_context`` / ``genai_context``).
+Enable or disable automatic propagation of GenAI context (conversation_id and
+association properties) to child spans. Default: ``true``.
 
-When set, this value is applied as the default ``gen_ai.conversation.id``
-attribute on all GenAI spans unless explicitly overridden via the invocation
-object or the GenAI context API.
+Set to ``false`` to prevent context attributes from being automatically
+copied to nested GenAI invocations. When disabled, only values explicitly
+set on each invocation object are emitted.
+
+Examples::
+
+    # Disable context propagation
+    export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=false
+
+    # Explicitly enable (default)
+    export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=true
 """
 
 __all__ = [
@@ -349,5 +355,5 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
     # genai context
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
-    "OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID",
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION",
 ]

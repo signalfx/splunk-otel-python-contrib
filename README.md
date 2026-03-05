@@ -177,8 +177,8 @@ An example of the third-party emitter:
 | `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape                                                      | Adds second event per result                                                  |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: true)                                                       |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` | Evaluation queue size                                                              | int (default: 100)                                                            |
-| `OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID` | Static conversation ID fallback                                                     | Empty (no default)                                                            |
 | `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS` | Context attributes as metric dimensions                                              | Empty (none included). Set to `all` or comma-separated keys                   |
+| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION` | Enable/disable context propagation to child spans                                    | `true` (enabled by default)                                                   |
 
 ### 6.1 Conversation Context & Association Properties
 
@@ -214,9 +214,18 @@ Context attributes are resolved (highest to lowest):
 
 1. **Explicit value on invocation** — set directly on the GenAI type object
 2. **ContextVars** — set via `set_genai_context()` or `genai_context()`
-3. **Environment variable** — `OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID` (conversation_id only)
 
 Association properties from context and invocation are **merged**: context properties applied first, invocation-level properties override same keys.
+
+#### Disabling Context Propagation
+
+By default, context attributes propagate to all child GenAI spans. To disable:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=false
+```
+
+When disabled, only values explicitly set on each invocation object are emitted.
 
 #### Span Attributes
 

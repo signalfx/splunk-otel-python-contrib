@@ -12,9 +12,9 @@ All notable changes to this repository are documented in this file.
   - Added `conversation_id` and `association_properties` fields to `GenAI` base type
   - Association properties emitted on spans as `gen_ai.association.properties.<key>`
   - New environment variables:
-    - `OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID`
     - `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS` (`all` or comma-separated keys)
-  - Priority order: explicit invocation value > contextvars > environment variables
+    - `OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION` (disable context propagation, default: `true`)
+  - Priority order: explicit invocation value > contextvars
 
 ## Version 0.1.9 - 2026-01-29
 

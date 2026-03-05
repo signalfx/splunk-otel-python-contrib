@@ -6,14 +6,14 @@ This module tests:
 - Context propagation via set_genai_context/get_genai_context
 - Context manager (genai_context) with restore
 - _apply_genai_context priority and property merge
-- Environment variable fallback for conversation_id
 - Association properties on spans as gen_ai.association.properties.<key>
+- OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION disable flag
 """
 
 import os
 
 from opentelemetry.util.genai.environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID,
+    OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION,
 )
 from opentelemetry.util.genai.handler import (
     GenAIContext,
@@ -171,11 +171,11 @@ class TestApplyGenAIContext:
 
     def setup_method(self):
         clear_genai_context()
-        os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID, None)
+        os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION, None)
 
     def teardown_method(self):
         clear_genai_context()
-        os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID, None)
+        os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION, None)
 
     def test_apply_from_contextvars(self):
         set_genai_context(
@@ -190,28 +190,14 @@ class TestApplyGenAIContext:
             "customer.id": "acme",
         }
 
-    def test_apply_from_env_var(self):
-        os.environ[OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID] = "env-conv"
-        inv = LLMInvocation(request_model="model-1")
-        _apply_genai_context(inv)
-        assert inv.conversation_id == "env-conv"
-
     def test_explicit_conversation_has_priority(self):
         set_genai_context(conversation_id="ctx-conv")
-        os.environ[OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID] = "env-conv"
         inv = LLMInvocation(
             request_model="model-1",
             conversation_id="explicit-conv",
         )
         _apply_genai_context(inv)
         assert inv.conversation_id == "explicit-conv"
-
-    def test_contextvars_priority_over_env(self):
-        set_genai_context(conversation_id="ctx-conv")
-        os.environ[OTEL_INSTRUMENTATION_GENAI_CONVERSATION_ID] = "env-conv"
-        inv = LLMInvocation(request_model="model-1")
-        _apply_genai_context(inv)
-        assert inv.conversation_id == "ctx-conv"
 
     def test_property_merge_context_then_invocation(self):
         """Invocation-level properties override same-key context properties."""
@@ -230,6 +216,47 @@ class TestApplyGenAIContext:
         _apply_genai_context(inv)
         assert inv.conversation_id is None
         assert inv.association_properties == {}
+
+    def test_propagation_disabled(self):
+        """When CONTEXT_PROPAGATION=false, context is not applied."""
+        os.environ[OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION] = "false"
+        set_genai_context(
+            conversation_id="ctx-conv",
+            properties={"user.id": "alice"},
+        )
+        inv = LLMInvocation(request_model="model-1")
+        _apply_genai_context(inv)
+        assert inv.conversation_id is None
+        assert inv.association_properties == {}
+
+    def test_propagation_enabled_explicitly(self):
+        """When CONTEXT_PROPAGATION=true, context is applied normally."""
+        os.environ[OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION] = "true"
+        set_genai_context(conversation_id="ctx-conv")
+        inv = LLMInvocation(request_model="model-1")
+        _apply_genai_context(inv)
+        assert inv.conversation_id == "ctx-conv"
+
+    def test_propagation_default_is_enabled(self):
+        """By default (no env var), context propagation is enabled."""
+        set_genai_context(conversation_id="ctx-conv")
+        inv = LLMInvocation(request_model="model-1")
+        _apply_genai_context(inv)
+        assert inv.conversation_id == "ctx-conv"
+
+    def test_propagation_disabled_explicit_value_preserved(self):
+        """Even when propagation disabled, explicit invocation values stay."""
+        os.environ[OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION] = "false"
+        set_genai_context(conversation_id="ctx-conv")
+        inv = LLMInvocation(
+            request_model="model-1",
+            conversation_id="explicit-conv",
+        )
+        inv.association_properties = {"key": "val"}
+        _apply_genai_context(inv)
+        # Explicit values on invocation are untouched
+        assert inv.conversation_id == "explicit-conv"
+        assert inv.association_properties == {"key": "val"}
 
 
 class TestGenAIContextInHandler:
