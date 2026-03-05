@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from opentelemetry import trace
@@ -622,6 +624,83 @@ def _get_metric_attributes(
     if server_port:
         attributes[ServerAttributes.SERVER_PORT] = server_port
     return attributes
+
+
+# ---- GenAI context metric attributes ----
+
+
+@lru_cache(maxsize=1)
+def _get_context_metric_include_set() -> frozenset[str] | None:
+    """Parse OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS.
+
+    Returns a frozenset of attribute keys to include
+    (e.g. {"gen_ai.conversation.id", "user.id"}).
+    Empty frozenset means no context attributes on metrics.
+    ``None`` means "all" — include conversation_id + all association properties.
+    """
+    from ..environment_variables import (
+        OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS,
+    )
+
+    raw = os.environ.get(
+        OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS, ""
+    )
+    if not raw:
+        return frozenset()
+
+    raw = raw.strip().lower()
+    if raw == "all":
+        return None  # sentinel: include everything
+
+    # Parse comma-separated list of arbitrary keys
+    result = set()
+    for item in raw.split(","):
+        item = item.strip()
+        if item:
+            result.add(item)
+    return frozenset(result)
+
+
+def get_context_metric_attributes(obj: Any) -> Dict[str, AttributeValue]:
+    """Get context-related metric attributes for a GenAI entity.
+
+    Returns a dict of context attributes to include in metrics based on the
+    OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS configuration.
+
+    When set to ``all``, includes ``gen_ai.conversation.id`` plus all
+    association properties (prefixed with
+    ``gen_ai.association.properties.<key>``).
+
+    Args:
+        obj: A GenAI entity (LLMInvocation, ToolCall, etc.) with context fields.
+
+    Returns:
+        Dict of context attributes to add to metric dimensions.
+    """
+    from ..attributes import GEN_AI_ASSOCIATION_PROPERTIES_PREFIX
+
+    include = _get_context_metric_include_set()
+    if include is not None and not include:
+        return {}
+
+    attrs: Dict[str, AttributeValue] = {}
+
+    # conversation_id
+    include_all = include is None
+    if include_all or "gen_ai.conversation.id" in include:
+        conversation_id = getattr(obj, "conversation_id", None)
+        if conversation_id:
+            attrs["gen_ai.conversation.id"] = conversation_id
+
+    # association properties
+    association_properties = getattr(obj, "association_properties", None)
+    if association_properties and isinstance(association_properties, dict):
+        for key, value in association_properties.items():
+            attr_key = f"{GEN_AI_ASSOCIATION_PROPERTIES_PREFIX}.{key}"
+            if include_all or key in include or attr_key in include:
+                attrs[attr_key] = value
+
+    return attrs
 
 
 def _record_token_metrics(

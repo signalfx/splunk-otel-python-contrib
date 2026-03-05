@@ -182,7 +182,7 @@ def test_retrieval_invocation_with_custom_attributes():
     custom_attrs = {
         "collection_name": "docs",
         "user_id": "user-456",
-        "session_id": "session-789",
+        "conversation_id": "conv-789",
     }
 
     retrieval = RetrievalInvocation(

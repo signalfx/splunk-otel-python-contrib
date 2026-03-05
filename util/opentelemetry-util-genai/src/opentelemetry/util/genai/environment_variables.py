@@ -276,6 +276,54 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
 Burst capacity for evaluation rate limiting token bucket. Default: 4.
 """
 
+# ---- GenAI Context ----
+OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS = (
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS
+
+Comma-separated list of GenAI context attribute keys to include as metric
+dimensions. Any association property key or ``gen_ai.conversation.id`` can be
+listed.
+
+Examples::
+
+    gen_ai.conversation.id
+    user.id,customer.id
+    all
+
+``all`` includes ``gen_ai.conversation.id`` plus all association properties set
+on the invocation.
+
+Default: empty (no context attributes on metrics — they are high-cardinality).
+
+⚠️  Including ``gen_ai.conversation.id`` in metrics may cause high-cardinality
+issues. Use selective property keys for lower cardinality.
+"""
+
+OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION = (
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION
+
+Enable or disable automatic propagation of GenAI context (conversation_id and
+association properties) to child spans. Default: ``true``.
+
+Set to ``false`` to prevent context attributes from being automatically
+copied to nested GenAI invocations. When disabled, only values explicitly
+set on each invocation object are emitted.
+
+Examples::
+
+    # Disable context propagation
+    export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=false
+
+    # Explicitly enable (default)
+    export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=true
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -305,4 +353,7 @@ __all__ = [
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
+    # genai context
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
+    "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION",
 ]

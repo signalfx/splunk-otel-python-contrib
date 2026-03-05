@@ -177,6 +177,90 @@ An example of the third-party emitter:
 | `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape                                                      | Adds second event per result                                                  |
 | `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: true)                                                       |
 | `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` | Evaluation queue size                                                              | int (default: 100)                                                            |
+| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS` | Context attributes as metric dimensions                                              | Empty (none included). Set to `all` or comma-separated keys                   |
+| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION` | Enable/disable context propagation to child spans                                    | `true` (enabled by default)                                                   |
+
+### 6.1 Conversation Context & Association Properties
+
+Adds `gen_ai.conversation.id` and custom association properties that auto-propagate to all GenAI spans within scope.
+
+#### Usage
+
+```python
+from opentelemetry.util.genai import genai_context, set_genai_context
+
+# Context manager (recommended)
+with genai_context(
+    conversation_id="conv-123",
+    properties={"user.id": "alice", "customer.id": "acme"},
+):
+    result = chain.invoke({"input": "Hello"})
+    # All spans get:
+    #   gen_ai.conversation.id = "conv-123"
+    #   gen_ai.association.properties.user.id = "alice"
+    #   gen_ai.association.properties.customer.id = "acme"
+
+# Imperative API
+set_genai_context(conversation_id="conv-123", properties={"user.id": "alice"})
+
+# Read / clear
+ctx = get_genai_context()
+clear_genai_context()
+```
+
+#### Priority Order
+
+Context attributes are resolved (highest to lowest):
+
+1. **Explicit value on invocation** — set directly on the GenAI type object
+2. **ContextVars** — set via `set_genai_context()` or `genai_context()`
+
+Association properties from context and invocation are **merged**: context properties applied first, invocation-level properties override same keys.
+
+#### Disabling Context Propagation
+
+By default, context attributes propagate to all child GenAI spans. To disable:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=false
+```
+
+When disabled, only values explicitly set on each invocation object are emitted.
+
+#### Span Attributes
+
+| Attribute | Source | Example |
+|-----------|--------|---------|
+| `gen_ai.conversation.id` | `conversation_id` param | `"conv-123"` |
+| `gen_ai.association.properties.<key>` | `properties` dict | `"alice"` |
+
+#### Including Context Attributes in Metrics
+
+By default, **no** context attributes are added to metrics (they are high-cardinality). To opt in, set `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS`:
+
+```bash
+# Include all context attributes (conversation_id + all association properties)
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS=all
+
+# Include only specific attributes (comma-separated keys)
+# Use the property key (without prefix) or the full attribute name
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS=user.id,customer.id
+
+# Include only conversation_id in metrics
+export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS=gen_ai.conversation.id
+```
+
+When a key matches, the corresponding attribute is added as a metric dimension to all GenAI metrics (duration histograms, token histograms). For association properties, either the short key (`user.id`) or the full prefixed key (`gen_ai.association.properties.user.id`) can be used.
+
+#### API Reference
+
+- `GenAIContext(conversation_id=None, properties={})` — dataclass holding context state
+- `genai_context(conversation_id=None, properties=None)` — context manager with auto-restore
+- `set_genai_context(conversation_id=None, properties=None)` — set context imperatively
+- `get_genai_context() -> GenAIContext` — read current context
+- `clear_genai_context()` — reset to empty
+
+See [API reference](util/opentelemetry-util-genai/docs/genai-context.md) for full details and examples.
 
 ## 7. Extensibility Mechanics
 
