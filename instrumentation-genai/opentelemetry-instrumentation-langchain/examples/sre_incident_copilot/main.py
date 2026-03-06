@@ -1,4 +1,14 @@
-"""SRE Incident Copilot - Main application."""
+"""SRE Incident Copilot - Main application.
+
+Demonstrates automatic gen_ai.conversation.id inference from LangGraph's
+configurable thread_id. No manual genai_context() wrapping needed — the
+instrumentation extracts thread_id from callback metadata and maps it to
+gen_ai.conversation.id on all root spans automatically.
+
+Usage:
+    python main.py --scenario scenario-001
+    python main.py --scenario scenario-001 --thread-id my-session-123
+"""
 
 import argparse
 import json
@@ -11,9 +21,6 @@ from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
-
-# Conversation context for telemetry correlation
-from opentelemetry.util.genai.handler import genai_context
 
 from agents import (
     action_planner_agent,
@@ -290,76 +297,75 @@ def run_scenario(
         "recursion_limit": 20,
     }
 
-    # Execute workflow with conversation context for telemetry correlation
-    # All GenAI spans created within this context will include gen_ai.conversation.id attribute
-    with genai_context(conversation_id=session_id):
-        final_state: IncidentState = initial_state
-        nodes_executed = []
-        previous_node = None
+    # LangGraph's thread_id is automatically inferred as gen_ai.conversation.id
+    # on all telemetry spans (root Workflow/AgentInvocation and their children).
+    # No manual genai_context() wrapping needed.
+    # Priority: explicit genai_context(conversation_id=...) > inferred thread_id > none.
+    final_state: IncidentState = initial_state
+    nodes_executed = []
+    previous_node = None
 
-        for step in app.stream(initial_state, config_dict):
-            node_name, node_state = next(iter(step.items()))
-            final_state = node_state
-            nodes_executed.append(node_name)
+    for step in app.stream(initial_state, config_dict):
+        node_name, node_state = next(iter(step.items()))
+        final_state = node_state
+        nodes_executed.append(node_name)
 
-            # Print routing decision AFTER previous node (if applicable)
-            if previous_node:
-                # Routing decision was already made, just show it was executed
-                pass
+        # Print routing decision AFTER previous node (if applicable)
+        if previous_node:
+            # Routing decision was already made, just show it was executed
+            pass
 
-            # Print node execution
-            print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
-            if node_state.get("current_agent"):
-                print(f"   Status: {node_state['current_agent']}")
+        # Print node execution
+        print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
+        if node_state.get("current_agent"):
+            print(f"   Status: {node_state['current_agent']}")
 
-            # Print routing decision AFTER node execution
-            if node_name == "triage":
-                service_id = node_state.get("service_id", "unknown")
-                hypotheses = node_state.get("hypotheses", [])
-                investigation_result = node_state.get("investigation_result", {})
-                if hypotheses or investigation_result:
-                    print(
-                        f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)"
-                    )
-                    print(f"   → Routing to action_planner (service: {service_id})")
-                else:
-                    print(f"   → Routing to action_planner (service: {service_id})")
-                    print(
-                        "   ⚠️  Warning: Investigation not completed via agent-as-tool"
-                    )
-            elif node_name == "action_planner":
-                action_plan = node_state.get("action_plan", {})
-                mitigation_plan = (
-                    action_plan.get("mitigation_plan", []) if action_plan else []
+        # Print routing decision AFTER node execution
+        if node_name == "triage":
+            service_id = node_state.get("service_id", "unknown")
+            hypotheses = node_state.get("hypotheses", [])
+            investigation_result = node_state.get("investigation_result", {})
+            if hypotheses or investigation_result:
+                print(
+                    f"   → Investigation completed via agent-as-tool ({len(hypotheses)} hypotheses)"
                 )
-                print(f"   → Routing to quality_gate ({len(mitigation_plan)} actions)")
-            elif node_name == "quality_gate":
-                quality_result = node_state.get("quality_gate_result") or {}
-                validation_passed = quality_result.get("validation_passed", False)
-                confidence_score = node_state.get("confidence_score", 0.0)
-                if validation_passed:
-                    print(
-                        f"   → Quality gate passed (confidence: {confidence_score:.2f}), ending workflow"
-                    )
-                else:
-                    print(
-                        f"   → Quality gate failed (confidence: {confidence_score:.2f}), ending workflow"
-                    )
-
-            previous_node = node_name
-
-        print("\n📋 Workflow execution summary:")
-        print(f"   Nodes executed: {nodes_executed}")
-        expected_nodes = ["triage", "action_planner", "quality_gate"]
-        missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
-        if missing_nodes:
-            print(f"   ⚠️  Missing nodes: {missing_nodes}")
-
-        # Check if investigation was done via agent-as-tool
-        if final_state.get("hypotheses") or final_state.get("investigation_result"):
-            print(
-                "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
+                print(f"   → Routing to action_planner (service: {service_id})")
+            else:
+                print(f"   → Routing to action_planner (service: {service_id})")
+                print("   ⚠️  Warning: Investigation not completed via agent-as-tool")
+        elif node_name == "action_planner":
+            action_plan = node_state.get("action_plan", {})
+            mitigation_plan = (
+                action_plan.get("mitigation_plan", []) if action_plan else []
             )
+            print(f"   → Routing to quality_gate ({len(mitigation_plan)} actions)")
+        elif node_name == "quality_gate":
+            quality_result = node_state.get("quality_gate_result") or {}
+            validation_passed = quality_result.get("validation_passed", False)
+            confidence_score = node_state.get("confidence_score", 0.0)
+            if validation_passed:
+                print(
+                    f"   → Quality gate passed (confidence: {confidence_score:.2f}), ending workflow"
+                )
+            else:
+                print(
+                    f"   → Quality gate failed (confidence: {confidence_score:.2f}), ending workflow"
+                )
+
+        previous_node = node_name
+
+    print("\n📋 Workflow execution summary:")
+    print(f"   Nodes executed: {nodes_executed}")
+    expected_nodes = ["triage", "action_planner", "quality_gate"]
+    missing_nodes = [n for n in expected_nodes if n not in nodes_executed]
+    if missing_nodes:
+        print(f"   ⚠️  Missing nodes: {missing_nodes}")
+
+    # Check if investigation was done via agent-as-tool
+    if final_state.get("hypotheses") or final_state.get("investigation_result"):
+        print(
+            "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
+        )
 
     return final_state
 
@@ -378,10 +384,16 @@ def main():
         help="Enable manual OpenTelemetry instrumentation",
     )
     parser.add_argument(
+        "--thread-id",
+        type=str,
+        default=None,
+        help="Thread ID for LangGraph session / gen_ai.conversation.id (default: random UUID)",
+    )
+    parser.add_argument(
         "--conversation-id",
         type=str,
         default=None,
-        help="Conversation ID for telemetry correlation (default: auto-generated UUID)",
+        help="Alias for --thread-id (deprecated, kept for backward compatibility)",
     )
     parser.add_argument(
         "--wait-after-completion",
@@ -415,13 +427,13 @@ def main():
     )
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
-    session_id = args.conversation_id or str(uuid4())
+    session_id = args.thread_id or args.conversation_id or str(uuid4())
 
     print("\U0001f6a8 SRE Incident Copilot")
     print("=" * 60)
     print(f"Scenario: {config.scenario_id}")
     print(f"Service: {config.otel_service_name}")
-    print(f"Conversation ID: {session_id}")
+    print(f"Thread ID (→ gen_ai.conversation.id): {session_id}")
     print()
 
     # Run scenario
