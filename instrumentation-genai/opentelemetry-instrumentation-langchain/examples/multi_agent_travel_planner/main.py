@@ -619,6 +619,9 @@ def main(manual_instrumentation: bool = False) -> None:
     workflow = build_workflow()
     app = workflow.compile()
 
+    # LangGraph's thread_id is automatically inferred as gen_ai.conversation.id
+    # on all telemetry spans. No manual genai_context() wrapping needed.
+    # To override, use: with genai_context(conversation_id="custom"): ...
     config = {
         "configurable": {"thread_id": session_id},
         "recursion_limit": 10,

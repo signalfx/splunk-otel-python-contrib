@@ -208,12 +208,34 @@ ctx = get_genai_context()
 clear_genai_context()
 ```
 
+#### Automatic Inference from LangChain/LangGraph
+
+For LangGraph applications, `gen_ai.conversation.id` is **automatically inferred** from `configurable.thread_id` — no manual wrapping needed:
+
+```python
+# thread_id is automatically mapped to gen_ai.conversation.id
+config = {"configurable": {"thread_id": "session-123"}}
+app.stream(state, config)
+# All spans get: gen_ai.conversation.id = "session-123"
+```
+
+The instrumentation checks metadata for `conversation_id` first, then `thread_id`. Explicit `genai_context()` always takes priority:
+
+```python
+# Explicit context overrides inferred thread_id
+config = {"configurable": {"thread_id": "session-123"}}
+with genai_context(conversation_id="custom-id"):
+    app.stream(state, config)
+    # gen_ai.conversation.id = "custom-id" (explicit wins)
+```
+
 #### Priority Order
 
 Context attributes are resolved (highest to lowest):
 
 1. **Explicit value on invocation** — set directly on the GenAI type object
 2. **ContextVars** — set via `set_genai_context()` or `genai_context()`
+3. **Framework inference** — e.g. LangGraph `thread_id` from metadata
 
 Association properties from context and invocation are **merged**: context properties applied first, invocation-level properties override same keys.
 

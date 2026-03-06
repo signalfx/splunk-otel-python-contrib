@@ -13,7 +13,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, BaseMessage, AIMessage
 from langchain_core.outputs import LLMResult
-from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.handler import TelemetryHandler, get_genai_context
 from opentelemetry.util.genai.types import (
     Workflow,
     Step,
@@ -111,6 +111,25 @@ def _make_workflow_output_fallback(data: dict[str, Any]) -> Optional[str]:
     if not output_data:
         return None
     return _serialize(output_data)
+
+
+def _infer_conversation_id(metadata: dict[str, Any] | None) -> str | None:
+    """Extract conversation_id from LangChain/LangGraph metadata.
+
+    Checks well-known keys in priority order:
+    1. ``conversation_id`` — explicit GenAI convention
+    2. ``thread_id`` — LangGraph's native session key
+
+    Returns:
+        The conversation identifier as a string, or ``None``.
+    """
+    if not metadata:
+        return None
+    for key in ("conversation_id", "thread_id"):
+        value = metadata.get(key)
+        if value is not None:
+            return str(value)
+    return None
 
 
 def _resolve_agent_name(
@@ -255,6 +274,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         inputs: dict[str, Any],
         metadata: Optional[dict[str, Any]],
         agent_name: Optional[str],
+        conversation_id: Optional[str] = None,
     ) -> AgentInvocation:
         agent = AgentInvocation(
             name=name,
@@ -265,6 +285,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         agent.agent_name = _safe_str(agent_name) if agent_name else name
         agent.parent_run_id = parent_run_id
         agent.framework = "langchain"
+        if conversation_id:
+            agent.conversation_id = conversation_id
         if metadata:
             if metadata.get("agent_type"):
                 agent.agent_type = _safe_str(metadata["agent_type"])
@@ -296,6 +318,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             attrs["tags"] = [str(t) for t in tags]
         agent_name_hint = _resolve_agent_name(tags, metadata)
         if parent_run_id is None:
+            # Infer conversation_id from metadata (thread_id) only when
+            # no explicit genai_context(conversation_id=...) is active.
+            # Priority: explicit genai_context > inferred metadata > none.
+            inferred_conv_id: str | None = None
+            ctx = get_genai_context()
+            if not ctx.conversation_id:
+                inferred_conv_id = _infer_conversation_id(metadata)
+
             if _is_agent_root(tags, metadata):
                 self._start_agent_invocation(
                     name=name,
@@ -305,10 +335,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     inputs=inputs,
                     metadata=metadata,
                     agent_name=agent_name_hint,
+                    conversation_id=inferred_conv_id,
                 )
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
                 wf.input_messages = _make_input_message(inputs)
+                if inferred_conv_id:
+                    wf.conversation_id = inferred_conv_id
                 self._handler.start_workflow(wf)
             return
         else:
