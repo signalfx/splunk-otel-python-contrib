@@ -7,7 +7,7 @@ gen_ai.conversation.id on all root spans automatically.
 
 Usage:
     python main.py --scenario scenario-001
-    python main.py --scenario scenario-001 --thread-id my-session-123
+    python main.py --scenario scenario-001 --conversation-id my-conv-123
 """
 
 import argparse
@@ -159,7 +159,7 @@ def save_artifacts(state: IncidentState, config: Config, run_id: str):
     # Save metadata
     metadata = {
         "run_id": run_id,
-        "session_id": state.get("session_id"),
+        "conversation_id": state.get("conversation_id"),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "config": {
             "scenario_id": config.scenario_id,
@@ -256,7 +256,7 @@ def _generate_postmortem_draft(state: IncidentState) -> str:
 
 
 def run_scenario(
-    scenario_id: str, config: Config, session_id: str | None = None
+    scenario_id: str, config: Config, conversation_id: str | None = None
 ) -> IncidentState:
     """Run a scenario end-to-end."""
     data_loader = DataLoader(data_dir=config.data_dir)
@@ -266,8 +266,8 @@ def run_scenario(
     if not alert:
         raise ValueError(f"Scenario {scenario_id} not found")
 
-    # Initialize state - use provided session_id or generate new one
-    session_id = session_id or str(uuid4())
+    # Initialize state - use provided conversation_id or generate new one
+    conversation_id = conversation_id or str(uuid4())
     initial_state: IncidentState = {
         "messages": [HumanMessage(content=f"Investigate alert: {alert['title']}")],
         "alert_id": alert["id"],
@@ -282,7 +282,7 @@ def run_scenario(
         "incident_summary": None,
         "postmortem_draft": None,
         "tickets_created": [],
-        "session_id": session_id,
+        "conversation_id": conversation_id,
         "current_agent": "start",
         "confidence_score": 0.0,
         "eval_metrics": {},
@@ -293,7 +293,7 @@ def run_scenario(
     app = workflow.compile()
 
     config_dict = {
-        "configurable": {"thread_id": session_id},
+        "configurable": {"thread_id": conversation_id},
         "recursion_limit": 20,
     }
 
@@ -384,16 +384,10 @@ def main():
         help="Enable manual OpenTelemetry instrumentation",
     )
     parser.add_argument(
-        "--thread-id",
-        type=str,
-        default=None,
-        help="Thread ID for LangGraph session / gen_ai.conversation.id (default: random UUID)",
-    )
-    parser.add_argument(
         "--conversation-id",
         type=str,
         default=None,
-        help="Alias for --thread-id (deprecated, kept for backward compatibility)",
+        help="Conversation ID mapped to gen_ai.conversation.id via LangGraph thread_id (default: random UUID)",
     )
     parser.add_argument(
         "--wait-after-completion",
@@ -427,13 +421,13 @@ def main():
     )
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
-    session_id = args.thread_id or args.conversation_id or str(uuid4())
+    conversation_id = args.conversation_id or str(uuid4())
 
     print("\U0001f6a8 SRE Incident Copilot")
     print("=" * 60)
     print(f"Scenario: {config.scenario_id}")
     print(f"Service: {config.otel_service_name}")
-    print(f"Thread ID (→ gen_ai.conversation.id): {session_id}")
+    print(f"Conversation ID (→ gen_ai.conversation.id): {conversation_id}")
     print()
 
     # Run scenario
@@ -441,7 +435,7 @@ def main():
         f"{config.scenario_id}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     )
     try:
-        final_state = run_scenario(config.scenario_id, config, session_id)
+        final_state = run_scenario(config.scenario_id, config, conversation_id)
 
         # Save artifacts
         save_artifacts(final_state, config, run_id)

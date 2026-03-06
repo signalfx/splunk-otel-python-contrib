@@ -113,7 +113,7 @@ def triage_agent(state: Dict, config: Config) -> Dict:
             "tags": ["agent", "agent:triage"],
             "metadata": {
                 "agent_name": "triage",
-                "session_id": state.get("session_id", ""),
+                "conversation_id": state.get("conversation_id", ""),
             },
         }
     )
@@ -262,7 +262,7 @@ def investigation_agent(state: Dict, config: Config) -> Dict:
             "tags": ["agent", "agent:investigation"],
             "metadata": {
                 "agent_name": "investigation",
-                "session_id": state.get("session_id", ""),
+                "conversation_id": state.get("conversation_id", ""),
             },
         }
     )
@@ -519,7 +519,7 @@ def action_planner_agent(state: Dict, config: Config) -> Dict:
             "tags": ["agent", "agent:action_planner"],
             "metadata": {
                 "agent_name": "action_planner",
-                "session_id": state.get("session_id", ""),
+                "conversation_id": state.get("conversation_id", ""),
             },
         }
     )
@@ -632,7 +632,7 @@ def quality_gate_agent(state: Dict, config: Config) -> Dict:
             "tags": ["agent", "agent:quality_gate"],
             "metadata": {
                 "agent_name": "quality_gate",
-                "session_id": state.get("session_id", ""),
+                "conversation_id": state.get("conversation_id", ""),
             },
         }
     )

@@ -30,7 +30,7 @@ class IncidentState(TypedDict):
     tickets_created: List[Dict]
 
     # Metadata
-    session_id: str
+    conversation_id: str
     current_agent: str
     confidence_score: float
     eval_metrics: Dict

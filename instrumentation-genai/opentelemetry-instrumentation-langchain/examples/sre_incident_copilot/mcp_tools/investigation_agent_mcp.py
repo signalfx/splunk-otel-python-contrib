@@ -70,7 +70,7 @@ async def investigate_incident(
     state = {
         "service_id": service_id,
         "scenario_id": scenario_id,
-        "session_id": f"mcp-{asyncio.get_event_loop().time()}",
+        "conversation_id": f"mcp-{asyncio.get_event_loop().time()}",
         "triage_result": {
             "investigation_checklist": json.loads(investigation_checklist)
             if isinstance(investigation_checklist, str)
