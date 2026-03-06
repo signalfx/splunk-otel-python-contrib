@@ -159,7 +159,7 @@ def save_artifacts(state: IncidentState, config: Config, run_id: str):
     # Save metadata
     metadata = {
         "run_id": run_id,
-        "conversation_id": state.get("conversation_id"),
+        "session_id": state.get("session_id"),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "config": {
             "scenario_id": config.scenario_id,
@@ -282,7 +282,7 @@ def run_scenario(
         "incident_summary": None,
         "postmortem_draft": None,
         "tickets_created": [],
-        "conversation_id": conversation_id,
+        "session_id": conversation_id,
         "current_agent": "start",
         "confidence_score": 0.0,
         "eval_metrics": {},
@@ -292,6 +292,8 @@ def run_scenario(
     workflow = build_workflow(config)
     app = workflow.compile()
 
+    # conversation_id is passed as LangGraph's configurable thread_id.
+    # The instrumentation automatically infers gen_ai.conversation.id from it.
     config_dict = {
         "configurable": {"thread_id": conversation_id},
         "recursion_limit": 20,
@@ -387,7 +389,7 @@ def main():
         "--conversation-id",
         type=str,
         default=None,
-        help="Conversation ID mapped to gen_ai.conversation.id via LangGraph thread_id (default: random UUID)",
+        help="Conversation ID mapped to gen_ai.conversation.id (default: random UUID)",
     )
     parser.add_argument(
         "--wait-after-completion",
