@@ -486,9 +486,6 @@ OpAMP Server                  Adapter              ConfigStore          Deepeval
 
 ## Risk and Mitigation
 
-> **Update (2026-03-05):** Upstream PR #3635 has been **merged** into
-> `opentelemetry-python-contrib`. The `opentelemetry-opamp-client` package
-> is now available on `main`. The "not merged" risk is retired.
 
 | Risk | Impact | Mitigation |
 | :--- | :--- | :--- |
