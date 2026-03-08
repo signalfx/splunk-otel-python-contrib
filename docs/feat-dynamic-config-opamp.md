@@ -486,11 +486,19 @@ OpAMP Server                  Adapter              ConfigStore          Deepeval
 
 ## Risk and Mitigation
 
+> **Update (2026-03-05):** Upstream PR #3635 has been **merged** into
+> `opentelemetry-python-contrib`. The `opentelemetry-opamp-client` package
+> is now available on `main`. The "not merged" risk is retired.
+
 | Risk | Impact | Mitigation |
 | :--- | :--- | :--- |
-| Upstream PR #3635 not merged | Cannot release Phase 4 | Install from git branch during dev; adapter layer isolates from API changes |
-| Upstream `message_handler` signature changes | Adapter breaks | Only `handler.py` in the adapter touches the upstream API; easy to fix |
-| Thread safety in config propagation | Race conditions between OpAMP thread and app threads | ConfigStore uses `RLock` + callbacks outside lock; no env var mutation |
-| In-flight evaluations during reconfiguration | Evaluations may fail or produce inconsistent results | `Manager.reconfigure()` drains current queue before switching |
-| OpAMP server pushes invalid config | Agent misbehaves | `key_mapper.py` validates and clamps all values; invalid configs logged and rejected |
-| `requests` library removed from upstream transport | HTTP transport breaks | `HttpTransport` is an ABC; we can implement our own if needed |
+| Upstream `_opamp` module is private (`opentelemetry._opamp`) | API may change without semver guarantees between releases | Pin `opentelemetry-opamp-client` to a known-good version; adapter layer isolates the rest of our code from upstream API changes. Only `handler.py` in the adapter touches the upstream API |
+| Upstream `message_handler` signature changes | Adapter callback breaks | Thin adapter: only `handler.py` calls upstream; single file to update |
+| Upstream `decode_remote_config` only supports JSON content types | Non-JSON configs from server silently ignored | Document JSON requirement for OpAMP server operators; add content-type validation in adapter with clear error logging |
+| Thread safety in config propagation | Race conditions between OpAMP daemon thread and app threads | `ConfigStore` uses `RLock`; observers are collected under lock but invoked outside it to prevent deadlocks; no direct env var mutation from OpAMP thread |
+| In-flight evaluations during reconfiguration | Evaluations may use stale evaluator instances or fail | `Manager.reconfigure()` atomically swaps plans and evaluators; in-flight items already dequeued continue with previous evaluator set |
+| OpAMP server pushes invalid config | Agent misbehaves or crashes | `key_mapper.py` validates and clamps all values (e.g., sample rate to 0.0-1.0); invalid configs logged and rejected; last-known-good config preserved |
+| Judge model hot-swap during active evaluation | LLM call uses wrong model mid-evaluation | Judge model env vars are propagated atomically; reconfiguration only affects evaluations picked up after the swap |
+| `requests` library removed from upstream transport | HTTP transport breaks | `HttpTransport` is an ABC; we can provide an alternative implementation (e.g., `urllib3`) if upstream drops `requests` |
+| `opentelemetry-opamp-client` not yet published to PyPI | Cannot declare it as a pip dependency | Install from git or vendor locally during development; switch to PyPI dependency once published |
+| OpAMP connection loss or server unavailability | Config updates stop arriving | Upstream `OpAMPAgent` has exponential backoff and retry built in; last-known-good config in `ConfigStore` remains active; no functionality lost, only dynamic updates paused |
