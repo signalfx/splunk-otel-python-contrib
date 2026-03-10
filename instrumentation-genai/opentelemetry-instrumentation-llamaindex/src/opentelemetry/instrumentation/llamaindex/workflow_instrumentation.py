@@ -69,7 +69,9 @@ class WorkflowEventInstrumentor:
 
         self._current_agent = current_agent
         span_id = getattr(current_agent, "span_id", None)
-        self._agent_scope = f"{span_id:016x}" if span_id is not None else str(id(current_agent))
+        self._agent_scope = (
+            f"{span_id:016x}" if span_id is not None else str(id(current_agent))
+        )
         self._active_agents = {}
         self._current_agent_key = None
         self._workflow_name = None
