@@ -65,13 +65,9 @@ except Exception:  # pragma: no cover - fallback if debug module missing
 
 
 from opentelemetry import _events as _otel_events
-from opentelemetry import trace as _trace_mod
 from opentelemetry._logs import Logger, LoggerProvider, get_logger
 from opentelemetry.metrics import MeterProvider, get_meter
 from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
-from opentelemetry.semconv.attributes import (
-    error_attributes as ErrorAttributes,
-)
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import (
     TracerProvider,
@@ -441,15 +437,6 @@ class TelemetryHandler:
         self._evaluation_manager = None
         # Active agent identity stack (name, id) for implicit propagation to nested operations
         self._agent_context_stack: list[tuple[str, str]] = []
-        # Span registry (run_id -> Span) to allow parenting even after original invocation ended.
-        # We intentionally retain ended parent spans to preserve trace linkage for late children
-        # (e.g., final LLM call after agent/workflow termination). A lightweight size cap can be
-        # added later if memory pressure surfaces.
-        self._span_registry: dict[str, _trace_mod.Span] = {}
-        # Generic entity registry (run_id -> entity object) allowing instrumentation
-        # layers to avoid storing lifecycle objects. This supports simplified
-        # instrumentations that only pass run_id on end/error callbacks.
-        self._entity_registry: dict[str, GenAI] = {}
         self._initialize_default_callbacks()
 
     def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
@@ -548,12 +535,6 @@ class TelemetryHandler:
                 invocation.agent_id = top_id
         # Start invocation span; tracer context propagation handles parent/child links
         self._emitter.on_start(invocation)
-        # Register span if created
-        span = getattr(invocation, "span", None)
-        if span is not None:
-            self._span_registry[str(invocation.run_id)] = span
-        # Register entity for later stop/fail by run_id
-        self._entity_registry[str(invocation.run_id)] = invocation
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -586,7 +567,6 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         # Send invocation for emitting telemetry
         self._emitter.on_end(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -624,7 +604,6 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -668,10 +647,6 @@ class TelemetryHandler:
                 invocation.agent_id = top_id
         invocation.start_time = time.time()
         self._emitter.on_start(invocation)
-        span = getattr(invocation, "span", None)
-        if span is not None:
-            self._span_registry[str(invocation.run_id)] = span
-        self._entity_registry[str(invocation.run_id)] = invocation
         return invocation
 
     def stop_embedding(
@@ -689,7 +664,6 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         # Send invocation for emitting telemetry
         self._emitter.on_end(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         # Force flush metrics if a custom provider with force_flush is present
         if (
             hasattr(self, "_meter_provider")
@@ -708,7 +682,6 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -736,10 +709,6 @@ class TelemetryHandler:
                 invocation.agent_id = top_id
         invocation.start_time = time.time()
         self._emitter.on_start(invocation)
-        span = getattr(invocation, "span", None)
-        if span is not None:
-            self._span_registry[str(invocation.run_id)] = span
-        self._entity_registry[str(invocation.run_id)] = invocation
         return invocation
 
     def stop_retrieval(
@@ -755,7 +724,6 @@ class TelemetryHandler:
 
         self._emitter.on_end(invocation)
         self._notify_completion(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         # Force flush metrics if a custom provider with force_flush is present
         if (
             hasattr(self, "_meter_provider")
@@ -774,7 +742,6 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -799,10 +766,6 @@ class TelemetryHandler:
             if not invocation.agent_id:
                 invocation.agent_id = top_id
         self._emitter.on_start(invocation)
-        span = getattr(invocation, "span", None)
-        if span is not None:
-            self._span_registry[str(invocation.run_id)] = span
-        self._entity_registry[str(invocation.run_id)] = invocation
         return invocation
 
     def stop_tool_call(self, invocation: ToolCall) -> ToolCall:
@@ -818,7 +781,6 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         # Send invocation for emitting telemetry
         self._emitter.on_end(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         return invocation
 
     def fail_tool_call(self, invocation: ToolCall, error: Error) -> ToolCall:
@@ -826,7 +788,6 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
-        self._entity_registry.pop(str(invocation.run_id), None)
         return invocation
 
     # Workflow lifecycle --------------------------------------------------
@@ -836,10 +797,6 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(workflow)
         self._emitter.on_start(workflow)
-        span = getattr(workflow, "span", None)
-        if span is not None:
-            self._span_registry[str(workflow.run_id)] = span
-        self._entity_registry[str(workflow.run_id)] = workflow
         return workflow
 
     def _handle_evaluation_results(
@@ -972,7 +929,6 @@ class TelemetryHandler:
         self._notify_completion(workflow)
         # Send invocation for emitting telemetry
         self._emitter.on_end(workflow)
-        self._entity_registry.pop(str(workflow.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -988,7 +944,6 @@ class TelemetryHandler:
         workflow.end_time = time.time()
         self._emitter.on_error(error, workflow)
         self._notify_completion(workflow)
-        self._entity_registry.pop(str(workflow.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1008,16 +963,12 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(agent)
         self._emitter.on_start(agent)
-        span = getattr(agent, "span", None)
-        if span is not None:
-            self._span_registry[str(agent.run_id)] = span
-        self._entity_registry[str(agent.run_id)] = agent
-        # Push agent identity context (use run_id as canonical id)
+        # Push agent identity context (use span_id as canonical id)
         if isinstance(agent, AgentInvocation):
             try:
-                if agent.name:
+                if agent.name and agent.span_id is not None:
                     self._agent_context_stack.append(
-                        (agent.name, str(agent.run_id))
+                        (agent.name, f"{agent.span_id:016x}")
                     )
             except Exception:  # pragma: no cover - defensive
                 pass
@@ -1038,7 +989,6 @@ class TelemetryHandler:
         self._notify_completion(agent)
         # Send invocation for emitting telemetry
         self._emitter.on_end(agent)
-        self._entity_registry.pop(str(agent.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1050,9 +1000,12 @@ class TelemetryHandler:
         # Pop context if matches top
         if isinstance(agent, AgentInvocation):
             try:
-                if self._agent_context_stack:
+                if self._agent_context_stack and agent.span_id is not None:
                     top_name, top_id = self._agent_context_stack[-1]
-                    if top_name == agent.name and top_id == str(agent.run_id):
+                    if (
+                        top_name == agent.name
+                        and top_id == f"{agent.span_id:016x}"
+                    ):
                         self._agent_context_stack.pop()
             except Exception:
                 pass
@@ -1065,7 +1018,6 @@ class TelemetryHandler:
         agent.end_time = time.time()
         self._emitter.on_error(error, agent)
         self._notify_completion(agent)
-        self._entity_registry.pop(str(agent.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1077,9 +1029,12 @@ class TelemetryHandler:
         # Pop context if this agent is active
         if isinstance(agent, AgentInvocation):
             try:
-                if self._agent_context_stack:
+                if self._agent_context_stack and agent.span_id is not None:
                     top_name, top_id = self._agent_context_stack[-1]
-                    if top_name == agent.name and top_id == str(agent.run_id):
+                    if (
+                        top_name == agent.name
+                        and top_id == f"{agent.span_id:016x}"
+                    ):
                         self._agent_context_stack.pop()
             except Exception:
                 pass
@@ -1092,10 +1047,6 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(step)
         self._emitter.on_start(step)
-        span = getattr(step, "span", None)
-        if span is not None:
-            self._span_registry[str(step.run_id)] = span
-        self._entity_registry[str(step.run_id)] = step
         return step
 
     def stop_step(self, step: Step) -> Step:
@@ -1111,7 +1062,6 @@ class TelemetryHandler:
         self._notify_completion(step)
         # Send invocation for emitting telemetry
         self._emitter.on_end(step)
-        self._entity_registry.pop(str(step.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1127,7 +1077,6 @@ class TelemetryHandler:
         step.end_time = time.time()
         self._emitter.on_error(error, step)
         self._notify_completion(step)
-        self._entity_registry.pop(str(step.run_id), None)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1211,70 +1160,6 @@ class TelemetryHandler:
         if isinstance(obj, ToolCall):
             return self.start_tool_call(obj)
         return obj
-
-    # ---- registry helpers -----------------------------------------------
-    def get_span_by_run_id(
-        self, run_id: Any
-    ) -> Optional[_trace_mod.Span]:  # run_id may be UUID or str
-        try:
-            key = str(run_id)
-        except Exception:
-            return None
-        return self._span_registry.get(key)
-
-    def has_span(self, run_id: Any) -> bool:
-        try:
-            return str(run_id) in self._span_registry
-        except Exception:
-            return False
-
-    # ---- entity registry helpers ---------------------------------------
-    def get_entity(self, run_id: Any) -> Optional[GenAI]:
-        try:
-            return self._entity_registry.get(str(run_id))
-        except Exception:
-            return None
-
-    def finish_by_run_id(self, run_id: Any) -> None:
-        entity = self.get_entity(run_id)
-        if entity is None:
-            return
-        if isinstance(entity, Workflow):
-            self.stop_workflow(entity)
-        elif isinstance(entity, (AgentCreation, AgentInvocation)):
-            self.stop_agent(entity)
-        elif isinstance(entity, Step):
-            self.stop_step(entity)
-        elif isinstance(entity, LLMInvocation):
-            self.stop_llm(entity)
-        elif isinstance(entity, EmbeddingInvocation):
-            self.stop_embedding(entity)
-        elif isinstance(entity, ToolCall):
-            self.stop_tool_call(entity)
-
-    def fail_by_run_id(self, run_id: Any, error: Error) -> None:
-        entity = self.get_entity(run_id)
-        if entity is None:
-            return
-        entity.attributes.update(
-            {
-                ErrorAttributes.ERROR_TYPE: getattr(
-                    error.type, "__qualname__", str(error.type)
-                )
-            }
-        )
-        if isinstance(entity, Workflow):
-            self.fail_workflow(entity, error)
-        elif isinstance(entity, (AgentCreation, AgentInvocation)):
-            self.fail_agent(entity, error)
-        elif isinstance(entity, Step):
-            self.fail_step(entity, error)
-        elif isinstance(entity, LLMInvocation):
-            self.fail_llm(entity, error)
-        elif isinstance(entity, EmbeddingInvocation):
-            self.fail_embedding(entity, error)
-        elif isinstance(entity, ToolCall):
-            self.fail_tool_call(entity, error)
 
     def finish(self, obj: Any) -> Any:
         """Generic finish method for any invocation type."""

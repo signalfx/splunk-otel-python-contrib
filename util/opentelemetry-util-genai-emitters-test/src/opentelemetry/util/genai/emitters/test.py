@@ -120,7 +120,11 @@ class TestEmitter(EmitterMeta):
                 self._stats.start_time = now
             self._stats.last_event_time = now
 
-            run_id = str(obj.run_id)
+            run_id = (
+                f"{obj.span_id:016x}"
+                if obj.span_id is not None
+                else str(id(obj))
+            )
             invocation_type = type(obj).__name__
 
             event = TelemetryEvent(
@@ -150,7 +154,11 @@ class TestEmitter(EmitterMeta):
             now = time.time()
             self._stats.last_event_time = now
 
-            run_id = str(obj.run_id)
+            run_id = (
+                f"{obj.span_id:016x}"
+                if obj.span_id is not None
+                else str(id(obj))
+            )
             invocation_type = type(obj).__name__
 
             # Build attributes including any evaluation info
@@ -177,7 +185,11 @@ class TestEmitter(EmitterMeta):
             now = time.time()
             self._stats.last_event_time = now
 
-            run_id = str(obj.run_id)
+            run_id = (
+                f"{obj.span_id:016x}"
+                if obj.span_id is not None
+                else str(id(obj))
+            )
             invocation_type = type(obj).__name__
             # error.type is Type[BaseException], convert to string
             err_type = getattr(error, "type", None)
@@ -220,8 +232,12 @@ class TestEmitter(EmitterMeta):
             self._stats.last_event_time = now
 
             run_id = (
-                str(obj.run_id)
-                if obj and hasattr(obj, "run_id")
+                (
+                    f"{obj.span_id:016x}"
+                    if getattr(obj, "span_id", None) is not None
+                    else str(id(obj))
+                )
+                if obj
                 else "unknown"
             )
             invocation_type = type(obj).__name__ if obj else "unknown"

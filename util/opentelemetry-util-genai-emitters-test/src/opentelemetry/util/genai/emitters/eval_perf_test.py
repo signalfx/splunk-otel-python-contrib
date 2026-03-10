@@ -848,7 +848,7 @@ def run_test(
     print(f"\n🚀 Submitting invocations across {len(traces)} traces...")
     submit_start = time.time()
 
-    # Track samples by run_id for validation
+    # Track samples by span_id for validation
     samples_by_run_id: Dict[str, Any] = {}
 
     total_submitted = 0
@@ -874,9 +874,13 @@ def run_test(
             handler.start_llm(invocation)
             handler.stop_llm(invocation)
 
-            # Track sample by run_id for validation (only for sampled traces)
-            if is_sampled and hasattr(invocation, "run_id"):
-                samples_by_run_id[str(invocation.run_id)] = sample
+            # Track sample by span_id for validation (only for sampled traces)
+            if (
+                is_sampled
+                and hasattr(invocation, "span_id")
+                and invocation.span_id is not None
+            ):
+                samples_by_run_id[f"{invocation.span_id:016x}"] = sample
 
             total_submitted += 1
 

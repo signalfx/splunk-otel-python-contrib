@@ -46,9 +46,11 @@ def serialize_invocation(invocation: GenAI) -> Dict[str, Any]:
         A dictionary containing the serializable representation.
     """
     base = {
-        "run_id": str(invocation.run_id),
-        "parent_run_id": str(invocation.parent_run_id)
-        if invocation.parent_run_id
+        "trace_id": f"{invocation.trace_id:032x}"
+        if invocation.trace_id is not None
+        else None,
+        "span_id": f"{invocation.span_id:016x}"
+        if invocation.span_id is not None
         else None,
         "type": type(invocation).__name__,
         "provider": invocation.provider,
@@ -239,8 +241,6 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
     Returns:
         A reconstructed GenAI invocation object.
     """
-    from uuid import UUID
-
     inv_type = payload.get("type", "")
 
     # Common fields
@@ -259,23 +259,8 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
         "attributes": payload.get("attributes", {}),
     }
 
-    # Parse run_id if present
-    run_id_str = payload.get("run_id")
-    if run_id_str:
-        try:
-            common_kwargs["run_id"] = UUID(run_id_str)
-        except ValueError:
-            pass
-
-    parent_run_id_str = payload.get("parent_run_id")
-    if parent_run_id_str:
-        try:
-            common_kwargs["parent_run_id"] = UUID(parent_run_id_str)
-        except ValueError:
-            pass
-
     if inv_type == "LLMInvocation":
-        return LLMInvocation(
+        result = LLMInvocation(
             request_model=payload.get("request_model", ""),
             response_model_name=payload.get("response_model_name"),
             operation=payload.get("operation", "chat"),
@@ -292,7 +277,7 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
         )
 
     elif inv_type == "AgentInvocation":
-        return AgentInvocation(
+        result = AgentInvocation(
             name=payload.get("name", ""),
             agent_type=payload.get("agent_type"),
             description=payload.get("description"),
@@ -309,7 +294,7 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
         )
 
     elif inv_type == "AgentCreation":
-        return AgentCreation(
+        result = AgentCreation(
             name=payload.get("name", ""),
             agent_type=payload.get("agent_type"),
             description=payload.get("description"),
@@ -323,7 +308,7 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
         )
 
     elif inv_type == "Workflow":
-        return Workflow(
+        result = Workflow(
             name=payload.get("name", ""),
             workflow_type=payload.get("workflow_type"),
             description=payload.get("description"),
@@ -337,7 +322,7 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
         )
 
     elif inv_type == "Step":
-        return Step(
+        result = Step(
             name=payload.get("name", ""),
             objective=payload.get("objective"),
             step_type=payload.get("step_type"),
@@ -349,16 +334,31 @@ def deserialize_invocation(payload: Dict[str, Any]) -> GenAI:
         )
 
     elif inv_type == "ToolCall":
-        return ToolCall(
+        result = ToolCall(
             name=payload.get("name", ""),
             id=payload.get("id"),
             arguments=payload.get("arguments"),
             **common_kwargs,
         )
 
-    # Fallback to base GenAI - this shouldn't happen in practice
-    # but provides safety
-    raise ValueError(f"Unknown invocation type: {inv_type}")
+    else:
+        raise ValueError(f"Unknown invocation type: {inv_type}")
+
+    # Restore trace/span identifiers from serialized hex strings
+    trace_id_str = payload.get("trace_id")
+    if trace_id_str:
+        try:
+            result.trace_id = int(trace_id_str, 16)
+        except (ValueError, TypeError):
+            pass
+    span_id_str = payload.get("span_id")
+    if span_id_str:
+        try:
+            result.span_id = int(span_id_str, 16)
+        except (ValueError, TypeError):
+            pass
+
+    return result
 
 
 def _deserialize_input_messages(

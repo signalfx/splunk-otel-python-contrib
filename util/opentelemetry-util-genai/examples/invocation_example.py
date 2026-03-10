@@ -277,7 +277,6 @@ def run_agent_invocation():
         provider="openai",
         framework="custom",
         agent_name="weather_assistant",
-        agent_id=str(agent.run_id),
         input_messages=[
             InputMessage(
                 role="system",
@@ -323,7 +322,6 @@ def run_agent_invocation():
         provider="openai",
         framework="custom",
         agent_name="weather_assistant",
-        agent_id=str(agent.run_id),
         input_messages=[
             InputMessage(
                 role="system",
@@ -446,7 +444,6 @@ def run_workflow_invocation():
         provider="openai",
         framework="custom",
         agent_name="classifier_agent",
-        agent_id=str(classifier.run_id),
         input_messages=[
             InputMessage(
                 role="system",
@@ -512,7 +509,6 @@ def run_workflow_invocation():
         provider="openai",
         framework="custom",
         agent_name="billing_support_agent",
-        agent_id=str(billing_agent.run_id),
         input_messages=[
             InputMessage(
                 role="system",

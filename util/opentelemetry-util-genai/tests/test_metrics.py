@@ -391,10 +391,9 @@ class TestMetricsEmission(unittest.TestCase):
                 continue
             for dp in getattr(data, "data_points", []) or []:
                 attrs = getattr(dp, "attributes", {}) or {}
-                if attrs.get(
-                    "gen_ai.agent.name"
-                ) == "context_agent" and attrs.get("gen_ai.agent.id") == str(
-                    agent.run_id
+                if (
+                    attrs.get("gen_ai.agent.name") == "context_agent"
+                    and attrs.get("gen_ai.agent.id") is not None
                 ):
                     inherited = True
                     break
