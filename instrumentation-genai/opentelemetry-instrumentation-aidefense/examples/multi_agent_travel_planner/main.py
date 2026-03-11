@@ -226,6 +226,7 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
             print(f"   ⚠️  Blocked! Event ID: {event_id}")
         return state
 
+    agent_invoked = False
     try:
         llm = create_llm("flight_specialist", temperature=0.4)
         agent = create_agent(
@@ -244,6 +245,7 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
             }
         )
 
+        agent_invoked = True
         result = agent.invoke({"messages": [HumanMessage(content=request)]})
         final_message = result["messages"][-1]
 
@@ -259,17 +261,19 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         )
     except Exception as e:
         print(f"   ⚠️  LLM call failed: {e}")
-        with tracer.start_as_current_span(
-            "invoke_agent flight_specialist",
-            attributes={
-                "gen_ai.agent.name": "flight_specialist",
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.fallback": True,
-            },
-        ):
-            fallback = mock_search_flights.invoke(
-                {"origin": state["origin"], "destination": state["destination"], "departure": state["departure"]}
-            )
+        if not agent_invoked:
+            with tracer.start_as_current_span(
+                "invoke_agent flight_specialist",
+                attributes={
+                    "gen_ai.agent.name": "flight_specialist",
+                    "gen_ai.operation.name": "invoke_agent",
+                    "gen_ai.agent.fallback": True,
+                },
+            ):
+                pass
+        fallback = mock_search_flights.invoke(
+            {"origin": state["origin"], "destination": state["destination"], "departure": state["departure"]}
+        )
         state["flight_summary"] = f"[LLM unavailable] {fallback}"
         state["messages"].append(AIMessage(content=state["flight_summary"]))
 
@@ -303,6 +307,7 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
             print(f"   ⚠️  Blocked! Event ID: {event_id}")
         return state
 
+    agent_invoked = False
     try:
         llm = create_llm("hotel_specialist", temperature=0.5)
         agent = create_agent(
@@ -321,6 +326,7 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
             }
         )
 
+        agent_invoked = True
         result = agent.invoke({"messages": [HumanMessage(content=request)]})
         final_message = result["messages"][-1]
 
@@ -336,17 +342,19 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
         )
     except Exception as e:
         print(f"   ⚠️  LLM call failed: {e}")
-        with tracer.start_as_current_span(
-            "invoke_agent hotel_specialist",
-            attributes={
-                "gen_ai.agent.name": "hotel_specialist",
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.fallback": True,
-            },
-        ):
-            fallback = mock_search_hotels.invoke(
-                {"destination": state["destination"], "check_in": state["departure"], "check_out": state["return_date"]}
-            )
+        if not agent_invoked:
+            with tracer.start_as_current_span(
+                "invoke_agent hotel_specialist",
+                attributes={
+                    "gen_ai.agent.name": "hotel_specialist",
+                    "gen_ai.operation.name": "invoke_agent",
+                    "gen_ai.agent.fallback": True,
+                },
+            ):
+                pass
+        fallback = mock_search_hotels.invoke(
+            {"destination": state["destination"], "check_in": state["departure"], "check_out": state["return_date"]}
+        )
         state["hotel_summary"] = f"[LLM unavailable] {fallback}"
         state["messages"].append(AIMessage(content=state["hotel_summary"]))
 
@@ -383,6 +391,7 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
             print(f"   📋 Security Event ID: {event_id}")
         return state
 
+    agent_invoked = False
     try:
         llm = create_llm("activity_specialist", temperature=0.6)
         agent = create_agent(
@@ -401,6 +410,7 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
             }
         )
 
+        agent_invoked = True
         result = agent.invoke({"messages": [HumanMessage(content=request)]})
         final_message = result["messages"][-1]
 
@@ -416,15 +426,17 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
         )
     except Exception as e:
         print(f"   ⚠️  LLM call failed: {e}")
-        with tracer.start_as_current_span(
-            "invoke_agent activity_specialist",
-            attributes={
-                "gen_ai.agent.name": "activity_specialist",
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.fallback": True,
-            },
-        ):
-            fallback = mock_search_activities.invoke({"destination": state["destination"]})
+        if not agent_invoked:
+            with tracer.start_as_current_span(
+                "invoke_agent activity_specialist",
+                attributes={
+                    "gen_ai.agent.name": "activity_specialist",
+                    "gen_ai.operation.name": "invoke_agent",
+                    "gen_ai.agent.fallback": True,
+                },
+            ):
+                pass
+        fallback = mock_search_activities.invoke({"destination": state["destination"]})
         state["activities_summary"] = f"[LLM unavailable] {fallback}"
         state["messages"].append(AIMessage(content=state["activities_summary"]))
 
