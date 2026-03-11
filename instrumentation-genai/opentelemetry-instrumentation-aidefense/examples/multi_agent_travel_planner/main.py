@@ -218,37 +218,45 @@ def flight_specialist_node(state: PlannerState) -> PlannerState:
         print(f"   ⚠️  Blocked! Event ID: {event_id}")
         return state
 
-    llm = create_llm("flight_specialist", temperature=0.4)
-    # Use .with_config() to get proper invoke_agent spans
-    agent = create_agent(
-        model=llm,
-        tools=[mock_search_flights],
-        system_prompt="You are a flight specialist. Find the best flight option concisely.",
-        name="flight_specialist",
-    ).with_config(
-        {
-            "run_name": "flight_specialist",
-            "tags": ["agent", "agent:flight_specialist"],
-            "metadata": {
-                "agent_name": "flight_specialist",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    try:
+        llm = create_llm("flight_specialist", temperature=0.4)
+        agent = create_agent(
+            model=llm,
+            tools=[mock_search_flights],
+            system_prompt="You are a flight specialist. Find the best flight option concisely.",
+            name="flight_specialist",
+        ).with_config(
+            {
+                "run_name": "flight_specialist",
+                "tags": ["agent", "agent:flight_specialist"],
+                "metadata": {
+                    "agent_name": "flight_specialist",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
 
-    result = agent.invoke({"messages": [HumanMessage(content=request)]})
-    final_message = result["messages"][-1]
+        result = agent.invoke({"messages": [HumanMessage(content=request)]})
+        final_message = result["messages"][-1]
 
-    state["flight_summary"] = (
-        final_message.content
-        if isinstance(final_message, BaseMessage)
-        else str(final_message)
-    )
-    state["messages"].append(
-        final_message
-        if isinstance(final_message, BaseMessage)
-        else AIMessage(content=str(final_message))
-    )
+        state["flight_summary"] = (
+            final_message.content
+            if isinstance(final_message, BaseMessage)
+            else str(final_message)
+        )
+        state["messages"].append(
+            final_message
+            if isinstance(final_message, BaseMessage)
+            else AIMessage(content=str(final_message))
+        )
+    except Exception as e:
+        print(f"   ⚠️  LLM call failed: {e}")
+        fallback = mock_search_flights.invoke(
+            {"origin": state["origin"], "destination": state["destination"], "departure": state["departure"]}
+        )
+        state["flight_summary"] = f"[LLM unavailable] {fallback}"
+        state["messages"].append(AIMessage(content=state["flight_summary"]))
+
     state["current_agent"] = "hotel_specialist"
     print(f"   ✅ {state['flight_summary'][:80]}...")
     return state
@@ -271,37 +279,45 @@ def hotel_specialist_node(state: PlannerState) -> PlannerState:
         print(f"   ⚠️  Blocked! Event ID: {event_id}")
         return state
 
-    llm = create_llm("hotel_specialist", temperature=0.5)
-    # Use .with_config() to get proper invoke_agent spans
-    agent = create_agent(
-        model=llm,
-        tools=[mock_search_hotels],
-        system_prompt="You are a hotel specialist. Recommend the best hotel option concisely.",
-        name="hotel_specialist",
-    ).with_config(
-        {
-            "run_name": "hotel_specialist",
-            "tags": ["agent", "agent:hotel_specialist"],
-            "metadata": {
-                "agent_name": "hotel_specialist",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    try:
+        llm = create_llm("hotel_specialist", temperature=0.5)
+        agent = create_agent(
+            model=llm,
+            tools=[mock_search_hotels],
+            system_prompt="You are a hotel specialist. Recommend the best hotel option concisely.",
+            name="hotel_specialist",
+        ).with_config(
+            {
+                "run_name": "hotel_specialist",
+                "tags": ["agent", "agent:hotel_specialist"],
+                "metadata": {
+                    "agent_name": "hotel_specialist",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
 
-    result = agent.invoke({"messages": [HumanMessage(content=request)]})
-    final_message = result["messages"][-1]
+        result = agent.invoke({"messages": [HumanMessage(content=request)]})
+        final_message = result["messages"][-1]
 
-    state["hotel_summary"] = (
-        final_message.content
-        if isinstance(final_message, BaseMessage)
-        else str(final_message)
-    )
-    state["messages"].append(
-        final_message
-        if isinstance(final_message, BaseMessage)
-        else AIMessage(content=str(final_message))
-    )
+        state["hotel_summary"] = (
+            final_message.content
+            if isinstance(final_message, BaseMessage)
+            else str(final_message)
+        )
+        state["messages"].append(
+            final_message
+            if isinstance(final_message, BaseMessage)
+            else AIMessage(content=str(final_message))
+        )
+    except Exception as e:
+        print(f"   ⚠️  LLM call failed: {e}")
+        fallback = mock_search_hotels.invoke(
+            {"destination": state["destination"], "check_in": state["departure"], "check_out": state["return_date"]}
+        )
+        state["hotel_summary"] = f"[LLM unavailable] {fallback}"
+        state["messages"].append(AIMessage(content=state["hotel_summary"]))
+
     state["current_agent"] = "activity_specialist"
     print(f"   ✅ {state['hotel_summary'][:80]}...")
     return state
@@ -327,37 +343,43 @@ def activity_specialist_node(state: PlannerState) -> PlannerState:
         print(f"   📋 Security Event ID: {event_id}")
         return state
 
-    llm = create_llm("activity_specialist", temperature=0.6)
-    # Use .with_config() to get proper invoke_agent spans
-    agent = create_agent(
-        model=llm,
-        tools=[mock_search_activities],
-        system_prompt="You are an activity specialist. Suggest the best activities concisely.",
-        name="activity_specialist",
-    ).with_config(
-        {
-            "run_name": "activity_specialist",
-            "tags": ["agent", "agent:activity_specialist"],
-            "metadata": {
-                "agent_name": "activity_specialist",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    try:
+        llm = create_llm("activity_specialist", temperature=0.6)
+        agent = create_agent(
+            model=llm,
+            tools=[mock_search_activities],
+            system_prompt="You are an activity specialist. Suggest the best activities concisely.",
+            name="activity_specialist",
+        ).with_config(
+            {
+                "run_name": "activity_specialist",
+                "tags": ["agent", "agent:activity_specialist"],
+                "metadata": {
+                    "agent_name": "activity_specialist",
+                    "session_id": state["session_id"],
+                },
+            }
+        )
 
-    result = agent.invoke({"messages": [HumanMessage(content=request)]})
-    final_message = result["messages"][-1]
+        result = agent.invoke({"messages": [HumanMessage(content=request)]})
+        final_message = result["messages"][-1]
 
-    state["activities_summary"] = (
-        final_message.content
-        if isinstance(final_message, BaseMessage)
-        else str(final_message)
-    )
-    state["messages"].append(
-        final_message
-        if isinstance(final_message, BaseMessage)
-        else AIMessage(content=str(final_message))
-    )
+        state["activities_summary"] = (
+            final_message.content
+            if isinstance(final_message, BaseMessage)
+            else str(final_message)
+        )
+        state["messages"].append(
+            final_message
+            if isinstance(final_message, BaseMessage)
+            else AIMessage(content=str(final_message))
+        )
+    except Exception as e:
+        print(f"   ⚠️  LLM call failed: {e}")
+        fallback = mock_search_activities.invoke({"destination": state["destination"]})
+        state["activities_summary"] = f"[LLM unavailable] {fallback}"
+        state["messages"].append(AIMessage(content=state["activities_summary"]))
+
     state["current_agent"] = "completed"
     print(f"   ✅ {state['activities_summary'][:80]}...")
     return state
