@@ -350,6 +350,7 @@ class TestMetricsEmission(unittest.TestCase):
             agent = AgentInvocation(
                 name="context_agent",
                 model="model-x",
+                agent_id="agent-123",
             )
             handler.start_agent(agent)
             # Start LLM WITHOUT agent_name/id explicitly set
@@ -393,7 +394,7 @@ class TestMetricsEmission(unittest.TestCase):
                 attrs = getattr(dp, "attributes", {}) or {}
                 if (
                     attrs.get("gen_ai.agent.name") == "context_agent"
-                    and attrs.get("gen_ai.agent.id") is not None
+                    and attrs.get("gen_ai.agent.id") == "agent-123"
                 ):
                     inherited = True
                     break

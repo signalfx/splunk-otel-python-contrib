@@ -436,7 +436,8 @@ class TelemetryHandler:
         self._capture_control = capture_control
         self._evaluation_manager = None
         # Active agent identity stack (name, id) for implicit propagation to nested operations
-        self._agent_context_stack: list[tuple[str, str]] = []
+        # agent_id may be None if not provided by instrumentation
+        self._agent_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
 
     def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
@@ -963,12 +964,12 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(agent)
         self._emitter.on_start(agent)
-        # Push agent identity context (use span_id as canonical id)
+        # Push agent identity context
         if isinstance(agent, AgentInvocation):
             try:
-                if agent.name and agent.span_id is not None:
+                if agent.name:
                     self._agent_context_stack.append(
-                        (agent.name, f"{agent.span_id:016x}")
+                        (agent.name, agent.agent_id)
                     )
             except Exception:  # pragma: no cover - defensive
                 pass
@@ -1000,12 +1001,9 @@ class TelemetryHandler:
         # Pop context if matches top
         if isinstance(agent, AgentInvocation):
             try:
-                if self._agent_context_stack and agent.span_id is not None:
+                if self._agent_context_stack and agent.agent_id is not None:
                     top_name, top_id = self._agent_context_stack[-1]
-                    if (
-                        top_name == agent.name
-                        and top_id == f"{agent.span_id:016x}"
-                    ):
+                    if top_name == agent.name and top_id == agent.agent_id:
                         self._agent_context_stack.pop()
             except Exception:
                 pass

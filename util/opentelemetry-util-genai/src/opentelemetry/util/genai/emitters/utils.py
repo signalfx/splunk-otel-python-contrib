@@ -909,11 +909,8 @@ def _agent_to_log_record(
     if agent.framework:
         attributes[GEN_AI_FRAMEWORK] = agent.framework
     attributes[GenAI.GEN_AI_AGENT_NAME] = agent.name
-    attributes[GenAI.GEN_AI_AGENT_ID] = (
-        f"{agent.span_id:016x}"
-        if agent.span_id is not None
-        else str(id(agent))
-    )
+    if agent.agent_id:
+        attributes[GenAI.GEN_AI_AGENT_ID] = agent.agent_id
 
     body: Dict[str, Any] = {}
     # System instructions treated similarly to LLM system messages
