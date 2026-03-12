@@ -186,6 +186,11 @@ def check_security(agent_name: str, request: str) -> tuple[bool, Optional[str]]:
     if not security_client:
         return True, None
 
+    # Set agent name on current span so AI Defense instrumentor can read it
+    current_span = trace.get_current_span()
+    if current_span and current_span.is_recording():
+        current_span.set_attribute("gen_ai.agent.name", agent_name)
+
     result = security_client.inspect_prompt(request)
 
     if not result.is_safe:

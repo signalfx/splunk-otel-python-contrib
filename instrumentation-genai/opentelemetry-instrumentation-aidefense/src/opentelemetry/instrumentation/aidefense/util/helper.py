@@ -46,6 +46,7 @@ def create_ai_defense_invocation(
     server_address: str,
     input_messages: List[InputMessage],
     operation: str = AI_DEFENSE_OPERATION,
+    agent_name: Optional[str] = None,
 ) -> LLMInvocation:
     """
     Create a standardized LLMInvocation for AI Defense SDK operations.
@@ -54,6 +55,7 @@ def create_ai_defense_invocation(
         server_address: The AI Defense server address
         input_messages: List of input messages for the invocation
         operation: The operation type (default: "chat")
+        agent_name: Optional agent name for correlation
 
     Returns:
         LLMInvocation configured for AI Defense
@@ -65,6 +67,7 @@ def create_ai_defense_invocation(
         system=AI_DEFENSE_SYSTEM,
         framework=AI_DEFENSE_FRAMEWORK,
         input_messages=input_messages,
+        agent_name=agent_name,
     )
 
 
