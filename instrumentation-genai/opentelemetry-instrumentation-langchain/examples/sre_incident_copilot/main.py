@@ -5,22 +5,41 @@ configurable thread_id. No manual genai_context() wrapping needed — the
 instrumentation extracts thread_id from callback metadata and maps it to
 gen_ai.conversation.id on all root spans automatically.
 
+Supports interrupt/resume for human-in-the-loop review.
+
 Usage:
+    # Normal run (no interrupt)
     python main.py --scenario scenario-001
-    python main.py --scenario scenario-001 --conversation-id my-conv-123
+
+    # Simulate interrupt/resume in a SINGLE process (two traces, one
+    # conversation_id) — ideal for demonstrating evaluations:
+    python main.py --scenario scenario-001 --simulate-interrupt-resume \\
+        --conversation-id troubleshooting-chat-1 \\
+        --manual-instrumentation --wait-after-completion 300
+
+    # Cross-process interrupt/resume (TWO separate invocations):
+    CONVERSATION_ID="troubleshooting-chat-1"
+    python main.py --scenario scenario-001 --enable-interrupt \\
+        --conversation-id $CONVERSATION_ID
+    python main.py --scenario scenario-001 --resume --approve \\
+        --conversation-id $CONVERSATION_ID
 """
 
 import argparse
 import json
 import os
+import sqlite3
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, Optional
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 from agents import (
     action_planner_agent,
@@ -31,6 +50,9 @@ from config import Config
 from data_loader import DataLoader
 from validation import ValidationHarness
 from incident_types import IncidentState
+
+# Persistent checkpoint directory — stores SQLite DBs keyed by conversation_id
+CHECKPOINTS_DIR = Path("checkpoints")
 
 
 def route_after_triage(state: IncidentState) -> str:
@@ -79,8 +101,66 @@ def route_after_quality_gate(state: IncidentState) -> str:
     return END
 
 
-def build_workflow(config: Config) -> StateGraph:
+def human_review_node(state: IncidentState) -> IncidentState:
+    """Pause execution for human review of the proposed mitigation plan.
+
+    Uses LangGraph's ``interrupt()`` to suspend the graph after the action
+    planner produces a mitigation plan. The caller resumes via
+    ``Command(resume=answer)`` where *answer* is a dict like
+    ``{"approved": True}`` or ``{"approved": False, "feedback": "..."}``.
+    """
+    action_plan = state.get("action_plan", {})
+    mitigation_plan = action_plan.get("mitigation_plan", [])
+    hypotheses = state.get("hypotheses", [])
+    top_hypothesis = hypotheses[0] if hypotheses else {}
+
+    answer = interrupt(
+        {
+            "question": (
+                "Please review the proposed mitigation plan and approve "
+                "to proceed with quality gate validation."
+            ),
+            "top_hypothesis": top_hypothesis.get("hypothesis", "N/A"),
+            "confidence_score": state.get("confidence_score", 0.0),
+            "mitigation_plan": mitigation_plan,
+            "tickets_created": [
+                t.get("title", "N/A") for t in state.get("tickets_created", [])
+            ],
+        }
+    )
+    # Store the human review decision
+    state["human_review_decision"] = answer
+    # Incorporate optional feedback into conversation
+    if isinstance(answer, dict) and answer.get("feedback"):
+        state["messages"].append(
+            HumanMessage(
+                content=f"SRE engineer feedback on mitigation plan: {answer['feedback']}"
+            )
+        )
+    state["current_agent"] = "quality_gate"
+    return state
+
+
+def _interrupt_enabled() -> bool:
+    """Return True when the SRE_COPILOT_INTERRUPT env var is set."""
+    return os.getenv("SRE_COPILOT_INTERRUPT", "").lower() in ("1", "true", "yes")
+
+
+def _get_checkpointer(conversation_id: str) -> SqliteSaver:
+    """Return a SqliteSaver backed by a per-conversation SQLite file."""
+    CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+    db_path = CHECKPOINTS_DIR / f"{conversation_id}.db"
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    return SqliteSaver(conn)
+
+
+def build_workflow(config: Config, enable_interrupt: bool = False) -> StateGraph:
     """Build the LangGraph workflow with conditional routing (orchestrator pattern).
+
+    When *enable_interrupt* is True, a ``human_review`` node is inserted
+    between ``action_planner`` and ``quality_gate``.  The node calls
+    ``interrupt()`` so an SRE engineer can approve the mitigation plan
+    before the quality gate runs.
 
     Note: Investigation Agent is called as a tool (agent-as-tool pattern) by Triage Agent,
     not as a separate node in the workflow.
@@ -91,6 +171,9 @@ def build_workflow(config: Config) -> StateGraph:
     graph.add_node("triage", lambda state: triage_agent(state, config))
     graph.add_node("action_planner", lambda state: action_planner_agent(state, config))
     graph.add_node("quality_gate", lambda state: quality_gate_agent(state, config))
+
+    if enable_interrupt:
+        graph.add_node("human_review", human_review_node)
 
     # Add conditional edges - orchestrator pattern with explicit routing
     graph.add_edge(START, "triage")
@@ -105,15 +188,20 @@ def build_workflow(config: Config) -> StateGraph:
         },
     )
 
-    # After action_planner: route to quality_gate
-    graph.add_conditional_edges(
-        "action_planner",
-        route_after_action_planner,
-        {
-            "quality_gate": "quality_gate",
-            END: END,
-        },
-    )
+    if enable_interrupt:
+        # action_planner -> human_review -> quality_gate
+        graph.add_edge("action_planner", "human_review")
+        graph.add_edge("human_review", "quality_gate")
+    else:
+        # After action_planner: route to quality_gate
+        graph.add_conditional_edges(
+            "action_planner",
+            route_after_action_planner,
+            {
+                "quality_gate": "quality_gate",
+                END: END,
+            },
+        )
 
     # After quality_gate: end workflow
     graph.add_conditional_edges(
@@ -256,9 +344,18 @@ def _generate_postmortem_draft(state: IncidentState) -> str:
 
 
 def run_scenario(
-    scenario_id: str, config: Config, conversation_id: str | None = None
-) -> IncidentState:
-    """Run a scenario end-to-end."""
+    scenario_id: str,
+    config: Config,
+    conversation_id: str | None = None,
+    enable_interrupt: bool = False,
+) -> IncidentState | Dict:
+    """Run a scenario end-to-end.
+
+    When *enable_interrupt* is True the graph pauses after the action planner
+    for human review.  Returns a dict with ``"status": "interrupted"`` and
+    the interrupt payload so the caller can inspect the mitigation plan and
+    resume.
+    """
     data_loader = DataLoader(data_dir=config.data_dir)
 
     # Get alert for scenario
@@ -279,6 +376,7 @@ def run_scenario(
         "hypotheses": [],
         "action_plan": None,
         "quality_gate_result": None,
+        "human_review_decision": None,
         "incident_summary": None,
         "postmortem_draft": None,
         "tickets_created": [],
@@ -289,8 +387,9 @@ def run_scenario(
     }
 
     # Build and run workflow
-    workflow = build_workflow(config)
-    app = workflow.compile()
+    workflow = build_workflow(config, enable_interrupt=enable_interrupt)
+    checkpointer = _get_checkpointer(conversation_id) if enable_interrupt else None
+    compiled_app = workflow.compile(checkpointer=checkpointer)
 
     # conversation_id is passed as LangGraph's configurable thread_id.
     # The instrumentation automatically infers gen_ai.conversation.id from it.
@@ -307,8 +406,14 @@ def run_scenario(
     nodes_executed = []
     previous_node = None
 
-    for step in app.stream(initial_state, config_dict):
+    for step in compiled_app.stream(initial_state, config_dict):
         node_name, node_state = next(iter(step.items()))
+
+        # When interrupt() fires, LangGraph emits a special __interrupt__
+        # entry whose value is a tuple, not a dict — skip it.
+        if not isinstance(node_state, dict):
+            continue
+
         final_state = node_state
         nodes_executed.append(node_name)
 
@@ -356,6 +461,30 @@ def run_scenario(
 
         previous_node = node_name
 
+    # ---- Check if the graph was interrupted --------------------------------
+    if enable_interrupt:
+        graph_state = compiled_app.get_state(config_dict)
+        if graph_state.next:
+            # Graph paused at human_review — return interrupt payload
+            interrupt_value = None
+            if graph_state.tasks:
+                for task in graph_state.tasks:
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        interrupt_value = task.interrupts[0].value
+                        break
+
+            return {
+                "status": "interrupted",
+                "session_id": conversation_id,
+                "interrupt": interrupt_value,
+                "nodes_executed": nodes_executed,
+                "action_plan": final_state.get("action_plan"),
+                "hypotheses": final_state.get("hypotheses", []),
+                "confidence_score": final_state.get("confidence_score", 0.0),
+                "tickets_created": final_state.get("tickets_created", []),
+            }
+
+    # ---- Normal completion -------------------------------------------------
     print("\n📋 Workflow execution summary:")
     print(f"   Nodes executed: {nodes_executed}")
     expected_nodes = ["triage", "action_planner", "quality_gate"]
@@ -368,6 +497,46 @@ def run_scenario(
         print(
             "   ✓ Investigation completed via agent-as-tool (investigation_agent_mcp)"
         )
+
+    return final_state
+
+
+def resume_scenario(
+    scenario_id: str,
+    config: Config,
+    conversation_id: str,
+    answer: Dict,
+) -> IncidentState:
+    """Resume a previously interrupted scenario.
+
+    Rebuilds the graph with the same persistent ``SqliteSaver`` so
+    LangGraph can restore state from the SQLite checkpoint.  *answer*
+    is forwarded to the graph via ``Command(resume=answer)``.
+    """
+    workflow = build_workflow(config, enable_interrupt=True)
+    checkpointer = _get_checkpointer(conversation_id)
+    compiled_app = workflow.compile(checkpointer=checkpointer)
+
+    config_dict = {
+        "configurable": {"thread_id": conversation_id},
+        "recursion_limit": 20,
+    }
+
+    final_state: Optional[IncidentState] = None
+    nodes_executed = []
+
+    for step in compiled_app.stream(Command(resume=answer), config_dict):
+        node_name, node_state = next(iter(step.items()))
+        if not isinstance(node_state, dict):
+            continue
+        final_state = node_state
+        nodes_executed.append(node_name)
+        print(f"\n🤖 {node_name.replace('_', ' ').title()} Agent")
+        if node_state.get("current_agent"):
+            print(f"   Status: {node_state['current_agent']}")
+
+    print("\n📋 Resume execution summary:")
+    print(f"   Nodes executed: {nodes_executed}")
 
     return final_state
 
@@ -390,6 +559,41 @@ def main():
         type=str,
         default=None,
         help="Conversation ID mapped to gen_ai.conversation.id (default: random UUID)",
+    )
+    parser.add_argument(
+        "--enable-interrupt",
+        action="store_true",
+        help="Enable human review interrupt after action planner",
+    )
+    parser.add_argument(
+        "--simulate-interrupt-resume",
+        action="store_true",
+        help=(
+            "Run interrupt and resume in a single process. "
+            "Produces two distinct traces under the same conversation ID. "
+            "Auto-approves by default; combine with --reject/--feedback to change."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume a previously interrupted workflow (requires --conversation-id)",
+    )
+    parser.add_argument(
+        "--approve",
+        action="store_true",
+        help="Approve the mitigation plan when resuming (non-interactive)",
+    )
+    parser.add_argument(
+        "--reject",
+        action="store_true",
+        help="Reject the mitigation plan when resuming (non-interactive)",
+    )
+    parser.add_argument(
+        "--feedback",
+        type=str,
+        default="",
+        help="Feedback to include when approving or rejecting",
     )
     parser.add_argument(
         "--wait-after-completion",
@@ -424,12 +628,19 @@ def main():
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
     conversation_id = args.conversation_id or str(uuid4())
+    enable_interrupt = args.enable_interrupt or _interrupt_enabled()
 
     print("\U0001f6a8 SRE Incident Copilot")
     print("=" * 60)
     print(f"Scenario: {config.scenario_id}")
     print(f"Service: {config.otel_service_name}")
     print(f"Conversation ID (→ gen_ai.conversation.id): {conversation_id}")
+    if args.resume:
+        print("Mode: resume (continuing interrupted workflow)")
+    elif args.simulate_interrupt_resume:
+        print("Mode: simulate-interrupt-resume (single process, two traces)")
+    elif enable_interrupt:
+        print("Mode: interrupt (will pause for human review after action planner)")
     print()
 
     # Run scenario
@@ -437,7 +648,143 @@ def main():
         f"{config.scenario_id}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     )
     try:
-        final_state = run_scenario(config.scenario_id, config, conversation_id)
+        # ---- Resume path ---------------------------------------------------
+        if args.resume:
+            if not args.conversation_id:
+                print("Error: --resume requires --conversation-id")
+                sys.exit(1)
+
+            # Determine approval answer
+            if args.approve:
+                answer = {"approved": True, "feedback": args.feedback}
+            elif args.reject:
+                answer = {
+                    "approved": False,
+                    "feedback": args.feedback or "rejected",
+                }
+            else:
+                # Interactive
+                approval = input("Approve? (y/n): ").strip().lower()
+                feedback = input("Feedback (optional): ").strip()
+                answer = {
+                    "approved": approval in ("y", "yes"),
+                    "feedback": feedback,
+                }
+
+            print(f"▶️  Resuming with: {json.dumps(answer)}")
+            final_state = resume_scenario(
+                config.scenario_id, config, conversation_id, answer
+            )
+
+        # ---- Simulate interrupt + resume in one process --------------------
+        elif args.simulate_interrupt_resume:
+            # Phase 1: run until interrupt (produces Trace 1)
+            print("Phase 1: Running workflow until human review interrupt…")
+            print("-" * 60)
+
+            result = run_scenario(
+                config.scenario_id, config, conversation_id, enable_interrupt=True
+            )
+
+            if not isinstance(result, dict) or result.get("status") != "interrupted":
+                print(
+                    "\n⚠️  Workflow completed without interrupting."
+                    "\n    (This can happen if triage fails before "
+                    "reaching action_planner)"
+                )
+                final_state = result
+            else:
+                # Display the interrupt payload
+                interrupt_payload = result.get("interrupt", {})
+                print("\n" + "=" * 60)
+                print("⏸️  WORKFLOW INTERRUPTED — Human Review Required")
+                print("=" * 60)
+                print(
+                    f"\n  Confidence:      "
+                    f"{interrupt_payload.get('confidence_score', 0.0):.2f}"
+                )
+                print(
+                    f"  Top Hypothesis:  "
+                    f"{interrupt_payload.get('top_hypothesis', 'N/A')}"
+                )
+                print("\n  Proposed Mitigation Plan:")
+                for i, step in enumerate(
+                    interrupt_payload.get("mitigation_plan", []), 1
+                ):
+                    print(f"    {i}. {step}")
+                print("\n  Tickets Created:")
+                for ticket in interrupt_payload.get("tickets_created", []):
+                    print(f"    - {ticket}")
+
+                # Determine approval answer
+                if args.reject:
+                    answer = {
+                        "approved": False,
+                        "feedback": args.feedback or "rejected",
+                    }
+                else:
+                    # Default: auto-approve
+                    answer = {"approved": True, "feedback": args.feedback}
+
+                # Phase 2: resume (produces Trace 2)
+                print("\n" + "-" * 60)
+                print(f"Phase 2: Resuming workflow with: {json.dumps(answer)}")
+                print("-" * 60)
+
+                final_state = resume_scenario(
+                    config.scenario_id, config, conversation_id, answer
+                )
+
+        # ---- Normal / interrupt path ---------------------------------------
+        else:
+            result = run_scenario(
+                config.scenario_id, config, conversation_id, enable_interrupt
+            )
+
+            if isinstance(result, dict) and result.get("status") == "interrupted":
+                interrupt_payload = result.get("interrupt", {})
+                print("\n" + "=" * 60)
+                print("⏸️  WORKFLOW INTERRUPTED — Human Review Required")
+                print("=" * 60)
+                print(f"\nQuestion: {interrupt_payload.get('question', 'N/A')}")
+                print(
+                    f"Top Hypothesis: {interrupt_payload.get('top_hypothesis', 'N/A')}"
+                )
+                print(
+                    f"Confidence: {interrupt_payload.get('confidence_score', 0.0):.2f}"
+                )
+                print("\nProposed Mitigation Plan:")
+                for i, step in enumerate(
+                    interrupt_payload.get("mitigation_plan", []), 1
+                ):
+                    print(f"  {i}. {step}")
+                print("\nTickets Created:")
+                for ticket in interrupt_payload.get("tickets_created", []):
+                    print(f"  - {ticket}")
+
+                # Print the resume command
+                print("\n" + "-" * 60)
+                print("To resume, run:")
+                print(
+                    f"  python main.py --scenario {config.scenario_id}"
+                    f" --conversation-id {conversation_id}"
+                    f" --resume --approve"
+                )
+                print(
+                    f"  python main.py --scenario {config.scenario_id}"
+                    f" --conversation-id {conversation_id}"
+                    f' --resume --reject --feedback "your feedback"'
+                )
+
+                # Wait for telemetry flush before exiting
+                if args.wait_after_completion > 0:
+                    print(
+                        f"\n⏳ Waiting for {args.wait_after_completion} seconds before exit..."
+                    )
+                    time.sleep(args.wait_after_completion)
+                return
+
+            final_state = result
 
         # Save artifacts
         save_artifacts(final_state, config, run_id)

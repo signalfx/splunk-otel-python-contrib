@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.9
+
+### Added
+- **Error classification for interrupts** — `GraphInterrupt`, `NodeInterrupt`, and `Interrupt` exceptions are now classified as interrupts (not errors), leaving span status as `UNSET` (default) instead of `StatusCode.ERROR`. `CancelledError` and `TaskCancelledError` are classified as cancellations.
+
 ## Version 0.1.8 - 2026-03-06
 
 ### Added

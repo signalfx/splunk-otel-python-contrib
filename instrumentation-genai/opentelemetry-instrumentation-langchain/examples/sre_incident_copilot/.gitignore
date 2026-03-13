@@ -28,6 +28,9 @@ artifacts/
 chroma_db/
 *.db
 
+# Checkpoints (LangGraph interrupt/resume state)
+checkpoints/
+
 # Logs
 *.log
 

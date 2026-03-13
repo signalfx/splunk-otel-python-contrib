@@ -24,6 +24,15 @@ Example usage for LLM Invocation.
 
 See the example in ``examples/agentic_example.py`` for a full agent + LLM invocation flow.
 
+Error Classification & Interrupts
+---------------------------------
+
+The ``Error`` dataclass includes a ``classification`` field (``ErrorClassification`` enum:
+``REAL_ERROR``, ``INTERRUPT``, ``CANCELLATION``) that controls span status behavior.
+Interrupts and cancellations leave span status as ``UNSET`` (default) instead of
+setting ``StatusCode.ERROR``, preventing false-positive alerts for expected
+control-flow exceptions like LangGraph's ``GraphInterrupt``.
+
 Concurrent Evaluation Mode
 --------------------------
 

@@ -208,8 +208,10 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
+from langgraph.types import Command, interrupt
 
 from langchain.agents import (
     create_agent as _create_react_agent,  # type: ignore[attr-defined]
@@ -800,6 +802,36 @@ def plan_synthesizer_node(
     return state
 
 
+def human_approval_node(state: PlannerState) -> PlannerState:
+    """Pause execution for human review of the flight recommendation.
+
+    Uses LangGraph's ``interrupt()`` to suspend the graph. The caller
+    resumes via ``Command(resume=answer)`` where *answer* is a dict
+    like ``{"approved": True}`` or ``{"approved": False, "feedback": "..."}``.
+    """
+    answer = interrupt(
+        {
+            "question": (
+                "Please review the flight recommendation and approve "
+                "to continue with hotel and activity search."
+            ),
+            "flight_summary": state.get("flight_summary", ""),
+        }
+    )
+    # Incorporate optional user feedback into conversation
+    if isinstance(answer, dict) and answer.get("feedback"):
+        state["messages"].append(
+            HumanMessage(content=f"User feedback on flights: {answer['feedback']}")
+        )
+    state["current_agent"] = "hotel_specialist"
+    return state
+
+
+def _interrupt_enabled() -> bool:
+    """Return True when the TRAVEL_PLANNER_INTERRUPT env var is set."""
+    return os.getenv("TRAVEL_PLANNER_INTERRUPT", "").lower() in ("1", "true", "yes")
+
+
 def should_continue(state: PlannerState) -> str:
     mapping = {
         "start": "coordinator",
@@ -813,6 +845,7 @@ def should_continue(state: PlannerState) -> str:
 
 def build_workflow(
     custom_poison_config: Optional[Dict[str, object]] = None,
+    enable_interrupt: bool = False,
 ) -> StateGraph:
     graph = StateGraph(PlannerState)
     # Wrap nodes to pass custom_poison_config
@@ -835,9 +868,20 @@ def build_workflow(
         "plan_synthesizer",
         lambda state: plan_synthesizer_node(state, custom_poison_config),
     )
+
+    if enable_interrupt:
+        graph.add_node("human_approval", human_approval_node)
+
     graph.add_conditional_edges(START, should_continue)
     graph.add_conditional_edges("coordinator", should_continue)
-    graph.add_conditional_edges("flight_specialist", should_continue)
+
+    if enable_interrupt:
+        # flight_specialist -> human_approval -> hotel_specialist (via should_continue)
+        graph.add_edge("flight_specialist", "human_approval")
+        graph.add_conditional_edges("human_approval", should_continue)
+    else:
+        graph.add_conditional_edges("flight_specialist", should_continue)
+
     graph.add_conditional_edges("hotel_specialist", should_continue)
     graph.add_conditional_edges("activity_specialist", should_continue)
     graph.add_conditional_edges("plan_synthesizer", should_continue)
@@ -855,6 +899,14 @@ LangchainInstrumentor().instrument()
 # Initialize Flask app
 app = Flask(__name__)
 
+# ---------------------------------------------------------------------------
+# Session storage for interrupt/resume cycles
+# ---------------------------------------------------------------------------
+# Stores compiled graphs keyed by session_id so that interrupted sessions
+# can be resumed.  In production this would be backed by a database; for
+# this demo an in-memory dict is sufficient.
+_sessions: Dict[str, Dict] = {}
+
 
 def plan_travel_internal(
     origin: str,
@@ -862,8 +914,15 @@ def plan_travel_internal(
     user_request: str,
     travellers: int,
     poison_config: Optional[Dict[str, object]] = None,
+    enable_interrupt: bool = False,
 ) -> Dict[str, object]:
-    """Internal function to execute travel planning workflow."""
+    """Internal function to execute travel planning workflow.
+
+    When *enable_interrupt* is True the graph contains a human-approval
+    node after the flight specialist.  If the graph pauses at that node
+    the function returns early with ``"status": "interrupted"`` and stores
+    the compiled graph so that ``resume_travel_internal`` can continue.
+    """
     session_id = str(uuid4())
     departure, return_date = _compute_dates()
 
@@ -884,8 +943,9 @@ def plan_travel_internal(
         "poison_events": [],
     }
 
-    workflow = build_workflow(poison_config)
-    compiled_app = workflow.compile()
+    workflow = build_workflow(poison_config, enable_interrupt=enable_interrupt)
+    checkpointer = MemorySaver() if enable_interrupt else None
+    compiled_app = workflow.compile(checkpointer=checkpointer)
 
     tracer = trace.get_tracer(__name__)
     attributes = _http_root_attributes(initial_state)
@@ -902,17 +962,17 @@ def plan_travel_internal(
         }
     ]
 
+    config = {
+        "configurable": {"thread_id": session_id},
+        "recursion_limit": 10,
+    }
+
     with tracer.start_as_current_span(
         name="POST /travel/plan",
         kind=SpanKind.SERVER,
         attributes=attributes,
     ) as root_span:
         root_span.set_attribute("gen_ai.input.messages", json.dumps(root_input))
-
-        config = {
-            "configurable": {"thread_id": session_id},
-            "recursion_limit": 10,
-        }
 
         final_state: Optional[PlannerState] = None
         agent_steps = []
@@ -922,6 +982,43 @@ def plan_travel_internal(
             final_state = node_state
             agent_steps.append({"agent": node_name, "status": "completed"})
 
+        # ---- Check if the graph was interrupted ----------------------------
+        if enable_interrupt:
+            graph_state = compiled_app.get_state(config)
+            if graph_state.next:
+                # Graph paused — store session for resume
+                _sessions[session_id] = {
+                    "compiled_app": compiled_app,
+                    "config": config,
+                    "initial_state": initial_state,
+                }
+                # Extract the interrupt payload from pending tasks
+                interrupt_value = None
+                if graph_state.tasks:
+                    for task in graph_state.tasks:
+                        if hasattr(task, "interrupts") and task.interrupts:
+                            interrupt_value = task.interrupts[0].value
+                            break
+
+                root_span.set_attribute("travel.session_id", session_id)
+                root_span.set_attribute("travel.status", "interrupted")
+                root_span.set_attribute("http.response.status_code", 202)
+
+                provider = trace.get_tracer_provider()
+                if hasattr(provider, "force_flush"):
+                    provider.force_flush()
+
+                return {
+                    "status": "interrupted",
+                    "session_id": session_id,
+                    "interrupt": interrupt_value,
+                    "flight_summary": (
+                        final_state.get("flight_summary") if final_state else None
+                    ),
+                    "agent_steps": agent_steps,
+                }
+
+        # ---- Normal completion ---------------------------------------------
         if not final_state:
             final_plan = ""
         else:
@@ -957,6 +1054,7 @@ def plan_travel_internal(
         provider.force_flush()
 
     return {
+        "status": "completed",
         "session_id": session_id,
         "origin": origin,
         "destination": destination,
@@ -974,9 +1072,79 @@ def plan_travel_internal(
     }
 
 
+def resume_travel_internal(
+    session_id: str,
+    answer: Dict[str, object],
+) -> Dict[str, object]:
+    """Resume a previously interrupted travel-planning session.
+
+    *answer* is forwarded to the graph via ``Command(resume=answer)``.
+    The interrupted graph picks up from the ``human_approval`` node
+    and continues through hotel → activities → synthesizer.
+    """
+    session = _sessions.pop(session_id, None)
+    if session is None:
+        return {"error": f"No interrupted session found for {session_id}"}
+
+    compiled_app = session["compiled_app"]
+    config = session["config"]
+
+    tracer = trace.get_tracer(__name__)
+
+    with tracer.start_as_current_span(
+        name="POST /travel/plan/resume",
+        kind=SpanKind.SERVER,
+        attributes={
+            "http.request.method": "POST",
+            "http.route": f"/travel/plan/{session_id}/resume",
+            "travel.session_id": session_id,
+        },
+    ) as root_span:
+        final_state: Optional[PlannerState] = None
+        agent_steps = []
+
+        for step in compiled_app.stream(Command(resume=answer), config):
+            node_name, node_state = next(iter(step.items()))
+            final_state = node_state
+            agent_steps.append({"agent": node_name, "status": "completed"})
+
+        if not final_state:
+            final_plan = ""
+        else:
+            final_plan = final_state.get("final_itinerary") or ""
+
+        if final_plan:
+            preview = final_plan[:500] + ("..." if len(final_plan) > 500 else "")
+            root_span.set_attribute("travel.plan.preview", preview)
+        root_span.set_attribute("http.response.status_code", 200)
+
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, "force_flush"):
+        provider.force_flush()
+
+    return {
+        "status": "completed",
+        "session_id": session_id,
+        "flight_summary": final_state.get("flight_summary") if final_state else None,
+        "hotel_summary": final_state.get("hotel_summary") if final_state else None,
+        "activities_summary": (
+            final_state.get("activities_summary") if final_state else None
+        ),
+        "final_itinerary": final_plan,
+        "poison_events": final_state.get("poison_events") if final_state else [],
+        "agent_steps": agent_steps,
+    }
+
+
 @app.route("/travel/plan", methods=["POST"])
 def plan():
-    """Handle travel planning requests via HTTP POST."""
+    """Handle travel planning requests via HTTP POST.
+
+    When ``enable_interrupt`` is true (via request body or
+    ``TRAVEL_PLANNER_INTERRUPT`` env var) the workflow pauses after the
+    flight specialist for human approval.  The response will have
+    ``"status": "interrupted"`` with the session_id to resume.
+    """
     try:
         data = request.get_json()
 
@@ -994,8 +1162,14 @@ def plan():
         if "poison_config" in data:
             poison_config = data["poison_config"]
 
+        # Interrupt mode: from request body or env var
+        enable_interrupt = data.get("enable_interrupt", _interrupt_enabled())
+        if isinstance(enable_interrupt, str):
+            enable_interrupt = enable_interrupt.lower() in ("1", "true", "yes")
+
         print(
-            f"[SERVER] Processing travel plan: {origin} -> {destination}",
+            f"[SERVER] Processing travel plan: {origin} -> {destination}"
+            + (" (interrupt mode)" if enable_interrupt else ""),
             file=sys.stderr,
             flush=True,
         )
@@ -1006,13 +1180,66 @@ def plan():
             user_request=user_request,
             travellers=travellers,
             poison_config=poison_config,
+            enable_interrupt=enable_interrupt,
         )
 
+        status_code = 202 if result.get("status") == "interrupted" else 200
+        label = (
+            "interrupted — waiting for approval" if status_code == 202 else "completed"
+        )
         print(
-            "[SERVER] Travel plan completed successfully", file=sys.stderr, flush=True
+            f"[SERVER] Travel plan {label}",
+            file=sys.stderr,
+            flush=True,
         )
         print("\n" + "=" * 80, file=sys.stderr)
         print("TRAVEL PLAN RESULT:", file=sys.stderr)
+        pprint(result, stream=sys.stderr)
+        print("=" * 80 + "\n", file=sys.stderr, flush=True)
+
+        return jsonify(result), status_code
+
+    except Exception as e:
+        print(
+            f"[SERVER] Error processing travel plan: {e}", file=sys.stderr, flush=True
+        )
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/travel/plan/<session_id>/resume", methods=["POST"])
+def resume(session_id: str):
+    """Resume a previously interrupted travel-planning session.
+
+    Example request body::
+
+        {"approved": true}
+        {"approved": true, "feedback": "prefer morning flights"}
+        {"approved": false, "feedback": "too expensive, look for budget options"}
+    """
+    try:
+        data = request.get_json() or {}
+
+        print(
+            f"[SERVER] Resuming session {session_id}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+        result = resume_travel_internal(session_id, answer=data)
+
+        if "error" in result:
+            return jsonify(result), 404
+
+        print(
+            "[SERVER] Travel plan completed after resume",
+            file=sys.stderr,
+            flush=True,
+        )
+        print("\n" + "=" * 80, file=sys.stderr)
+        print("TRAVEL PLAN RESULT (resumed):", file=sys.stderr)
         pprint(result, stream=sys.stderr)
         print("=" * 80 + "\n", file=sys.stderr, flush=True)
 
@@ -1020,7 +1247,9 @@ def plan():
 
     except Exception as e:
         print(
-            f"[SERVER] Error processing travel plan: {e}", file=sys.stderr, flush=True
+            f"[SERVER] Error resuming session {session_id}: {e}",
+            file=sys.stderr,
+            flush=True,
         )
         import traceback
 
