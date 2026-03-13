@@ -201,22 +201,30 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 }
 ```
 
+## Workflow for AI Agents
+
+- Always start work from creating `.local/plan-<jira-ticket>-<feature-name>.md` (skip jira if not present)
+  - start plan from a research industry standards (other instrumentation libraries, ai agentic frameworks, ai-focused observability products)
+  - plan sections - project description, research, open questions that need human clarification, implementation plan for AI Coder.
+- after implementing a change - maintain a PR description for the change in `.local/pr-<jira-ticket>-<feature-name>.md` (skip jira if not present). Highlighte the changes, identify major parts requiring special attention. Update the file on code changes.
+- Maintain repo level `README.md`, `README.packages.architecture.md`, and package level README to reflect the changes. Ensure user documentation added when needed.
+- Stage changes, do not commit without human review.
+- Always run `make lint` after changes
+- Tests are required for all new features
+- Update `CHANGELOG.md` to document changes
+- Update `version.py`, only update the minor version unless backward-incompatible changes are introduced. Always communicate with human when the breaking changes are introduced.
+
 ## Notes for AI Agents
 
-- Always run `make lint` before committing
-- Ask user to provide a file to export OPENAI_API_KEY or other credentials to run the demo app to validate
 - Check existing patterns in similar packages before implementing
-- Tests are required for all new features
+- Ask user to provide a file to export `OPENAI_API_KEY` or other credentials to run the demo app to validate
 - Environment variables should have `OTEL_INSTRUMENTATION_GENAI_` prefix
 - Use semantic conventions from OpenTelemetry GenAI spec where applicable
-- Update README.md and README.arhcitecture.md if needed.
-- Update CHANGELOG.md to document changes
-- Update version.py, only update the minor version unless backward-incompatible changes are introduced. Always communicate with human when the breaking changes are introduced.
 - Always keep backward compatibility in mind when refactoring existing
 - Follow DRY and SOLID software engineering principles when readability and maintainability is not compromised.
 
 ## Common Pitfalls to Avoid
 
 - Do not try to mock libraries if import in the current env fail. If in doubt - clearly communicate the problem to user
-- Always refer to README.md and README.packages.architecture.md
+- Always refer to `README.md` and `README.packages.architecture.md` for context.
 - avoid creating multiple copies of example apps, when can introduce parameters and reuse the same demo app
