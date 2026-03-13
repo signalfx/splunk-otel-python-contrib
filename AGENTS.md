@@ -205,7 +205,7 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 
 - Always start work from creating `.local/plan-<jira-ticket>-<feature-name>.md` (skip jira if not present)
   - start plan from a research industry standards (other instrumentation libraries, ai agentic frameworks, ai-focused observability products)
-  - plan sectiotns - project description, research, open questions that need human clarification, implementation plan for AI Coder.
+  - plan sections - project description, research, open questions that need human clarification, implementation plan for AI Coder.
 - after implementing a change - maintain a PR description for the change in `.local/pr-<jira-ticket>-<feature-name>.md` (skip jira if not present). Highlighte the changes, identify major parts requiring special attention. Update the file on code changes.
 - Maintain repo level `ARCHITECTURE.md`, `README.md`, and package level README to reflect the changes. Ensure user documentation added when needed.
 - Stage changes, do not commit without human review.
