@@ -49,6 +49,7 @@ from ..types import (
     ContentCapturingMode,
     EmbeddingInvocation,
     Error,
+    ErrorClassification,
     LLMInvocation,
     RetrievalInvocation,
     Step,
@@ -446,6 +447,32 @@ class SpanEmitter(EmitterMeta):
             if is_recording:
                 span.end()
 
+    def _apply_error_status(self, span: Span, error: Error) -> None:
+        """Apply span status based on error classification.
+
+        For INTERRUPT and CANCELLATION, we intentionally do NOT call
+        set_status() — leaving the span in its default UNSET state.
+        UNSET means "no error occurred" without the stronger assertion
+        of OK ("validated as successful"). This matches the OTel spec:
+        interrupts are not errors, but they are not successful completions.
+        """
+        classification = getattr(
+            error, "classification", ErrorClassification.REAL_ERROR
+        )
+        if classification == ErrorClassification.INTERRUPT:
+            # Leave status UNSET (default) — not an error, not a success
+            if span.is_recording():
+                span.set_attribute("gen_ai.interrupt", True)
+        elif classification == ErrorClassification.CANCELLATION:
+            # Leave status UNSET (default) — not an error
+            pass
+        else:
+            span.set_status(Status(StatusCode.ERROR, error.message))
+            if span.is_recording():
+                span.set_attribute(
+                    ErrorAttributes.ERROR_TYPE, error.type.__qualname__
+                )
+
     def on_error(
         self, error: Error, invocation: LLMInvocation | EmbeddingInvocation
     ) -> None:  # type: ignore[override]
@@ -465,11 +492,7 @@ class SpanEmitter(EmitterMeta):
             span = getattr(invocation, "span", None)
             if span is None:
                 return
-            span.set_status(Status(StatusCode.ERROR, error.message))
-            if span.is_recording():
-                span.set_attribute(
-                    ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-                )
+            self._apply_error_status(span, error)
             self._apply_finish_attrs(invocation)
             token = getattr(invocation, "context_token", None)
             if token is not None and hasattr(token, "__exit__"):
@@ -544,11 +567,7 @@ class SpanEmitter(EmitterMeta):
         span = workflow.span
         if span is None:
             return
-        span.set_status(Status(StatusCode.ERROR, error.message))
-        if span.is_recording():
-            span.set_attribute(
-                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-            )
+        self._apply_error_status(span, error)
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
@@ -653,11 +672,7 @@ class SpanEmitter(EmitterMeta):
         span = agent.span
         if span is None:
             return
-        span.set_status(Status(StatusCode.ERROR, error.message))
-        if span.is_recording():
-            span.set_attribute(
-                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-            )
+        self._apply_error_status(span, error)
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
@@ -728,13 +743,17 @@ class SpanEmitter(EmitterMeta):
         span = step.span
         if span is None:
             return
-        span.set_status(Status(StatusCode.ERROR, error.message))
-        if span.is_recording():
-            span.set_attribute(
-                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-            )
-        # Update status to failed
-        span.set_attribute(GEN_AI_STEP_STATUS, "failed")
+        self._apply_error_status(span, error)
+        # Update step status based on error classification
+        classification = getattr(
+            error, "classification", ErrorClassification.REAL_ERROR
+        )
+        if classification == ErrorClassification.INTERRUPT:
+            span.set_attribute(GEN_AI_STEP_STATUS, "interrupted")
+        elif classification == ErrorClassification.CANCELLATION:
+            span.set_attribute(GEN_AI_STEP_STATUS, "cancelled")
+        else:
+            span.set_attribute(GEN_AI_STEP_STATUS, "failed")
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
@@ -811,12 +830,8 @@ class SpanEmitter(EmitterMeta):
         span = tool.span
         if span is None:
             return
-        span.set_status(Status(StatusCode.ERROR, error.message))
+        self._apply_error_status(span, error)
         if span.is_recording():
-            # Set error type from the error object
-            span.set_attribute(
-                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-            )
             # Apply all semconv attributes
             _apply_tool_semconv_attributes(span, tool, self._capture_content)
             # Apply any supplemental custom attributes
@@ -889,11 +904,7 @@ class SpanEmitter(EmitterMeta):
         span = embedding.span
         if span is None:
             return
-        span.set_status(Status(StatusCode.ERROR, error.message))
-        if span.is_recording():
-            span.set_attribute(
-                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-            )
+        self._apply_error_status(span, error)
         # Set error type from invocation if available
         if embedding.error_type:
             span.set_attribute(
@@ -964,11 +975,7 @@ class SpanEmitter(EmitterMeta):
         span = retrieval.span
         if span is None:
             return
-        span.set_status(Status(StatusCode.ERROR, error.message))
-        if span.is_recording():
-            span.set_attribute(
-                ErrorAttributes.ERROR_TYPE, error.type.__qualname__
-            )
+        self._apply_error_status(span, error)
         # Set error type from invocation if available
         if retrieval.error_type:
             span.set_attribute(

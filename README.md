@@ -29,6 +29,7 @@ Implemented dataclasses (in `types.py`):
 - `Step`
 - `ToolCall`
 - `EvaluationResult`
+- `ErrorClassification` — enum (`REAL_ERROR`, `INTERRUPT`, `CANCELLATION`) governing span status behavior
 
 Base dataclass:  – fields include timing (`start_time`, `end_time`), identity (`run_id`, `parent_run_id`), context (`provider`, `framework`, `agent_*`, `system`, `conversation_id`, `data_source_id`), plus `attributes: dict[str, Any]` for free-form metadata.
 
@@ -109,6 +110,22 @@ Supported modes: `append`, `prepend`, `replace-category` (alias `replace`), `rep
 ### 3.7 Error Handling
 
 CompositeEmitter wraps all emitter calls; failures are debug‑logged. Error metrics hook (`genai.emitter.errors`) is **not yet implemented** (planned enhancement).
+
+#### Error Classification
+
+The `Error` dataclass includes a `classification` field (`ErrorClassification` enum) that controls how the span emitter sets span status:
+
+| Classification | Span Status | Use Case |
+|----------------|-------------|----------|
+| `REAL_ERROR` (default) | `ERROR` with description | Genuine failures |
+| `INTERRUPT` | `UNSET` (default) + `gen_ai.interrupt=true` | Framework-level interrupts (e.g., LangGraph `GraphInterrupt`) requiring human input |
+| `CANCELLATION` | `UNSET` (default) | Task cancellations (`asyncio.CancelledError`) |
+
+For `INTERRUPT` and `CANCELLATION`, `set_status()` is intentionally **not called** — the span retains its default `UNSET` status. Per the [OTel Trace Spec](https://opentelemetry.io/docs/specs/otel/trace/api/#set-status), `UNSET` means "no error" without the stronger assertion of `OK` ("validated as successfully completed"). Most backends treat both `UNSET` and `OK` as non-error for alerting purposes.
+
+Instrumentation libraries classify errors by inspecting exception type hierarchies. For example, the LangChain instrumentation recognizes `GraphInterrupt`, `NodeInterrupt`, and `Interrupt` as interrupt types, and `CancelledError` / `TaskCancelledError` as cancellation types — without importing LangGraph (uses type name string matching).
+
+Step spans additionally set `gen_ai.step.status` to `interrupted` or `cancelled` for non-error classifications.
 
 ## 4. Built-In Telemetry Emitters
 
@@ -349,6 +366,7 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 - Content capture gated by experimental opt-in to prevent accidental large data egress.
 - Single content event per invocation reduces volume.
 - Invocation-type filtering occurs before heavy serialization.
+- Error classification (`INTERRUPT`, `CANCELLATION`) prevents false-positive error alerts on expected control-flow exceptions.
 
 ## 12. Shared Utilities
 

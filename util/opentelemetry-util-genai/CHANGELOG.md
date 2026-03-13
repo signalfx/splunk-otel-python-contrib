@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.11
+
+### Added
+- **Error classification for interrupt/resume support** — New `ErrorClassification` enum (`REAL_ERROR`, `INTERRUPT`, `CANCELLATION`) on `Error` dataclass enables classification-aware span status. Interrupts and cancellations leave span status as `UNSET` (default) instead of setting `StatusCode.ERROR`.
+- **Classification-aware step status** — `_error_step` now sets `gen_ai.step.status` to `"interrupted"`, `"cancelled"`, or `"failed"` based on error classification.
+
 ## Version 0.1.10 - 2026-03-04
 
 ### Added

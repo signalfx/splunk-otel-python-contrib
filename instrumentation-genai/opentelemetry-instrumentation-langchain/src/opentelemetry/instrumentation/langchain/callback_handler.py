@@ -24,7 +24,34 @@ from opentelemetry.util.genai.types import (
     Text,
     ToolCall,
     Error as GenAIError,
+    ErrorClassification,
 )
+
+# Error type names that indicate flow-control, not real errors.
+# Uses type name strings to avoid importing LangGraph at instrumentation time.
+_INTERRUPT_TYPE_NAMES = frozenset(
+    {
+        "GraphInterrupt",
+        "NodeInterrupt",
+        "Interrupt",
+    }
+)
+_CANCELLATION_TYPE_NAMES = frozenset(
+    {
+        "CancelledError",
+        "TaskCancelledError",
+    }
+)
+
+
+def _classify_error(error: BaseException) -> ErrorClassification:
+    """Classify an exception as a real error, interrupt, or cancellation."""
+    for cls in type(error).__mro__:
+        if cls.__name__ in _INTERRUPT_TYPE_NAMES:
+            return ErrorClassification.INTERRUPT
+        if cls.__name__ in _CANCELLATION_TYPE_NAMES:
+            return ErrorClassification.CANCELLATION
+    return ErrorClassification.REAL_ERROR
 
 
 def _safe_str(value: Any) -> str:
@@ -738,8 +765,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         self._handler.stop_tool_call(tool)
 
     def _fail(self, run_id: UUID, error: BaseException) -> None:
+        classification = _classify_error(error)
         self._handler.fail_by_run_id(
-            run_id, GenAIError(message=str(error), type=type(error))
+            run_id,
+            GenAIError(
+                message=str(error),
+                type=type(error),
+                classification=classification,
+            ),
         )
 
     def on_llm_error(
