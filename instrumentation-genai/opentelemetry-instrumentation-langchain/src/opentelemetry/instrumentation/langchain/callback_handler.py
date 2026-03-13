@@ -7,7 +7,7 @@ Complex logic removed (agent heuristics, child counting, prompt capture, events)
 from __future__ import annotations
 
 import json
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -243,6 +243,40 @@ def _extract_tool_details(
     }
 
 
+def _agent_span_id(agent: AgentInvocation) -> Optional[str]:
+    """Return the agent's span ID as a hex string, if available."""
+    if agent.span_id is not None:
+        return f"{agent.span_id:016x}"
+    return None
+
+
+class _InvocationManager:
+    """Local store mapping LangChain run_ids to GenAI invocation objects.
+
+    Keyed by LangChain's own run_id UUID (from callback API), not the
+    GenAI run_id field. Tracks parent-child relationships so the parent
+    chain can be walked without a central registry.
+    """
+
+    def __init__(self) -> None:
+        self._invocations: Dict[UUID, Any] = {}
+        self._parents: Dict[UUID, Optional[UUID]] = {}
+
+    def add(self, run_id: UUID, parent_run_id: Optional[UUID], invocation: Any) -> None:
+        self._invocations[run_id] = invocation
+        self._parents[run_id] = parent_run_id
+
+    def get(self, run_id: UUID) -> Any:
+        return self._invocations.get(run_id)
+
+    def get_parent_id(self, run_id: UUID) -> Optional[UUID]:
+        return self._parents.get(run_id)
+
+    def remove(self, run_id: UUID) -> None:
+        self._invocations.pop(run_id, None)
+        self._parents.pop(run_id, None)
+
+
 class LangchainCallbackHandler(BaseCallbackHandler):
     def __init__(
         self,
@@ -250,18 +284,19 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         super().__init__()
         self._handler = telemetry_handler
+        self._invocation_manager = _InvocationManager()
 
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
         visited = set()
         while current is not None and current not in visited:
             visited.add(current)
-            entity = self._handler.get_entity(current)
+            entity = self._invocation_manager.get(current)
             if isinstance(entity, AgentInvocation):
                 return entity
             if entity is None:
                 break
-            current = getattr(entity, "parent_run_id", None)
+            current = self._invocation_manager.get_parent_id(current)
         return None
 
     def _start_agent_invocation(
@@ -278,12 +313,10 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> AgentInvocation:
         agent = AgentInvocation(
             name=name,
-            run_id=run_id,
             attributes=attrs,
         )
         agent.input_messages = _make_input_message(inputs)
         agent.agent_name = _safe_str(agent_name) if agent_name else name
-        agent.parent_run_id = parent_run_id
         agent.framework = "langchain"
         if conversation_id:
             agent.conversation_id = conversation_id
@@ -295,6 +328,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if metadata.get("system"):
                 agent.system = _safe_str(metadata["system"])
         self._handler.start_agent(agent)
+        self._invocation_manager.add(run_id, parent_run_id, agent)
         return agent
 
     def on_chain_start(
@@ -338,11 +372,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     conversation_id=inferred_conv_id,
                 )
             else:
-                wf = Workflow(name=name, run_id=run_id, attributes=attrs)
+                wf = Workflow(name=name, attributes=attrs)
                 wf.input_messages = _make_input_message(inputs)
                 if inferred_conv_id:
                     wf.conversation_id = inferred_conv_id
                 self._handler.start_workflow(wf)
+                self._invocation_manager.add(run_id, None, wf)
             return
         else:
             context_agent = self._find_nearest_agent(parent_run_id)
@@ -369,7 +404,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     return
             tool_info = _extract_tool_details(metadata)
             if tool_info is not None:
-                existing = self._handler.get_entity(run_id)
+                existing = self._invocation_manager.get(run_id)
                 if isinstance(existing, ToolCall):
                     tool = existing
                     if context_agent is not None:
@@ -379,7 +414,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         if not getattr(tool, "agent_name", None):
                             tool.agent_name = _safe_str(agent_name_value)
                         if not getattr(tool, "agent_id", None):
-                            tool.agent_id = str(context_agent.run_id)
+                            tool.agent_id = _agent_span_id(context_agent)
                 else:
                     # Filter out tool-specific metadata from attributes
                     # since they're stored in dedicated fields
@@ -397,15 +432,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         name=tool_info.get("name", name),
                         id=tool_info.get("id"),
                         arguments=arguments,
-                        run_id=run_id,
-                        parent_run_id=parent_run_id,
                         attributes=tool_attrs,
                     )
                     tool.framework = "langchain"
                     if context_agent is not None and context_agent_name is not None:
                         tool.agent_name = context_agent_name
-                        tool.agent_id = str(context_agent.run_id)
+                        tool.agent_id = _agent_span_id(context_agent)
                     self._handler.start_tool_call(tool)
+                    self._invocation_manager.add(run_id, parent_run_id, tool)
                 if inputs is not None and getattr(tool, "arguments", None) is None:
                     tool.arguments = inputs
                 if getattr(tool, "arguments", None) is not None:
@@ -415,16 +449,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             else:
                 step = Step(
                     name=name,
-                    run_id=run_id,
-                    parent_run_id=parent_run_id,
                     step_type="chain",
                     attributes=attrs,
                 )
                 if context_agent is not None:
                     if context_agent_name is not None:
                         step.agent_name = context_agent_name
-                    step.agent_id = str(context_agent.run_id)
+                    step.agent_id = _agent_span_id(context_agent)
                 self._handler.start_step(step)
+                self._invocation_manager.add(run_id, parent_run_id, step)
 
     def on_chain_end(
         self,
@@ -434,7 +467,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_kwargs: Any,
     ) -> None:
-        entity = self._handler.get_entity(run_id)
+        entity = self._invocation_manager.get(run_id)
         if entity is None:
             return
         if isinstance(entity, Workflow):
@@ -461,6 +494,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if serialized is not None:
                 entity.attributes.setdefault("tool.response", serialized)
             self._handler.stop_tool_call(entity)
+        self._invocation_manager.remove(run_id)
 
     def on_chat_model_start(
         self,
@@ -546,8 +580,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             request_model=request_model,
             input_messages=input_messages,
             attributes=attrs,
-            run_id=run_id,
-            parent_run_id=parent_run_id,
         )
         if provider:
             inv.provider = provider
@@ -556,8 +588,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if context_agent is not None:
                 agent_name_value = context_agent.agent_name or context_agent.name
                 inv.agent_name = _safe_str(agent_name_value)
-                inv.agent_id = str(context_agent.run_id)
+                inv.agent_id = _agent_span_id(context_agent)
         self._handler.start_llm(inv)
+        self._invocation_manager.add(run_id, parent_run_id, inv)
 
     def on_llm_start(
         self,
@@ -580,7 +613,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             metadata=metadata,
             **extra,
         )
-        inv = self._handler.get_entity(run_id)
+        inv = self._invocation_manager.get(run_id)
         if isinstance(inv, LLMInvocation):
             inv.operation = "generate_text"
 
@@ -592,7 +625,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_kwargs: Any,
     ) -> None:
-        inv = self._handler.get_entity(run_id)
+        inv = self._invocation_manager.get(run_id)
         if not isinstance(inv, LLMInvocation):
             return
         generations = getattr(response, "generations", [])
@@ -645,6 +678,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     break
 
         self._handler.stop_llm(inv)
+        self._invocation_manager.remove(run_id)
 
     def on_tool_start(
         self,
@@ -684,7 +718,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         else:
             id_value = None
         arguments: Any = inputs if inputs is not None else input_str
-        existing = self._handler.get_entity(run_id)
+        existing = self._invocation_manager.get(run_id)
         if isinstance(existing, ToolCall):
             if arguments is not None:
                 existing.arguments = arguments
@@ -697,7 +731,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 ):
                     existing.agent_name = context_agent_name
                 if not getattr(existing, "agent_id", None):
-                    existing.agent_id = str(context_agent.run_id)
+                    existing.agent_id = _agent_span_id(context_agent)
             if existing.framework is None:
                 existing.framework = "langchain"
             return
@@ -705,14 +739,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             name=name,
             id=id_value,
             arguments=arguments,
-            run_id=run_id,
-            parent_run_id=parent_run_id,
             attributes=attrs,
         )
         tool.framework = "langchain"
         if context_agent is not None and context_agent_name is not None:
             tool.agent_name = context_agent_name
-            tool.agent_id = str(context_agent.run_id)
+            tool.agent_id = _agent_span_id(context_agent)
         if arguments is not None:
             serialized_args = _serialize(arguments)
             if serialized_args is not None:
@@ -720,6 +752,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if inputs is None and input_str:
             tool.attributes.setdefault("tool.input_str", _safe_str(input_str))
         self._handler.start_tool_call(tool)
+        self._invocation_manager.add(run_id, parent_run_id, tool)
 
     def on_tool_end(
         self,
@@ -729,18 +762,31 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_kwargs: Any,
     ) -> None:
-        tool = self._handler.get_entity(run_id)
+        tool = self._invocation_manager.get(run_id)
         if not isinstance(tool, ToolCall):
             return
         serialized = _serialize(output)
         if serialized is not None:
             tool.attributes.setdefault("tool.response", serialized)
         self._handler.stop_tool_call(tool)
+        self._invocation_manager.remove(run_id)
 
     def _fail(self, run_id: UUID, error: BaseException) -> None:
-        self._handler.fail_by_run_id(
-            run_id, GenAIError(message=str(error), type=type(error))
-        )
+        entity = self._invocation_manager.get(run_id)
+        if entity is None:
+            return
+        genai_error = GenAIError(message=str(error), type=type(error))
+        if isinstance(entity, Workflow):
+            self._handler.fail_workflow(entity, genai_error)
+        elif isinstance(entity, AgentInvocation):
+            self._handler.fail_agent(entity, genai_error)
+        elif isinstance(entity, Step):
+            self._handler.fail_step(entity, genai_error)
+        elif isinstance(entity, LLMInvocation):
+            self._handler.fail_llm(entity, genai_error)
+        elif isinstance(entity, ToolCall):
+            self._handler.fail_tool_call(entity, genai_error)
+        self._invocation_manager.remove(run_id)
 
     def on_llm_error(
         self,

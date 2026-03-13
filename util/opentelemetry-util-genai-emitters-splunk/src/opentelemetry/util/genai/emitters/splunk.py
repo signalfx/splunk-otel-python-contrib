@@ -451,7 +451,11 @@ class SplunkEvaluationResultsEmitter(EmitterMeta):
             description = getattr(invocation, "description", None)
             if description:
                 attrs["gen_ai.agent.description"] = description
-            attrs["gen_ai.agent.id"] = str(invocation.run_id)
+            attrs["gen_ai.agent.id"] = (
+                f"{invocation.span_id:016x}"
+                if invocation.span_id is not None
+                else str(id(invocation))
+            )
 
         # Evaluation results array
         evaluations: list[Dict[str, Any]] = []

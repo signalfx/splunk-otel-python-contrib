@@ -1,5 +1,5 @@
 OpenTelemetry LlamaIndex Instrumentation Example (Zero-Code)
-===========================================================
+============================================================
 
 This is an example of how to instrument LlamaIndex calls using zero-code
 instrumentation with :code:`opentelemetry-instrument`.

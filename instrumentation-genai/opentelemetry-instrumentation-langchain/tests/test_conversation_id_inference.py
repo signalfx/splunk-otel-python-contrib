@@ -68,27 +68,27 @@ class _StubTelemetryHandler:
 
     def start_agent(self, agent):
         self.started_agents.append(agent)
-        self.entities[str(agent.run_id)] = agent
+        self.entities[id(agent)] = agent
         return agent
 
     def stop_agent(self, agent):
         self.stopped_agents.append(agent)
-        self.entities.pop(str(agent.run_id), None)
+        self.entities.pop(id(agent), None)
         return agent
 
     def fail_agent(self, agent, error):
         self.failed_agents.append((agent, error))
-        self.entities.pop(str(agent.run_id), None)
+        self.entities.pop(id(agent), None)
         return agent
 
     def start_llm(self, invocation):
         self.started_llms.append(invocation)
-        self.entities[str(invocation.run_id)] = invocation
+        self.entities[id(invocation)] = invocation
         return invocation
 
     def stop_llm(self, invocation):
         self.stopped_llms.append(invocation)
-        self.entities.pop(str(invocation.run_id), None)
+        self.entities.pop(id(invocation), None)
         return invocation
 
     def evaluate_llm(self, invocation):
@@ -96,56 +96,55 @@ class _StubTelemetryHandler:
 
     def start_tool_call(self, call):
         self.started_tools.append(call)
-        self.entities[str(call.run_id)] = call
+        self.entities[id(call)] = call
         return call
 
     def stop_tool_call(self, call):
         self.stopped_tools.append(call)
-        self.entities.pop(str(call.run_id), None)
+        self.entities.pop(id(call), None)
         return call
 
     def fail_tool_call(self, call, error):
         self.failed_tools.append((call, error))
-        self.entities.pop(str(call.run_id), None)
+        self.entities.pop(id(call), None)
         return call
 
     def start_step(self, step):
         self.started_steps.append(step)
-        self.entities[str(step.run_id)] = step
+        self.entities[id(step)] = step
         return step
 
     def stop_step(self, step):
         self.stopped_steps.append(step)
-        self.entities.pop(str(step.run_id), None)
+        self.entities.pop(id(step), None)
         return step
 
     def fail_step(self, step, error):
         self.failed_steps.append((step, error))
-        self.entities.pop(str(step.run_id), None)
+        self.entities.pop(id(step), None)
         return step
 
     def start_workflow(self, workflow):
         self.started_workflows.append(workflow)
-        self.entities[str(workflow.run_id)] = workflow
+        self.entities[id(workflow)] = workflow
         return workflow
 
     def stop_workflow(self, workflow):
         self.stopped_workflows.append(workflow)
-        self.entities.pop(str(workflow.run_id), None)
+        self.entities.pop(id(workflow), None)
         return workflow
 
     def fail_workflow(self, workflow, error):
-        self.entities.pop(str(workflow.run_id), None)
+        self.entities.pop(id(workflow), None)
         return workflow
 
     def fail_by_run_id(self, run_id, error):
-        entity = self.entities.get(str(run_id))
-        if entity is None:
-            return
-        self.fail_agent(entity, error)
+        # run_id no longer exists, this is a no-op stub
+        pass
 
     def get_entity(self, run_id):
-        return self.entities.get(str(run_id))
+        # run_id no longer exists, return None
+        return None
 
 
 @pytest.fixture(name="handler_with_stub")

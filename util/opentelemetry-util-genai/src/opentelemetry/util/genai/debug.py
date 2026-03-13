@@ -92,12 +92,9 @@ def summarize_genai(obj: Any) -> str:
     cls_name = obj.__class__.__name__
     parts: list[str] = [cls_name]
     # Common identifiers
-    run_id = getattr(obj, "run_id", None)
-    if run_id is not None:
-        parts.append(f"run_id={run_id}")
-    parent_run_id = getattr(obj, "parent_run_id", None)
-    if parent_run_id is not None:
-        parts.append(f"parent_run_id={parent_run_id}")
+    span_id = getattr(obj, "span_id", None)
+    if span_id is not None:
+        parts.append(f"span_id={span_id:016x}")
     provider = getattr(obj, "provider", None)
     if provider:
         parts.append(f"provider={provider}")

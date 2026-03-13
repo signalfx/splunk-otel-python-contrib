@@ -166,10 +166,17 @@ def run_mock_agent_with_telemetry(question: str) -> str:
     agent_invocation.attributes["agent.temperature"] = mocked[
         "invocation_params"
     ]["temperature"]
+    # Set agent_id from handler once started
+    if getattr(agent_invocation, "agent_id", None) is None:
+        pass  # agent_id will be set from span_id by handler
 
     agent_invocation = handler.start_agent(agent_invocation)
     if getattr(agent_invocation, "agent_id", None) is None:
-        agent_invocation.agent_id = str(agent_invocation.run_id)
+        agent_invocation.agent_id = (
+            f"{agent_invocation.span_id:016x}"
+            if agent_invocation.span_id is not None
+            else None
+        )
     trace_id = getattr(agent_invocation, "trace_id", None)
 
     print(f"\n{'=' * 80}")
@@ -207,8 +214,6 @@ def run_mock_agent_with_telemetry(question: str) -> str:
         response_finish_reasons=[mocked["finish_reason"]],
         response_system_fingerprint=mocked["system_fingerprint"],
         request_service_tier=mocked["invocation_params"]["service_tier"],
-        run_id=mocked["llm_run_id"],
-        parent_run_id=agent_invocation.run_id,
         agent_name=agent_invocation.name,
         agent_id=getattr(agent_invocation, "agent_id", None),
     )

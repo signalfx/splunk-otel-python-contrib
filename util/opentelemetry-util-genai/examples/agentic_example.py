@@ -123,7 +123,6 @@ def simulate_multi_agent_workflow():
         framework="custom",
         model="gpt-5-nano",
         input_context="User query: My order hasn't arrived yet",
-        run_id=classifier_agent.run_id,  # Link to created agent
     )
     handler.start_agent(classifier_invocation)
     time.sleep(0.1)
@@ -159,7 +158,9 @@ def simulate_multi_agent_workflow():
         ],
         # Agent context - links this LLM call to the agent
         agent_name="classifier_agent",
-        agent_id=str(classifier_agent.run_id),
+        agent_id=f"{classifier_agent.span_id:016x}"
+        if classifier_agent.span_id is not None
+        else None,
     )
     handler.start_llm(llm_invocation)
     time.sleep(0.1)
@@ -208,7 +209,6 @@ def simulate_multi_agent_workflow():
         framework="custom",
         model="gpt-5-nano",
         input_context="Handle order_status query: My order hasn't arrived yet",
-        run_id=support_agent.run_id,
     )
     handler.start_agent(support_invocation)
     time.sleep(0.1)
@@ -275,7 +275,9 @@ def simulate_multi_agent_workflow():
         ],
         # Agent context
         agent_name="support_agent",
-        agent_id=str(support_agent.run_id),
+        agent_id=f"{support_agent.span_id:016x}"
+        if support_agent.span_id is not None
+        else None,
     )
     handler.start_llm(support_llm)
     time.sleep(0.1)

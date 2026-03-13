@@ -68,7 +68,10 @@ class WorkflowEventInstrumentor:
         )
 
         self._current_agent = current_agent
-        self._agent_scope = str(getattr(current_agent, "run_id", id(current_agent)))
+        span_id = getattr(current_agent, "span_id", None)
+        self._agent_scope = (
+            f"{span_id:016x}" if span_id is not None else str(id(current_agent))
+        )
         self._active_agents = {}
         self._current_agent_key = None
         self._workflow_name = None
@@ -178,14 +181,16 @@ class WorkflowEventInstrumentor:
                         tool_call.agent_name = _normalize_agent_name(
                             active_agent.agent_name
                         )
-                        tool_call.agent_id = str(active_agent.run_id)
+                        if getattr(active_agent, "span_id", None):
+                            tool_call.agent_id = f"{active_agent.span_id:016x}"
                         if hasattr(active_agent, "span") and active_agent.span:
                             tool_call.parent_span = active_agent.span
                     elif self._current_agent:
                         tool_call.agent_name = _normalize_agent_name(
                             self._current_agent.agent_name
                         )
-                        tool_call.agent_id = str(self._current_agent.run_id)
+                        if getattr(self._current_agent, "span_id", None):
+                            tool_call.agent_id = f"{self._current_agent.span_id:016x}"
                         if (
                             hasattr(self._current_agent, "span")
                             and self._current_agent.span
