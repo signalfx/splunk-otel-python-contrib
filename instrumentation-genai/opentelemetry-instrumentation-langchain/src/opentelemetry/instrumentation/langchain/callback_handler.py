@@ -13,7 +13,12 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, BaseMessage, AIMessage
 from langchain_core.outputs import LLMResult
-from opentelemetry.util.genai.handler import TelemetryHandler, get_genai_context
+from opentelemetry.util.genai.handler import (
+    GenAIContext,
+    TelemetryHandler,
+    get_genai_context,
+    set_genai_context,
+)
 from opentelemetry.util.genai.types import (
     Workflow,
     Step,
@@ -277,6 +282,18 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         super().__init__()
         self._handler = telemetry_handler
+        # Tracks ContextVar state before we push an inferred conversation_id
+        # so it can be restored when the root entity finishes.
+        self._inferred_context_prev: dict[UUID, GenAIContext | None] = {}
+
+    def _restore_inferred_context(self, run_id: UUID) -> None:
+        """Restore ContextVar state pushed in on_chain_start for inferred conversation_id."""
+        prev = self._inferred_context_prev.pop(run_id, None)
+        if prev is not None:
+            set_genai_context(
+                conversation_id=prev.conversation_id,
+                properties=prev.properties if prev.properties else None,
+            )
 
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
@@ -352,6 +369,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             ctx = get_genai_context()
             if not ctx.conversation_id:
                 inferred_conv_id = _infer_conversation_id(metadata)
+
+            # Push the inferred conversation_id into the ContextVar so
+            # _apply_genai_context() propagates it to ALL child entities
+            # (LLM calls, tools, steps, nested agents).  Save previous
+            # state so we can restore it when the root entity finishes.
+            if inferred_conv_id:
+                self._inferred_context_prev[run_id] = ctx
+                set_genai_context(conversation_id=inferred_conv_id)
 
             if _is_agent_root(tags, metadata):
                 self._start_agent_invocation(
@@ -464,6 +489,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         entity = self._handler.get_entity(run_id)
         if entity is None:
             return
+
+        self._restore_inferred_context(run_id)
         if isinstance(entity, Workflow):
             output_msgs = _make_last_output_message(outputs)
             if output_msgs:
@@ -793,6 +820,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_: Any,
     ) -> None:
+        self._restore_inferred_context(run_id)
         self._fail(run_id, error)
 
     def on_tool_error(

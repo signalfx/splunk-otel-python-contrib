@@ -34,7 +34,8 @@ graph LR
     A[Alert] --> B[Triage Agent]
     B --> C[Investigation Agent]
     C --> D[Action Planner Agent]
-    D --> E[Quality Gate Agent]
+    D --> HR{Human Review}
+    HR -->|approved| E[Quality Gate Agent]
     E --> F[Artifacts]
 
     C --> G[MCP Tools]
@@ -42,9 +43,12 @@ graph LR
     D --> I[Task Writer]
 ```
 
+When `--enable-interrupt` is used, the workflow pauses at **Human Review** after the Action Planner produces a mitigation plan. A second invocation with `--resume` continues through Quality Gate.
+
 ## Features
 
 - **Multi-Agent Orchestration**: 4 agents working in sequence with LangGraph
+- **Interrupt/Resume**: Human-in-the-loop review with persistent state across separate process invocations (SQLite checkpointer)
 - **MCP Tools**: Observability tools exposed via MCP protocol
 - **Agent-as-MCP-Tool**: Investigation Agent can be called as an MCP tool
 - **RAG with Citations**: Runbook search with vector embeddings and citations
@@ -227,6 +231,88 @@ python main.py --scenario scenario-001
 python main.py --scenario scenario-001 --manual-instrumentation
 ```
 
+### Run with Interrupt/Resume (Human-in-the-Loop)
+
+The workflow can pause after the Action Planner for human review of the
+proposed mitigation plan. Two distinct telemetry traces are produced under
+the same `gen_ai.conversation.id`:
+
+| Trace | Nodes executed |
+|-------|----------------|
+| Trace 1 (interrupt) | triage → action_planner → ⏸️ pause |
+| Trace 2 (resume)    | human_review → quality_gate → ✅ done |
+
+#### Single-process simulation (recommended)
+
+Use `--simulate-interrupt-resume` to run both phases in one Python
+process.  The interrupt fires for real (via LangGraph `interrupt()`),
+then the script auto-approves and resumes.  Use `--wait-after-completion`
+to keep the process alive so LLM-as-a-judge evaluations can finish
+exporting telemetry for **both** traces.
+
+```bash
+python main.py --scenario scenario-001 --simulate-interrupt-resume \
+    --conversation-id troubleshooting-chat-1 \
+    --manual-instrumentation --wait-after-completion 300
+```
+
+To reject the mitigation plan instead:
+
+```bash
+python main.py --scenario scenario-001 --simulate-interrupt-resume \
+    --reject --feedback "add rollback step" \
+    --conversation-id troubleshooting-chat-1 \
+    --manual-instrumentation --wait-after-completion 300
+```
+
+#### Cross-process interrupt/resume
+
+State is persisted to SQLite so the resume can also happen in a
+**separate** process invocation:
+
+```bash
+CONVERSATION_ID="troubleshooting-chat-1"
+
+# Invocation 1 — run until interrupt
+python main.py --scenario scenario-001 --enable-interrupt \
+    --conversation-id $CONVERSATION_ID \
+    --manual-instrumentation --wait-after-completion 5
+
+# Invocation 2 — resume with approval
+python main.py --scenario scenario-001 --resume --approve \
+    --conversation-id $CONVERSATION_ID \
+    --manual-instrumentation --wait-after-completion 5
+```
+
+#### Resume options
+
+| Flag | Description |
+|------|-------------|
+| `--resume --approve` | Approve the mitigation plan (non-interactive) |
+| `--resume --reject` | Reject the mitigation plan (non-interactive) |
+| `--resume --reject --feedback "add rollback step"` | Reject with feedback |
+| `--resume` | Interactive prompt for approval |
+
+The interrupt command prints the exact resume commands to copy-paste.
+
+#### Invocation Example Script
+
+A standalone script with programmatic instrumentation setup that runs
+both phases in a single process:
+
+```bash
+# Auto-approve, wait 300 s for evals
+python invocation_example.py --scenario scenario-001 --auto-approve \
+    --wait-after-completion 300
+
+# Auto-reject with feedback
+python invocation_example.py --scenario scenario-001 --auto-reject \
+    --feedback "add rollback step for database connections"
+
+# Interactive
+python invocation_example.py --scenario scenario-001
+```
+
 ### Run Simulation with Drift
 
 **Make sure the venv is activated first:**
@@ -293,8 +379,10 @@ kubectl apply -f k8s-cronjob.yaml
 
 | File                                   | Purpose                                                    |
 | -------------------------------------- | ---------------------------------------------------------- |
-| `main.py`                              | Workflow orchestration, artifact generation                |
+| `main.py`                              | Workflow orchestration, interrupt/resume, artifact generation |
+| `invocation_example.py`                | Standalone interrupt/resume example with manual instrumentation |
 | `agents.py`                            | Triage, Investigation, Action Planner, Quality Gate agents |
+| `incident_types.py`                    | `IncidentState` TypedDict (includes `human_review_decision`) |
 | `tools.py`                             | LangChain tools including MCP tool wrappers                |
 | `mcp_tools/observability_tools.py`     | MCP server for metrics/logs/traces                         |
 | `mcp_tools/investigation_agent_mcp.py` | Investigation Agent as MCP tool                            |
@@ -325,3 +413,4 @@ kubectl apply -f k8s-cronjob.yaml
 | `ARTIFACTS_DIR`               | Artifacts directory            | `artifacts`            |
 | `CONFIDENCE_THRESHOLD`        | Minimum confidence for actions | `0.7`                  |
 | `EVIDENCE_COUNT_THRESHOLD`    | Minimum evidence pieces        | `3`                    |
+| `SRE_COPILOT_INTERRUPT`       | Enable interrupt mode          | `false`                |

@@ -30,6 +30,7 @@ from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: 
 )
 from opentelemetry.util.genai.handler import (  # noqa: E402
     clear_genai_context,
+    get_genai_context,
     set_genai_context,
 )
 from opentelemetry.util.genai.types import (  # noqa: E402
@@ -398,3 +399,134 @@ class TestAgentConversationIdInference:
 
         agent = stub.started_agents[-1]
         assert agent.conversation_id == "conv-priority"
+
+
+# ── Propagation tests: ContextVar lifecycle ────────────────────────
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+class TestConversationIdContextVarPropagation:
+    """Verify that inferred conversation_id is pushed into the ContextVar
+    so children (LLM, tool, step) inherit it via _apply_genai_context."""
+
+    def test_contextvar_set_on_workflow_start(self, handler_with_stub):
+        """After on_chain_start with thread_id, ContextVar should hold
+        the inferred conversation_id."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "session-999"},
+        )
+
+        ctx = get_genai_context()
+        assert ctx.conversation_id == "session-999"
+
+    def test_contextvar_restored_on_workflow_end(self, handler_with_stub):
+        """After on_chain_end for the root workflow, the ContextVar should
+        be restored to its previous (empty) state."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "session-999"},
+        )
+
+        # ContextVar is set during the workflow
+        assert get_genai_context().conversation_id == "session-999"
+
+        handler.on_chain_end(
+            outputs={"final": "result"},
+            run_id=wf_run_id,
+        )
+
+        # ContextVar should be restored to empty
+        assert get_genai_context().conversation_id is None
+
+    def test_contextvar_restored_on_chain_error(self, handler_with_stub):
+        """ContextVar should be restored even when the root chain errors."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "session-err"},
+        )
+
+        assert get_genai_context().conversation_id == "session-err"
+
+        handler.on_chain_error(
+            error=RuntimeError("boom"),
+            run_id=wf_run_id,
+        )
+
+        assert get_genai_context().conversation_id is None
+
+    def test_contextvar_not_set_when_explicit_context_active(self, handler_with_stub):
+        """When explicit genai_context is active, inferred thread_id should
+        NOT overwrite the ContextVar."""
+        handler, stub = handler_with_stub
+
+        set_genai_context(conversation_id="explicit-override")
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "inferred-should-be-ignored"},
+        )
+
+        # Explicit context should remain untouched
+        assert get_genai_context().conversation_id == "explicit-override"
+
+    def test_contextvar_set_on_agent_start(self, handler_with_stub):
+        """Inferred conversation_id should also push to ContextVar for agents."""
+        handler, stub = handler_with_stub
+
+        agent_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "AgentExecutor"},
+            inputs={"messages": [HumanMessage(content="test")]},
+            run_id=agent_run_id,
+            tags=["agent"],
+            metadata={"agent_name": "test_agent", "thread_id": "agent-session-1"},
+        )
+
+        ctx = get_genai_context()
+        assert ctx.conversation_id == "agent-session-1"
+
+    def test_contextvar_preserves_prior_context(self, handler_with_stub):
+        """When a previous non-empty context exists and no explicit
+        conversation_id is set, the inferred value should be used —
+        but the prior context should be restored on end."""
+        handler, stub = handler_with_stub
+
+        # No explicit conversation_id, but set some properties
+        # (this means ctx.conversation_id is None, so inference should run)
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "new-session"},
+        )
+
+        assert get_genai_context().conversation_id == "new-session"
+
+        handler.on_chain_end(
+            outputs={"done": True},
+            run_id=wf_run_id,
+        )
+
+        # Should be restored
+        assert get_genai_context().conversation_id is None
