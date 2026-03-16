@@ -429,6 +429,18 @@ def _get_agent_name_from_context() -> str:
     return ""
 
 
+def _get_provider_name_from_context() -> Optional[str]:
+    """Read gen_ai.provider.name from the current active span, if available."""
+    try:
+        span = trace.get_current_span()
+        if span and hasattr(span, "attributes"):
+            value = span.attributes.get("gen_ai.provider.name", "")
+            return value if value else None
+    except Exception:
+        pass
+    return None
+
+
 # ============================================================================
 # SDK Mode Wrappers - ChatInspectionClient
 # ============================================================================
@@ -445,6 +457,7 @@ def _wrap_chat_inspect_prompt(wrapped, instance, args, kwargs):
         server_address=get_server_address(instance),
         input_messages=[create_input_message("user", prompt)],
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -467,6 +480,7 @@ def _wrap_chat_inspect_response(wrapped, instance, args, kwargs):
         server_address=get_server_address(instance),
         input_messages=[create_input_message("assistant", response)],
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -497,6 +511,7 @@ def _wrap_chat_inspect_conversation(wrapped, instance, args, kwargs):
         server_address=get_server_address(instance),
         input_messages=input_msgs,
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -525,6 +540,7 @@ def _wrap_http_inspect_request(wrapped, instance, args, kwargs):
         server_address=get_server_address(instance),
         input_messages=[create_input_message("user", f"{method} {url}")],
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -550,6 +566,7 @@ def _wrap_http_inspect_response(wrapped, instance, args, kwargs):
             create_input_message("assistant", f"HTTP {status_code} from {url}")
         ],
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -574,6 +591,7 @@ def _wrap_http_inspect_request_from_library(wrapped, instance, args, kwargs):
         server_address=get_server_address(instance),
         input_messages=[create_input_message("user", f"{method} {url}")],
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,
@@ -600,6 +618,7 @@ def _wrap_http_inspect_response_from_library(wrapped, instance, args, kwargs):
             create_input_message("assistant", f"HTTP {status_code} from {url}")
         ],
         agent_name=_get_agent_name_from_context(),
+        provider=_get_provider_name_from_context(),
     )
     return execute_with_telemetry(
         handler=_handler,

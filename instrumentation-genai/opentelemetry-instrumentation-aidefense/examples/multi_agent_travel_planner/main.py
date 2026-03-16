@@ -103,6 +103,20 @@ from util import OAuth2TokenManager  # noqa: E402
 LLM_APP_KEY = os.environ.get("LLM_APP_KEY", "")
 token_manager = OAuth2TokenManager()
 
+
+def _detect_llm_provider() -> str:
+    """Detect the LLM provider from LLM_BASE_URL."""
+    base_url = os.environ.get("LLM_BASE_URL", OAuth2TokenManager.DEFAULT_LLM_BASE_URL)
+    base_lower = base_url.lower()
+    if "anthropic" in base_lower:
+        return "anthropic"
+    if "openai" in base_lower or "chat-ai.cisco.com" in base_lower:
+        return "openai"
+    return "openai"
+
+
+LLM_PROVIDER = _detect_llm_provider()
+
 # AI Defense client (initialized in main)
 security_client: Optional[ChatInspectionClient] = None
 blocked_requests: List[Dict] = []
@@ -186,10 +200,11 @@ def check_security(agent_name: str, request: str) -> tuple[bool, Optional[str]]:
     if not security_client:
         return True, None
 
-    # Set agent name on current span so AI Defense instrumentor can read it
+    # Set agent name and provider on current span so AI Defense instrumentor can read them
     current_span = trace.get_current_span()
     if current_span and current_span.is_recording():
         current_span.set_attribute("gen_ai.agent.name", agent_name)
+        current_span.set_attribute("gen_ai.provider.name", LLM_PROVIDER)
 
     result = security_client.inspect_prompt(request)
 
