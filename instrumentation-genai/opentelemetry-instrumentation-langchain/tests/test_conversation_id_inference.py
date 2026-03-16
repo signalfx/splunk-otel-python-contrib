@@ -33,6 +33,9 @@ from opentelemetry.util.genai.handler import (  # noqa: E402
     get_genai_context,
     set_genai_context,
 )
+from opentelemetry.util.genai.attributes import (  # noqa: E402
+    GEN_AI_WORKFLOW_COMMAND,
+)
 from opentelemetry.util.genai.types import (  # noqa: E402
     AgentInvocation,
     Workflow,
@@ -530,3 +533,97 @@ class TestConversationIdContextVarPropagation:
 
         # Should be restored
         assert get_genai_context().conversation_id is None
+
+
+# ── Resume detection tests: gen_ai.workflow.command ────────────────
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+class TestResumeDetection:
+    """Verify that checkpoint_id in metadata triggers
+    gen_ai.workflow.command = 'resume' on root workflow/agent spans."""
+
+    def test_workflow_resume_with_checkpoint_id(self, handler_with_stub):
+        """Workflow root with checkpoint_id in metadata should get
+        gen_ai.workflow.command='resume'."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="continue")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "t1", "checkpoint_id": "cp-abc123"},
+        )
+
+        wf = stub.started_workflows[-1]
+        assert wf.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+
+    def test_agent_resume_with_checkpoint_id(self, handler_with_stub):
+        """Agent root with checkpoint_id in metadata should get
+        gen_ai.workflow.command='resume'."""
+        handler, stub = handler_with_stub
+
+        agent_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "AgentExecutor"},
+            inputs={"messages": [HumanMessage(content="continue")]},
+            run_id=agent_run_id,
+            tags=["agent"],
+            metadata={
+                "agent_name": "sre_copilot",
+                "thread_id": "t2",
+                "checkpoint_id": "cp-def456",
+            },
+        )
+
+        agent = stub.started_agents[-1]
+        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+
+    def test_workflow_fresh_no_checkpoint_id(self, handler_with_stub):
+        """Workflow without checkpoint_id should NOT have
+        gen_ai.workflow.command set."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "t3"},
+        )
+
+        wf = stub.started_workflows[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in wf.attributes
+
+    def test_agent_fresh_no_checkpoint_id(self, handler_with_stub):
+        """Agent without checkpoint_id should NOT have
+        gen_ai.workflow.command set."""
+        handler, stub = handler_with_stub
+
+        agent_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "AgentExecutor"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=agent_run_id,
+            tags=["agent"],
+            metadata={"agent_name": "sre_copilot", "thread_id": "t4"},
+        )
+
+        agent = stub.started_agents[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
+
+    def test_workflow_no_metadata(self, handler_with_stub):
+        """Workflow with no metadata at all should NOT have
+        gen_ai.workflow.command set."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=wf_run_id,
+        )
+
+        wf = stub.started_workflows[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in wf.attributes

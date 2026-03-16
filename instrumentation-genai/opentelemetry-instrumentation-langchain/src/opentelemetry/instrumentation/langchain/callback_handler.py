@@ -31,6 +31,9 @@ from opentelemetry.util.genai.types import (
     Error as GenAIError,
     ErrorClassification,
 )
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_WORKFLOW_COMMAND,
+)
 
 # Error type names that indicate flow-control, not real errors.
 # Uses type name strings to avoid importing LangGraph at instrumentation time.
@@ -378,8 +381,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 self._inferred_context_prev[run_id] = ctx
                 set_genai_context(conversation_id=inferred_conv_id)
 
+            # Detect resume: checkpoint_id in metadata indicates this
+            # invocation continues a previously interrupted workflow.
+            is_resume = bool(metadata and metadata.get("checkpoint_id") is not None)
+
             if _is_agent_root(tags, metadata):
-                self._start_agent_invocation(
+                agent = self._start_agent_invocation(
                     name=name,
                     run_id=run_id,
                     parent_run_id=None,
@@ -389,11 +396,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     agent_name=agent_name_hint,
                     conversation_id=inferred_conv_id,
                 )
+                if is_resume:
+                    agent.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
                 wf.input_messages = _make_input_message(inputs)
                 if inferred_conv_id:
                     wf.conversation_id = inferred_conv_id
+                if is_resume:
+                    wf.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
                 self._handler.start_workflow(wf)
             return
         else:

@@ -16,6 +16,9 @@ from opentelemetry.trace import Span, SpanKind, Tracer
 from opentelemetry.trace.status import Status, StatusCode
 
 from ..attributes import (
+    FINISH_REASON_CANCELLED,
+    FINISH_REASON_FAILED,
+    FINISH_REASON_INTERRUPTED,
     GEN_AI_AGENT_ID,
     GEN_AI_AGENT_NAME,
     GEN_AI_AGENT_TOOLS,
@@ -30,11 +33,15 @@ from ..attributes import (
     GEN_AI_RETRIEVAL_QUERY_TEXT,
     GEN_AI_RETRIEVAL_TOP_K,
     GEN_AI_STEP_ASSIGNED_AGENT,
+    GEN_AI_STEP_FINISH_REASON,
+    GEN_AI_STEP_FINISH_REASON_DESCRIPTION,
+    GEN_AI_STEP_INTERRUPTED,
     GEN_AI_STEP_NAME,
     GEN_AI_STEP_OBJECTIVE,
     GEN_AI_STEP_SOURCE,
     GEN_AI_STEP_STATUS,
     GEN_AI_STEP_TYPE,
+    GEN_AI_WORKFLOW_COMMAND,
     GEN_AI_WORKFLOW_DESCRIPTION,
     GEN_AI_WORKFLOW_NAME,
     GEN_AI_WORKFLOW_TYPE,
@@ -70,6 +77,7 @@ from .utils import (
 _SPAN_ALLOWED_SUPPLEMENTAL_KEYS: tuple[str, ...] = (
     "gen_ai.framework",
     "gen_ai.request.id",
+    GEN_AI_WORKFLOW_COMMAND,
     GEN_AI_WORKFLOW_NAME,
 )
 _SPAN_BLOCKED_SUPPLEMENTAL_KEYS: set[str] = {"request_top_p", "ls_temperature"}
@@ -462,16 +470,37 @@ class SpanEmitter(EmitterMeta):
         if classification == ErrorClassification.INTERRUPT:
             # Leave status UNSET (default) — not an error, not a success
             if span.is_recording():
-                span.set_attribute("gen_ai.interrupt", True)
+                span.set_attribute(GEN_AI_STEP_INTERRUPTED, True)
+                span.set_attribute(
+                    GEN_AI_STEP_FINISH_REASON, FINISH_REASON_INTERRUPTED
+                )
+                if error.message:
+                    span.set_attribute(
+                        GEN_AI_STEP_FINISH_REASON_DESCRIPTION, error.message
+                    )
         elif classification == ErrorClassification.CANCELLATION:
             # Leave status UNSET (default) — not an error
-            pass
+            if span.is_recording():
+                span.set_attribute(
+                    GEN_AI_STEP_FINISH_REASON, FINISH_REASON_CANCELLED
+                )
+                if error.message:
+                    span.set_attribute(
+                        GEN_AI_STEP_FINISH_REASON_DESCRIPTION, error.message
+                    )
         else:
             span.set_status(Status(StatusCode.ERROR, error.message))
             if span.is_recording():
                 span.set_attribute(
                     ErrorAttributes.ERROR_TYPE, error.type.__qualname__
                 )
+                span.set_attribute(
+                    GEN_AI_STEP_FINISH_REASON, FINISH_REASON_FAILED
+                )
+                if error.message:
+                    span.set_attribute(
+                        GEN_AI_STEP_FINISH_REASON_DESCRIPTION, error.message
+                    )
 
     def on_error(
         self, error: Error, invocation: LLMInvocation | EmbeddingInvocation
@@ -540,6 +569,14 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
+        # Apply supplemental attributes (e.g., gen_ai.workflow.command)
+        supplemental = getattr(workflow, "attributes", None)
+        if supplemental:
+            semconv_subset = filter_semconv_gen_ai_attributes(
+                supplemental, extras=_SPAN_ALLOWED_SUPPLEMENTAL_KEYS
+            )
+            if semconv_subset:
+                _apply_gen_ai_semconv_attributes(span, semconv_subset)
 
     def _finish_workflow(self, workflow: Workflow) -> None:
         """Finish a workflow span."""
@@ -749,11 +786,11 @@ class SpanEmitter(EmitterMeta):
             error, "classification", ErrorClassification.REAL_ERROR
         )
         if classification == ErrorClassification.INTERRUPT:
-            span.set_attribute(GEN_AI_STEP_STATUS, "interrupted")
+            span.set_attribute(GEN_AI_STEP_STATUS, FINISH_REASON_INTERRUPTED)
         elif classification == ErrorClassification.CANCELLATION:
-            span.set_attribute(GEN_AI_STEP_STATUS, "cancelled")
+            span.set_attribute(GEN_AI_STEP_STATUS, FINISH_REASON_CANCELLED)
         else:
-            span.set_attribute(GEN_AI_STEP_STATUS, "failed")
+            span.set_attribute(GEN_AI_STEP_STATUS, FINISH_REASON_FAILED)
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )

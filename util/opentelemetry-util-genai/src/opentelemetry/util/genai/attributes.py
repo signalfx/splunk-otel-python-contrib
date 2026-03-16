@@ -35,6 +35,7 @@ GEN_AI_AGENT_SYSTEM_INSTRUCTIONS = "gen_ai.agent.system_instructions"
 GEN_AI_WORKFLOW_NAME = "gen_ai.workflow.name"
 GEN_AI_WORKFLOW_TYPE = "gen_ai.workflow.type"
 GEN_AI_WORKFLOW_DESCRIPTION = "gen_ai.workflow.description"
+GEN_AI_WORKFLOW_COMMAND = "gen_ai.workflow.command"
 
 # Step attributes (not in semantic conventions)
 GEN_AI_STEP_NAME = "gen_ai.step.name"
@@ -43,6 +44,14 @@ GEN_AI_STEP_OBJECTIVE = "gen_ai.step.objective"
 GEN_AI_STEP_SOURCE = "gen_ai.step.source"
 GEN_AI_STEP_ASSIGNED_AGENT = "gen_ai.step.assigned_agent"
 GEN_AI_STEP_STATUS = "gen_ai.step.status"
+GEN_AI_STEP_INTERRUPTED = "gen_ai.step.interrupted"
+GEN_AI_STEP_FINISH_REASON = "gen_ai.step.finish_reason"
+GEN_AI_STEP_FINISH_REASON_DESCRIPTION = "gen_ai.step.finish_reason_description"
+
+# Step finish_reason values
+FINISH_REASON_INTERRUPTED = "interrupted"
+FINISH_REASON_CANCELLED = "cancelled"
+FINISH_REASON_FAILED = "failed"
 
 # Embedding attributes
 GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"
