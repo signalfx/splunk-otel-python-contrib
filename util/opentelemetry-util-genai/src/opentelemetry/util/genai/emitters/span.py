@@ -25,6 +25,8 @@ from ..attributes import (
     GEN_AI_AGENT_TYPE,
     GEN_AI_EMBEDDINGS_DIMENSION_COUNT,
     GEN_AI_EMBEDDINGS_INPUT_TEXTS,
+    GEN_AI_FINISH_REASON,
+    GEN_AI_FINISH_REASON_DESCRIPTION,
     GEN_AI_INPUT_MESSAGES,
     GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_PROVIDER_NAME,
@@ -33,9 +35,6 @@ from ..attributes import (
     GEN_AI_RETRIEVAL_QUERY_TEXT,
     GEN_AI_RETRIEVAL_TOP_K,
     GEN_AI_STEP_ASSIGNED_AGENT,
-    GEN_AI_STEP_FINISH_REASON,
-    GEN_AI_STEP_FINISH_REASON_DESCRIPTION,
-    GEN_AI_STEP_INTERRUPTED,
     GEN_AI_STEP_NAME,
     GEN_AI_STEP_OBJECTIVE,
     GEN_AI_STEP_SOURCE,
@@ -464,29 +463,26 @@ class SpanEmitter(EmitterMeta):
         of OK ("validated as successful"). This matches the OTel spec:
         interrupts are not errors, but they are not successful completions.
         """
-        classification = getattr(
-            error, "classification", ErrorClassification.REAL_ERROR
-        )
+        classification = error.classification
         if classification == ErrorClassification.INTERRUPT:
             # Leave status UNSET (default) — not an error, not a success
             if span.is_recording():
-                span.set_attribute(GEN_AI_STEP_INTERRUPTED, True)
                 span.set_attribute(
-                    GEN_AI_STEP_FINISH_REASON, FINISH_REASON_INTERRUPTED
+                    GEN_AI_FINISH_REASON, FINISH_REASON_INTERRUPTED
                 )
                 if error.message:
                     span.set_attribute(
-                        GEN_AI_STEP_FINISH_REASON_DESCRIPTION, error.message
+                        GEN_AI_FINISH_REASON_DESCRIPTION, error.message
                     )
         elif classification == ErrorClassification.CANCELLATION:
             # Leave status UNSET (default) — not an error
             if span.is_recording():
                 span.set_attribute(
-                    GEN_AI_STEP_FINISH_REASON, FINISH_REASON_CANCELLED
+                    GEN_AI_FINISH_REASON, FINISH_REASON_CANCELLED
                 )
                 if error.message:
                     span.set_attribute(
-                        GEN_AI_STEP_FINISH_REASON_DESCRIPTION, error.message
+                        GEN_AI_FINISH_REASON_DESCRIPTION, error.message
                     )
         else:
             span.set_status(Status(StatusCode.ERROR, error.message))
@@ -494,12 +490,10 @@ class SpanEmitter(EmitterMeta):
                 span.set_attribute(
                     ErrorAttributes.ERROR_TYPE, error.type.__qualname__
                 )
-                span.set_attribute(
-                    GEN_AI_STEP_FINISH_REASON, FINISH_REASON_FAILED
-                )
+                span.set_attribute(GEN_AI_FINISH_REASON, FINISH_REASON_FAILED)
                 if error.message:
                     span.set_attribute(
-                        GEN_AI_STEP_FINISH_REASON_DESCRIPTION, error.message
+                        GEN_AI_FINISH_REASON_DESCRIPTION, error.message
                     )
 
     def on_error(
@@ -782,9 +776,7 @@ class SpanEmitter(EmitterMeta):
             return
         self._apply_error_status(span, error)
         # Update step status based on error classification
-        classification = getattr(
-            error, "classification", ErrorClassification.REAL_ERROR
-        )
+        classification = error.classification
         if classification == ErrorClassification.INTERRUPT:
             span.set_attribute(GEN_AI_STEP_STATUS, FINISH_REASON_INTERRUPTED)
         elif classification == ErrorClassification.CANCELLATION:

@@ -9,9 +9,8 @@ from opentelemetry.util.genai.attributes import (
     FINISH_REASON_CANCELLED,
     FINISH_REASON_FAILED,
     FINISH_REASON_INTERRUPTED,
-    GEN_AI_STEP_FINISH_REASON,
-    GEN_AI_STEP_FINISH_REASON_DESCRIPTION,
-    GEN_AI_STEP_INTERRUPTED,
+    GEN_AI_FINISH_REASON,
+    GEN_AI_FINISH_REASON_DESCRIPTION,
     GEN_AI_STEP_STATUS,
     GEN_AI_WORKFLOW_COMMAND,
 )
@@ -89,13 +88,12 @@ def test_error_workflow_interrupt():
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
     assert spans[0].status.status_code == StatusCode.UNSET
-    assert spans[0].attributes.get(GEN_AI_STEP_INTERRUPTED) is True
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON)
         == FINISH_REASON_INTERRUPTED
     )
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON_DESCRIPTION)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON_DESCRIPTION)
         == "interrupted"
     )
 
@@ -114,9 +112,8 @@ def test_error_workflow_cancellation():
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
     assert spans[0].status.status_code == StatusCode.UNSET
-    assert spans[0].attributes.get(GEN_AI_STEP_INTERRUPTED) is None
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON)
         == FINISH_REASON_CANCELLED
     )
 
@@ -139,9 +136,8 @@ def test_error_step_interrupt_status():
         spans[0].attributes.get(GEN_AI_STEP_STATUS)
         == FINISH_REASON_INTERRUPTED
     )
-    assert spans[0].attributes.get(GEN_AI_STEP_INTERRUPTED) is True
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON)
         == FINISH_REASON_INTERRUPTED
     )
 
@@ -163,9 +159,8 @@ def test_error_step_cancellation_status():
     assert (
         spans[0].attributes.get(GEN_AI_STEP_STATUS) == FINISH_REASON_CANCELLED
     )
-    assert spans[0].attributes.get(GEN_AI_STEP_INTERRUPTED) is None
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON)
         == FINISH_REASON_CANCELLED
     )
 
@@ -181,15 +176,10 @@ def test_error_step_real_error_status():
     assert len(spans) == 1
     assert spans[0].status.status_code == StatusCode.ERROR
     assert spans[0].attributes.get(GEN_AI_STEP_STATUS) == FINISH_REASON_FAILED
-    assert spans[0].attributes.get(GEN_AI_STEP_INTERRUPTED) is None
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
-        == FINISH_REASON_FAILED
+        spans[0].attributes.get(GEN_AI_FINISH_REASON) == FINISH_REASON_FAILED
     )
-    assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON_DESCRIPTION)
-        == "fail"
-    )
+    assert spans[0].attributes.get(GEN_AI_FINISH_REASON_DESCRIPTION) == "fail"
 
 
 def test_error_agent_interrupt():
@@ -206,9 +196,8 @@ def test_error_agent_interrupt():
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
     assert spans[0].status.status_code == StatusCode.UNSET
-    assert spans[0].attributes.get(GEN_AI_STEP_INTERRUPTED) is True
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON)
         == FINISH_REASON_INTERRUPTED
     )
 
@@ -249,10 +238,9 @@ def test_error_real_error_sets_finish_reason_description():
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON)
-        == FINISH_REASON_FAILED
+        spans[0].attributes.get(GEN_AI_FINISH_REASON) == FINISH_REASON_FAILED
     )
     assert (
-        spans[0].attributes.get(GEN_AI_STEP_FINISH_REASON_DESCRIPTION)
+        spans[0].attributes.get(GEN_AI_FINISH_REASON_DESCRIPTION)
         == "connection timed out"
     )

@@ -44,9 +44,10 @@ GEN_AI_STEP_OBJECTIVE = "gen_ai.step.objective"
 GEN_AI_STEP_SOURCE = "gen_ai.step.source"
 GEN_AI_STEP_ASSIGNED_AGENT = "gen_ai.step.assigned_agent"
 GEN_AI_STEP_STATUS = "gen_ai.step.status"
-GEN_AI_STEP_INTERRUPTED = "gen_ai.step.interrupted"
-GEN_AI_STEP_FINISH_REASON = "gen_ai.step.finish_reason"
-GEN_AI_STEP_FINISH_REASON_DESCRIPTION = "gen_ai.step.finish_reason_description"
+
+# Finish reason attributes (entity-agnostic, set on any span type)
+GEN_AI_FINISH_REASON = "gen_ai.finish_reason"
+GEN_AI_FINISH_REASON_DESCRIPTION = "gen_ai.finish_reason_description"
 
 # Step finish_reason values
 FINISH_REASON_INTERRUPTED = "interrupted"
