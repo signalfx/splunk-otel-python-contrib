@@ -512,3 +512,108 @@ def test_agent_output_captures_last_ai_message(handler_with_stub):
     stopped = stub.stopped_agents[-1]
     assert len(stopped.output_messages) == 1
     assert "Here is your answer" in stopped.output_messages[0].parts[0].content
+
+
+# ---------------------------------------------------------------------------
+# Interrupt / error classification tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_graph_interrupt_classifies_as_interrupt(handler_with_stub):
+    """A GraphInterrupt exception should produce INTERRUPT classification, not REAL_ERROR."""
+    handler, stub = handler_with_stub
+
+    # Create a mock GraphInterrupt exception (avoid importing langgraph)
+    class GraphInterrupt(Exception):
+        pass
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="plan my trip")]},
+        run_id=agent_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "planner", "thread_id": "t-123"},
+    )
+
+    handler.on_chain_error(GraphInterrupt("paused"), run_id=agent_run_id)
+
+    assert stub.failed_agents, "GraphInterrupt should trigger fail_agent"
+    _, error = stub.failed_agents[-1]
+    from opentelemetry.util.genai.types import ErrorClassification
+
+    assert error.classification == ErrorClassification.INTERRUPT
+    assert error.type is GraphInterrupt
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_cancelled_error_classifies_as_cancellation(handler_with_stub):
+    """CancelledError should produce CANCELLATION classification."""
+    import asyncio
+
+    handler, stub = handler_with_stub
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=agent_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "planner"},
+    )
+
+    handler.on_chain_error(asyncio.CancelledError(), run_id=agent_run_id)
+
+    assert stub.failed_agents
+    _, error = stub.failed_agents[-1]
+    from opentelemetry.util.genai.types import ErrorClassification
+
+    assert error.classification == ErrorClassification.CANCELLATION
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_runtime_error_classifies_as_real_error(handler_with_stub):
+    """RuntimeError should produce REAL_ERROR classification (regression)."""
+    handler, stub = handler_with_stub
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={},
+        run_id=agent_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "planner"},
+    )
+
+    handler.on_chain_error(RuntimeError("boom"), run_id=agent_run_id)
+
+    assert stub.failed_agents
+    _, error = stub.failed_agents[-1]
+    from opentelemetry.util.genai.types import ErrorClassification
+
+    assert error.classification == ErrorClassification.REAL_ERROR
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_thread_id_sets_conversation_id(handler_with_stub):
+    """thread_id in metadata should flow to conversation_id on the entity."""
+    handler, stub = handler_with_stub
+
+    agent_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="hello")]},
+        run_id=agent_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "planner", "thread_id": "t-456"},
+    )
+
+    assert stub.started_agents
+    agent = stub.started_agents[-1]
+    assert agent.conversation_id == "t-456"
+
+    handler.on_chain_end(
+        outputs={"messages": [AIMessage(content="done")]},
+        run_id=agent_run_id,
+    )

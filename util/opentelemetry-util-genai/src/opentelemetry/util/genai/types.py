@@ -407,10 +407,19 @@ class LLMInvocation(GenAI):
     )
 
 
+class ErrorClassification(Enum):
+    """Classification of an error for status reporting."""
+
+    REAL_ERROR = "error"
+    INTERRUPT = "interrupted"
+    CANCELLATION = "cancelled"
+
+
 @dataclass
 class Error:
     message: str
     type: Type[BaseException]
+    classification: ErrorClassification = ErrorClassification.REAL_ERROR
 
 
 @dataclass

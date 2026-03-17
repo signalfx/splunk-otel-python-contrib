@@ -67,6 +67,8 @@ class Workflow(GenAI): ...                  # workflow_type, description, initia
 class ToolCall(GenAI): ...                  # tool name, input/output, error
 class EmbeddingInvocation(GenAI): ...       # input texts, model, vector counts
 class EvaluationResult:                     # metric_name, score, label, explanation, error?, attrs
+class ErrorClassification(Enum):            # REAL_ERROR, INTERRUPT, CANCELLATION – controls span status
+class Error:                                # message, type, classification (ErrorClassification)
 
 class TelemetryHandler:
     def start_llm(...)->LLMInvocation: ...   # or context manager variant
@@ -167,6 +169,18 @@ Key mappings:
 - `traceloop.entity.output` → `gen_ai.output.messages`
 
 The translator automatically activates on import via the `opentelemetry_configurator` entry point and intercepts spans with `traceloop.*` attributes, creating corresponding spans with `gen_ai.*` attributes for seamless integration with GenAI observability tools.
+
+---
+
+## Error Classification
+
+The `Error` dataclass carries an `ErrorClassification` field that governs span status:
+
+- `REAL_ERROR` (default) → span status `ERROR`
+- `INTERRUPT` → span status `UNSET` (default — `set_status()` not called) + `gen_ai.interrupt=true`
+- `CANCELLATION` → span status `UNSET` (default — `set_status()` not called)
+
+Instrumentation libraries classify errors via exception MRO type name matching (no framework imports required).
 
 ---
 

@@ -64,6 +64,18 @@ app with the OpenTelemetry LangChain Instrumentor enabled::
     response = llm.invoke(messages)
     print(response.content)
 
+Interrupt/Resume Support
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+The instrumentation automatically detects LangGraph interrupt/resume patterns:
+
+- **Error classification** — ``GraphInterrupt``, ``NodeInterrupt``, and ``Interrupt``
+  exceptions are classified as interrupts (span status left as ``UNSET`` instead of ``ERROR``).
+  ``CancelledError`` and ``TaskCancelledError`` are classified as cancellations.
+- **Conversation ID** — ``thread_id`` from LangGraph checkpoint metadata is extracted
+  and set as ``gen_ai.conversation.id`` on root workflow/agent spans.
+
+See the ``examples/multi_agent_travel_planner`` demo for interrupt/resume in action.
 
 Testing
 -------

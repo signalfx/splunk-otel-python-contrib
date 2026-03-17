@@ -30,7 +30,11 @@ from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: 
 )
 from opentelemetry.util.genai.handler import (  # noqa: E402
     clear_genai_context,
+    get_genai_context,
     set_genai_context,
+)
+from opentelemetry.util.genai.attributes import (  # noqa: E402
+    GEN_AI_WORKFLOW_COMMAND,
 )
 from opentelemetry.util.genai.types import (  # noqa: E402
     AgentInvocation,
@@ -398,3 +402,397 @@ class TestAgentConversationIdInference:
 
         agent = stub.started_agents[-1]
         assert agent.conversation_id == "conv-priority"
+
+
+# ── Propagation tests: ContextVar lifecycle ────────────────────────
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+class TestConversationIdContextVarPropagation:
+    """Verify that inferred conversation_id is pushed into the ContextVar
+    so children (LLM, tool, step) inherit it via _apply_genai_context."""
+
+    def test_contextvar_set_on_workflow_start(self, handler_with_stub):
+        """After on_chain_start with thread_id, ContextVar should hold
+        the inferred conversation_id."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "session-999"},
+        )
+
+        ctx = get_genai_context()
+        assert ctx.conversation_id == "session-999"
+
+    def test_contextvar_restored_on_workflow_end(self, handler_with_stub):
+        """After on_chain_end for the root workflow, the ContextVar should
+        be restored to its previous (empty) state."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "session-999"},
+        )
+
+        # ContextVar is set during the workflow
+        assert get_genai_context().conversation_id == "session-999"
+
+        handler.on_chain_end(
+            outputs={"final": "result"},
+            run_id=wf_run_id,
+        )
+
+        # ContextVar should be restored to empty
+        assert get_genai_context().conversation_id is None
+
+    def test_contextvar_restored_on_chain_error(self, handler_with_stub):
+        """ContextVar should be restored even when the root chain errors."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "session-err"},
+        )
+
+        assert get_genai_context().conversation_id == "session-err"
+
+        handler.on_chain_error(
+            error=RuntimeError("boom"),
+            run_id=wf_run_id,
+        )
+
+        assert get_genai_context().conversation_id is None
+
+    def test_contextvar_not_set_when_explicit_context_active(self, handler_with_stub):
+        """When explicit genai_context is active, inferred thread_id should
+        NOT overwrite the ContextVar."""
+        handler, stub = handler_with_stub
+
+        set_genai_context(conversation_id="explicit-override")
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "inferred-should-be-ignored"},
+        )
+
+        # Explicit context should remain untouched
+        assert get_genai_context().conversation_id == "explicit-override"
+
+    def test_contextvar_set_on_agent_start(self, handler_with_stub):
+        """Inferred conversation_id should also push to ContextVar for agents."""
+        handler, stub = handler_with_stub
+
+        agent_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "AgentExecutor"},
+            inputs={"messages": [HumanMessage(content="test")]},
+            run_id=agent_run_id,
+            tags=["agent"],
+            metadata={"agent_name": "test_agent", "thread_id": "agent-session-1"},
+        )
+
+        ctx = get_genai_context()
+        assert ctx.conversation_id == "agent-session-1"
+
+    def test_contextvar_preserves_prior_context(self, handler_with_stub):
+        """When a previous non-empty context exists and no explicit
+        conversation_id is set, the inferred value should be used —
+        but the prior context should be restored on end."""
+        handler, stub = handler_with_stub
+
+        # No explicit conversation_id, but set some properties
+        # (this means ctx.conversation_id is None, so inference should run)
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="hello")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "new-session"},
+        )
+
+        assert get_genai_context().conversation_id == "new-session"
+
+        handler.on_chain_end(
+            outputs={"done": True},
+            run_id=wf_run_id,
+        )
+
+        # Should be restored
+        assert get_genai_context().conversation_id is None
+
+
+# ── Resume detection tests: gen_ai.workflow.command ────────────────
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+class TestResumeDetection:
+    """Verify that resume is detected via checkpoint_id in metadata
+    or Command object as input, setting gen_ai.workflow.command = 'resume'."""
+
+    def test_workflow_resume_with_checkpoint_id(self, handler_with_stub):
+        """Workflow root with checkpoint_id in metadata should get
+        gen_ai.workflow.command='resume'."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="continue")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "t1", "checkpoint_id": "cp-abc123"},
+        )
+
+        wf = stub.started_workflows[-1]
+        assert wf.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+
+    def test_agent_resume_with_checkpoint_id(self, handler_with_stub):
+        """Agent root with checkpoint_id in metadata should get
+        gen_ai.workflow.command='resume'."""
+        handler, stub = handler_with_stub
+
+        agent_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "AgentExecutor"},
+            inputs={"messages": [HumanMessage(content="continue")]},
+            run_id=agent_run_id,
+            tags=["agent"],
+            metadata={
+                "agent_name": "sre_copilot",
+                "thread_id": "t2",
+                "checkpoint_id": "cp-def456",
+            },
+        )
+
+        agent = stub.started_agents[-1]
+        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+
+    def test_workflow_fresh_no_checkpoint_id(self, handler_with_stub):
+        """Workflow without checkpoint_id should NOT have
+        gen_ai.workflow.command set."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "t3"},
+        )
+
+        wf = stub.started_workflows[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in wf.attributes
+
+    def test_agent_fresh_no_checkpoint_id(self, handler_with_stub):
+        """Agent without checkpoint_id should NOT have
+        gen_ai.workflow.command set."""
+        handler, stub = handler_with_stub
+
+        agent_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "AgentExecutor"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=agent_run_id,
+            tags=["agent"],
+            metadata={"agent_name": "sre_copilot", "thread_id": "t4"},
+        )
+
+        agent = stub.started_agents[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
+
+    def test_workflow_no_metadata(self, handler_with_stub):
+        """Workflow with no metadata at all should NOT have
+        gen_ai.workflow.command set."""
+        handler, stub = handler_with_stub
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=wf_run_id,
+        )
+
+        wf = stub.started_workflows[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in wf.attributes
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+class TestOrphanSpanGuard:
+    """Verify that on_chain_start silently drops child entities whose parent
+    was already cleaned up — prevents orphan root spans during LangGraph
+    resume when the interrupted node is replayed."""
+
+    def test_child_with_missing_parent_is_dropped(self, handler_with_stub):
+        """on_chain_start with parent_run_id pointing to a non-existent
+        entity should not create any step, agent, or workflow."""
+        handler, stub = handler_with_stub
+
+        # parent_run_id refers to a workflow that no longer exists
+        stale_parent = uuid4()
+        child_run_id = uuid4()
+
+        handler.on_chain_start(
+            serialized={"name": "human_review"},
+            inputs={},
+            run_id=child_run_id,
+            parent_run_id=stale_parent,
+            metadata={"thread_id": "t-orphan"},
+        )
+
+        assert len(stub.started_steps) == 0
+        assert len(stub.started_agents) == 0
+        assert len(stub.started_workflows) == 0
+        assert stub.get_entity(child_run_id) is None
+
+    def test_child_with_live_parent_is_created(self, handler_with_stub):
+        """on_chain_start with a live parent_run_id should still create
+        the child entity normally."""
+        handler, stub = handler_with_stub
+
+        # First create a workflow so there's a live parent
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=wf_run_id,
+            metadata={"thread_id": "t-live"},
+        )
+        assert len(stub.started_workflows) == 1
+
+        # Now create a child step under it
+        child_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "human_review"},
+            inputs={},
+            run_id=child_run_id,
+            parent_run_id=wf_run_id,
+            metadata={"thread_id": "t-live"},
+        )
+
+        assert len(stub.started_steps) == 1
+        assert stub.get_entity(child_run_id) is not None
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+class TestCommandInputHandling:
+    """Verify that Command objects (LangGraph resume) are handled correctly
+    without crashing, and trigger resume detection."""
+
+    def test_command_input_creates_workflow_with_resume(self, handler_with_stub):
+        """When inputs is a Command object, a workflow span should be
+        created with gen_ai.workflow.command='resume' and capture the
+        resume value as a user input message."""
+        handler, stub = handler_with_stub
+
+        # Simulate what LangGraph sends on resume
+        class Command:
+            def __init__(self, resume):
+                self.resume = resume
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized=None,
+            inputs=Command(resume="approved!"),
+            run_id=wf_run_id,
+            metadata={"thread_id": "t-cmd"},
+            name="LangGraph",
+        )
+
+        assert len(stub.started_workflows) == 1
+        wf = stub.started_workflows[-1]
+        assert wf.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+        assert wf.conversation_id == "t-cmd"
+        # Resume value should be captured as user input message
+        assert len(wf.input_messages) == 1
+        assert wf.input_messages[0].role == "user"
+        assert wf.input_messages[0].parts[0].content == "approved!"
+
+    def test_command_input_dict_resume(self, handler_with_stub):
+        """When resume value is a dict, it should be JSON-serialized."""
+        handler, stub = handler_with_stub
+
+        class Command:
+            def __init__(self, resume):
+                self.resume = resume
+
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized=None,
+            inputs=Command(resume={"action": "approve", "comment": "lgtm"}),
+            run_id=wf_run_id,
+            metadata={"thread_id": "t-dict"},
+            name="LangGraph",
+        )
+
+        wf = stub.started_workflows[-1]
+        assert len(wf.input_messages) == 1
+        content = wf.input_messages[0].parts[0].content
+        # Should be valid JSON containing the dict keys
+        assert "approve" in content
+        assert "lgtm" in content
+
+    def test_command_input_does_not_crash(self, handler_with_stub):
+        """Command input without resume should not crash and should
+        use repr as fallback input."""
+        handler, stub = handler_with_stub
+
+        class Command:
+            pass
+
+        wf_run_id = uuid4()
+        # Should not raise
+        handler.on_chain_start(
+            serialized=None,
+            inputs=Command(),
+            run_id=wf_run_id,
+            metadata={"thread_id": "t-safe"},
+            name="LangGraph",
+        )
+        assert len(stub.started_workflows) == 1
+        wf = stub.started_workflows[-1]
+        # Should have a fallback input message from repr
+        assert len(wf.input_messages) == 1
+
+    def test_langgraph_node_metadata_used_for_step_name(self, handler_with_stub):
+        """When serialized is None (LangGraph), langgraph_node from
+        metadata should be used as the step name."""
+        handler, stub = handler_with_stub
+
+        # Create a parent workflow first
+        wf_run_id = uuid4()
+        handler.on_chain_start(
+            serialized=None,
+            inputs={},
+            run_id=wf_run_id,
+            metadata={"thread_id": "t-name"},
+            name="LangGraph",
+        )
+
+        step_run_id = uuid4()
+        handler.on_chain_start(
+            serialized=None,
+            inputs={},
+            run_id=step_run_id,
+            parent_run_id=wf_run_id,
+            metadata={
+                "thread_id": "t-name",
+                "langgraph_node": "human_review",
+            },
+        )
+
+        assert len(stub.started_steps) == 1
+        step = stub.started_steps[-1]
+        assert step.name == "human_review"

@@ -24,6 +24,9 @@ class IncidentState(TypedDict):
     action_plan: Optional[Dict]
     quality_gate_result: Optional[Dict]
 
+    # Human review (interrupt/resume)
+    human_review_decision: Optional[Dict]
+
     # Artifacts
     incident_summary: Optional[str]
     postmortem_draft: Optional[str]

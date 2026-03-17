@@ -13,7 +13,12 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, BaseMessage, AIMessage
 from langchain_core.outputs import LLMResult
-from opentelemetry.util.genai.handler import TelemetryHandler, get_genai_context
+from opentelemetry.util.genai.handler import (
+    GenAIContext,
+    TelemetryHandler,
+    get_genai_context,
+    set_genai_context,
+)
 from opentelemetry.util.genai.types import (
     Workflow,
     Step,
@@ -24,7 +29,37 @@ from opentelemetry.util.genai.types import (
     Text,
     ToolCall,
     Error as GenAIError,
+    ErrorClassification,
 )
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_WORKFLOW_COMMAND,
+)
+
+# Error type names that indicate flow-control, not real errors.
+# Uses type name strings to avoid importing LangGraph at instrumentation time.
+_INTERRUPT_TYPE_NAMES = frozenset(
+    {
+        "GraphInterrupt",
+        "NodeInterrupt",
+        "Interrupt",
+    }
+)
+_CANCELLATION_TYPE_NAMES = frozenset(
+    {
+        "CancelledError",
+        "TaskCancelledError",
+    }
+)
+
+
+def _classify_error(error: BaseException) -> ErrorClassification:
+    """Classify an exception as a real error, interrupt, or cancellation."""
+    for cls in type(error).__mro__:
+        if cls.__name__ in _INTERRUPT_TYPE_NAMES:
+            return ErrorClassification.INTERRUPT
+        if cls.__name__ in _CANCELLATION_TYPE_NAMES:
+            return ErrorClassification.CANCELLATION
+    return ErrorClassification.REAL_ERROR
 
 
 def _safe_str(value: Any) -> str:
@@ -47,6 +82,24 @@ def _serialize(obj: Any) -> Optional[str]:
         return json.dumps(obj, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return None
+
+
+def _make_command_input_message(command: Any) -> list[InputMessage]:
+    """Create input messages from a LangGraph Command object.
+
+    The ``resume`` value is the human's response to an interrupt question,
+    so it maps naturally to a user message.  For non-resume commands we
+    fall back to the string representation of the Command.
+    """
+    resume = getattr(command, "resume", None)
+    if resume is not None:
+        content = (
+            json.dumps(resume, ensure_ascii=False, default=str)
+            if not isinstance(resume, str)
+            else resume
+        )
+        return [InputMessage(role="user", parts=[Text(content)])]
+    return [InputMessage(role="user", parts=[Text(_safe_str(command))])]
 
 
 def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
@@ -250,6 +303,18 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         super().__init__()
         self._handler = telemetry_handler
+        # Tracks ContextVar state before we push an inferred conversation_id
+        # so it can be restored when the root entity finishes.
+        self._inferred_context_prev: dict[UUID, GenAIContext | None] = {}
+
+    def _restore_inferred_context(self, run_id: UUID) -> None:
+        """Restore ContextVar state pushed in on_chain_start for inferred conversation_id."""
+        prev = self._inferred_context_prev.pop(run_id, None)
+        if prev is not None:
+            set_genai_context(
+                conversation_id=prev.conversation_id,
+                properties=prev.properties if prev.properties else None,
+            )
 
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
@@ -275,13 +340,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         metadata: Optional[dict[str, Any]],
         agent_name: Optional[str],
         conversation_id: Optional[str] = None,
+        command_input_messages: Optional[list[InputMessage]] = None,
     ) -> AgentInvocation:
         agent = AgentInvocation(
             name=name,
             run_id=run_id,
             attributes=attrs,
         )
-        agent.input_messages = _make_input_message(inputs)
+        agent.input_messages = command_input_messages or _make_input_message(inputs)
         agent.agent_name = _safe_str(agent_name) if agent_name else name
         agent.parent_run_id = parent_run_id
         agent.framework = "langchain"
@@ -309,7 +375,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         **extra: Any,
     ) -> None:
         payload = serialized or {}
-        name_source = payload.get("name") or payload.get("id") or extra.get("name")
+        name_source = (
+            payload.get("name")
+            or payload.get("id")
+            or extra.get("name")
+            or (metadata.get("langgraph_node") if metadata else None)
+        )
         name = _safe_str(name_source or "chain")
         attrs: dict[str, Any] = {}
         if metadata:
@@ -317,6 +388,17 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if tags:
             attrs["tags"] = [str(t) for t in tags]
         agent_name_hint = _resolve_agent_name(tags, metadata)
+
+        # LangGraph passes a Command object (not a dict) as inputs on
+        # resume.  Detect this for resume signalling, capture a
+        # meaningful input representation, then normalise to a dict so
+        # downstream helpers (_make_input_message, etc.) work.
+        is_command = type(inputs).__name__ == "Command"
+        command_input_messages: list[InputMessage] = []
+        if is_command:
+            command_input_messages = _make_command_input_message(inputs)
+            inputs = {}
+
         if parent_run_id is None:
             # Infer conversation_id from metadata (thread_id) only when
             # no explicit genai_context(conversation_id=...) is active.
@@ -326,8 +408,21 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             if not ctx.conversation_id:
                 inferred_conv_id = _infer_conversation_id(metadata)
 
+            # Push the inferred conversation_id into the ContextVar so
+            # _apply_genai_context() propagates it to ALL child entities
+            # (LLM calls, tools, steps, nested agents).  Save previous
+            # state so we can restore it when the root entity finishes.
+            if inferred_conv_id:
+                self._inferred_context_prev[run_id] = ctx
+                set_genai_context(conversation_id=inferred_conv_id)
+
+            # Detect resume: Command input or checkpoint_id in metadata.
+            is_resume = is_command or bool(
+                metadata and metadata.get("checkpoint_id") is not None
+            )
+
             if _is_agent_root(tags, metadata):
-                self._start_agent_invocation(
+                agent = self._start_agent_invocation(
                     name=name,
                     run_id=run_id,
                     parent_run_id=None,
@@ -336,15 +431,28 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     metadata=metadata,
                     agent_name=agent_name_hint,
                     conversation_id=inferred_conv_id,
+                    command_input_messages=command_input_messages or None,
                 )
+                if is_resume:
+                    agent.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
-                wf.input_messages = _make_input_message(inputs)
+                wf.input_messages = command_input_messages or _make_input_message(
+                    inputs
+                )
                 if inferred_conv_id:
                     wf.conversation_id = inferred_conv_id
+                if is_resume:
+                    wf.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
                 self._handler.start_workflow(wf)
             return
         else:
+            # Skip if parent entity no longer exists (e.g., LangGraph
+            # replays the interrupted node during resume — the parent
+            # workflow from the previous trace was already ended).
+            if self._handler.get_entity(parent_run_id) is None:
+                return
+
             context_agent = self._find_nearest_agent(parent_run_id)
             context_agent_name = (
                 _safe_str(context_agent.agent_name or context_agent.name)
@@ -437,6 +545,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         entity = self._handler.get_entity(run_id)
         if entity is None:
             return
+
+        self._restore_inferred_context(run_id)
         if isinstance(entity, Workflow):
             output_msgs = _make_last_output_message(outputs)
             if output_msgs:
@@ -738,8 +848,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         self._handler.stop_tool_call(tool)
 
     def _fail(self, run_id: UUID, error: BaseException) -> None:
+        classification = _classify_error(error)
         self._handler.fail_by_run_id(
-            run_id, GenAIError(message=str(error), type=type(error))
+            run_id,
+            GenAIError(
+                message=str(error),
+                type=type(error),
+                classification=classification,
+            ),
         )
 
     def on_llm_error(
@@ -760,6 +876,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_: Any,
     ) -> None:
+        self._restore_inferred_context(run_id)
         self._fail(run_id, error)
 
     def on_tool_error(
