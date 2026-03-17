@@ -2,12 +2,16 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.9
+## Version 0.1.8
 
 ### Added
 - **Error classification for interrupts** — `GraphInterrupt`, `NodeInterrupt`, and `Interrupt` exceptions are now classified as interrupts (not errors), leaving span status as `UNSET` (default) instead of `StatusCode.ERROR`. `CancelledError` and `TaskCancelledError` are classified as cancellations.
+- **Resume detection** — `gen_ai.workflow.command = "resume"` set on root workflow span when resuming via `Command(resume=...)` or from a LangGraph checkpoint with `checkpoint_id`.
+- **Orphan span guard** — Prevents orphan root spans when LangGraph replays interrupted nodes during resume.
+- **Command input handling** — LangGraph passes a `Command` object (not a dict) as `inputs` on resume; the callback handler now normalises this without crashing and captures the `resume` value as a user input message on the workflow span. Dict resume values are JSON-serialized; non-resume commands use the string representation.
+- **LangGraph node name fallback** — When `serialized` is `None` (LangGraph ≥1.0), `langgraph_node` from callback metadata is used as the step name.
 
-## Version 0.1.8 - 2026-03-06
+## Version 0.1.7 - 2026-03-06
 
 ### Added
 - **Automatic `gen_ai.conversation.id` inference from LangGraph `thread_id`** — When LangGraph's `configurable.thread_id` is present in callback metadata, it is automatically mapped to `gen_ai.conversation.id` on root Workflow and AgentInvocation spans. No manual `genai_context()` wrapping needed. Explicit `genai_context(conversation_id=...)` always takes priority over the inferred value. Also recognizes `conversation_id` key in metadata (checked before `thread_id`).

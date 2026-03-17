@@ -84,6 +84,24 @@ def _serialize(obj: Any) -> Optional[str]:
         return None
 
 
+def _make_command_input_message(command: Any) -> list[InputMessage]:
+    """Create input messages from a LangGraph Command object.
+
+    The ``resume`` value is the human's response to an interrupt question,
+    so it maps naturally to a user message.  For non-resume commands we
+    fall back to the string representation of the Command.
+    """
+    resume = getattr(command, "resume", None)
+    if resume is not None:
+        content = (
+            json.dumps(resume, ensure_ascii=False, default=str)
+            if not isinstance(resume, str)
+            else resume
+        )
+        return [InputMessage(role="user", parts=[Text(content)])]
+    return [InputMessage(role="user", parts=[Text(_safe_str(command))])]
+
+
 def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
     """Create structured input message with full data as JSON."""
     input_messages: list[InputMessage] = []
@@ -322,13 +340,14 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         metadata: Optional[dict[str, Any]],
         agent_name: Optional[str],
         conversation_id: Optional[str] = None,
+        command_input_messages: Optional[list[InputMessage]] = None,
     ) -> AgentInvocation:
         agent = AgentInvocation(
             name=name,
             run_id=run_id,
             attributes=attrs,
         )
-        agent.input_messages = _make_input_message(inputs)
+        agent.input_messages = command_input_messages or _make_input_message(inputs)
         agent.agent_name = _safe_str(agent_name) if agent_name else name
         agent.parent_run_id = parent_run_id
         agent.framework = "langchain"
@@ -356,7 +375,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         **extra: Any,
     ) -> None:
         payload = serialized or {}
-        name_source = payload.get("name") or payload.get("id") or extra.get("name")
+        name_source = (
+            payload.get("name")
+            or payload.get("id")
+            or extra.get("name")
+            or (metadata.get("langgraph_node") if metadata else None)
+        )
         name = _safe_str(name_source or "chain")
         attrs: dict[str, Any] = {}
         if metadata:
@@ -364,6 +388,17 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if tags:
             attrs["tags"] = [str(t) for t in tags]
         agent_name_hint = _resolve_agent_name(tags, metadata)
+
+        # LangGraph passes a Command object (not a dict) as inputs on
+        # resume.  Detect this for resume signalling, capture a
+        # meaningful input representation, then normalise to a dict so
+        # downstream helpers (_make_input_message, etc.) work.
+        is_command = type(inputs).__name__ == "Command"
+        command_input_messages: list[InputMessage] = []
+        if is_command:
+            command_input_messages = _make_command_input_message(inputs)
+            inputs = {}
+
         if parent_run_id is None:
             # Infer conversation_id from metadata (thread_id) only when
             # no explicit genai_context(conversation_id=...) is active.
@@ -381,9 +416,10 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 self._inferred_context_prev[run_id] = ctx
                 set_genai_context(conversation_id=inferred_conv_id)
 
-            # Detect resume: checkpoint_id in metadata indicates this
-            # invocation continues a previously interrupted workflow.
-            is_resume = bool(metadata and metadata.get("checkpoint_id") is not None)
+            # Detect resume: Command input or checkpoint_id in metadata.
+            is_resume = is_command or bool(
+                metadata and metadata.get("checkpoint_id") is not None
+            )
 
             if _is_agent_root(tags, metadata):
                 agent = self._start_agent_invocation(
@@ -395,12 +431,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     metadata=metadata,
                     agent_name=agent_name_hint,
                     conversation_id=inferred_conv_id,
+                    command_input_messages=command_input_messages or None,
                 )
                 if is_resume:
                     agent.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
             else:
                 wf = Workflow(name=name, run_id=run_id, attributes=attrs)
-                wf.input_messages = _make_input_message(inputs)
+                wf.input_messages = command_input_messages or _make_input_message(
+                    inputs
+                )
                 if inferred_conv_id:
                     wf.conversation_id = inferred_conv_id
                 if is_resume:
@@ -408,6 +447,12 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 self._handler.start_workflow(wf)
             return
         else:
+            # Skip if parent entity no longer exists (e.g., LangGraph
+            # replays the interrupted node during resume — the parent
+            # workflow from the previous trace was already ended).
+            if self._handler.get_entity(parent_run_id) is None:
+                return
+
             context_agent = self._find_nearest_agent(parent_run_id)
             context_agent_name = (
                 _safe_str(context_agent.agent_name or context_agent.name)
