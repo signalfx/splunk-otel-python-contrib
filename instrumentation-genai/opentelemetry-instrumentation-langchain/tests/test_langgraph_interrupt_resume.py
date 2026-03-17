@@ -18,7 +18,7 @@ if _PACKAGE_SRC.exists():
 
 try:
     from langgraph.graph import StateGraph
-    from langgraph.types import interrupt, Command
+    from langgraph.types import Command, interrupt
     from langgraph.checkpoint.memory import MemorySaver
 except ModuleNotFoundError:
     StateGraph = None  # type: ignore[assignment]
@@ -30,7 +30,6 @@ try:
         SpanExporter,
         SpanExportResult,
     )
-    from opentelemetry import trace
 except ModuleNotFoundError:
     TracerProvider = None  # type: ignore[assignment]
 
@@ -70,28 +69,36 @@ def _step_b(state: State) -> State:
     return {"value": state["value"] + " -> step_b"}
 
 
-@pytest.fixture(scope="module")
-def _otel_setup():
-    """Module-scoped OTel setup — TracerProvider can only be set once."""
-    exporter = _CollectingExporter()
-    tp = TracerProvider()
-    tp.add_span_processor(SimpleSpanProcessor(exporter))
-    trace.set_tracer_provider(tp)
+def _fully_unwrap_callback_manager():
+    """Unwrap BaseCallbackManager.__init__ to restore original for test isolation."""
+    try:
+        from wrapt import ObjectProxy
+        import langchain_core.callbacks
 
-    instrumentor = LangchainInstrumentor()
-    instrumentor.instrument()
-
-    yield exporter, tp
-
-    instrumentor.uninstrument()
-    tp.shutdown()
+        func = langchain_core.callbacks.BaseCallbackManager.__init__
+        while isinstance(func, ObjectProxy) and hasattr(func, "__wrapped__"):
+            func = func.__wrapped__
+        langchain_core.callbacks.BaseCallbackManager.__init__ = func
+    except Exception:
+        pass
 
 
 @pytest.fixture()
-def instrumented_graph(_otel_setup):
-    """Per-test fixture that builds a fresh graph and clears spans."""
-    exporter, tp = _otel_setup
-    exporter.spans.clear()
+def instrumented_graph():
+    """Per-test fixture: fresh TracerProvider, instrumentor, graph, and exporter."""
+    import opentelemetry.util.genai.handler as _handler_mod
+
+    # Reset the singleton TelemetryHandler so a fresh one is created
+    # with our test TracerProvider.
+    if hasattr(_handler_mod.get_telemetry_handler, "_default_handler"):
+        setattr(_handler_mod.get_telemetry_handler, "_default_handler", None)
+
+    exporter = _CollectingExporter()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(exporter))
+
+    instrumentor = LangchainInstrumentor()
+    instrumentor.instrument(tracer_provider=tp)
 
     builder = StateGraph(State)
     builder.add_node("step_a", _step_a)
@@ -106,6 +113,11 @@ def instrumented_graph(_otel_setup):
     graph = builder.compile(checkpointer=checkpointer)
 
     yield graph, exporter, tp
+
+    instrumentor.uninstrument()
+    _fully_unwrap_callback_manager()
+    tp.shutdown()
+    setattr(_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.mark.skipif(not DEPS_AVAILABLE, reason="langgraph or otel sdk not available")
