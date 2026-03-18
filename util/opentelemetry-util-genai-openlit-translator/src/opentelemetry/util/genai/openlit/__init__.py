@@ -266,8 +266,14 @@ def _install_deferred_registration() -> None:
     trace.set_tracer_provider = wrapped_set_tracer_provider
 
 
-# Auto-enable on import (unless disabled)
-_auto_enable()
+# Auto-enable on import (unless disabled).
+# Wrapped in try/except because this runs via .pth file on every Python
+# startup, including during pip installs where namespace packages may not
+# be fully resolved yet.
+try:
+    _auto_enable()
+except (ImportError, ModuleNotFoundError):
+    _LOGGER.debug("OpenLit translator deferred: processor module not yet available")
 
 
 __all__ = [
