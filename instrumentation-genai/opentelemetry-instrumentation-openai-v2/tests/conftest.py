@@ -89,7 +89,9 @@ def fixture_meter_provider(metric_reader):
 @pytest.fixture(autouse=True)
 def environment():
     original_api_key = os.environ.get("OPENAI_API_KEY")
-    original_evals = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS")
+    original_evals = os.environ.get(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
+    )
 
     if not original_api_key:
         os.environ["OPENAI_API_KEY"] = "test_openai_api_key"
@@ -106,7 +108,9 @@ def environment():
     if original_evals is None:
         os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
     else:
-        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = original_evals
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = (
+            original_evals
+        )
 
     setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
 
@@ -291,7 +295,9 @@ try:
 
     vcr_module.VCR().register_serializer("yaml", PrettyPrintJSONBody)
 
-except ModuleNotFoundError:
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - provide stub when plugin missing
 
     @pytest.fixture(name="vcr", scope="module")
     def _noop_vcr_fixture():
