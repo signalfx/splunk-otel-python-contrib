@@ -102,7 +102,7 @@ def async_openai_client():
     return AsyncOpenAI()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def vcr_config():
     return {
         "filter_headers": [
@@ -113,7 +113,13 @@ def vcr_config():
         ],
         "decode_compressed_response": True,
         "before_record_response": scrub_response_headers,
+        "serializer": "yaml",
     }
+
+
+@pytest.fixture(scope="session")
+def vcr_cassette_dir():
+    return os.path.join(os.path.dirname(__file__), "cassettes")
 
 
 @pytest.fixture(scope="function")
@@ -260,9 +266,25 @@ class PrettyPrintJSONBody:
         return yaml.load(cassette_string, Loader=yaml.Loader)
 
 
-@pytest.fixture(autouse=True)
+try:
+    import pytest_recording  # type: ignore # noqa: F401
+    import vcr as vcr_module  # type: ignore # noqa: F401
+
+    vcr_module.VCR().register_serializer("yaml", PrettyPrintJSONBody)
+
+except ModuleNotFoundError:
+
+    @pytest.fixture(name="vcr", scope="module")
+    def _noop_vcr_fixture():
+        class _VCRStub:
+            def register_serializer(self, *_args, **_kwargs):
+                return None
+
+        return _VCRStub()
+
+
+@pytest.fixture(scope="function", autouse=True)
 def fixture_vcr(vcr):
-    vcr.register_serializer("yaml", PrettyPrintJSONBody)
     return vcr
 
 
