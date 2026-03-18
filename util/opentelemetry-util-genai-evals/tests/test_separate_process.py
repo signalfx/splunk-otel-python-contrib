@@ -419,14 +419,8 @@ class TestEvalManagerProxyBasic:
             proxy._parent_conn = MagicMock()
 
         # Add two pending items
-        from uuid import uuid4
-
-        proxy._pending["id1"] = LLMInvocation(
-            request_model="m1", run_id=uuid4()
-        )
-        proxy._pending["id2"] = LLMInvocation(
-            request_model="m2", run_id=uuid4()
-        )
+        proxy._pending["id1"] = LLMInvocation(request_model="m1")
+        proxy._pending["id2"] = LLMInvocation(request_model="m2")
 
         # Third should be dropped
         invocation = LLMInvocation(request_model="m3")

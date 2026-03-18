@@ -26,7 +26,7 @@ def test_agent_evaluation_metric_includes_agent_identity():
     emitter = EvaluationMetricsEmitter(hist)
     agent = AgentInvocation(name="router")
     agent.agent_name = "router"  # identity fields reused for emission
-    agent.agent_id = str(agent.run_id)
+    agent.agent_id = "agent-123"
     agent.model = "gpt-agent"
     res = EvaluationResult(metric_name="bias", score=0.9, label="pass")
 

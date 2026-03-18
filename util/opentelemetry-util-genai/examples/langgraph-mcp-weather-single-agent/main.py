@@ -836,7 +836,9 @@ async def process_weather_request(
                                 input_messages=input_msgs,
                                 output_messages=[output_msg],
                                 agent_name="weather_agent",
-                                agent_id=str(agent_obj.run_id),
+                                agent_id=f"{agent_obj.span_id:016x}"
+                                if agent_obj.span_id is not None
+                                else None,
                             )
 
                             # Populate token usage
@@ -850,14 +852,6 @@ async def process_weather_request(
                             if llm_call_data.get("response_id"):
                                 llm_invocation.response_id = llm_call_data[
                                     "response_id"
-                                ]
-                            if llm_call_data.get("request_id"):
-                                llm_invocation.run_id = llm_call_data[
-                                    "request_id"
-                                ]
-                            if llm_call_data.get("parent_run_id"):
-                                llm_invocation.parent_run_id = llm_call_data[
-                                    "parent_run_id"
                                 ]
 
                             # Populate attributes

@@ -329,7 +329,11 @@ class MetricsEmitter(EmitterMeta):
         metric_attrs = {
             GenAI.GEN_AI_OPERATION_NAME: agent.operation,
             GenAI.GEN_AI_AGENT_NAME: agent.name,
-            GenAI.GEN_AI_AGENT_ID: str(agent.run_id),
+            GenAI.GEN_AI_AGENT_ID: (
+                f"{agent.span_id:016x}"
+                if agent.span_id is not None
+                else str(id(agent))
+            ),
         }
         if agent.agent_type:
             metric_attrs["gen_ai.agent.type"] = agent.agent_type
