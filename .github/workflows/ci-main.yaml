@@ -42,7 +42,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest==7.4.4 pytest-cov==4.1.0
           pip install -r dev-genai-requirements.txt
-          pip install pytest-vcr pytest-asyncio pyyaml
+          pip install pytest-asyncio pyyaml
 
       - name: Install util packages
         run: |
