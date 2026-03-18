@@ -88,8 +88,27 @@ def fixture_meter_provider(metric_reader):
 
 @pytest.fixture(autouse=True)
 def environment():
-    if not os.getenv("OPENAI_API_KEY"):
+    original_api_key = os.environ.get("OPENAI_API_KEY")
+    original_evals = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS")
+
+    if not original_api_key:
         os.environ["OPENAI_API_KEY"] = "test_openai_api_key"
+    os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
+    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
+
+    yield
+
+    if original_api_key is None:
+        os.environ.pop("OPENAI_API_KEY", None)
+    else:
+        os.environ["OPENAI_API_KEY"] = original_api_key
+
+    if original_evals is None:
+        os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
+    else:
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = original_evals
+
+    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.fixture
