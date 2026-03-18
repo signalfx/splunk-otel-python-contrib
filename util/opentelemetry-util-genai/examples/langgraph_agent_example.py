@@ -394,7 +394,6 @@ def run_agent_with_telemetry(question: str):
         framework="langgraph",
         model="gpt-5-nano",
         input_context=question,
-        run_id=agent_obj.run_id,
     )
     handler.start_agent(agent_invocation)
 
@@ -517,7 +516,9 @@ def run_agent_with_telemetry(question: str):
                     input_messages=input_msgs,
                     output_messages=[output_msg],
                     agent_name="capital_agent",
-                    agent_id=str(agent_obj.run_id),
+                    agent_id=f"{agent_obj.span_id:016x}"
+                    if agent_obj.span_id is not None
+                    else None,
                 )
 
                 # Populate all token-related attributes from real data
@@ -531,14 +532,6 @@ def run_agent_with_telemetry(question: str):
                 # Populate response_id if available
                 if llm_call_data.get("response_id"):
                     llm_invocation.response_id = llm_call_data["response_id"]
-
-                # Populate run_id and parent_run_id from LangChain
-                if llm_call_data.get("request_id"):
-                    llm_invocation.run_id = llm_call_data["request_id"]
-                if llm_call_data.get("parent_run_id"):
-                    llm_invocation.parent_run_id = llm_call_data[
-                        "parent_run_id"
-                    ]
 
                 # Populate attributes dict with gen_ai.* semantic convention attributes
                 if llm_call_data.get("temperature") is not None:

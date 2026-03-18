@@ -181,72 +181,32 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 and parent_ctx.span_id == expected_parent_span_id
             ):
                 return context_agent_span
-        stack = getattr(self._handler, "_agent_context_stack", None)
-        if not stack:
-            return None
-        span_registry = getattr(self._handler, "_span_registry", {})
-        expected_parent_span_id = None
-        if expected_parent_span and hasattr(expected_parent_span, "get_span_context"):
-            try:
-                expected_parent_span_id = (
-                    expected_parent_span.get_span_context().span_id
-                )
-            except Exception:
-                expected_parent_span_id = None
-        try:
-            if expected_parent_span_id is None:
-                _agent_name, agent_run_id = stack[-1]
-                return span_registry.get(str(agent_run_id))
-
-            for _agent_name, agent_run_id in reversed(stack):
-                agent_span = span_registry.get(str(agent_run_id))
-                if not agent_span:
-                    continue
-                parent_ctx = getattr(agent_span, "parent", None)
-                if parent_ctx and parent_ctx.span_id == expected_parent_span_id:
-                    return agent_span
-            return None
-        except Exception:
-            return None
+        # The handler's _agent_context_stack no longer tracks spans
+        # (the _span_registry was removed). If the invocation manager's
+        # context lookup above didn't find an agent span, there is no
+        # further fallback available.
+        return None
 
     def _get_active_agent_context_fallback(
         self, expected_parent_span: Optional[Any] = None
     ) -> Optional[tuple[str, str]]:
         """Resolve active agent (name, id) from context, then handler stack."""
         context_agent = self._invocation_manager.get_current_agent_invocation()
-        if context_agent and getattr(context_agent, "run_id", None):
+        if context_agent and getattr(context_agent, "span_id", None):
             name = getattr(context_agent, "agent_name", None) or getattr(
                 context_agent, "name", None
             )
             if name:
-                return (_normalize_agent_name(name), str(context_agent.run_id))
+                return (_normalize_agent_name(name), f"{context_agent.span_id:016x}")
 
         if not self._handler:
             return None
         stack = getattr(self._handler, "_agent_context_stack", None)
         if not stack:
             return None
-        span_registry = getattr(self._handler, "_span_registry", {})
-        expected_parent_span_id = None
-        if expected_parent_span and hasattr(expected_parent_span, "get_span_context"):
-            try:
-                expected_parent_span_id = (
-                    expected_parent_span.get_span_context().span_id
-                )
-            except Exception:
-                expected_parent_span_id = None
         try:
-            if expected_parent_span_id is None:
-                top_name, top_id = stack[-1]
-                return (_normalize_agent_name(top_name), str(top_id))
-            for agent_name, agent_run_id in reversed(stack):
-                agent_span = span_registry.get(str(agent_run_id))
-                if not agent_span:
-                    continue
-                parent_ctx = getattr(agent_span, "parent", None)
-                if parent_ctx and parent_ctx.span_id == expected_parent_span_id:
-                    return (_normalize_agent_name(agent_name), str(agent_run_id))
-            return None
+            top_name, top_id = stack[-1]
+            return (_normalize_agent_name(top_name), str(top_id) if top_id else "")
         except Exception:
             return None
 
@@ -412,8 +372,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         llm_inv.agent_name = _normalize_agent_name(
                             context_agent.agent_name
                         )
-                    if getattr(context_agent, "run_id", None):
-                        llm_inv.agent_id = str(context_agent.run_id)
+                    if getattr(context_agent, "span_id", None):
+                        llm_inv.agent_id = f"{context_agent.span_id:016x}"
             else:
                 active_agent_span = self._get_active_agent_span_fallback(
                     expected_parent_span=parent_span
@@ -425,8 +385,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if context_agent_span and context_agent:
                 if getattr(context_agent, "agent_name", None):
                     llm_inv.agent_name = _normalize_agent_name(context_agent.agent_name)
-                if getattr(context_agent, "run_id", None):
-                    llm_inv.agent_id = str(context_agent.run_id)
+                if getattr(context_agent, "span_id", None):
+                    llm_inv.agent_id = f"{context_agent.span_id:016x}"
         if parent_span:
             llm_inv.parent_span = parent_span  # type: ignore[attr-defined]
         if not llm_inv.agent_name or not llm_inv.agent_id:
@@ -619,9 +579,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if entity is None:
                 break
             # Move to parent
-            current_id = getattr(entity, "parent_run_id", None)
-            if current_id:
-                current_id = str(current_id)
+            current_id = self._invocation_manager.get_parent_id(current_id)
         return None
 
     def _handle_agent_step_start(
@@ -778,7 +736,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         tool_call.attributes = {
             "tool.description": tool_description,
         }
-        tool_call.run_id = event_id  # type: ignore[attr-defined]
         tool_call.framework = "llamaindex"  # type: ignore[attr-defined]
 
         # Propagate agent context to tool call
@@ -788,7 +745,8 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             )
             if agent_name:
                 tool_call.agent_name = _normalize_agent_name(agent_name)  # type: ignore[attr-defined]
-            tool_call.agent_id = str(context_agent.run_id)  # type: ignore[attr-defined]
+            if getattr(context_agent, "span_id", None):
+                tool_call.agent_id = f"{context_agent.span_id:016x}"  # type: ignore[attr-defined]
             context_attrs = getattr(context_agent, "attributes", None)
             if isinstance(context_attrs, dict):
                 workflow_name = context_attrs.get("gen_ai.workflow.name")
@@ -966,7 +924,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             operation_name="retrieve",
             retriever_type="llamaindex_retriever",
             query=_safe_str(query_str),
-            parent_run_id=parent_run_id,
             attributes={},
         )
 

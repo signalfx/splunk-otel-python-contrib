@@ -156,7 +156,6 @@ def run_mock_agent_with_telemetry(question: str) -> str:
         ),
     )
     agent_create.agent_name = agent_create.name
-    agent_create.agent_id = str(agent_create.run_id)
     agent_create.attributes["agent.version"] = "1.0"
     agent_create.attributes["agent.temperature"] = mocked["invocation_params"][
         "temperature"
@@ -177,11 +176,8 @@ def run_mock_agent_with_telemetry(question: str) -> str:
         provider="openai",
         framework="langgraph",
         input_context=question,
-        run_id=mocked["agent_run_id"],
-        parent_run_id=agent_create.run_id,
     )
     agent_invoke.agent_name = agent_invoke.name
-    agent_invoke.agent_id = agent_create.agent_id
     agent_invoke.attributes["agent.temperature"] = mocked["invocation_params"][
         "temperature"
     ]
@@ -219,10 +215,7 @@ def run_mock_agent_with_telemetry(question: str) -> str:
         response_finish_reasons=[mocked["finish_reason"]],
         response_system_fingerprint=mocked["system_fingerprint"],
         request_service_tier=mocked["invocation_params"]["service_tier"],
-        run_id=mocked["llm_run_id"],
-        parent_run_id=agent_invoke.run_id,
         agent_name=agent_invoke.name,
-        agent_id=str(agent_invoke.run_id),
     )
     llm_invocation.input_tokens = mocked["input_tokens"]
     llm_invocation.output_tokens = mocked["output_tokens"]
