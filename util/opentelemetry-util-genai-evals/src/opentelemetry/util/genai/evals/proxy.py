@@ -260,18 +260,22 @@ class EvalManagerProxy(CompletionCallback):
             )
             return
 
-        run_id = str(invocation.run_id)
+        span_id = (
+            f"{invocation.span_id:016x}"
+            if invocation.span_id is not None
+            else None
+        )
 
         with self._pending_lock:
-            self._pending[run_id] = invocation
+            self._pending[span_id] = invocation
 
         try:
             self._parent_conn.send(("evaluate", serializable))
-            _LOGGER.debug("Sent invocation for evaluation: %s", run_id)
+            _LOGGER.debug("Sent invocation for evaluation: %s", span_id)
         except Exception as exc:
             _LOGGER.warning("Failed to send invocation to worker: %s", exc)
             with self._pending_lock:
-                self._pending.pop(run_id, None)
+                self._pending.pop(span_id, None)
             invocation.evaluation_error = "client_evaluation_send_error"
 
     def _result_receiver_loop(self) -> None:

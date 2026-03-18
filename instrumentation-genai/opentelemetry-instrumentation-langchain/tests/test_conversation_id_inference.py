@@ -68,31 +68,32 @@ class _StubTelemetryHandler:
         self.failed_steps: list[Any] = []
         self.started_workflows: list[Any] = []
         self.stopped_workflows: list[Any] = []
+        self.failed_workflows: list[Any] = []
         self.entities: dict[str, Any] = {}
 
     def start_agent(self, agent):
         self.started_agents.append(agent)
-        self.entities[str(agent.run_id)] = agent
+        self.entities[id(agent)] = agent
         return agent
 
     def stop_agent(self, agent):
         self.stopped_agents.append(agent)
-        self.entities.pop(str(agent.run_id), None)
+        self.entities.pop(id(agent), None)
         return agent
 
     def fail_agent(self, agent, error):
         self.failed_agents.append((agent, error))
-        self.entities.pop(str(agent.run_id), None)
+        self.entities.pop(id(agent), None)
         return agent
 
     def start_llm(self, invocation):
         self.started_llms.append(invocation)
-        self.entities[str(invocation.run_id)] = invocation
+        self.entities[id(invocation)] = invocation
         return invocation
 
     def stop_llm(self, invocation):
         self.stopped_llms.append(invocation)
-        self.entities.pop(str(invocation.run_id), None)
+        self.entities.pop(id(invocation), None)
         return invocation
 
     def evaluate_llm(self, invocation):
@@ -100,56 +101,48 @@ class _StubTelemetryHandler:
 
     def start_tool_call(self, call):
         self.started_tools.append(call)
-        self.entities[str(call.run_id)] = call
+        self.entities[id(call)] = call
         return call
 
     def stop_tool_call(self, call):
         self.stopped_tools.append(call)
-        self.entities.pop(str(call.run_id), None)
+        self.entities.pop(id(call), None)
         return call
 
     def fail_tool_call(self, call, error):
         self.failed_tools.append((call, error))
-        self.entities.pop(str(call.run_id), None)
+        self.entities.pop(id(call), None)
         return call
 
     def start_step(self, step):
         self.started_steps.append(step)
-        self.entities[str(step.run_id)] = step
+        self.entities[id(step)] = step
         return step
 
     def stop_step(self, step):
         self.stopped_steps.append(step)
-        self.entities.pop(str(step.run_id), None)
+        self.entities.pop(id(step), None)
         return step
 
     def fail_step(self, step, error):
         self.failed_steps.append((step, error))
-        self.entities.pop(str(step.run_id), None)
+        self.entities.pop(id(step), None)
         return step
 
     def start_workflow(self, workflow):
         self.started_workflows.append(workflow)
-        self.entities[str(workflow.run_id)] = workflow
+        self.entities[id(workflow)] = workflow
         return workflow
 
     def stop_workflow(self, workflow):
         self.stopped_workflows.append(workflow)
-        self.entities.pop(str(workflow.run_id), None)
+        self.entities.pop(id(workflow), None)
         return workflow
 
     def fail_workflow(self, workflow, error):
-        self.entities.pop(str(workflow.run_id), None)
+        self.failed_workflows.append((workflow, error))
+        self.entities.pop(id(workflow), None)
         return workflow
-
-    def fail_by_run_id(self, run_id, error):
-        entity = self.entities.get(str(run_id))
-        if entity is None:
-            return
-        self.fail_agent(entity, error)
-
-    def get_entity(self, run_id):
-        return self.entities.get(str(run_id))
 
 
 @pytest.fixture(name="handler_with_stub")
@@ -452,26 +445,70 @@ class TestConversationIdContextVarPropagation:
         # ContextVar should be restored to empty
         assert get_genai_context().conversation_id is None
 
-    def test_contextvar_restored_on_chain_error(self, handler_with_stub):
-        """ContextVar should be restored even when the root chain errors."""
+    def test_interrupted_workflow_does_not_leak_conversation_id(
+        self, handler_with_stub
+    ):
+        """Realistic interrupt/resume scenario: workflow A is interrupted,
+        then workflow B starts with a different thread_id.  Without
+        _restore_inferred_context, workflow A's conversation_id leaks
+        into the ContextVar, which causes workflow B to skip inference
+        (because ctx.conversation_id is already set) and inherit the
+        wrong conversation_id.
+
+        Sequence without restore (the bug):
+          1. on_chain_start(wf_A, thread_id="session-A")
+             → ContextVar pushed to "session-A"
+          2. on_chain_error(wf_A, GraphInterrupt)
+             → ContextVar still "session-A" (leaked!)
+          3. on_chain_start(wf_B, thread_id="session-B")
+             → ctx.conversation_id == "session-A" → inference SKIPPED
+             → wf_B.conversation_id stays None
+             → all wf_B children inherit "session-A" — WRONG
+
+        With restore (correct):
+          2. on_chain_error(wf_A, GraphInterrupt)
+             → _restore clears ContextVar → None
+          3. on_chain_start(wf_B, thread_id="session-B")
+             → ctx.conversation_id is None → infers "session-B" ✓
+        """
         handler, stub = handler_with_stub
 
-        wf_run_id = uuid4()
+        # --- Workflow A: interrupted ---
+        wf_a_run_id = uuid4()
         handler.on_chain_start(
             serialized={"name": "LangGraph"},
-            inputs={"messages": [HumanMessage(content="hello")]},
-            run_id=wf_run_id,
-            metadata={"thread_id": "session-err"},
+            inputs={"messages": [HumanMessage(content="start")]},
+            run_id=wf_a_run_id,
+            metadata={"thread_id": "session-A"},
         )
+        assert get_genai_context().conversation_id == "session-A"
 
-        assert get_genai_context().conversation_id == "session-err"
+        # Simulate GraphInterrupt cascading up to the root workflow
+        class GraphInterrupt(Exception):
+            pass
 
         handler.on_chain_error(
-            error=RuntimeError("boom"),
-            run_id=wf_run_id,
+            error=GraphInterrupt("human review needed"),
+            run_id=wf_a_run_id,
         )
 
+        # ContextVar must be clean after the interrupt
         assert get_genai_context().conversation_id is None
+        assert len(stub.failed_workflows) == 1
+
+        # --- Workflow B: resumed with different thread_id ---
+        wf_b_run_id = uuid4()
+        handler.on_chain_start(
+            serialized={"name": "LangGraph"},
+            inputs={"messages": [HumanMessage(content="approved")]},
+            run_id=wf_b_run_id,
+            metadata={"thread_id": "session-B", "checkpoint_id": "cp-123"},
+        )
+
+        # Workflow B must have its OWN conversation_id, not session-A
+        wf_b = stub.started_workflows[-1]
+        assert wf_b.conversation_id == "session-B"
+        assert get_genai_context().conversation_id == "session-B"
 
     def test_contextvar_not_set_when_explicit_context_active(self, handler_with_stub):
         """When explicit genai_context is active, inferred thread_id should
@@ -655,7 +692,6 @@ class TestOrphanSpanGuard:
         assert len(stub.started_steps) == 0
         assert len(stub.started_agents) == 0
         assert len(stub.started_workflows) == 0
-        assert stub.get_entity(child_run_id) is None
 
     def test_child_with_live_parent_is_created(self, handler_with_stub):
         """on_chain_start with a live parent_run_id should still create
@@ -683,7 +719,6 @@ class TestOrphanSpanGuard:
         )
 
         assert len(stub.started_steps) == 1
-        assert stub.get_entity(child_run_id) is not None
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")

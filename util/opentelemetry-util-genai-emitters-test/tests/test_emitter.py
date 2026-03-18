@@ -50,7 +50,6 @@ class TestTestEmitter:
         assert len(events) == 1
         assert events[0].event_type == "start"
         assert events[0].invocation_type == "LLMInvocation"
-        assert events[0].run_id == str(invocation.run_id)
 
         stats = emitter.get_stats()
         assert stats["total_starts"] == 1

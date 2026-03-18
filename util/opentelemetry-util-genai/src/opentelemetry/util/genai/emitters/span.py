@@ -638,7 +638,12 @@ class SpanEmitter(EmitterMeta):
         # Set operation name based on agent operation (create or invoke)
         semconv_attrs = dict(agent.semantic_convention_attributes())
         semconv_attrs.setdefault(GEN_AI_AGENT_NAME, agent.name)
-        semconv_attrs.setdefault(GEN_AI_AGENT_ID, str(agent.run_id))
+        semconv_attrs.setdefault(
+            GEN_AI_AGENT_ID,
+            f"{agent.span_id:016x}"
+            if agent.span_id is not None
+            else str(id(agent)),
+        )
         _apply_gen_ai_semconv_attributes(span, semconv_attrs)
 
         # Optional attributes

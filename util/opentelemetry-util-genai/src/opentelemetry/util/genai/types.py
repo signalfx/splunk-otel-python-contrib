@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Type, Union
-from uuid import UUID, uuid4
 
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
@@ -80,8 +79,6 @@ class GenAI:
     )
     framework: Optional[str] = None
     attributes: Dict[str, Any] = field(default_factory=_new_str_any_dict)
-    run_id: UUID = field(default_factory=uuid4)
-    parent_run_id: Optional[UUID] = None
     agent_name: Optional[str] = field(
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_AGENT_NAME},
@@ -530,8 +527,6 @@ class Workflow(GenAI):
         end_time: Timestamp when workflow completed
         span: OpenTelemetry span associated with this workflow
         context_token: Context token for span management
-        run_id: Unique identifier for this workflow execution
-        parent_run_id: Optional parent workflow/trace identifier
     """
 
     name: str
