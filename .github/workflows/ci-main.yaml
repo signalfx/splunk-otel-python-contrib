@@ -51,9 +51,6 @@ jobs:
           pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
           pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
           pip install -e util/opentelemetry-util-genai-emitters-test --no-deps
-          pip install -e util/opentelemetry-util-genai-traceloop-translator --no-deps
-          pip install -e util/opentelemetry-util-genai-openlit-translator --no-deps
-          pip install -e util/opentelemetry-util-genai-langsmith-translator --no-deps
 
       - name: Install instrumentation packages
         run: |
@@ -85,18 +82,6 @@ jobs:
       - name: Run tests - opentelemetry-util-genai-emitters-test
         run: |
           python -m pytest util/opentelemetry-util-genai-emitters-test/tests/ -v
-
-      - name: Run tests - opentelemetry-util-genai-traceloop-translator
-        run: |
-          python -m pytest util/opentelemetry-util-genai-traceloop-translator/tests/ -v
-
-      - name: Run tests - opentelemetry-util-genai-openlit-translator
-        run: |
-          python -m pytest util/opentelemetry-util-genai-openlit-translator/tests/ -v
-
-      - name: Run tests - opentelemetry-util-genai-langsmith-translator
-        run: |
-          python -m pytest util/opentelemetry-util-genai-langsmith-translator/tests/ -v
 
       - name: Run tests - opentelemetry-instrumentation-langchain
         run: |
