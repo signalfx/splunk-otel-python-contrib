@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.9
+
+### Fixed
+- **Context suppression leak in `_OpenAITracingWrapper`** — `context_api.attach()` was called without `detach()`, leaking the suppression context. Now properly scoped with `try/finally` for all four callable types: sync, sync generator (`_stream`), async coroutine (`_agenerate`), and async generator (`_astream`).
+- **Missing `parent_span` after run_id removal** — Added `_resolve_parent_span()` to look up parent invocation spans via `_InvocationManager`. Set `parent_span` explicitly in all 5 invocation start paths (agent, tool, step, LLM, tool from `on_tool_start`) to restore parent-child span relationships.
+
 ## Version 0.1.8
 
 ### Added
