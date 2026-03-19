@@ -32,6 +32,7 @@ instruments = ["llama-index-core >= 0.14.0"]
 test = [
     "llama-index-core >= 0.14.0",
     "llama-index-llms-openai >= 0.6.0",
+    "llama-index-embeddings-openai >= 0.4.0",
     "pytest >= 7.0.0",
 ]
 
