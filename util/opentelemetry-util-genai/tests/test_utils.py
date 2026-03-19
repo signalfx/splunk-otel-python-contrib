@@ -218,8 +218,8 @@ class TestTelemetryHandler(unittest.TestCase):
             provider="test-provider",
         )
 
-        # Pass invocation data to start_llm
         self.telemetry_handler.start_llm(parent_invocation)
+        child_invocation.parent_span = parent_invocation.span
         self.telemetry_handler.start_llm(child_invocation)
 
         # Stop child first, then parent (order should not matter)

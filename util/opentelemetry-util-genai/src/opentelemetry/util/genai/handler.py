@@ -48,6 +48,7 @@ Usage:
     # handler.fail_llm(invocation, Error(type="...", message="..."))
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -65,11 +66,14 @@ except Exception:  # pragma: no cover - fallback if debug module missing
 
 
 from opentelemetry import _events as _otel_events
+from opentelemetry import context as context_api
+from opentelemetry import trace
 from opentelemetry._logs import Logger, LoggerProvider, get_logger
 from opentelemetry.metrics import MeterProvider, get_meter
 from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
 from opentelemetry.semconv.schemas import Schemas
 from opentelemetry.trace import (
+    Span,
     TracerProvider,
     get_tracer,
 )
@@ -147,6 +151,23 @@ class GenAIContext:
 _genai_context: ContextVar[GenAIContext] = ContextVar(
     "genai_context", default=GenAIContext()
 )
+
+# Tracks the most recently started GenAI span in the current context.
+# Used as a fallback parent for instrumentations that don't explicitly
+# set parent_span (e.g. sync frameworks like CrewAI / FastMCP).
+# Uses ContextVar.set() (never reset()) to avoid cross-task token errors.
+_current_genai_span: ContextVar[Optional[Span]] = ContextVar(
+    "_current_genai_span", default=None
+)
+
+
+def _is_async_context() -> bool:
+    """Return True when called inside a running asyncio event loop."""
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
 
 
 def set_genai_context(
@@ -515,6 +536,44 @@ class TelemetryHandler:
         except Exception:
             pass
 
+    # -- Span parenting helpers -----------------------------------------------
+    # These maintain a ContextVar-based "current GenAI span" so that sync
+    # instrumentations (CrewAI, FastMCP) get correct parent-child links
+    # without needing to set parent_span themselves.  Async instrumentations
+    # (LangChain, OpenAI Agents) already set parent_span explicitly; the
+    # ContextVar fallback is simply ignored for them.
+
+    @staticmethod
+    def _inherit_parent_span(invocation: GenAI) -> None:
+        """If parent_span is unset, inherit from the current GenAI span."""
+        if getattr(invocation, "parent_span", None) is None:
+            current = _current_genai_span.get()
+            if current is not None:
+                invocation.parent_span = current
+
+    @staticmethod
+    def _push_current_span(invocation: GenAI) -> None:
+        """After span creation, track this span as current for child resolution.
+
+        In sync contexts, also attach to OTel context so downstream
+        non-GenAI instrumentations (HTTP, DB) see the correct parent.
+        Skipped in async contexts to avoid cross-task detach errors.
+        """
+        span = getattr(invocation, "span", None)
+        if span is not None:
+            _current_genai_span.set(span)
+            if not _is_async_context():
+                ctx = trace.set_span_in_context(span)
+                invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _pop_current_span(invocation: GenAI) -> None:
+        """After completion, restore current span to parent (effectively a pop)."""
+        _current_genai_span.set(getattr(invocation, "parent_span", None))
+        token = getattr(invocation, "_otel_context_token", None)
+        if token is not None:
+            context_api.detach(token)
+
     def start_llm(
         self,
         invocation: LLMInvocation,
@@ -534,8 +593,9 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
-        # Start invocation span; tracer context propagation handles parent/child links
+        self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
+        self._push_current_span(invocation)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -564,10 +624,9 @@ class TelemetryHandler:
             invocation.trace_id
         )
 
-        # Send invocation for evaluation if applicable
         self._notify_completion(invocation)
-        # Send invocation for emitting telemetry
         self._emitter.on_end(invocation)
+        self._pop_current_span(invocation)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -605,6 +664,7 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
+        self._pop_current_span(invocation)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -647,7 +707,9 @@ class TelemetryHandler:
             if not invocation.agent_id:
                 invocation.agent_id = top_id
         invocation.start_time = time.time()
+        self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
+        self._push_current_span(invocation)
         return invocation
 
     def stop_embedding(
@@ -656,15 +718,13 @@ class TelemetryHandler:
         """Finalize an embedding invocation successfully and end its span."""
         invocation.end_time = time.time()
 
-        # Determine if this invocation should be sampled for evaluation
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
 
-        # Send invocation for evaluation if applicable
         self._notify_completion(invocation)
-        # Send invocation for emitting telemetry
         self._emitter.on_end(invocation)
+        self._pop_current_span(invocation)
         # Force flush metrics if a custom provider with force_flush is present
         if (
             hasattr(self, "_meter_provider")
@@ -683,6 +743,7 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
+        self._pop_current_span(invocation)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -709,7 +770,9 @@ class TelemetryHandler:
             if not invocation.agent_id:
                 invocation.agent_id = top_id
         invocation.start_time = time.time()
+        self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
+        self._push_current_span(invocation)
         return invocation
 
     def stop_retrieval(
@@ -718,12 +781,12 @@ class TelemetryHandler:
         """Finalize a retrieval invocation successfully and end its span."""
         invocation.end_time = time.time()
 
-        # Determine if this invocation should be sampled for evaluation
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
 
         self._emitter.on_end(invocation)
+        self._pop_current_span(invocation)
         self._notify_completion(invocation)
         # Force flush metrics if a custom provider with force_flush is present
         if (
@@ -743,6 +806,7 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
+        self._pop_current_span(invocation)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -756,7 +820,6 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
-        # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
@@ -766,22 +829,22 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
+        self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
+        self._push_current_span(invocation)
         return invocation
 
     def stop_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Finalize a tool call invocation successfully and end its span."""
         invocation.end_time = time.time()
 
-        # Determine if this invocation should be sampled for evaluation
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
 
-        # Send invocation for evaluation if applicable
         self._notify_completion(invocation)
-        # Send invocation for emitting telemetry
         self._emitter.on_end(invocation)
+        self._pop_current_span(invocation)
         return invocation
 
     def fail_tool_call(self, invocation: ToolCall, error: Error) -> ToolCall:
@@ -789,15 +852,17 @@ class TelemetryHandler:
         invocation.end_time = time.time()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
+        self._pop_current_span(invocation)
         return invocation
 
     # Workflow lifecycle --------------------------------------------------
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply GenAI context from contextvars if not already set
         _apply_genai_context(workflow)
+        self._inherit_parent_span(workflow)
         self._emitter.on_start(workflow)
+        self._push_current_span(workflow)
         return workflow
 
     def _handle_evaluation_results(
@@ -921,15 +986,13 @@ class TelemetryHandler:
         """Finalize a workflow successfully and end its span."""
         workflow.end_time = time.time()
 
-        # Determine if this invocation should be sampled for evaluation
         workflow.sample_for_evaluation = self._should_sample_for_evaluation(
             workflow.trace_id
         )
 
-        # Send invocation for evaluation if applicable
         self._notify_completion(workflow)
-        # Send invocation for emitting telemetry
         self._emitter.on_end(workflow)
+        self._pop_current_span(workflow)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -945,6 +1008,7 @@ class TelemetryHandler:
         workflow.end_time = time.time()
         self._emitter.on_error(error, workflow)
         self._notify_completion(workflow)
+        self._pop_current_span(workflow)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -961,9 +1025,10 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply GenAI context from contextvars if not already set
         _apply_genai_context(agent)
+        self._inherit_parent_span(agent)
         self._emitter.on_start(agent)
+        self._push_current_span(agent)
         # Push agent identity context
         if isinstance(agent, AgentInvocation):
             try:
@@ -981,15 +1046,13 @@ class TelemetryHandler:
         """Finalize an agent operation successfully and end its span."""
         agent.end_time = time.time()
 
-        # Determine if this invocation should be sampled for evaluation
         agent.sample_for_evaluation = self._should_sample_for_evaluation(
             agent.trace_id
         )
 
-        # Send invocation for evaluation if applicable
         self._notify_completion(agent)
-        # Send invocation for emitting telemetry
         self._emitter.on_end(agent)
+        self._pop_current_span(agent)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1016,6 +1079,7 @@ class TelemetryHandler:
         agent.end_time = time.time()
         self._emitter.on_error(error, agent)
         self._notify_completion(agent)
+        self._pop_current_span(agent)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1039,24 +1103,23 @@ class TelemetryHandler:
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
         self._refresh_capture_content()
-        # Apply GenAI context from contextvars if not already set
         _apply_genai_context(step)
+        self._inherit_parent_span(step)
         self._emitter.on_start(step)
+        self._push_current_span(step)
         return step
 
     def stop_step(self, step: Step) -> Step:
         """Finalize a step successfully and end its span."""
         step.end_time = time.time()
 
-        # Determine if this invocation should be sampled for evaluation
         step.sample_for_evaluation = self._should_sample_for_evaluation(
             step.trace_id
         )
 
-        # Send invocation for evaluation if applicable
         self._notify_completion(step)
-        # Send invocation for emitting telemetry
         self._emitter.on_end(step)
+        self._pop_current_span(step)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1072,6 +1135,7 @@ class TelemetryHandler:
         step.end_time = time.time()
         self._emitter.on_error(error, step)
         self._notify_completion(step)
+        self._pop_current_span(step)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None

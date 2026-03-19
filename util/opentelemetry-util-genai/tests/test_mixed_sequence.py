@@ -14,10 +14,10 @@ def test_mixed_sequence_llm_tool_llm_embedding_parenting():
     handler.start_llm(llm1)
     assert llm1.span is not None
 
-    # ToolCall inside llm1 span context
     tool = ToolCall(
         name="translate", id="t1", arguments={"text": "hola"}, provider="prov"
     )
+    tool.parent_span = llm1.span
     handler.start_tool_call(tool)
     assert tool.span is not None
     # Same trace id indicates proper parenting; span ids must differ
@@ -37,6 +37,7 @@ def test_mixed_sequence_llm_tool_llm_embedding_parenting():
     llm2 = LLMInvocation(request_model="model-beta")
     handler.start_llm(llm2)
     emb = EmbeddingInvocation(request_model="embed-1", input_texts=["abc"])
+    emb.parent_span = llm2.span
     handler.start_embedding(emb)
     assert emb.span is not None and llm2.span is not None
     assert (
