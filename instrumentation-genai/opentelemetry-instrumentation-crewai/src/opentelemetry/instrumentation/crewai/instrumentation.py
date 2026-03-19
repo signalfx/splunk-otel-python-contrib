@@ -30,6 +30,8 @@ _instruments = ("crewai >= 0.70.0",)
 
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
+# Active root workflow (set during kickoff, used by child wrappers)
+_active_workflow: Optional[Workflow] = None
 
 _logger = logging.getLogger(__name__)
 
@@ -209,6 +211,9 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         # If instrumentation setup fails, just run the original function
         return wrapped(*args, **kwargs)
 
+    global _active_workflow
+    prev_workflow = _active_workflow
+    _active_workflow = workflow
     try:
         result = wrapped(*args, **kwargs)
 
@@ -232,6 +237,8 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         except Exception:
             pass
         raise
+    finally:
+        _active_workflow = prev_workflow
 
 
 def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
@@ -263,6 +270,10 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
             if expected_output:
                 messages["expected_output"] = expected_output
             agent_invocation.input_messages = _make_input_message(messages)
+
+        # Communicate parent hierarchy for conversation root detection.
+        if _active_workflow and getattr(_active_workflow, "span", None):
+            agent_invocation.parent_span = _active_workflow.span
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)

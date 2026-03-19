@@ -821,3 +821,73 @@ class TestWrapperGracefulDegradation:
         # Should raise the original error, not the fail error
         with pytest.raises(ValueError, match="Original error"):
             crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
+
+
+# ---- conversation_root via real TelemetryHandler integration tests ----------
+
+
+class TestConversationRootOnSpan:
+    """Validate that handler marks root workflow with conversation_root=True on span."""
+
+    def test_crew_kickoff_workflow_has_conversation_root(
+        self, tracer_provider, span_exporter, meter_provider
+    ):
+        """Crew.kickoff creates a Workflow via real handler; span should have conversation_root=True."""
+        from opentelemetry.util.genai.handler import get_telemetry_handler
+
+        if hasattr(get_telemetry_handler, "_default_handler"):
+            delattr(get_telemetry_handler, "_default_handler")
+
+        real_handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+        )
+        crewai_module._handler = real_handler
+
+        mock_crew = mock.MagicMock()
+        mock_crew.name = "Root Crew"
+
+        result = mock.MagicMock()
+        result.raw = "Done"
+        mock_wrapped = mock.MagicMock(return_value=result)
+
+        crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
+
+        spans = span_exporter.get_finished_spans()
+        workflow_spans = [s for s in spans if "invoke_workflow" in str(s.attributes)]
+        assert workflow_spans, (
+            "Expected at least one workflow span with invoke_workflow"
+        )
+        attrs = dict(workflow_spans[0].attributes or {})
+        assert attrs.get("gen_ai.conversation_root") is True
+
+    def test_child_agent_lacks_conversation_root(
+        self, tracer_provider, span_exporter, meter_provider
+    ):
+        """Agent started under an existing workflow should NOT have conversation_root."""
+        from opentelemetry.util.genai.handler import get_telemetry_handler
+
+        if hasattr(get_telemetry_handler, "_default_handler"):
+            delattr(get_telemetry_handler, "_default_handler")
+
+        real_handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+        )
+
+        # Start root workflow
+        wf = Workflow(name="Root Crew")
+        real_handler.start_workflow(wf)
+
+        # Start child agent under the workflow — simulate parent_span
+        agent = AgentInvocation(name="SubAgent")
+        agent.parent_span = wf.span
+        real_handler.start_agent(agent)
+        real_handler.stop_agent(agent)
+        real_handler.stop_workflow(wf)
+
+        spans = span_exporter.get_finished_spans()
+        agent_spans = [s for s in spans if "invoke_agent" in str(s.attributes)]
+        assert agent_spans, "Expected at least one agent span with invoke_agent"
+        attrs = dict(agent_spans[0].attributes or {})
+        assert "gen_ai.conversation_root" not in attrs

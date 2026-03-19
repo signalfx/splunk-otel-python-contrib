@@ -393,6 +393,11 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 agent.model = _safe_str(metadata["model_name"])
             if metadata.get("system"):
                 agent.system = _safe_str(metadata["system"])
+        # Communicate parent hierarchy so the handler can detect roots.
+        if parent_run_id is not None:
+            parent_entity = self._invocation_manager.get(parent_run_id)
+            if parent_entity and getattr(parent_entity, "span", None):
+                agent.parent_span = parent_entity.span
         self._handler.start_agent(agent)
         self._invocation_manager.add(run_id, parent_run_id, agent)
         return agent

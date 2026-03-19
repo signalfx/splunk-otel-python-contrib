@@ -1,4 +1,5 @@
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,7 +16,9 @@ from opentelemetry.util.genai.emitters.content_events import (
     ContentEventsEmitter,
 )
 from opentelemetry.util.genai.emitters.span import SpanEmitter
+from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
+    AgentCreation,
     AgentInvocation,
     EmbeddingInvocation,
     Error,
@@ -23,7 +26,9 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
+    Step,
     Text,
+    ToolCall,
     Workflow,
 )
 
@@ -430,8 +435,6 @@ def test_llm_span_emitter_for_sampled_attribute():
 
 def test_handler_marks_workflow_root_when_no_parent_span():
     """Handler auto-sets conversation_root=True on Workflow with no parent_span."""
-    from opentelemetry.util.genai.handler import TelemetryHandler
-
     workflow = Workflow(name="root_wf")
     TelemetryHandler._maybe_mark_conversation_root(workflow)
     assert workflow.conversation_root is True
@@ -439,8 +442,6 @@ def test_handler_marks_workflow_root_when_no_parent_span():
 
 def test_handler_marks_agent_root_when_no_parent_span():
     """Handler auto-sets conversation_root=True on AgentInvocation with no parent_span."""
-    from opentelemetry.util.genai.handler import TelemetryHandler
-
     agent = AgentInvocation(name="root_agent")
     TelemetryHandler._maybe_mark_conversation_root(agent)
     assert agent.conversation_root is True
@@ -448,10 +449,6 @@ def test_handler_marks_agent_root_when_no_parent_span():
 
 def test_handler_skips_root_when_parent_span_exists():
     """Handler does NOT set conversation_root when parent_span is present."""
-    from unittest.mock import MagicMock
-
-    from opentelemetry.util.genai.handler import TelemetryHandler
-
     workflow = Workflow(name="child_wf")
     workflow.parent_span = MagicMock()  # simulate a parent span
     TelemetryHandler._maybe_mark_conversation_root(workflow)
@@ -460,8 +457,6 @@ def test_handler_skips_root_when_parent_span_exists():
 
 def test_handler_respects_explicit_conversation_root_false():
     """Handler does NOT override conversation_root when explicitly set to False."""
-    from opentelemetry.util.genai.handler import TelemetryHandler
-
     workflow = Workflow(name="wf", conversation_root=False)
     TelemetryHandler._maybe_mark_conversation_root(workflow)
     assert workflow.conversation_root is False
@@ -469,14 +464,54 @@ def test_handler_respects_explicit_conversation_root_false():
 
 def test_handler_respects_explicit_conversation_root_true_with_parent():
     """Handler preserves conversation_root=True even if parent_span exists."""
-    from unittest.mock import MagicMock
-
-    from opentelemetry.util.genai.handler import TelemetryHandler
-
     agent = AgentInvocation(name="forced_root", conversation_root=True)
     agent.parent_span = MagicMock()
     TelemetryHandler._maybe_mark_conversation_root(agent)
     assert agent.conversation_root is True
+
+
+def test_handler_idempotent_when_already_true():
+    """Calling _maybe_mark_conversation_root twice does not change result."""
+    workflow = Workflow(name="wf")
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is True
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is True
+
+
+def test_handler_skips_llm_invocation():
+    """LLMInvocation is never marked as conversation root."""
+    llm = LLMInvocation(request_model="test-model")
+    TelemetryHandler._maybe_mark_conversation_root(llm)
+    assert llm.conversation_root is None
+
+
+def test_handler_skips_step():
+    """Step entity is never marked as conversation root."""
+    step = Step(name="my_step")
+    TelemetryHandler._maybe_mark_conversation_root(step)
+    assert step.conversation_root is None
+
+
+def test_handler_skips_tool_call():
+    """ToolCall entity is never marked as conversation root."""
+    tool = ToolCall(name="my_tool")
+    TelemetryHandler._maybe_mark_conversation_root(tool)
+    assert tool.conversation_root is None
+
+
+def test_handler_skips_embedding_invocation():
+    """EmbeddingInvocation entity is never marked as conversation root."""
+    emb = EmbeddingInvocation(request_model="embed-model")
+    TelemetryHandler._maybe_mark_conversation_root(emb)
+    assert emb.conversation_root is None
+
+
+def test_handler_skips_agent_creation():
+    """AgentCreation is never marked as conversation root (only invocations)."""
+    creation = AgentCreation(name="new_agent")
+    TelemetryHandler._maybe_mark_conversation_root(creation)
+    assert creation.conversation_root is None
 
 
 def test_workflow_conversation_root_attribute_on_span():

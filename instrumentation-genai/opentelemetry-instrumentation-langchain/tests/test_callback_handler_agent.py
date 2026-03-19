@@ -585,3 +585,139 @@ def test_thread_id_sets_conversation_id(handler_with_stub):
         outputs={"messages": [AIMessage(content="done")]},
         run_id=agent_run_id,
     )
+
+
+# ---- conversation_root via real TelemetryHandler integration tests ----------
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_root_agent_has_conversation_root_on_span(
+    tracer_provider, span_exporter, meter_provider
+):
+    """Root agent chain (no parent_run_id) gets conversation_root=True on its span."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    # Reset singleton so we get a fresh handler with test providers
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    root_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="hi")]},
+        run_id=root_id,
+        tags=["agent"],
+        metadata={"agent_name": "root_agent"},
+    )
+    cb.on_chain_end(
+        outputs={"messages": [AIMessage(content="bye")]},
+        run_id=root_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    agent_spans = [s for s in spans if "invoke_agent" in s.name]
+    assert agent_spans, "Expected at least one invoke_agent span"
+    attrs = dict(agent_spans[0].attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_child_agent_lacks_conversation_root_on_span(
+    tracer_provider, span_exporter, meter_provider
+):
+    """Child agent chain (with parent_run_id) does NOT get conversation_root."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    parent_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="hi")]},
+        run_id=parent_id,
+        tags=["agent"],
+        metadata={"agent_name": "parent_agent"},
+    )
+
+    child_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "SubAgent"},
+        inputs={"messages": [HumanMessage(content="sub-task")]},
+        run_id=child_id,
+        parent_run_id=parent_id,
+        tags=["agent"],
+        metadata={"agent_name": "child_agent"},
+    )
+    cb.on_chain_end(
+        outputs={"messages": [AIMessage(content="sub-done")]},
+        run_id=child_id,
+    )
+    cb.on_chain_end(
+        outputs={"messages": [AIMessage(content="done")]},
+        run_id=parent_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    agent_spans = [s for s in spans if "invoke_agent" in s.name]
+    assert len(agent_spans) >= 2, "Expected parent and child agent spans"
+
+    # Find parent and child by name
+    parent_spans = [s for s in agent_spans if "parent_agent" in str(s.attributes)]
+    child_spans = [s for s in agent_spans if "child_agent" in str(s.attributes)]
+
+    assert parent_spans, "Expected parent_agent span"
+    parent_attrs = dict(parent_spans[0].attributes or {})
+    assert parent_attrs.get("gen_ai.conversation_root") is True
+
+    assert child_spans, "Expected child_agent span"
+    child_attrs = dict(child_spans[0].attributes or {})
+    assert "gen_ai.conversation_root" not in child_attrs
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_root_workflow_has_conversation_root_on_span(
+    tracer_provider, span_exporter, meter_provider
+):
+    """Root workflow chain (no parent_run_id, no agent tag) gets conversation_root=True."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    root_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "LangGraphWorkflow"},
+        inputs={"input": "start"},
+        run_id=root_id,
+        tags=[],
+        metadata={"langgraph_node": "__start__"},
+    )
+    cb.on_chain_end(
+        outputs={"output": "done"},
+        run_id=root_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    workflow_spans = [s for s in spans if "invoke_workflow" in str(s.attributes)]
+    assert workflow_spans, "Expected at least one workflow span with invoke_workflow"
+    attrs = dict(workflow_spans[0].attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True

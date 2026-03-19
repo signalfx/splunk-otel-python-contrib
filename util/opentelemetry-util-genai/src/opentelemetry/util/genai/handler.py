@@ -795,9 +795,14 @@ class TelemetryHandler:
     def _maybe_mark_conversation_root(entity: GenAI) -> None:
         """Auto-mark entity as conversation root when no parent span exists.
 
+        Only Workflow and AgentInvocation are eligible — other entity types
+        (LLMInvocation, Step, ToolCall, AgentCreation, etc.) are never roots.
+
         If the instrumentation has not explicitly set conversation_root and
         the entity has no parent_span, this is the invocation-level root.
         """
+        if not isinstance(entity, (Workflow, AgentInvocation)):
+            return
         if entity.conversation_root is None and not getattr(
             entity, "parent_span", None
         ):
