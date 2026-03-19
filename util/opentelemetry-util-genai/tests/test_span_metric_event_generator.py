@@ -423,3 +423,111 @@ def test_llm_span_emitter_for_sampled_attribute():
 
     sampled_value = attrs.get("gen_ai.evaluation.sampled")
     assert sampled_value is True
+
+
+# ---- TelemetryHandler._maybe_mark_conversation_root tests ----------------
+
+
+def test_handler_marks_workflow_root_when_no_parent_span():
+    """Handler auto-sets conversation_root=True on Workflow with no parent_span."""
+    from opentelemetry.util.genai.handler import TelemetryHandler
+
+    workflow = Workflow(name="root_wf")
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is True
+
+
+def test_handler_marks_agent_root_when_no_parent_span():
+    """Handler auto-sets conversation_root=True on AgentInvocation with no parent_span."""
+    from opentelemetry.util.genai.handler import TelemetryHandler
+
+    agent = AgentInvocation(name="root_agent")
+    TelemetryHandler._maybe_mark_conversation_root(agent)
+    assert agent.conversation_root is True
+
+
+def test_handler_skips_root_when_parent_span_exists():
+    """Handler does NOT set conversation_root when parent_span is present."""
+    from unittest.mock import MagicMock
+
+    from opentelemetry.util.genai.handler import TelemetryHandler
+
+    workflow = Workflow(name="child_wf")
+    workflow.parent_span = MagicMock()  # simulate a parent span
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is None
+
+
+def test_handler_respects_explicit_conversation_root_false():
+    """Handler does NOT override conversation_root when explicitly set to False."""
+    from opentelemetry.util.genai.handler import TelemetryHandler
+
+    workflow = Workflow(name="wf", conversation_root=False)
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is False
+
+
+def test_handler_respects_explicit_conversation_root_true_with_parent():
+    """Handler preserves conversation_root=True even if parent_span exists."""
+    from unittest.mock import MagicMock
+
+    from opentelemetry.util.genai.handler import TelemetryHandler
+
+    agent = AgentInvocation(name="forced_root", conversation_root=True)
+    agent.parent_span = MagicMock()
+    TelemetryHandler._maybe_mark_conversation_root(agent)
+    assert agent.conversation_root is True
+
+
+def test_workflow_conversation_root_attribute_on_span():
+    """Workflow with conversation_root=True emits gen_ai.conversation_root on span."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+
+    workflow = Workflow(name="root_workflow", conversation_root=True)
+    emitter.on_start(workflow)
+    emitter.on_end(workflow)
+
+    span = workflow.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+def test_workflow_no_conversation_root_attribute_when_none():
+    """Workflow without conversation_root does not emit the attribute on span."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+
+    workflow = Workflow(name="child_workflow")
+    emitter.on_start(workflow)
+    emitter.on_end(workflow)
+
+    span = workflow.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert "gen_ai.conversation_root" not in attrs
+
+
+def test_llm_invocation_no_conversation_root():
+    """LLMInvocation does not emit conversation_root (only Workflow/Agent roots do)."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+
+    llm = LLMInvocation(request_model="test-model")
+    emitter.on_start(llm)
+    emitter.on_end(llm)
+
+    span = llm.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert "gen_ai.conversation_root" not in attrs

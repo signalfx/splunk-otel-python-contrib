@@ -78,6 +78,9 @@ GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
 
+# Conversation root marker (marks the invocation-level root GenAI span)
+GEN_AI_CONVERSATION_ROOT = "gen_ai.conversation_root"
+
 # Association properties prefix
 GEN_AI_ASSOCIATION_PROPERTIES_PREFIX = "gen_ai.association.properties"
 

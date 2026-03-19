@@ -791,12 +791,25 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         return invocation
 
+    @staticmethod
+    def _maybe_mark_conversation_root(entity: GenAI) -> None:
+        """Auto-mark entity as conversation root when no parent span exists.
+
+        If the instrumentation has not explicitly set conversation_root and
+        the entity has no parent_span, this is the invocation-level root.
+        """
+        if entity.conversation_root is None and not getattr(
+            entity, "parent_span", None
+        ):
+            entity.conversation_root = True
+
     # Workflow lifecycle --------------------------------------------------
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(workflow)
+        self._maybe_mark_conversation_root(workflow)
         self._emitter.on_start(workflow)
         return workflow
 
@@ -963,6 +976,7 @@ class TelemetryHandler:
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(agent)
+        self._maybe_mark_conversation_root(agent)
         self._emitter.on_start(agent)
         # Push agent identity context
         if isinstance(agent, AgentInvocation):
