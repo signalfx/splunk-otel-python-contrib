@@ -811,7 +811,9 @@ class TelemetryHandler:
             entity.conversation_root = True
 
     def should_use_workflow_root(
-        self, force_workflow: bool | str = False
+        self,
+        force_workflow: bool = False,
+        workflow_name: Optional[str] = None,
     ) -> bool:
         """Decide if root entity should be Workflow (vs AgentInvocation).
 
@@ -820,19 +822,20 @@ class TelemetryHandler:
         starting the entity.
 
         Returns True when:
-        - force_workflow is True or a non-empty string, or
+        - force_workflow is True, or
+        - workflow_name is a non-empty string, or
         - OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW env var is truthy.
 
         Example:
-            if handler.should_use_workflow_root(workflow_name_override):
-                wf = Workflow(...)
+            if handler.should_use_workflow_root(workflow_name=override):
+                wf = Workflow(name=override or default, ...)
                 handler.start_workflow(wf)
             else:
                 agent = AgentInvocation(...)
                 agent.agent_name = ...  # set before start
                 handler.start_agent(agent)
         """
-        if force_workflow:
+        if force_workflow or workflow_name:
             return True
         return is_truthy_env(
             os.environ.get(
@@ -844,7 +847,8 @@ class TelemetryHandler:
         self,
         name: str,
         *,
-        force_workflow: bool | str = False,
+        force_workflow: bool = False,
+        workflow_name: Optional[str] = None,
         workflow_type: Optional[str] = None,
         framework: Optional[str] = None,
         system: Optional[str] = None,
@@ -855,10 +859,9 @@ class TelemetryHandler:
         """Create and start a root entity (Workflow or AgentInvocation).
 
         By default creates AgentInvocation. Creates Workflow when:
-        - force_workflow is True or a non-empty string, or
+        - force_workflow is True, or
+        - workflow_name is a non-empty string, or
         - OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW env var is truthy.
-
-        If force_workflow is a string, it becomes the workflow name.
 
         Use the generic lifecycle methods to complete the entity:
         - ``finish(entity)`` to end successfully
@@ -866,8 +869,9 @@ class TelemetryHandler:
 
         Args:
             name: Entity name (agent name or default workflow name).
-            force_workflow: If True or a string, creates Workflow. If string,
-                used as workflow name.
+            force_workflow: If True, creates Workflow regardless of env var.
+            workflow_name: Optional workflow name. If provided, creates
+                Workflow and uses this as the span name.
             workflow_type: Workflow type (e.g., "crewai.crew"). Ignored for
                 AgentInvocation.
             framework: Framework name (e.g., "crewai", "langchain").
@@ -879,13 +883,13 @@ class TelemetryHandler:
         Returns:
             The created and started Workflow or AgentInvocation.
         """
-        use_workflow = self.should_use_workflow_root(force_workflow)
+        use_workflow = self.should_use_workflow_root(
+            force_workflow, workflow_name
+        )
         attrs = attributes or {}
 
         if use_workflow:
-            wf_name = (
-                force_workflow if isinstance(force_workflow, str) else name
-            )
+            wf_name = workflow_name or name
             entity: Workflow | AgentInvocation = Workflow(
                 name=wf_name,
                 workflow_type=workflow_type,

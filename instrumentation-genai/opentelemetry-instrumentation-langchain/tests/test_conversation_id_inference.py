@@ -34,7 +34,7 @@ from opentelemetry.util.genai.handler import (  # noqa: E402
     set_genai_context,
 )
 from opentelemetry.util.genai.attributes import (  # noqa: E402
-    GEN_AI_WORKFLOW_COMMAND,
+    GEN_AI_COMMAND,
 )
 from opentelemetry.util.genai.types import (  # noqa: E402
     AgentInvocation,
@@ -143,9 +143,28 @@ class _StubTelemetryHandler:
         self.entities.pop(id(workflow), None)
         return workflow
 
-    def should_use_workflow_root(self, force_workflow: bool | str = False) -> bool:
-        """Stub: return True if force_workflow is truthy, else False."""
-        return bool(force_workflow)
+    def should_use_workflow_root(
+        self, force_workflow: bool = False, workflow_name: str | None = None
+    ) -> bool:
+        """Stub: return True if force_workflow or workflow_name is set."""
+        return bool(force_workflow or workflow_name)
+
+    def finish(self, entity):
+        """Generic finish dispatcher."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.stop_workflow(entity)
+        return self.stop_agent(entity)
+
+    def fail(self, entity, error):
+        """Generic fail dispatcher."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.fail_workflow(entity, error)
+        self.failed_agents.append((entity, error))
+        return entity
 
 
 @pytest.fixture(name="handler_with_stub")
@@ -574,17 +593,17 @@ class TestConversationIdContextVarPropagation:
         assert get_genai_context().conversation_id is None
 
 
-# ── Resume detection tests: gen_ai.workflow.command ────────────────
+# ── Resume detection tests: gen_ai.command ────────────────
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 class TestResumeDetection:
     """Verify that resume is detected via checkpoint_id in metadata
-    or Command object as input, setting gen_ai.workflow.command = 'resume'."""
+    or Command object as input, setting gen_ai.command = 'resume'."""
 
     def test_workflow_resume_with_checkpoint_id(self, handler_with_stub):
         """Root entity with checkpoint_id in metadata should get
-        gen_ai.workflow.command='resume'."""
+        gen_ai.command='resume'."""
         handler, stub = handler_with_stub
 
         wf_run_id = uuid4()
@@ -596,11 +615,11 @@ class TestResumeDetection:
         )
 
         agent = stub.started_agents[-1]
-        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+        assert agent.attributes.get(GEN_AI_COMMAND) == "resume"
 
     def test_agent_resume_with_checkpoint_id(self, handler_with_stub):
         """Agent root with checkpoint_id in metadata should get
-        gen_ai.workflow.command='resume'."""
+        gen_ai.command='resume'."""
         handler, stub = handler_with_stub
 
         agent_run_id = uuid4()
@@ -617,11 +636,11 @@ class TestResumeDetection:
         )
 
         agent = stub.started_agents[-1]
-        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+        assert agent.attributes.get(GEN_AI_COMMAND) == "resume"
 
     def test_workflow_fresh_no_checkpoint_id(self, handler_with_stub):
         """Root entity without checkpoint_id should NOT have
-        gen_ai.workflow.command set."""
+        gen_ai.command set."""
         handler, stub = handler_with_stub
 
         wf_run_id = uuid4()
@@ -633,11 +652,11 @@ class TestResumeDetection:
         )
 
         agent = stub.started_agents[-1]
-        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
+        assert GEN_AI_COMMAND not in agent.attributes
 
     def test_agent_fresh_no_checkpoint_id(self, handler_with_stub):
         """Agent without checkpoint_id should NOT have
-        gen_ai.workflow.command set."""
+        gen_ai.command set."""
         handler, stub = handler_with_stub
 
         agent_run_id = uuid4()
@@ -650,11 +669,11 @@ class TestResumeDetection:
         )
 
         agent = stub.started_agents[-1]
-        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
+        assert GEN_AI_COMMAND not in agent.attributes
 
     def test_workflow_no_metadata(self, handler_with_stub):
         """Root entity with no metadata at all should NOT have
-        gen_ai.workflow.command set."""
+        gen_ai.command set."""
         handler, stub = handler_with_stub
 
         wf_run_id = uuid4()
@@ -665,7 +684,7 @@ class TestResumeDetection:
         )
 
         agent = stub.started_agents[-1]
-        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
+        assert GEN_AI_COMMAND not in agent.attributes
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
@@ -730,7 +749,7 @@ class TestCommandInputHandling:
 
     def test_command_input_creates_root_with_resume(self, handler_with_stub):
         """When inputs is a Command object, a root entity span should be
-        created with gen_ai.workflow.command='resume' and capture the
+        created with gen_ai.command='resume' and capture the
         resume value as a user input message."""
         handler, stub = handler_with_stub
 
@@ -750,7 +769,7 @@ class TestCommandInputHandling:
 
         assert len(stub.started_agents) == 1
         agent = stub.started_agents[-1]
-        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+        assert agent.attributes.get(GEN_AI_COMMAND) == "resume"
         assert agent.conversation_id == "t-cmd"
         # Resume value should be captured as user input message
         assert len(agent.input_messages) == 1

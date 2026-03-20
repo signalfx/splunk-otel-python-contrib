@@ -876,8 +876,8 @@ def test_create_and_start_root_force_workflow_overrides_default():
     assert "workflow my_agent" in spans[0].name
 
 
-def test_create_and_start_root_force_workflow_string_becomes_name():
-    """force_workflow='Custom Name' should use that as workflow name."""
+def test_create_and_start_root_workflow_name_becomes_name():
+    """workflow_name='Custom Name' should use that as workflow name."""
     import os
 
     os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", None)
@@ -886,7 +886,7 @@ def test_create_and_start_root_force_workflow_string_becomes_name():
 
     entity = handler.create_and_start_root(
         "default_name",
-        force_workflow="Custom Workflow Name",
+        workflow_name="Custom Workflow Name",
     )
 
     assert isinstance(entity, Workflow)

@@ -167,7 +167,7 @@ class TestLangGraphInterruptResume:
 
     def test_resume_root_has_command_attribute(self, instrumented_graph):
         """The resume root span should have
-        gen_ai.workflow.command='resume'."""
+        gen_ai.command='resume'."""
         graph, exporter, tp = instrumented_graph
         config = {"configurable": {"thread_id": "t-cmd-attr"}}
 
@@ -190,7 +190,7 @@ class TestLangGraphInterruptResume:
         assert root.attributes.get("gen_ai.operation.name") == "invoke_agent", (
             "Resume root should be invoke_agent by default"
         )
-        assert root.attributes.get("gen_ai.workflow.command") == "resume"
+        assert root.attributes.get("gen_ai.command") == "resume"
 
     def test_resume_has_conversation_id(self, instrumented_graph):
         """All spans in both phases should have gen_ai.conversation.id

@@ -104,9 +104,28 @@ class _StubTelemetryHandler:
     def fail_workflow(self, workflow, error):
         return workflow
 
-    def should_use_workflow_root(self, force_workflow: bool | str = False) -> bool:
-        """Stub: return True if force_workflow is truthy, else False."""
-        return bool(force_workflow)
+    def should_use_workflow_root(
+        self, force_workflow: bool = False, workflow_name: str | None = None
+    ) -> bool:
+        """Stub: return True if force_workflow or workflow_name is set."""
+        return bool(force_workflow or workflow_name)
+
+    def finish(self, entity):
+        """Generic finish dispatcher."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.stop_workflow(entity)
+        return self.stop_agent(entity)
+
+    def fail(self, entity, error):
+        """Generic fail dispatcher."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.fail_workflow(entity, error)
+        self.failed_agents.append((entity, error))
+        return entity
 
 
 @pytest.fixture(name="handler_with_stub")
@@ -589,6 +608,49 @@ def test_thread_id_sets_conversation_id(handler_with_stub):
         outputs={"messages": [AIMessage(content="done")]},
         run_id=agent_run_id,
     )
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_interrupt_bubbles_up_to_root_span(handler_with_stub):
+    """When a child entity is interrupted, the root span should get
+    gen_ai.finish_reason='interrupted' attribute."""
+    from opentelemetry.util.genai.attributes import (
+        GEN_AI_FINISH_REASON,
+        FINISH_REASON_INTERRUPTED,
+    )
+
+    handler, stub = handler_with_stub
+
+    # Create a mock GraphInterrupt exception
+    class GraphInterrupt(Exception):
+        pass
+
+    # Start a root agent
+    root_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="plan my trip")]},
+        run_id=root_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "root_agent"},
+    )
+
+    # Start a child step under the root
+    child_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "ApprovalNode"},
+        inputs={},
+        run_id=child_run_id,
+        parent_run_id=root_run_id,
+        metadata={"langgraph_node": "approval"},
+    )
+
+    # Child gets interrupted
+    handler.on_chain_error(GraphInterrupt("need approval"), run_id=child_run_id)
+
+    # Root should now have the interrupted finish reason
+    root_agent = stub.started_agents[0]
+    assert root_agent.attributes.get(GEN_AI_FINISH_REASON) == FINISH_REASON_INTERRUPTED
 
 
 # ---- conversation_root via real TelemetryHandler integration tests ----------

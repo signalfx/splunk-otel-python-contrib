@@ -98,9 +98,9 @@ class StubTelemetryHandler:
         self.stopped_tool_calls = []
         self.failed_entities = []
 
-    def _should_use_workflow_root(self, force_workflow=False):
+    def _should_use_workflow_root(self, force_workflow=False, workflow_name=None):
         """Check if root should be workflow based on env var."""
-        if force_workflow:
+        if force_workflow or workflow_name:
             return True
         val = os.environ.get("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "")
         return val.strip().lower() in {"1", "true", "yes", "on"}
@@ -110,6 +110,7 @@ class StubTelemetryHandler:
         name,
         *,
         force_workflow=False,
+        workflow_name=None,
         workflow_type=None,
         framework=None,
         system=None,
@@ -120,11 +121,11 @@ class StubTelemetryHandler:
         """Create and start a root entity (Workflow or AgentInvocation)."""
         from opentelemetry.util.genai.types import Workflow, AgentInvocation
 
-        use_workflow = self._should_use_workflow_root(force_workflow)
+        use_workflow = self._should_use_workflow_root(force_workflow, workflow_name)
         attrs = attributes or {}
 
         if use_workflow:
-            wf_name = force_workflow if isinstance(force_workflow, str) else name
+            wf_name = workflow_name or name
             entity = Workflow(
                 name=wf_name,
                 workflow_type=workflow_type,

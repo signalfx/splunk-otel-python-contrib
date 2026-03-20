@@ -23,6 +23,7 @@ from ..attributes import (
     GEN_AI_AGENT_NAME,
     GEN_AI_AGENT_TOOLS,
     GEN_AI_AGENT_TYPE,
+    GEN_AI_COMMAND,
     GEN_AI_EMBEDDINGS_DIMENSION_COUNT,
     GEN_AI_EMBEDDINGS_INPUT_TEXTS,
     GEN_AI_FINISH_REASON,
@@ -40,7 +41,6 @@ from ..attributes import (
     GEN_AI_STEP_SOURCE,
     GEN_AI_STEP_STATUS,
     GEN_AI_STEP_TYPE,
-    GEN_AI_WORKFLOW_COMMAND,
     GEN_AI_WORKFLOW_DESCRIPTION,
     GEN_AI_WORKFLOW_NAME,
     GEN_AI_WORKFLOW_TYPE,
@@ -76,7 +76,7 @@ from .utils import (
 _SPAN_ALLOWED_SUPPLEMENTAL_KEYS: tuple[str, ...] = (
     "gen_ai.framework",
     "gen_ai.request.id",
-    GEN_AI_WORKFLOW_COMMAND,
+    GEN_AI_COMMAND,
     GEN_AI_WORKFLOW_NAME,
 )
 _SPAN_BLOCKED_SUPPLEMENTAL_KEYS: set[str] = {"request_top_p", "ls_temperature"}
@@ -563,7 +563,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
-        # Apply supplemental attributes (e.g., gen_ai.workflow.command)
+        # Apply supplemental attributes (e.g., gen_ai.command)
         supplemental = getattr(workflow, "attributes", None)
         if supplemental:
             semconv_subset = filter_semconv_gen_ai_attributes(

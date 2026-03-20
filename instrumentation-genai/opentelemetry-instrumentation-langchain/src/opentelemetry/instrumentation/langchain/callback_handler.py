@@ -32,7 +32,9 @@ from opentelemetry.util.genai.types import (
     ErrorClassification,
 )
 from opentelemetry.util.genai.attributes import (
-    GEN_AI_WORKFLOW_COMMAND,
+    GEN_AI_COMMAND,
+    GEN_AI_FINISH_REASON,
+    FINISH_REASON_INTERRUPTED,
 )
 
 # Error type names that indicate flow-control, not real errors.
@@ -207,23 +209,6 @@ def _resolve_agent_name(
     return None
 
 
-def _is_agent_root(
-    tags: Optional[list[str]], metadata: Optional[dict[str, Any]]
-) -> bool:
-    if _resolve_agent_name(tags, metadata):
-        return True
-    if tags:
-        for tag in tags:
-            try:
-                if "agent" in str(tag).lower():
-                    return True
-            except (TypeError, ValueError):
-                continue
-    if metadata and metadata.get("agent_name"):
-        return True
-    return False
-
-
 def _extract_tool_details(
     metadata: Optional[dict[str, Any]],
 ) -> Optional[dict[str, Any]]:
@@ -314,10 +299,14 @@ class _InvocationManager:
     def __init__(self) -> None:
         self._invocations: Dict[UUID, Any] = {}
         self._parents: Dict[UUID, Optional[UUID]] = {}
+        self._root_run_id: Optional[UUID] = None  # Track the root entity
 
     def add(self, run_id: UUID, parent_run_id: Optional[UUID], invocation: Any) -> None:
         self._invocations[run_id] = invocation
         self._parents[run_id] = parent_run_id
+        # Track the root (first entity with no parent)
+        if parent_run_id is None and self._root_run_id is None:
+            self._root_run_id = run_id
 
     def get(self, run_id: UUID) -> Any:
         return self._invocations.get(run_id)
@@ -325,9 +314,18 @@ class _InvocationManager:
     def get_parent_id(self, run_id: UUID) -> Optional[UUID]:
         return self._parents.get(run_id)
 
+    def get_root(self) -> Any:
+        """Get the root entity (Workflow or AgentInvocation)."""
+        if self._root_run_id is not None:
+            return self._invocations.get(self._root_run_id)
+        return None
+
     def remove(self, run_id: UUID) -> None:
         self._invocations.pop(run_id, None)
         self._parents.pop(run_id, None)
+        # Clear root tracking when root is removed
+        if run_id == self._root_run_id:
+            self._root_run_id = None
 
 
 class LangchainCallbackHandler(BaseCallbackHandler):
@@ -463,9 +461,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             # Determine root span type: AgentInvocation (default) or Workflow.
             # Workflow is used only when explicitly requested via env var or
             # workflow_name in LangGraph config metadata.
+            #
+            # Note: the old _is_agent_root(tags, metadata) check has been
+            # removed from the root path.  Root spans are now always
+            # AgentInvocation by default, regardless of whether agent
+            # tags/metadata are present.  _is_agent_root still governs
+            # agent-promotion for *child* chains.
             workflow_name_override = metadata.get("workflow_name") if metadata else None
             force_workflow = self._handler.should_use_workflow_root(
-                workflow_name_override
+                workflow_name=workflow_name_override
             )
 
             if force_workflow:
@@ -476,13 +480,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 if inferred_conv_id:
                     wf.conversation_id = inferred_conv_id
                 if is_resume:
-                    wf.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
+                    wf.attributes[GEN_AI_COMMAND] = "resume"
                 self._handler.start_workflow(wf)
                 self._invocation_manager.add(run_id, None, wf)
             else:
                 agent_name = agent_name_hint or name
                 if is_resume:
-                    attrs[GEN_AI_WORKFLOW_COMMAND] = "resume"
+                    attrs[GEN_AI_COMMAND] = "resume"
                 self._start_agent_invocation(
                     name=name,
                     run_id=run_id,
@@ -597,7 +601,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             return
 
         self._restore_inferred_context(run_id)
-        if isinstance(entity, Workflow):
+        if isinstance(entity, (Workflow, AgentInvocation)):
             output_msgs = _make_last_output_message(outputs)
             if output_msgs:
                 entity.output_messages = output_msgs
@@ -610,21 +614,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     entity.output_messages = [
                         OutputMessage(role="assistant", parts=[Text(fallback)])
                     ]
-            self._handler.stop_workflow(entity)
-        elif isinstance(entity, AgentInvocation):
-            output_msgs = _make_last_output_message(outputs)
-            if output_msgs:
-                entity.output_messages = output_msgs
-            else:
-                # Fallback: serialize non-message state fields as output.
-                # Common for root agent spans in LangGraph where nodes
-                # update structured state fields rather than the message list.
-                fallback = _make_workflow_output_fallback(outputs)
-                if fallback:
-                    entity.output_messages = [
-                        OutputMessage(role="assistant", parts=[Text(fallback)])
-                    ]
-            self._handler.stop_agent(entity)
+            self._handler.finish(entity)
         elif isinstance(entity, Step):
             self._handler.stop_step(entity)
         elif isinstance(entity, ToolCall):
@@ -919,16 +909,17 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             type=type(error),
             classification=classification,
         )
-        if isinstance(entity, Workflow):
-            self._handler.fail_workflow(entity, genai_error)
-        elif isinstance(entity, AgentInvocation):
-            self._handler.fail_agent(entity, genai_error)
-        elif isinstance(entity, Step):
-            self._handler.fail_step(entity, genai_error)
-        elif isinstance(entity, LLMInvocation):
-            self._handler.fail_llm(entity, genai_error)
-        elif isinstance(entity, ToolCall):
-            self._handler.fail_tool_call(entity, genai_error)
+
+        # Bubble up "interrupted" status to the root span when an interrupt occurs
+        # on any child entity. This ensures the root span reflects that the
+        # conversation was interrupted, even if the interrupt happened deeper
+        # in the call hierarchy.
+        if classification == ErrorClassification.INTERRUPT:
+            root_entity = self._invocation_manager.get_root()
+            if root_entity is not None and root_entity is not entity:
+                root_entity.attributes[GEN_AI_FINISH_REASON] = FINISH_REASON_INTERRUPTED
+
+        self._handler.fail(entity, genai_error)
         self._invocation_manager.remove(run_id)
 
     def on_llm_error(
