@@ -460,22 +460,16 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 metadata and metadata.get("checkpoint_id") is not None
             )
 
-            if _is_agent_root(tags, metadata):
-                agent = self._start_agent_invocation(
-                    name=name,
-                    run_id=run_id,
-                    parent_run_id=None,
-                    attrs=attrs,
-                    inputs=inputs,
-                    metadata=metadata,
-                    agent_name=agent_name_hint,
-                    conversation_id=inferred_conv_id,
-                    command_input_messages=command_input_messages or None,
-                )
-                if is_resume:
-                    agent.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
-            else:
-                wf = Workflow(name=name, attributes=attrs)
+            # Determine root span type: AgentInvocation (default) or Workflow.
+            # Workflow is used only when explicitly requested via env var or
+            # workflow_name in LangGraph config metadata.
+            workflow_name_override = metadata.get("workflow_name") if metadata else None
+            force_workflow = self._handler.should_use_workflow_root(
+                workflow_name_override
+            )
+
+            if force_workflow:
+                wf = Workflow(name=workflow_name_override or name, attributes=attrs)
                 wf.input_messages = command_input_messages or _make_input_message(
                     inputs
                 )
@@ -485,6 +479,21 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     wf.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
                 self._handler.start_workflow(wf)
                 self._invocation_manager.add(run_id, None, wf)
+            else:
+                agent_name = agent_name_hint or name
+                if is_resume:
+                    attrs[GEN_AI_WORKFLOW_COMMAND] = "resume"
+                self._start_agent_invocation(
+                    name=name,
+                    run_id=run_id,
+                    parent_run_id=None,
+                    attrs=attrs,
+                    inputs=inputs,
+                    metadata=metadata,
+                    agent_name=agent_name,
+                    conversation_id=inferred_conv_id,
+                    command_input_messages=command_input_messages or None,
+                )
             return
         else:
             # Skip if parent entity no longer exists (e.g., LangGraph
@@ -603,7 +612,18 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     ]
             self._handler.stop_workflow(entity)
         elif isinstance(entity, AgentInvocation):
-            entity.output_messages = _make_last_output_message(outputs)
+            output_msgs = _make_last_output_message(outputs)
+            if output_msgs:
+                entity.output_messages = output_msgs
+            else:
+                # Fallback: serialize non-message state fields as output.
+                # Common for root agent spans in LangGraph where nodes
+                # update structured state fields rather than the message list.
+                fallback = _make_workflow_output_fallback(outputs)
+                if fallback:
+                    entity.output_messages = [
+                        OutputMessage(role="assistant", parts=[Text(fallback)])
+                    ]
             self._handler.stop_agent(entity)
         elif isinstance(entity, Step):
             self._handler.stop_step(entity)

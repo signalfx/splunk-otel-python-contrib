@@ -89,6 +89,7 @@ from opentelemetry.util.genai.types import (
     Error,
     EvaluationResult,
     GenAI,
+    InputMessage,
     LLMInvocation,
     RetrievalInvocation,
     Step,
@@ -110,6 +111,7 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
+    OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -807,6 +809,110 @@ class TelemetryHandler:
             entity, "parent_span", None
         ):
             entity.conversation_root = True
+
+    def should_use_workflow_root(
+        self, force_workflow: bool | str = False
+    ) -> bool:
+        """Decide if root entity should be Workflow (vs AgentInvocation).
+
+        Use this to determine root entity type before creating it, especially
+        when the instrumentation needs to set type-specific fields before
+        starting the entity.
+
+        Returns True when:
+        - force_workflow is True or a non-empty string, or
+        - OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW env var is truthy.
+
+        Example:
+            if handler.should_use_workflow_root(workflow_name_override):
+                wf = Workflow(...)
+                handler.start_workflow(wf)
+            else:
+                agent = AgentInvocation(...)
+                agent.agent_name = ...  # set before start
+                handler.start_agent(agent)
+        """
+        if force_workflow:
+            return True
+        return is_truthy_env(
+            os.environ.get(
+                OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW, ""
+            )
+        )
+
+    def create_and_start_root(
+        self,
+        name: str,
+        *,
+        force_workflow: bool | str = False,
+        workflow_type: Optional[str] = None,
+        framework: Optional[str] = None,
+        system: Optional[str] = None,
+        input_messages: Optional[list[InputMessage]] = None,
+        conversation_id: Optional[str] = None,
+        attributes: Optional[dict[str, Any]] = None,
+    ) -> Workflow | AgentInvocation:
+        """Create and start a root entity (Workflow or AgentInvocation).
+
+        By default creates AgentInvocation. Creates Workflow when:
+        - force_workflow is True or a non-empty string, or
+        - OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW env var is truthy.
+
+        If force_workflow is a string, it becomes the workflow name.
+
+        Use the generic lifecycle methods to complete the entity:
+        - ``finish(entity)`` to end successfully
+        - ``fail(entity, error)`` to end with error
+
+        Args:
+            name: Entity name (agent name or default workflow name).
+            force_workflow: If True or a string, creates Workflow. If string,
+                used as workflow name.
+            workflow_type: Workflow type (e.g., "crewai.crew"). Ignored for
+                AgentInvocation.
+            framework: Framework name (e.g., "crewai", "langchain").
+            system: System name (e.g., "crewai", "langgraph").
+            input_messages: Input messages to attach.
+            conversation_id: Conversation ID to set.
+            attributes: Additional span attributes.
+
+        Returns:
+            The created and started Workflow or AgentInvocation.
+        """
+        use_workflow = self.should_use_workflow_root(force_workflow)
+        attrs = attributes or {}
+
+        if use_workflow:
+            wf_name = (
+                force_workflow if isinstance(force_workflow, str) else name
+            )
+            entity: Workflow | AgentInvocation = Workflow(
+                name=wf_name,
+                workflow_type=workflow_type,
+                framework=framework,
+                system=system,
+                attributes=attrs,
+            )
+            if input_messages:
+                entity.input_messages = input_messages
+            if conversation_id:
+                entity.conversation_id = conversation_id
+            self.start_workflow(entity)
+        else:
+            entity = AgentInvocation(
+                name=name,
+                framework=framework,
+                system=system,
+                attributes=attrs,
+            )
+            entity.agent_name = name
+            if input_messages:
+                entity.input_messages = input_messages
+            if conversation_id:
+                entity.conversation_id = conversation_id
+            self.start_agent(entity)
+
+        return entity
 
     # Workflow lifecycle --------------------------------------------------
     def start_workflow(self, workflow: Workflow) -> Workflow:

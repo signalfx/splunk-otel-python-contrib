@@ -38,7 +38,6 @@ from opentelemetry.util.genai.attributes import (  # noqa: E402
 )
 from opentelemetry.util.genai.types import (  # noqa: E402
     AgentInvocation,
-    Workflow,
 )
 
 try:  # pragma: no cover - optional dependency in CI
@@ -144,6 +143,10 @@ class _StubTelemetryHandler:
         self.entities.pop(id(workflow), None)
         return workflow
 
+    def should_use_workflow_root(self, force_workflow: bool | str = False) -> bool:
+        """Stub: return True if force_workflow is truthy, else False."""
+        return bool(force_workflow)
+
 
 @pytest.fixture(name="handler_with_stub")
 def _handler_with_stub_fixture() -> Tuple[
@@ -193,13 +196,13 @@ class TestInferConversationId:
         assert _infer_conversation_id({"session_id": "s1", "run_id": "r1"}) is None
 
 
-# ── Integration tests: Workflow path ───────────────────────────────
+# ── Integration tests: Root entity path (default: AgentInvocation) ─
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 class TestWorkflowConversationIdInference:
     def test_thread_id_sets_workflow_conversation_id(self, handler_with_stub):
-        """Workflow root should have conversation_id from thread_id."""
+        """Root entity should have conversation_id from thread_id."""
         handler, stub = handler_with_stub
 
         wf_run_id = uuid4()
@@ -210,10 +213,9 @@ class TestWorkflowConversationIdInference:
             metadata={"thread_id": "session-abc"},
         )
 
-        assert stub.started_workflows
-        wf = stub.started_workflows[-1]
-        assert isinstance(wf, Workflow)
-        assert wf.conversation_id == "session-abc"
+        assert stub.started_agents
+        agent = stub.started_agents[-1]
+        assert agent.conversation_id == "session-abc"
 
     def test_conversation_id_key_sets_workflow_conversation_id(self, handler_with_stub):
         """conversation_id key in metadata should map to conversation_id."""
@@ -227,8 +229,8 @@ class TestWorkflowConversationIdInference:
             metadata={"conversation_id": "conv-xyz"},
         )
 
-        wf = stub.started_workflows[-1]
-        assert wf.conversation_id == "conv-xyz"
+        agent = stub.started_agents[-1]
+        assert agent.conversation_id == "conv-xyz"
 
     def test_no_metadata_no_conversation_id(self, handler_with_stub):
         """Without thread_id/conversation_id, conversation_id stays None."""
@@ -241,8 +243,8 @@ class TestWorkflowConversationIdInference:
             run_id=wf_run_id,
         )
 
-        wf = stub.started_workflows[-1]
-        assert wf.conversation_id is None
+        agent = stub.started_agents[-1]
+        assert agent.conversation_id is None
 
     def test_empty_metadata_no_conversation_id(self, handler_with_stub):
         """Empty metadata dict → no conversation_id."""
@@ -256,8 +258,8 @@ class TestWorkflowConversationIdInference:
             metadata={},
         )
 
-        wf = stub.started_workflows[-1]
-        assert wf.conversation_id is None
+        agent = stub.started_agents[-1]
+        assert agent.conversation_id is None
 
     def test_explicit_context_overrides_metadata_thread_id(self, handler_with_stub):
         """Explicit genai_context(conversation_id=...) wins over metadata thread_id.
@@ -281,10 +283,10 @@ class TestWorkflowConversationIdInference:
             metadata={"thread_id": "inferred-session"},
         )
 
-        wf = stub.started_workflows[-1]
+        agent = stub.started_agents[-1]
         # The inferred value must NOT be set — explicit context takes priority.
         # In a real runtime, _apply_genai_context would then set "explicit-session".
-        assert wf.conversation_id is None
+        assert agent.conversation_id is None
 
     def test_metadata_with_unrelated_keys_no_inference(self, handler_with_stub):
         """Metadata without recognized keys → no conversation_id."""
@@ -298,8 +300,8 @@ class TestWorkflowConversationIdInference:
             metadata={"session_id": "s1", "custom_key": "v1"},
         )
 
-        wf = stub.started_workflows[-1]
-        assert wf.conversation_id is None
+        agent = stub.started_agents[-1]
+        assert agent.conversation_id is None
 
 
 # ── Integration tests: AgentInvocation path ────────────────────────
@@ -494,7 +496,7 @@ class TestConversationIdContextVarPropagation:
 
         # ContextVar must be clean after the interrupt
         assert get_genai_context().conversation_id is None
-        assert len(stub.failed_workflows) == 1
+        assert len(stub.failed_agents) == 1
 
         # --- Workflow B: resumed with different thread_id ---
         wf_b_run_id = uuid4()
@@ -505,9 +507,9 @@ class TestConversationIdContextVarPropagation:
             metadata={"thread_id": "session-B", "checkpoint_id": "cp-123"},
         )
 
-        # Workflow B must have its OWN conversation_id, not session-A
-        wf_b = stub.started_workflows[-1]
-        assert wf_b.conversation_id == "session-B"
+        # Root B must have its OWN conversation_id, not session-A
+        agent_b = stub.started_agents[-1]
+        assert agent_b.conversation_id == "session-B"
         assert get_genai_context().conversation_id == "session-B"
 
     def test_contextvar_not_set_when_explicit_context_active(self, handler_with_stub):
@@ -581,7 +583,7 @@ class TestResumeDetection:
     or Command object as input, setting gen_ai.workflow.command = 'resume'."""
 
     def test_workflow_resume_with_checkpoint_id(self, handler_with_stub):
-        """Workflow root with checkpoint_id in metadata should get
+        """Root entity with checkpoint_id in metadata should get
         gen_ai.workflow.command='resume'."""
         handler, stub = handler_with_stub
 
@@ -593,8 +595,8 @@ class TestResumeDetection:
             metadata={"thread_id": "t1", "checkpoint_id": "cp-abc123"},
         )
 
-        wf = stub.started_workflows[-1]
-        assert wf.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+        agent = stub.started_agents[-1]
+        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
 
     def test_agent_resume_with_checkpoint_id(self, handler_with_stub):
         """Agent root with checkpoint_id in metadata should get
@@ -618,7 +620,7 @@ class TestResumeDetection:
         assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
 
     def test_workflow_fresh_no_checkpoint_id(self, handler_with_stub):
-        """Workflow without checkpoint_id should NOT have
+        """Root entity without checkpoint_id should NOT have
         gen_ai.workflow.command set."""
         handler, stub = handler_with_stub
 
@@ -630,8 +632,8 @@ class TestResumeDetection:
             metadata={"thread_id": "t3"},
         )
 
-        wf = stub.started_workflows[-1]
-        assert GEN_AI_WORKFLOW_COMMAND not in wf.attributes
+        agent = stub.started_agents[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
 
     def test_agent_fresh_no_checkpoint_id(self, handler_with_stub):
         """Agent without checkpoint_id should NOT have
@@ -651,7 +653,7 @@ class TestResumeDetection:
         assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
 
     def test_workflow_no_metadata(self, handler_with_stub):
-        """Workflow with no metadata at all should NOT have
+        """Root entity with no metadata at all should NOT have
         gen_ai.workflow.command set."""
         handler, stub = handler_with_stub
 
@@ -662,8 +664,8 @@ class TestResumeDetection:
             run_id=wf_run_id,
         )
 
-        wf = stub.started_workflows[-1]
-        assert GEN_AI_WORKFLOW_COMMAND not in wf.attributes
+        agent = stub.started_agents[-1]
+        assert GEN_AI_WORKFLOW_COMMAND not in agent.attributes
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
@@ -706,7 +708,7 @@ class TestOrphanSpanGuard:
             run_id=wf_run_id,
             metadata={"thread_id": "t-live"},
         )
-        assert len(stub.started_workflows) == 1
+        assert len(stub.started_agents) == 1
 
         # Now create a child step under it
         child_run_id = uuid4()
@@ -726,8 +728,8 @@ class TestCommandInputHandling:
     """Verify that Command objects (LangGraph resume) are handled correctly
     without crashing, and trigger resume detection."""
 
-    def test_command_input_creates_workflow_with_resume(self, handler_with_stub):
-        """When inputs is a Command object, a workflow span should be
+    def test_command_input_creates_root_with_resume(self, handler_with_stub):
+        """When inputs is a Command object, a root entity span should be
         created with gen_ai.workflow.command='resume' and capture the
         resume value as a user input message."""
         handler, stub = handler_with_stub
@@ -746,14 +748,14 @@ class TestCommandInputHandling:
             name="LangGraph",
         )
 
-        assert len(stub.started_workflows) == 1
-        wf = stub.started_workflows[-1]
-        assert wf.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
-        assert wf.conversation_id == "t-cmd"
+        assert len(stub.started_agents) == 1
+        agent = stub.started_agents[-1]
+        assert agent.attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+        assert agent.conversation_id == "t-cmd"
         # Resume value should be captured as user input message
-        assert len(wf.input_messages) == 1
-        assert wf.input_messages[0].role == "user"
-        assert wf.input_messages[0].parts[0].content == "approved!"
+        assert len(agent.input_messages) == 1
+        assert agent.input_messages[0].role == "user"
+        assert agent.input_messages[0].parts[0].content == "approved!"
 
     def test_command_input_dict_resume(self, handler_with_stub):
         """When resume value is a dict, it should be JSON-serialized."""
@@ -772,9 +774,9 @@ class TestCommandInputHandling:
             name="LangGraph",
         )
 
-        wf = stub.started_workflows[-1]
-        assert len(wf.input_messages) == 1
-        content = wf.input_messages[0].parts[0].content
+        agent = stub.started_agents[-1]
+        assert len(agent.input_messages) == 1
+        content = agent.input_messages[0].parts[0].content
         # Should be valid JSON containing the dict keys
         assert "approve" in content
         assert "lgtm" in content
@@ -796,10 +798,10 @@ class TestCommandInputHandling:
             metadata={"thread_id": "t-safe"},
             name="LangGraph",
         )
-        assert len(stub.started_workflows) == 1
-        wf = stub.started_workflows[-1]
+        assert len(stub.started_agents) == 1
+        agent = stub.started_agents[-1]
         # Should have a fallback input message from repr
-        assert len(wf.input_messages) == 1
+        assert len(agent.input_messages) == 1
 
     def test_langgraph_node_metadata_used_for_step_name(self, handler_with_stub):
         """When serialized is None (LangGraph), langgraph_node from

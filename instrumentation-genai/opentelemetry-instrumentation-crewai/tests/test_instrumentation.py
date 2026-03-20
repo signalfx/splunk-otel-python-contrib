@@ -1,7 +1,7 @@
 """Tests for CrewAI instrumentation mappings.
 
 Tests the mapping of CrewAI operations to OpenTelemetry types:
-- Crew.kickoff -> Workflow
+- Crew.kickoff -> AgentInvocation (default) or Workflow (env var)
 - Agent.execute_task -> AgentInvocation
 - Task.execute_sync -> Step
 - BaseTool.run -> ToolCall
@@ -23,10 +23,10 @@ from opentelemetry.util.genai.types import (
 
 
 class TestCrewKickoffMapping:
-    """Test Crew.kickoff -> Workflow mapping."""
+    """Test Crew.kickoff -> AgentInvocation mapping (default, no env var)."""
 
-    def test_kickoff_creates_workflow(self, stub_handler):
-        """Crew.kickoff should create a Workflow span."""
+    def test_kickoff_creates_agent(self, stub_handler):
+        """Crew.kickoff should create an AgentInvocation span by default."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -38,12 +38,12 @@ class TestCrewKickoffMapping:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {"inputs": {}})
 
-        assert len(stub_handler.started_workflows) == 1
-        workflow = stub_handler.started_workflows[0]
-        assert isinstance(workflow, Workflow)
+        assert len(stub_handler.started_agents) == 1
+        agent = stub_handler.started_agents[0]
+        assert isinstance(agent, AgentInvocation)
 
-    def test_workflow_has_correct_name(self, stub_handler):
-        """Workflow should use the Crew's name."""
+    def test_agent_has_correct_name(self, stub_handler):
+        """Root agent should use the Crew's name."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -55,11 +55,11 @@ class TestCrewKickoffMapping:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.name == "Customer Support Crew"
+        agent = stub_handler.started_agents[0]
+        assert agent.name == "Customer Support Crew"
 
-    def test_workflow_default_name_when_crew_has_no_name(self, stub_handler):
-        """Workflow should use default name when Crew has no name attribute."""
+    def test_agent_default_name_when_crew_has_no_name(self, stub_handler):
+        """Root agent should use default name when Crew has no name attribute."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -71,11 +71,11 @@ class TestCrewKickoffMapping:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.name == "CrewAI Workflow"
+        agent = stub_handler.started_agents[0]
+        assert agent.name == "CrewAI Workflow"
 
-    def test_workflow_has_correct_type(self, stub_handler):
-        """Workflow should have workflow_type set to 'crewai.crew'."""
+    def test_agent_has_framework_and_system(self, stub_handler):
+        """Root agent should have framework and system set to 'crewai'."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -87,11 +87,12 @@ class TestCrewKickoffMapping:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.workflow_type == "crewai.crew"
+        agent = stub_handler.started_agents[0]
+        assert agent.framework == "crewai"
+        assert agent.system == "crewai"
 
-    def test_workflow_has_framework_and_system(self, stub_handler):
-        """Workflow should have framework and system set to 'crewai'."""
+    def test_agent_captures_inputs(self, stub_handler):
+        """Root agent should capture input data in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -101,36 +102,18 @@ class TestCrewKickoffMapping:
         result.raw = "Done"
         mock_wrapped = mock.MagicMock(return_value=result)
 
-        crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
-
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.framework == "crewai"
-        assert workflow.system == "crewai"
-
-    def test_workflow_captures_inputs(self, stub_handler):
-        """Workflow should capture input data in input_messages."""
-        crewai_module._handler = stub_handler
-
-        mock_crew = mock.MagicMock()
-        mock_crew.name = "Test Crew"
-
-        result = mock.MagicMock()
-        result.raw = "Done"
-        mock_wrapped = mock.MagicMock(return_value=result)
-
-        inputs = {"topic": "AI", "depth": "comprehensive"}
+        inputs = {"description": "Research AI trends", "expected_output": "A report"}
         crewai_module._wrap_crew_kickoff(
             mock_wrapped, mock_crew, (), {"inputs": inputs}
         )
 
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.input_messages and len(workflow.input_messages) > 0
-        content = workflow.input_messages[0].parts[0].content
-        assert "topic" in content
-        assert "AI" in content
+        agent = stub_handler.started_agents[0]
+        assert agent.input_messages and len(agent.input_messages) > 0
+        content = agent.input_messages[0].parts[0].content
+        assert "Research AI trends" in content
 
-    def test_workflow_captures_inputs_from_args(self, stub_handler):
-        """Workflow should capture inputs passed positionally in input_messages."""
+    def test_agent_captures_inputs_from_args(self, stub_handler):
+        """Root agent should capture inputs passed positionally in input_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -141,15 +124,15 @@ class TestCrewKickoffMapping:
         mock_wrapped = mock.MagicMock(return_value=result)
 
         crewai_module._wrap_crew_kickoff(
-            mock_wrapped, mock_crew, ({"topic": "args"},), {}
+            mock_wrapped, mock_crew, ({"description": "from args"},), {}
         )
 
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.input_messages and len(workflow.input_messages) > 0
-        assert "topic" in workflow.input_messages[0].parts[0].content
+        agent = stub_handler.started_agents[0]
+        assert agent.input_messages and len(agent.input_messages) > 0
+        assert "from args" in agent.input_messages[0].parts[0].content
 
-    def test_workflow_captures_output(self, stub_handler):
-        """Workflow should capture result output in output_messages."""
+    def test_agent_captures_output(self, stub_handler):
+        """Root agent should capture result output in output_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -161,12 +144,12 @@ class TestCrewKickoffMapping:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
-        workflow = stub_handler.stopped_workflows[0]
-        assert workflow.output_messages and len(workflow.output_messages) > 0
-        assert "artificial intelligence" in workflow.output_messages[0].parts[0].content
+        agent = stub_handler.stopped_agents[0]
+        assert agent.output_messages and len(agent.output_messages) > 0
+        assert "artificial intelligence" in agent.output_messages[0].parts[0].content
 
-    def test_workflow_captures_empty_output(self, stub_handler):
-        """Workflow should capture empty output in output_messages."""
+    def test_agent_captures_empty_output(self, stub_handler):
+        """Root agent should capture empty output in output_messages."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -178,12 +161,12 @@ class TestCrewKickoffMapping:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
-        workflow = stub_handler.stopped_workflows[0]
-        assert workflow.output_messages and len(workflow.output_messages) > 0
-        assert workflow.output_messages[0].parts[0].content == '""'
+        agent = stub_handler.stopped_agents[0]
+        assert agent.output_messages and len(agent.output_messages) > 0
+        assert agent.output_messages[0].parts[0].content == ""
 
-    def test_workflow_error_handling(self, stub_handler):
-        """Workflow should capture errors on failure."""
+    def test_agent_error_handling(self, stub_handler):
+        """Root agent should capture errors on failure."""
         crewai_module._handler = stub_handler
 
         mock_crew = mock.MagicMock()
@@ -199,7 +182,7 @@ class TestCrewKickoffMapping:
 
         assert len(stub_handler.failed_entities) == 1
         entity, error = stub_handler.failed_entities[0]
-        assert isinstance(entity, Workflow)
+        assert isinstance(entity, AgentInvocation)
         assert isinstance(error, Error)
         assert "Crew execution failed" in error.message
 
@@ -217,13 +200,55 @@ class TestCrewKickoffMapping:
         # Create a very long input
         long_input = "x" * 1000
         crewai_module._wrap_crew_kickoff(
-            mock_wrapped, mock_crew, (), {"inputs": {"data": long_input}}
+            mock_wrapped, mock_crew, (), {"inputs": {"description": long_input}}
         )
 
-        workflow = stub_handler.started_workflows[0]
-        assert workflow.input_messages and len(workflow.input_messages) > 0
+        agent = stub_handler.started_agents[0]
+        assert agent.input_messages and len(agent.input_messages) > 0
         # Long input should be captured in full (no truncation in structured messages)
-        assert long_input in workflow.input_messages[0].parts[0].content
+        assert long_input in agent.input_messages[0].parts[0].content
+
+
+class TestCrewKickoffWithEnvVar:
+    """Test Crew.kickoff -> Workflow when ROOT_SPAN_AS_WORKFLOW env var is set."""
+
+    def test_kickoff_creates_workflow_with_env_var(self, stub_handler, monkeypatch):
+        """Crew.kickoff should create a Workflow when env var is set."""
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "true")
+        crewai_module._handler = stub_handler
+
+        mock_crew = mock.MagicMock()
+        mock_crew.name = "Research Crew"
+
+        result = mock.MagicMock()
+        result.raw = "Done"
+        mock_wrapped = mock.MagicMock(return_value=result)
+
+        crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {"inputs": {}})
+
+        assert len(stub_handler.started_workflows) == 1
+        workflow = stub_handler.started_workflows[0]
+        assert isinstance(workflow, Workflow)
+        assert workflow.workflow_type == "crewai.crew"
+
+    def test_workflow_has_correct_name_with_env_var(self, stub_handler, monkeypatch):
+        """Workflow should use the Crew's name when env var is set."""
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "1")
+        crewai_module._handler = stub_handler
+
+        mock_crew = mock.MagicMock()
+        mock_crew.name = "Custom Crew"
+
+        result = mock.MagicMock()
+        result.raw = "Done"
+        mock_wrapped = mock.MagicMock(return_value=result)
+
+        crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
+
+        workflow = stub_handler.started_workflows[0]
+        assert workflow.name == "Custom Crew"
+        assert workflow.framework == "crewai"
+        assert workflow.system == "crewai"
 
 
 class TestAgentExecuteTaskMapping:
@@ -364,7 +389,7 @@ class TestAgentExecuteTaskMapping:
 
         agent = stub_handler.stopped_agents[0]
         assert agent.output_messages and len(agent.output_messages) > 0
-        assert agent.output_messages[0].parts[0].content == '""'
+        assert agent.output_messages[0].parts[0].content == ""
 
     def test_agent_error_handling(self, stub_handler):
         """AgentInvocation should capture errors on failure."""
@@ -764,8 +789,8 @@ class TestWrapperGracefulDegradation:
         """Wrapper should continue if handler method fails during setup."""
         crewai_module._handler = stub_handler
 
-        # Make start_workflow raise an exception
-        stub_handler.start_workflow = mock.MagicMock(
+        # Make start_agent raise an exception (default path uses agent now)
+        stub_handler.start_agent = mock.MagicMock(
             side_effect=RuntimeError("Handler error")
         )
 
@@ -786,10 +811,8 @@ class TestWrapperGracefulDegradation:
         """Wrapper should ignore errors when stopping span on success."""
         crewai_module._handler = stub_handler
 
-        # Make stop_workflow raise an exception
-        stub_handler.stop_workflow = mock.MagicMock(
-            side_effect=RuntimeError("Stop error")
-        )
+        # Make stop_agent raise an exception (default path uses agent now)
+        stub_handler.stop_agent = mock.MagicMock(side_effect=RuntimeError("Stop error"))
 
         mock_crew = mock.MagicMock()
         mock_crew.name = "Test Crew"
@@ -827,12 +850,12 @@ class TestWrapperGracefulDegradation:
 
 
 class TestConversationRootOnSpan:
-    """Validate that handler marks root workflow with conversation_root=True on span."""
+    """Validate that handler marks root agent with conversation_root=True on span."""
 
-    def test_crew_kickoff_workflow_has_conversation_root(
+    def test_crew_kickoff_root_has_conversation_root(
         self, tracer_provider, span_exporter, meter_provider
     ):
-        """Crew.kickoff creates a Workflow via real handler; span should have conversation_root=True."""
+        """Crew.kickoff creates an agent via real handler; span should have conversation_root=True."""
         from opentelemetry.util.genai.handler import get_telemetry_handler
 
         if hasattr(get_telemetry_handler, "_default_handler"):
@@ -854,11 +877,9 @@ class TestConversationRootOnSpan:
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {})
 
         spans = span_exporter.get_finished_spans()
-        workflow_spans = [s for s in spans if "invoke_workflow" in str(s.attributes)]
-        assert workflow_spans, (
-            "Expected at least one workflow span with invoke_workflow"
-        )
-        attrs = dict(workflow_spans[0].attributes or {})
+        agent_spans = [s for s in spans if "invoke_agent" in str(s.attributes)]
+        assert agent_spans, "Expected at least one agent span with invoke_agent"
+        attrs = dict(agent_spans[0].attributes or {})
         assert attrs.get("gen_ai.conversation_root") is True
 
     def test_child_agent_lacks_conversation_root(

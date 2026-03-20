@@ -186,5 +186,5 @@ class TestTelemetryHandlerSingleton:
 
         crewai_module._wrap_crew_kickoff(mock_wrapped, mock_crew, (), {"inputs": {}})
 
-        assert len(stub_handler.started_workflows) == 1
-        assert len(stub_handler.stopped_workflows) == 1
+        assert len(stub_handler.started_agents) == 1
+        assert len(stub_handler.stopped_agents) == 1

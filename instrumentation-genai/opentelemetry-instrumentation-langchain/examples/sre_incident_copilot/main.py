@@ -17,6 +17,12 @@ Usage:
         --conversation-id troubleshooting-chat-1 \\
         --manual-instrumentation --wait-after-completion 300
 
+    # Same, but with a Workflow root span instead of AgentInvocation:
+    python main.py --scenario scenario-001 --simulate-interrupt-resume \\
+        --conversation-id troubleshooting-chat-1 \\
+        --manual-instrumentation --wait-after-completion 300 \\
+        --root-as-workflow "SRE Incident Copilot"
+
     # Cross-process interrupt/resume (TWO separate invocations):
     CONVERSATION_ID="troubleshooting-chat-1"
     python main.py --scenario scenario-001 --enable-interrupt \\
@@ -348,6 +354,7 @@ def run_scenario(
     config: Config,
     conversation_id: str | None = None,
     enable_interrupt: bool = False,
+    workflow_name: str | None = None,
 ) -> IncidentState | Dict:
     """Run a scenario end-to-end.
 
@@ -397,6 +404,11 @@ def run_scenario(
         "configurable": {"thread_id": conversation_id},
         "recursion_limit": 20,
     }
+
+    # When workflow_name is provided, add it to config metadata so the
+    # instrumentation creates a Workflow root span instead of AgentInvocation.
+    if workflow_name:
+        config_dict["metadata"] = {"workflow_name": workflow_name}
 
     # LangGraph's thread_id is automatically inferred as gen_ai.conversation.id
     # on all telemetry spans (root Workflow/AgentInvocation and their children).
@@ -506,6 +518,7 @@ def resume_scenario(
     config: Config,
     conversation_id: str,
     answer: Dict,
+    workflow_name: str | None = None,
 ) -> IncidentState:
     """Resume a previously interrupted scenario.
 
@@ -521,6 +534,8 @@ def resume_scenario(
         "configurable": {"thread_id": conversation_id},
         "recursion_limit": 20,
     }
+    if workflow_name:
+        config_dict["metadata"] = {"workflow_name": workflow_name}
 
     final_state: Optional[IncidentState] = None
     nodes_executed = []
@@ -596,6 +611,17 @@ def main():
         help="Feedback to include when approving or rejecting",
     )
     parser.add_argument(
+        "--root-as-workflow",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help=(
+            "Use a Workflow root span instead of the default AgentInvocation. "
+            "The provided NAME becomes the workflow_name in LangGraph config "
+            "metadata (e.g. --root-as-workflow 'SRE Incident Copilot')."
+        ),
+    )
+    parser.add_argument(
         "--wait-after-completion",
         type=int,
         default=0,
@@ -635,6 +661,10 @@ def main():
     print(f"Scenario: {config.scenario_id}")
     print(f"Service: {config.otel_service_name}")
     print(f"Conversation ID (→ gen_ai.conversation.id): {conversation_id}")
+    if args.root_as_workflow:
+        print(f"Root span type: Workflow (name: {args.root_as_workflow})")
+    else:
+        print("Root span type: AgentInvocation (default)")
     if args.resume:
         print("Mode: resume (continuing interrupted workflow)")
     elif args.simulate_interrupt_resume:
@@ -673,7 +703,8 @@ def main():
 
             print(f"▶️  Resuming with: {json.dumps(answer)}")
             final_state = resume_scenario(
-                config.scenario_id, config, conversation_id, answer
+                config.scenario_id, config, conversation_id, answer,
+                workflow_name=args.root_as_workflow,
             )
 
         # ---- Simulate interrupt + resume in one process --------------------
@@ -683,7 +714,8 @@ def main():
             print("-" * 60)
 
             result = run_scenario(
-                config.scenario_id, config, conversation_id, enable_interrupt=True
+                config.scenario_id, config, conversation_id,
+                enable_interrupt=True, workflow_name=args.root_as_workflow,
             )
 
             if not isinstance(result, dict) or result.get("status") != "interrupted":
@@ -732,13 +764,15 @@ def main():
                 print("-" * 60)
 
                 final_state = resume_scenario(
-                    config.scenario_id, config, conversation_id, answer
+                    config.scenario_id, config, conversation_id, answer,
+                    workflow_name=args.root_as_workflow,
                 )
 
         # ---- Normal / interrupt path ---------------------------------------
         else:
             result = run_scenario(
-                config.scenario_id, config, conversation_id, enable_interrupt
+                config.scenario_id, config, conversation_id, enable_interrupt,
+                workflow_name=args.root_as_workflow,
             )
 
             if isinstance(result, dict) and result.get("status") == "interrupted":
