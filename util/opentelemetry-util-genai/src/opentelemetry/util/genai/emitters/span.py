@@ -77,6 +77,7 @@ _SPAN_ALLOWED_SUPPLEMENTAL_KEYS: tuple[str, ...] = (
     "gen_ai.framework",
     "gen_ai.request.id",
     GEN_AI_COMMAND,
+    GEN_AI_FINISH_REASON,
     GEN_AI_WORKFLOW_NAME,
 )
 _SPAN_BLOCKED_SUPPLEMENTAL_KEYS: set[str] = {"request_top_p", "ls_temperature"}
@@ -585,6 +586,15 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
+        # Re-apply supplemental attributes so values set after start
+        # (e.g. interrupt bubbling to root) are captured on the span.
+        supplemental = getattr(workflow, "attributes", None)
+        if supplemental:
+            semconv_subset = filter_semconv_gen_ai_attributes(
+                supplemental, extras=_SPAN_ALLOWED_SUPPLEMENTAL_KEYS
+            )
+            if semconv_subset:
+                _apply_gen_ai_semconv_attributes(span, semconv_subset)
         token = workflow.context_token
         if token is not None and hasattr(token, "__exit__"):
             try:
@@ -693,6 +703,15 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
+        # Re-apply supplemental attributes so values set after start
+        # (e.g. interrupt bubbling to root) are captured on the span.
+        supplemental = getattr(agent, "attributes", None)
+        if supplemental:
+            semconv_subset = filter_semconv_gen_ai_attributes(
+                supplemental, extras=_SPAN_ALLOWED_SUPPLEMENTAL_KEYS
+            )
+            if semconv_subset:
+                _apply_gen_ai_semconv_attributes(span, semconv_subset)
         token = agent.context_token
         if token is not None and hasattr(token, "__exit__"):
             try:

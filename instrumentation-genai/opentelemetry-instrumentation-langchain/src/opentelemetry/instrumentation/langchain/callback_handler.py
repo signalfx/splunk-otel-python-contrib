@@ -64,6 +64,29 @@ def _classify_error(error: BaseException) -> ErrorClassification:
     return ErrorClassification.REAL_ERROR
 
 
+def _extract_interrupt_values(error: BaseException) -> list[Any] | None:
+    """Extract the interrupt value(s) from a GraphInterrupt exception.
+
+    ``GraphInterrupt.__init__`` receives a sequence of ``Interrupt`` objects
+    stored as ``args[0]``.  Each ``Interrupt`` carries a ``.value`` attribute
+    that holds the payload the node passed to ``interrupt()``.
+
+    Returns a list of extracted values, or ``None`` when nothing useful can
+    be extracted.
+    """
+    if not (hasattr(error, "args") and error.args):
+        return None
+    interrupts = error.args[0]
+    if not isinstance(interrupts, (list, tuple)):
+        return None
+    values: list[Any] = []
+    for item in interrupts:
+        val = getattr(item, "value", None)
+        if val is not None:
+            values.append(val)
+    return values or None
+
+
 def _safe_str(value: Any) -> str:
     try:
         return str(value)
@@ -602,18 +625,25 @@ class LangchainCallbackHandler(BaseCallbackHandler):
 
         self._restore_inferred_context(run_id)
         if isinstance(entity, (Workflow, AgentInvocation)):
-            output_msgs = _make_last_output_message(outputs)
-            if output_msgs:
-                entity.output_messages = output_msgs
-            else:
-                # Fallback: serialize non-message state fields as output.
-                # Common in LangGraph where nodes update structured state
-                # fields rather than the message list.
-                fallback = _make_workflow_output_fallback(outputs)
-                if fallback:
-                    entity.output_messages = [
-                        OutputMessage(role="assistant", parts=[Text(fallback)])
-                    ]
+            # When the entity was interrupted, _fail() already set the
+            # interrupt value as the output message.  Don't overwrite it
+            # with the full graph state dump that LangGraph passes here.
+            already_interrupted = (
+                entity.attributes.get(GEN_AI_FINISH_REASON) == FINISH_REASON_INTERRUPTED
+            )
+            if not already_interrupted:
+                output_msgs = _make_last_output_message(outputs)
+                if output_msgs:
+                    entity.output_messages = output_msgs
+                else:
+                    # Fallback: serialize non-message state fields as output.
+                    # Common in LangGraph where nodes update structured state
+                    # fields rather than the message list.
+                    fallback = _make_workflow_output_fallback(outputs)
+                    if fallback:
+                        entity.output_messages = [
+                            OutputMessage(role="assistant", parts=[Text(fallback)])
+                        ]
             self._handler.finish(entity)
         elif isinstance(entity, Step):
             self._handler.stop_step(entity)
@@ -915,9 +945,40 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         # conversation was interrupted, even if the interrupt happened deeper
         # in the call hierarchy.
         if classification == ErrorClassification.INTERRUPT:
+            # Extract the clean interrupt value(s) from the
+            # GraphInterrupt exception.  The value is what the node
+            # passed to ``interrupt()`` — e.g. the question or review
+            # payload.
+            interrupt_values = _extract_interrupt_values(error)
+            if interrupt_values is not None:
+                raw_value = (
+                    interrupt_values[0]
+                    if len(interrupt_values) == 1
+                    else interrupt_values
+                )
+                content = (
+                    json.dumps(raw_value, ensure_ascii=False, default=str)
+                    if not isinstance(raw_value, str)
+                    else raw_value
+                )
+                # Use the clean interrupt value as the error message so
+                # _apply_error_status writes a human-readable
+                # finish_reason_description on the child step span.
+                genai_error = GenAIError(
+                    message=content,
+                    type=type(error),
+                    classification=classification,
+                )
             root_entity = self._invocation_manager.get_root()
             if root_entity is not None and root_entity is not entity:
                 root_entity.attributes[GEN_AI_FINISH_REASON] = FINISH_REASON_INTERRUPTED
+                # Set the interrupt value as the root output message.
+                # The finish_reason_description is intentionally NOT set
+                # on the root — it would duplicate gen_ai.output.messages.
+                if interrupt_values is not None:
+                    root_entity.output_messages = [
+                        OutputMessage(role="assistant", parts=[Text(content)])
+                    ]
 
         self._handler.fail(entity, genai_error)
         self._invocation_manager.remove(run_id)

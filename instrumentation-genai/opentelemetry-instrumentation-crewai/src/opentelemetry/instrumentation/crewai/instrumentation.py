@@ -6,6 +6,7 @@ Wrapper-based instrumentation for CrewAI using splunk-otel-util-genai.
 
 import json
 import logging
+from contextvars import ContextVar
 from typing import Any, Collection, Optional
 
 from wrapt import wrap_function_wrapper
@@ -29,8 +30,11 @@ _instruments = ("crewai >= 0.70.0",)
 
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
-# Active root entity (set during kickoff, used by child wrappers)
-_active_root_entity: Optional[Any] = None
+# Active root entity (set during kickoff, used by child wrappers).
+# ContextVar ensures thread safety for concurrent kickoffs.
+_active_root_entity: ContextVar[Optional[Any]] = ContextVar(
+    "_active_root_entity", default=None
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -211,9 +215,7 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         # If instrumentation setup fails, just run the original function
         return wrapped(*args, **kwargs)
 
-    global _active_root_entity
-    prev_root = _active_root_entity
-    _active_root_entity = root_entity
+    token = _active_root_entity.set(root_entity)
     try:
         result = wrapped(*args, **kwargs)
 
@@ -237,7 +239,7 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
             pass
         raise
     finally:
-        _active_root_entity = prev_root
+        _active_root_entity.reset(token)
 
 
 def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
@@ -271,8 +273,9 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
             agent_invocation.input_messages = _make_input_message(messages)
 
         # Communicate parent hierarchy for conversation root detection.
-        if _active_root_entity and getattr(_active_root_entity, "span", None):
-            agent_invocation.parent_span = _active_root_entity.span
+        root = _active_root_entity.get()
+        if root and getattr(root, "span", None):
+            agent_invocation.parent_span = root.span
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)
