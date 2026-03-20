@@ -703,7 +703,10 @@ def main():
 
             print(f"▶️  Resuming with: {json.dumps(answer)}")
             final_state = resume_scenario(
-                config.scenario_id, config, conversation_id, answer,
+                config.scenario_id,
+                config,
+                conversation_id,
+                answer,
                 workflow_name=args.root_as_workflow,
             )
 
@@ -714,8 +717,11 @@ def main():
             print("-" * 60)
 
             result = run_scenario(
-                config.scenario_id, config, conversation_id,
-                enable_interrupt=True, workflow_name=args.root_as_workflow,
+                config.scenario_id,
+                config,
+                conversation_id,
+                enable_interrupt=True,
+                workflow_name=args.root_as_workflow,
             )
 
             if not isinstance(result, dict) or result.get("status") != "interrupted":
@@ -764,14 +770,20 @@ def main():
                 print("-" * 60)
 
                 final_state = resume_scenario(
-                    config.scenario_id, config, conversation_id, answer,
+                    config.scenario_id,
+                    config,
+                    conversation_id,
+                    answer,
                     workflow_name=args.root_as_workflow,
                 )
 
         # ---- Normal / interrupt path ---------------------------------------
         else:
             result = run_scenario(
-                config.scenario_id, config, conversation_id, enable_interrupt,
+                config.scenario_id,
+                config,
+                conversation_id,
+                enable_interrupt,
                 workflow_name=args.root_as_workflow,
             )
 
