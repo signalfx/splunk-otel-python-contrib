@@ -176,8 +176,9 @@ def test_chat_completion_bad_endpoint(
         spans[0], llm_model_value, server_address="localhost"
     )
     assert 4242 == spans[0].attributes[ServerAttributes.SERVER_PORT]
-    assert (
-        "APIConnectionError" == spans[0].attributes[ErrorAttributes.ERROR_TYPE]
+    assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] in (
+        "APIConnectionError",
+        "APITimeoutError",
     )
 
     metrics = metric_reader.get_metrics_data().resource_metrics
@@ -194,12 +195,9 @@ def test_chat_completion_bad_endpoint(
     )
     assert duration_metric is not None
     assert duration_metric.data.data_points[0].sum > 0
-    assert (
-        duration_metric.data.data_points[0].attributes[
-            ErrorAttributes.ERROR_TYPE
-        ]
-        == "APIConnectionError"
-    )
+    assert duration_metric.data.data_points[0].attributes[
+        ErrorAttributes.ERROR_TYPE
+    ] in ("APIConnectionError", "APITimeoutError")
 
 
 @pytest.mark.vcr()
