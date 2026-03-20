@@ -1,5 +1,11 @@
 """Test embedding instrumentation for LlamaIndex."""
 
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Requires live OpenAI API key; needs VCR cassettes"
+)
+
 import os
 
 from llama_index.core import Settings

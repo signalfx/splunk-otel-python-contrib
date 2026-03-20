@@ -9,6 +9,12 @@ This test validates that:
 5. Embedding invocations nest under their parent (RetrievalInvocation) via parent span
 """
 
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Requires live OpenAI API key; needs VCR cassettes"
+)
+
 from llama_index.core import Document, Settings, VectorStoreIndex
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI

@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.llms.mock import MockLLM
 from opentelemetry import metrics, trace
@@ -31,6 +33,7 @@ def setup_telemetry():
     return tracer_provider, meter_provider, metric_reader
 
 
+@pytest.mark.skip(reason="Requires live OpenAI API key; needs VCR cassettes")
 def test_with_openai():
     """Test with real OpenAI API - requires OPENAI_API_KEY environment variable."""
     from llama_index.llms.openai import OpenAI
