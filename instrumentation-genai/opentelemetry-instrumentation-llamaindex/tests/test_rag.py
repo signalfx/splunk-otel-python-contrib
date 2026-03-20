@@ -11,13 +11,10 @@ This test validates that:
 
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="Requires live OpenAI API key; needs VCR cassettes"
-)
-
 from llama_index.core import Document, Settings, VectorStoreIndex
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
+
 from opentelemetry import trace
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
@@ -25,6 +22,10 @@ from opentelemetry.sdk.trace.export import (
     SimpleSpanProcessor,
     SpanExporter,
     SpanExportResult,
+)
+
+pytestmark = pytest.mark.skip(
+    reason="Requires live OpenAI API key; needs VCR cassettes"
 )
 
 

@@ -3,9 +3,9 @@
 import os
 
 import pytest
-
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.llms.mock import MockLLM
+
 from opentelemetry import metrics, trace
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
