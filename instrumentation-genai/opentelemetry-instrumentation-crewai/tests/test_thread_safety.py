@@ -38,13 +38,13 @@ class TestThreadSafety:
             for f in concurrent.futures.as_completed(futures):
                 f.result()  # Wait for completion
 
-        # Verify all workflows were started and stopped
-        assert len(stub_handler.started_workflows) == num_threads
-        assert len(stub_handler.stopped_workflows) == num_threads
+        # Verify all agents were started and stopped
+        assert len(stub_handler.started_agents) == num_threads
+        assert len(stub_handler.stopped_agents) == num_threads
 
-        # Verify each workflow has a unique name
-        workflow_names = [w.name for w in stub_handler.started_workflows]
-        assert len(set(workflow_names)) == num_threads
+        # Verify each agent has a unique name
+        agent_names = [a.name for a in stub_handler.started_agents]
+        assert len(set(agent_names)) == num_threads
 
     def test_concurrent_agent_executions(self, stub_handler):
         """Test that concurrent agent executions are properly tracked."""
@@ -200,10 +200,10 @@ class TestThreadSafety:
                 f.result()  # Wait for completion
 
         # Verify all operations completed
-        assert len(stub_handler.started_workflows) == 5
-        assert len(stub_handler.stopped_workflows) == 5
-        assert len(stub_handler.started_agents) == 5
-        assert len(stub_handler.stopped_agents) == 5
+        assert (
+            len(stub_handler.started_agents) == 5 + 5
+        )  # 5 from kickoff + 5 from agent
+        assert len(stub_handler.stopped_agents) == 5 + 5
         assert len(stub_handler.started_steps) == 5
         assert len(stub_handler.stopped_steps) == 5
         assert len(stub_handler.started_tool_calls) == 5
@@ -314,8 +314,9 @@ class TestThreadSafety:
 
         # Verify all operations completed
         assert set(results) == {"workflow", "agent", "task", "tool"}
-        assert len(stub_handler.started_workflows) == 1
-        assert len(stub_handler.started_agents) == 1
+        assert (
+            len(stub_handler.started_agents) == 1 + 1
+        )  # 1 from kickoff + 1 from agent
         assert len(stub_handler.started_steps) == 1
         assert len(stub_handler.started_tool_calls) == 1
 
@@ -349,9 +350,9 @@ class TestThreadSafety:
             for f in concurrent.futures.as_completed(futures):
                 f.result()  # Wait for completion
 
-        # Verify all workflows were started
-        assert len(stub_handler.started_workflows) == num_threads
+        # Verify all agents were started
+        assert len(stub_handler.started_agents) == num_threads
         # Verify all failures were recorded
         assert len(stub_handler.failed_entities) == num_threads
-        # Verify no workflows were stopped (they all failed)
-        assert len(stub_handler.stopped_workflows) == 0
+        # Verify no agents were stopped (they all failed)
+        assert len(stub_handler.stopped_agents) == 0

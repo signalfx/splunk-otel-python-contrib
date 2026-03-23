@@ -6,6 +6,7 @@ verifying that interrupt/resume produces correct telemetry.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import TypedDict
@@ -88,6 +89,10 @@ def instrumented_graph():
     """Per-test fixture: fresh TracerProvider, instrumentor, graph, and exporter."""
     import opentelemetry.util.genai.handler as _handler_mod
 
+    # Enable content capture so gen_ai.input/output.messages are populated.
+    os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
+    os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"] = "SPAN_ONLY"
+
     # Reset the singleton TelemetryHandler so a fresh one is created
     # with our test TracerProvider.
     if hasattr(_handler_mod.get_telemetry_handler, "_default_handler"):
@@ -117,6 +122,8 @@ def instrumented_graph():
     instrumentor.uninstrument()
     _fully_unwrap_callback_manager()
     tp.shutdown()
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE", None)
     setattr(_handler_mod.get_telemetry_handler, "_default_handler", None)
 
 
@@ -126,7 +133,7 @@ class TestLangGraphInterruptResume:
 
     def test_interrupt_resume_produces_two_traces(self, instrumented_graph):
         """Interrupt + resume should produce two separate traces,
-        each with a workflow root span."""
+        each with an agent root span (default)."""
         graph, exporter, tp = instrumented_graph
         config = {"configurable": {"thread_id": "t-two-traces"}}
 
@@ -149,6 +156,15 @@ class TestLangGraphInterruptResume:
         assert len(phase1_spans) > 0, "Phase 1 should produce spans"
         assert len(phase2_spans) > 0, "Phase 2 should produce spans"
 
+        # Root spans should be invoke_agent (default, not invoke_workflow)
+        for label, spans in [("Phase 1", phase1_spans), ("Phase 2", phase2_spans)]:
+            roots = [s for s in spans if s.parent is None]
+            assert len(roots) == 1, f"{label} should have one root span"
+            op = roots[0].attributes.get("gen_ai.operation.name")
+            assert op == "invoke_agent", (
+                f"{label} root should be invoke_agent, got {op}"
+            )
+
         # Traces should be different
         trace1_ids = {s.context.trace_id for s in phase1_spans}
         trace2_ids = {s.context.trace_id for s in phase2_spans}
@@ -156,9 +172,9 @@ class TestLangGraphInterruptResume:
         assert len(trace2_ids) == 1, "Phase 2 spans should share one trace"
         assert trace1_ids != trace2_ids, "Phases should have different trace IDs"
 
-    def test_resume_workflow_has_command_attribute(self, instrumented_graph):
-        """The resume workflow span should have
-        gen_ai.workflow.command='resume'."""
+    def test_resume_root_has_command_attribute(self, instrumented_graph):
+        """The resume root span should have
+        gen_ai.command='resume'."""
         graph, exporter, tp = instrumented_graph
         config = {"configurable": {"thread_id": "t-cmd-attr"}}
 
@@ -173,15 +189,15 @@ class TestLangGraphInterruptResume:
             pass
         tp.force_flush()
 
-        # Find the root workflow span
+        # Find the root span (agent by default)
         root_spans = [s for s in exporter.spans if s.parent is None]
         assert len(root_spans) == 1, "Should have exactly one root span"
 
         root = root_spans[0]
-        assert root.name.startswith("workflow"), (
-            f"Root should be workflow, got {root.name}"
+        assert root.attributes.get("gen_ai.operation.name") == "invoke_agent", (
+            "Resume root should be invoke_agent by default"
         )
-        assert root.attributes.get("gen_ai.workflow.command") == "resume"
+        assert root.attributes.get("gen_ai.command") == "resume"
 
     def test_resume_has_conversation_id(self, instrumented_graph):
         """All spans in both phases should have gen_ai.conversation.id
@@ -225,3 +241,120 @@ class TestLangGraphInterruptResume:
                         f"Span {s.name} has parent not in same trace "
                         f"(orphan span detected)"
                     )
+
+    def test_interrupt_bubbles_finish_reason_to_root(self, instrumented_graph):
+        """When a child step is interrupted, the root invoke_agent span
+        should receive gen_ai.finish_reason='interrupted'.  The interrupt
+        value is captured via gen_ai.output.messages (not duplicated in
+        finish_reason_description on the root)."""
+        graph, exporter, tp = instrumented_graph
+        config = {"configurable": {"thread_id": "t-bubble-finish"}}
+
+        # Phase 1: Run until interrupt at human_review node
+        for _ in graph.stream({"value": "start"}, config):
+            pass
+        tp.force_flush()
+
+        # Find the root span
+        root_spans = [s for s in exporter.spans if s.parent is None]
+        assert len(root_spans) == 1
+        root = root_spans[0]
+
+        # Root span should have finish_reason=interrupted (bubbled up from child)
+        assert root.attributes.get("gen_ai.finish_reason") == "interrupted", (
+            "Root span should have gen_ai.finish_reason='interrupted' "
+            "bubbled up from the interrupted child step"
+        )
+
+        # finish_reason_description should NOT be on the root span — the
+        # interrupt payload is already in gen_ai.output.messages.
+        assert root.attributes.get("gen_ai.finish_reason_description") is None, (
+            "Root span should NOT have finish_reason_description "
+            "(interrupt payload is in gen_ai.output.messages instead)"
+        )
+
+        # The interrupted child step should have finish_reason=interrupted
+        # with a clean finish_reason_description from the interrupt value.
+        step_spans = [s for s in exporter.spans if "human_review" in s.name]
+        assert len(step_spans) == 1
+        step = step_spans[0]
+        assert step.attributes.get("gen_ai.finish_reason") == "interrupted"
+        step_desc = step.attributes.get("gen_ai.finish_reason_description")
+        assert step_desc is not None and "approve?" in step_desc, (
+            f"Child step should have clean finish_reason_description, got: {step_desc}"
+        )
+
+    def test_interrupt_sets_output_from_interrupt_value(self, instrumented_graph):
+        """Root span output should contain the interrupt value (the question
+        to the user), not the full graph state dump."""
+        graph, exporter, tp = instrumented_graph
+        config = {"configurable": {"thread_id": "t-int-output"}}
+
+        for _ in graph.stream({"value": "start"}, config):
+            pass
+        tp.force_flush()
+
+        root_spans = [s for s in exporter.spans if s.parent is None]
+        assert len(root_spans) == 1
+        root = root_spans[0]
+
+        output = root.attributes.get("gen_ai.output.messages")
+        assert output is not None, "Root span should have gen_ai.output.messages"
+
+        import json
+
+        parsed = json.loads(output)
+        assert isinstance(parsed, list) and len(parsed) == 1
+        msg = parsed[0]
+        assert msg.get("role") == "assistant"
+
+        # The content is the serialised interrupt value dict inside a text part
+        parts = msg.get("parts", [])
+        assert len(parts) == 1
+        assert parts[0].get("type") == "text"
+        content = parts[0].get("content", "")
+        content_data = json.loads(content)
+        assert content_data.get("question") == "approve?", (
+            f"Expected interrupt question in output, got: {content}"
+        )
+
+    def test_resume_root_captures_command_input(self, instrumented_graph):
+        """The resume root span should capture the Command(resume=...)
+        value as its gen_ai.input.messages."""
+        graph, exporter, tp = instrumented_graph
+        config = {"configurable": {"thread_id": "t-resume-input"}}
+
+        # Phase 1: Interrupt
+        for _ in graph.stream({"value": "start"}, config):
+            pass
+        tp.force_flush()
+        exporter.spans.clear()
+
+        # Phase 2: Resume with a meaningful answer
+        for _ in graph.stream(Command(resume="approved!"), config):
+            pass
+        tp.force_flush()
+
+        root_spans = [s for s in exporter.spans if s.parent is None]
+        assert len(root_spans) == 1
+        root = root_spans[0]
+
+        input_attr = root.attributes.get("gen_ai.input.messages")
+        assert input_attr is not None, (
+            "Resume root span should have gen_ai.input.messages "
+            "with the Command(resume=...) value"
+        )
+
+        import json
+
+        parsed = json.loads(input_attr)
+        assert isinstance(parsed, list) and len(parsed) == 1
+        msg = parsed[0]
+        assert msg.get("role") == "user"
+        # Content is inside a text part
+        parts = msg.get("parts", [])
+        assert len(parts) >= 1
+        content = parts[0].get("content", "")
+        assert "approved!" in content, (
+            f"Resume input should contain the resume value, got: {parts}"
+        )

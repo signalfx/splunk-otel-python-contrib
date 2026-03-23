@@ -95,6 +95,10 @@ class GenAI:
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_CONVERSATION_ID},
     )
+    conversation_root: Optional[bool] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.conversation_root"},
+    )
     data_source_id: Optional[str] = field(
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},

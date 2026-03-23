@@ -35,7 +35,9 @@ GEN_AI_AGENT_SYSTEM_INSTRUCTIONS = "gen_ai.agent.system_instructions"
 GEN_AI_WORKFLOW_NAME = "gen_ai.workflow.name"
 GEN_AI_WORKFLOW_TYPE = "gen_ai.workflow.type"
 GEN_AI_WORKFLOW_DESCRIPTION = "gen_ai.workflow.description"
-GEN_AI_WORKFLOW_COMMAND = "gen_ai.workflow.command"
+
+# Command attribute (root-level, used for resume detection on Workflow or AgentInvocation)
+GEN_AI_COMMAND = "gen_ai.command"
 
 # Step attributes (not in semantic conventions)
 GEN_AI_STEP_NAME = "gen_ai.step.name"
@@ -77,6 +79,9 @@ GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
 # Server attributes (from semantic conventions)
 SERVER_ADDRESS = "server.address"
 SERVER_PORT = "server.port"
+
+# Conversation root marker (marks the invocation-level root GenAI span)
+GEN_AI_CONVERSATION_ROOT = "gen_ai.conversation_root"
 
 # Association properties prefix
 GEN_AI_ASSOCIATION_PROPERTIES_PREFIX = "gen_ai.association.properties"

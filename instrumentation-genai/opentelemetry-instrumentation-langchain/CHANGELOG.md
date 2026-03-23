@@ -6,7 +6,7 @@ All notable changes to this repository are documented in this file.
 
 ### Added
 - **Error classification for interrupts** — `GraphInterrupt`, `NodeInterrupt`, and `Interrupt` exceptions are now classified as interrupts (not errors), leaving span status as `UNSET` (default) instead of `StatusCode.ERROR`. `CancelledError` and `TaskCancelledError` are classified as cancellations.
-- **Resume detection** — `gen_ai.workflow.command = "resume"` set on root workflow span when resuming via `Command(resume=...)` or from a LangGraph checkpoint with `checkpoint_id`.
+- **Resume detection** — `gen_ai.command = "resume"` set on root workflow span when resuming via `Command(resume=...)` or from a LangGraph checkpoint with `checkpoint_id`.
 - **Orphan span guard** — Prevents orphan root spans when LangGraph replays interrupted nodes during resume.
 - **Command input handling** — LangGraph passes a `Command` object (not a dict) as `inputs` on resume; the callback handler now normalises this without crashing and captures the `resume` value as a user input message on the workflow span. Dict resume values are JSON-serialized; non-resume commands use the string representation.
 - **LangGraph node name fallback** — When `serialized` is `None` (LangGraph ≥1.0), `langgraph_node` from callback metadata is used as the step name.
