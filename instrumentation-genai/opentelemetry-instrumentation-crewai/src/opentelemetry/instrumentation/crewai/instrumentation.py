@@ -6,6 +6,7 @@ Wrapper-based instrumentation for CrewAI using splunk-otel-util-genai.
 
 import json
 import logging
+from contextvars import ContextVar
 from typing import Any, Collection, Optional
 
 from wrapt import wrap_function_wrapper
@@ -16,7 +17,6 @@ from opentelemetry.util.genai.handler import (
     get_telemetry_handler,
 )
 from opentelemetry.util.genai.types import (
-    Workflow,
     AgentInvocation,
     Step,
     ToolCall,
@@ -30,6 +30,11 @@ _instruments = ("crewai >= 0.70.0",)
 
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
+# Active root entity (set during kickoff, used by child wrappers).
+# ContextVar ensures thread safety for concurrent kickoffs.
+_active_root_entity: ContextVar[Optional[Any]] = ContextVar(
+    "_active_root_entity", default=None
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -182,33 +187,35 @@ class CrewAIInstrumentor(BaseInstrumentor):
 
 def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
     """
-    Wrap Crew.kickoff to create a Workflow span.
+    Wrap Crew.kickoff to create a root span.
 
-    Maps to: Workflow type from splunk-otel-util-genai
+    By default creates an AgentInvocation (agent type) at root.
+    When OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW is truthy,
+    creates a Workflow instead.
+
+    Uses handler.create_and_start_root() to centralize the Workflow vs
+    AgentInvocation decision.
     """
     try:
         handler = _handler
-
-        # Create workflow invocation
-        workflow = Workflow(
-            name=getattr(instance, "name", None) or "CrewAI Workflow",
-            workflow_type="crewai.crew",
-            framework="crewai",
-            system="crewai",
-        )
+        crew_name = getattr(instance, "name", None) or "CrewAI Workflow"
 
         inputs = kwargs.get("inputs")
         if inputs is None and args:
             inputs = args[0]
-        if inputs is not None:
-            workflow.input_messages = _make_input_message(inputs)
 
-        # Start the workflow
-        handler.start_workflow(workflow)
+        root_entity = handler.create_and_start_root(
+            crew_name,
+            workflow_type="crewai.crew",
+            framework="crewai",
+            system="crewai",
+            input_messages=_make_input_message(inputs) if inputs else None,
+        )
     except Exception:
         # If instrumentation setup fails, just run the original function
         return wrapped(*args, **kwargs)
 
+    token = _active_root_entity.set(root_entity)
     try:
         result = wrapped(*args, **kwargs)
 
@@ -216,10 +223,9 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
         try:
             if result:
                 if hasattr(result, "raw"):
-                    workflow.output_messages = _make_output_message(result.raw)
+                    root_entity.output_messages = _make_output_message(result.raw)
 
-            # Stop the workflow successfully
-            handler.stop_workflow(workflow)
+            handler.finish(root_entity)
         except Exception:
             # Ignore instrumentation errors on success path
             pass
@@ -228,10 +234,12 @@ def _wrap_crew_kickoff(wrapped, instance, args, kwargs):
     except Exception as exc:
         # Wrapped function failed - record error and end span
         try:
-            handler.fail(workflow, Error(message=str(exc), type=type(exc)))
+            handler.fail(root_entity, Error(message=str(exc), type=type(exc)))
         except Exception:
             pass
         raise
+    finally:
+        _active_root_entity.reset(token)
 
 
 def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
@@ -263,6 +271,11 @@ def _wrap_agent_execute_task(wrapped, instance, args, kwargs):
             if expected_output:
                 messages["expected_output"] = expected_output
             agent_invocation.input_messages = _make_input_message(messages)
+
+        # Communicate parent hierarchy for conversation root detection.
+        root = _active_root_entity.get()
+        if root and getattr(root, "span", None):
+            agent_invocation.parent_span = root.span
 
         # Start the agent invocation
         handler.start_agent(agent_invocation)

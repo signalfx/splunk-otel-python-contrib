@@ -98,6 +98,70 @@ class StubTelemetryHandler:
         self.stopped_tool_calls = []
         self.failed_entities = []
 
+    def _should_use_workflow_root(self, force_workflow=False, workflow_name=None):
+        """Check if root should be workflow based on env var."""
+        if force_workflow or workflow_name:
+            return True
+        val = os.environ.get("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "")
+        return val.strip().lower() in {"1", "true", "yes", "on"}
+
+    def create_and_start_root(
+        self,
+        name,
+        *,
+        force_workflow=False,
+        workflow_name=None,
+        workflow_type=None,
+        framework=None,
+        system=None,
+        input_messages=None,
+        conversation_id=None,
+        attributes=None,
+    ):
+        """Create and start a root entity (Workflow or AgentInvocation)."""
+        from opentelemetry.util.genai.types import Workflow, AgentInvocation
+
+        use_workflow = self._should_use_workflow_root(force_workflow, workflow_name)
+        attrs = attributes or {}
+
+        if use_workflow:
+            wf_name = workflow_name or name
+            entity = Workflow(
+                name=wf_name,
+                workflow_type=workflow_type,
+                framework=framework,
+                system=system,
+                attributes=attrs,
+            )
+            if input_messages:
+                entity.input_messages = input_messages
+            if conversation_id:
+                entity.conversation_id = conversation_id
+            self.start_workflow(entity)
+        else:
+            entity = AgentInvocation(
+                name=name,
+                framework=framework,
+                system=system,
+                attributes=attrs,
+            )
+            entity.agent_name = name
+            if input_messages:
+                entity.input_messages = input_messages
+            if conversation_id:
+                entity.conversation_id = conversation_id
+            self.start_agent(entity)
+
+        return entity
+
+    def finish(self, entity):
+        """Finish any entity (generic stop dispatcher)."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.stop_workflow(entity)
+        return self.stop_agent(entity)
+
     def start_workflow(self, workflow):
         self.started_workflows.append(workflow)
         return workflow

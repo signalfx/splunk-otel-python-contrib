@@ -93,6 +93,7 @@ from opentelemetry.util.genai.types import (
     Error,
     EvaluationResult,
     GenAI,
+    InputMessage,
     LLMInvocation,
     RetrievalInvocation,
     Step,
@@ -114,6 +115,7 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
+    OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -855,12 +857,138 @@ class TelemetryHandler:
         self._pop_current_span(invocation)
         return invocation
 
+    @staticmethod
+    def _maybe_mark_conversation_root(entity: GenAI) -> None:
+        """Auto-mark entity as conversation root when no parent span exists.
+
+        Only Workflow and AgentInvocation are eligible — other entity types
+        (LLMInvocation, Step, ToolCall, AgentCreation, etc.) are never roots.
+
+        If the instrumentation has not explicitly set conversation_root and
+        the entity has no parent_span, this is the invocation-level root.
+        """
+        if not isinstance(entity, (Workflow, AgentInvocation)):
+            return
+        if entity.conversation_root is None and not getattr(
+            entity, "parent_span", None
+        ):
+            entity.conversation_root = True
+
+    def should_use_workflow_root(
+        self,
+        force_workflow: bool = False,
+        workflow_name: Optional[str] = None,
+    ) -> bool:
+        """Decide if root entity should be Workflow (vs AgentInvocation).
+
+        Use this to determine root entity type before creating it, especially
+        when the instrumentation needs to set type-specific fields before
+        starting the entity.
+
+        Returns True when:
+        - force_workflow is True, or
+        - workflow_name is a non-empty string, or
+        - OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW env var is truthy.
+
+        Example:
+            if handler.should_use_workflow_root(workflow_name=override):
+                wf = Workflow(name=override or default, ...)
+                handler.start_workflow(wf)
+            else:
+                agent = AgentInvocation(...)
+                agent.agent_name = ...  # set before start
+                handler.start_agent(agent)
+        """
+        if force_workflow or workflow_name:
+            return True
+        return is_truthy_env(
+            os.environ.get(
+                OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW, ""
+            )
+        )
+
+    def create_and_start_root(
+        self,
+        name: str,
+        *,
+        force_workflow: bool = False,
+        workflow_name: Optional[str] = None,
+        workflow_type: Optional[str] = None,
+        framework: Optional[str] = None,
+        system: Optional[str] = None,
+        input_messages: Optional[list[InputMessage]] = None,
+        conversation_id: Optional[str] = None,
+        attributes: Optional[dict[str, Any]] = None,
+    ) -> Workflow | AgentInvocation:
+        """Create and start a root entity (Workflow or AgentInvocation).
+
+        By default creates AgentInvocation. Creates Workflow when:
+        - force_workflow is True, or
+        - workflow_name is a non-empty string, or
+        - OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW env var is truthy.
+
+        Use the generic lifecycle methods to complete the entity:
+        - ``finish(entity)`` to end successfully
+        - ``fail(entity, error)`` to end with error
+
+        Args:
+            name: Entity name (agent name or default workflow name).
+            force_workflow: If True, creates Workflow regardless of env var.
+            workflow_name: Optional workflow name. If provided, creates
+                Workflow and uses this as the span name.
+            workflow_type: Workflow type (e.g., "crewai.crew"). Ignored for
+                AgentInvocation.
+            framework: Framework name (e.g., "crewai", "langchain").
+            system: System name (e.g., "crewai", "langgraph").
+            input_messages: Input messages to attach.
+            conversation_id: Conversation ID to set.
+            attributes: Additional span attributes.
+
+        Returns:
+            The created and started Workflow or AgentInvocation.
+        """
+        use_workflow = self.should_use_workflow_root(
+            force_workflow, workflow_name
+        )
+        attrs = attributes or {}
+
+        if use_workflow:
+            wf_name = workflow_name or name
+            entity: Workflow | AgentInvocation = Workflow(
+                name=wf_name,
+                workflow_type=workflow_type,
+                framework=framework,
+                system=system,
+                attributes=attrs,
+            )
+            if input_messages:
+                entity.input_messages = input_messages
+            if conversation_id:
+                entity.conversation_id = conversation_id
+            self.start_workflow(entity)
+        else:
+            entity = AgentInvocation(
+                name=name,
+                framework=framework,
+                system=system,
+                attributes=attrs,
+            )
+            entity.agent_name = name
+            if input_messages:
+                entity.input_messages = input_messages
+            if conversation_id:
+                entity.conversation_id = conversation_id
+            self.start_agent(entity)
+
+        return entity
+
     # Workflow lifecycle --------------------------------------------------
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
         self._refresh_capture_content()
         _apply_genai_context(workflow)
         self._inherit_parent_span(workflow)
+        self._maybe_mark_conversation_root(workflow)
         self._emitter.on_start(workflow)
         self._push_current_span(workflow)
         return workflow
@@ -1027,6 +1155,7 @@ class TelemetryHandler:
         self._refresh_capture_content()
         _apply_genai_context(agent)
         self._inherit_parent_span(agent)
+        self._maybe_mark_conversation_root(agent)
         self._emitter.on_start(agent)
         self._push_current_span(agent)
         # Push agent identity context

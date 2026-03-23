@@ -15,7 +15,7 @@ if _PACKAGE_SRC.exists():
 from opentelemetry.instrumentation.langchain.callback_handler import (  # noqa: E402
     LangchainCallbackHandler,
 )
-from opentelemetry.util.genai.types import Step, ToolCall, Workflow  # noqa: E402
+from opentelemetry.util.genai.types import AgentInvocation, Step, ToolCall, Workflow  # noqa: E402
 
 try:  # pragma: no cover - optional dependency in CI
     from langchain_core.messages import HumanMessage, AIMessage  # noqa: E402
@@ -103,6 +103,29 @@ class _StubTelemetryHandler:
 
     def fail_workflow(self, workflow, error):
         return workflow
+
+    def should_use_workflow_root(
+        self, force_workflow: bool = False, workflow_name: str | None = None
+    ) -> bool:
+        """Stub: return True if force_workflow or workflow_name is set."""
+        return bool(force_workflow or workflow_name)
+
+    def finish(self, entity):
+        """Generic finish dispatcher."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.stop_workflow(entity)
+        return self.stop_agent(entity)
+
+    def fail(self, entity, error):
+        """Generic fail dispatcher."""
+        from opentelemetry.util.genai.types import Workflow
+
+        if isinstance(entity, Workflow):
+            return self.fail_workflow(entity, error)
+        self.failed_agents.append((entity, error))
+        return entity
 
 
 @pytest.fixture(name="handler_with_stub")
@@ -382,8 +405,8 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
-def test_workflow_output_fallback_when_no_ai_messages(handler_with_stub):
-    """Root workflow span should capture state fields as output
+def test_root_output_fallback_when_no_ai_messages(handler_with_stub):
+    """Root agent span should capture state fields as output
     when no AIMessages are present (common LangGraph pattern)."""
     handler, stub = handler_with_stub
 
@@ -392,14 +415,14 @@ def test_workflow_output_fallback_when_no_ai_messages(handler_with_stub):
         serialized={"name": "LangGraph"},
         inputs={"messages": [HumanMessage(content="Investigate alert")]},
         run_id=wf_run_id,
-        # No agent tags -> creates Workflow, not AgentInvocation
+        # No agent tags -> now creates AgentInvocation by default
     )
 
-    assert stub.started_workflows, "Workflow was not started"
-    wf = stub.started_workflows[-1]
-    assert isinstance(wf, Workflow)
-    assert wf.input_messages and len(wf.input_messages) == 1
-    assert "Investigate alert" in wf.input_messages[0].parts[0].content
+    assert stub.started_agents, "Agent was not started"
+    agent = stub.started_agents[-1]
+    assert isinstance(agent, AgentInvocation)
+    assert agent.input_messages and len(agent.input_messages) == 1
+    assert "Investigate alert" in agent.input_messages[0].parts[0].content
 
     # End with state that has no AI messages (only structured fields)
     handler.on_chain_end(
@@ -411,18 +434,18 @@ def test_workflow_output_fallback_when_no_ai_messages(handler_with_stub):
         run_id=wf_run_id,
     )
 
-    assert stub.stopped_workflows, "Workflow was not stopped"
-    stopped_wf = stub.stopped_workflows[-1]
-    assert stopped_wf.output_messages and len(stopped_wf.output_messages) == 1
-    output_text = stopped_wf.output_messages[0].parts[0].content
+    assert stub.stopped_agents, "Agent was not stopped"
+    stopped = stub.stopped_agents[-1]
+    assert stopped.output_messages and len(stopped.output_messages) == 1
+    output_text = stopped.output_messages[0].parts[0].content
     assert "triage_result" in output_text
     assert "svc-123" in output_text
     assert "confidence_score" in output_text
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
-def test_workflow_output_captures_last_ai_message(handler_with_stub):
-    """Root workflow span should capture only the last AIMessage,
+def test_root_output_captures_last_ai_message(handler_with_stub):
+    """Root agent span should capture only the last AIMessage,
     not all intermediate ones."""
     handler, stub = handler_with_stub
 
@@ -444,10 +467,10 @@ def test_workflow_output_captures_last_ai_message(handler_with_stub):
         run_id=wf_run_id,
     )
 
-    assert stub.stopped_workflows
-    stopped_wf = stub.stopped_workflows[-1]
-    assert len(stopped_wf.output_messages) == 1
-    assert "final answer" in stopped_wf.output_messages[0].parts[0].content
+    assert stub.stopped_agents
+    stopped = stub.stopped_agents[-1]
+    assert len(stopped.output_messages) == 1
+    assert "final answer" in stopped.output_messages[0].parts[0].content
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
@@ -585,3 +608,240 @@ def test_thread_id_sets_conversation_id(handler_with_stub):
         outputs={"messages": [AIMessage(content="done")]},
         run_id=agent_run_id,
     )
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_interrupt_bubbles_up_to_root_span(handler_with_stub):
+    """When a child entity is interrupted, the root span should get
+    gen_ai.finish_reason='interrupted' attribute."""
+    from opentelemetry.util.genai.attributes import (
+        GEN_AI_FINISH_REASON,
+        FINISH_REASON_INTERRUPTED,
+    )
+
+    handler, stub = handler_with_stub
+
+    # Create a mock GraphInterrupt exception
+    class GraphInterrupt(Exception):
+        pass
+
+    # Start a root agent
+    root_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="plan my trip")]},
+        run_id=root_run_id,
+        tags=["agent"],
+        metadata={"agent_name": "root_agent"},
+    )
+
+    # Start a child step under the root
+    child_run_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "ApprovalNode"},
+        inputs={},
+        run_id=child_run_id,
+        parent_run_id=root_run_id,
+        metadata={"langgraph_node": "approval"},
+    )
+
+    # Child gets interrupted
+    handler.on_chain_error(GraphInterrupt("need approval"), run_id=child_run_id)
+
+    # Root should now have the interrupted finish reason
+    root_agent = stub.started_agents[0]
+    assert root_agent.attributes.get(GEN_AI_FINISH_REASON) == FINISH_REASON_INTERRUPTED
+
+
+# ---- conversation_root via real TelemetryHandler integration tests ----------
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_root_agent_has_conversation_root_on_span(
+    tracer_provider, span_exporter, meter_provider
+):
+    """Root agent chain (no parent_run_id) gets conversation_root=True on its span."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    # Reset singleton so we get a fresh handler with test providers
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    root_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="hi")]},
+        run_id=root_id,
+        tags=["agent"],
+        metadata={"agent_name": "root_agent"},
+    )
+    cb.on_chain_end(
+        outputs={"messages": [AIMessage(content="bye")]},
+        run_id=root_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    agent_spans = [s for s in spans if "invoke_agent" in s.name]
+    assert agent_spans, "Expected at least one invoke_agent span"
+    attrs = dict(agent_spans[0].attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_child_agent_lacks_conversation_root_on_span(
+    tracer_provider, span_exporter, meter_provider
+):
+    """Child agent chain (with parent_run_id) does NOT get conversation_root."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    parent_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "AgentExecutor"},
+        inputs={"messages": [HumanMessage(content="hi")]},
+        run_id=parent_id,
+        tags=["agent"],
+        metadata={"agent_name": "parent_agent"},
+    )
+
+    child_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "SubAgent"},
+        inputs={"messages": [HumanMessage(content="sub-task")]},
+        run_id=child_id,
+        parent_run_id=parent_id,
+        tags=["agent"],
+        metadata={"agent_name": "child_agent"},
+    )
+    cb.on_chain_end(
+        outputs={"messages": [AIMessage(content="sub-done")]},
+        run_id=child_id,
+    )
+    cb.on_chain_end(
+        outputs={"messages": [AIMessage(content="done")]},
+        run_id=parent_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    agent_spans = [s for s in spans if "invoke_agent" in s.name]
+    assert len(agent_spans) >= 2, "Expected parent and child agent spans"
+
+    # Find parent and child by name
+    parent_spans = [s for s in agent_spans if "parent_agent" in str(s.attributes)]
+    child_spans = [s for s in agent_spans if "child_agent" in str(s.attributes)]
+
+    assert parent_spans, "Expected parent_agent span"
+    parent_attrs = dict(parent_spans[0].attributes or {})
+    assert parent_attrs.get("gen_ai.conversation_root") is True
+
+    assert child_spans, "Expected child_agent span"
+    child_attrs = dict(child_spans[0].attributes or {})
+    assert "gen_ai.conversation_root" not in child_attrs
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_root_chain_without_agent_tag_has_conversation_root_on_span(
+    tracer_provider, span_exporter, meter_provider
+):
+    """Root chain (no parent_run_id, no agent tag) creates agent span with conversation_root=True."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    root_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "LangGraphWorkflow"},
+        inputs={"input": "start"},
+        run_id=root_id,
+        tags=[],
+        metadata={"langgraph_node": "__start__"},
+    )
+    cb.on_chain_end(
+        outputs={"output": "done"},
+        run_id=root_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    agent_spans = [s for s in spans if "invoke_agent" in str(s.attributes)]
+    assert agent_spans, "Expected at least one agent span with invoke_agent"
+    attrs = dict(agent_spans[0].attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_env_var_root_as_workflow_creates_workflow(
+    tracer_provider, span_exporter, meter_provider, monkeypatch
+):
+    """When OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW=true, root creates Workflow."""
+    from opentelemetry.util.genai.handler import get_telemetry_handler
+
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "true")
+
+    if hasattr(get_telemetry_handler, "_default_handler"):
+        delattr(get_telemetry_handler, "_default_handler")
+
+    real_handler = get_telemetry_handler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
+    cb = LangchainCallbackHandler(telemetry_handler=real_handler)
+
+    root_id = uuid4()
+    cb.on_chain_start(
+        serialized={"name": "LangGraph"},
+        inputs={"input": "start"},
+        run_id=root_id,
+        tags=[],
+        metadata={},
+    )
+    cb.on_chain_end(
+        outputs={"output": "done"},
+        run_id=root_id,
+    )
+
+    spans = span_exporter.get_finished_spans()
+    workflow_spans = [s for s in spans if "invoke_workflow" in str(s.attributes)]
+    assert workflow_spans, "Expected workflow span when ROOT_SPAN_AS_WORKFLOW=true"
+    attrs = dict(workflow_spans[0].attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_workflow_name_metadata_creates_workflow(handler_with_stub):
+    """workflow_name in metadata should create Workflow even without env var."""
+    handler, stub = handler_with_stub
+
+    root_id = uuid4()
+    handler.on_chain_start(
+        serialized={"name": "LangGraph"},
+        inputs={"messages": [HumanMessage(content="start")]},
+        run_id=root_id,
+        tags=[],
+        metadata={"workflow_name": "MyCustomWorkflow"},
+    )
+
+    assert stub.started_workflows, "workflow_name in metadata should create Workflow"
+    wf = stub.started_workflows[-1]
+    assert isinstance(wf, Workflow)
+    assert wf.name == "MyCustomWorkflow"

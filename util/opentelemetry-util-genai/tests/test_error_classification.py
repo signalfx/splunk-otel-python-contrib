@@ -9,10 +9,10 @@ from opentelemetry.util.genai.attributes import (
     FINISH_REASON_CANCELLED,
     FINISH_REASON_FAILED,
     FINISH_REASON_INTERRUPTED,
+    GEN_AI_COMMAND,
     GEN_AI_FINISH_REASON,
     GEN_AI_FINISH_REASON_DESCRIPTION,
     GEN_AI_STEP_STATUS,
-    GEN_AI_WORKFLOW_COMMAND,
 )
 from opentelemetry.util.genai.emitters.span import SpanEmitter
 from opentelemetry.util.genai.types import (
@@ -208,13 +208,13 @@ def test_error_agent_interrupt():
 def test_workflow_command_resume():
     emitter, exporter, provider = _make_emitter()
     wf = Workflow(name="test-wf")
-    wf.attributes[GEN_AI_WORKFLOW_COMMAND] = "resume"
+    wf.attributes[GEN_AI_COMMAND] = "resume"
     emitter.on_start(wf)
     emitter.on_end(wf)
     provider.force_flush()
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
-    assert spans[0].attributes.get(GEN_AI_WORKFLOW_COMMAND) == "resume"
+    assert spans[0].attributes.get(GEN_AI_COMMAND) == "resume"
 
 
 def test_workflow_command_not_set_on_fresh():
@@ -225,7 +225,7 @@ def test_workflow_command_not_set_on_fresh():
     provider.force_flush()
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
-    assert spans[0].attributes.get(GEN_AI_WORKFLOW_COMMAND) is None
+    assert spans[0].attributes.get(GEN_AI_COMMAND) is None
 
 
 def test_error_real_error_sets_finish_reason_description():

@@ -276,6 +276,29 @@ OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST = (
 Burst capacity for evaluation rate limiting token bucket. Default: 4.
 """
 
+# ---- Root span type ----
+OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW = (
+    "OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW
+
+When set to a truthy value (``true``, ``1``, ``yes``, ``on``), the root
+GenAI span created by framework instrumentations (LangChain/LangGraph,
+CrewAI) uses the ``Workflow`` type instead of the default ``AgentInvocation``.
+
+By default the root span is an agent span, which aligns better with
+OpenTelemetry GenAI semantic conventions.  Users who need an explicit
+workflow root can either:
+
+* set this variable, or
+* pass ``workflow_name`` in LangGraph ``config.metadata``, or
+* call ``handler.start_workflow()`` / ``handler.stop_workflow()``
+  explicitly in application code.
+
+Default: ``false`` (root span is ``AgentInvocation``).
+"""
+
 # ---- GenAI Context ----
 OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS = (
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS"
@@ -353,6 +376,8 @@ __all__ = [
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
+    # root span type
+    "OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW",
     # genai context
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION",

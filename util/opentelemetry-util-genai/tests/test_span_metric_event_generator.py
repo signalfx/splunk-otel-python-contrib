@@ -1,4 +1,5 @@
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,7 +16,9 @@ from opentelemetry.util.genai.emitters.content_events import (
     ContentEventsEmitter,
 )
 from opentelemetry.util.genai.emitters.span import SpanEmitter
+from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
+    AgentCreation,
     AgentInvocation,
     EmbeddingInvocation,
     Error,
@@ -23,7 +26,9 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
+    Step,
     Text,
+    ToolCall,
     Workflow,
 )
 
@@ -423,3 +428,521 @@ def test_llm_span_emitter_for_sampled_attribute():
 
     sampled_value = attrs.get("gen_ai.evaluation.sampled")
     assert sampled_value is True
+
+
+# ---- TelemetryHandler._maybe_mark_conversation_root tests ----------------
+
+
+def test_handler_marks_workflow_root_when_no_parent_span():
+    """Handler auto-sets conversation_root=True on Workflow with no parent_span."""
+    workflow = Workflow(name="root_wf")
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is True
+
+
+def test_handler_marks_agent_root_when_no_parent_span():
+    """Handler auto-sets conversation_root=True on AgentInvocation with no parent_span."""
+    agent = AgentInvocation(name="root_agent")
+    TelemetryHandler._maybe_mark_conversation_root(agent)
+    assert agent.conversation_root is True
+
+
+def test_handler_skips_root_when_parent_span_exists():
+    """Handler does NOT set conversation_root when parent_span is present."""
+    workflow = Workflow(name="child_wf")
+    workflow.parent_span = MagicMock()  # simulate a parent span
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is None
+
+
+def test_handler_respects_explicit_conversation_root_false():
+    """Handler does NOT override conversation_root when explicitly set to False."""
+    workflow = Workflow(name="wf", conversation_root=False)
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is False
+
+
+def test_handler_respects_explicit_conversation_root_true_with_parent():
+    """Handler preserves conversation_root=True even if parent_span exists."""
+    agent = AgentInvocation(name="forced_root", conversation_root=True)
+    agent.parent_span = MagicMock()
+    TelemetryHandler._maybe_mark_conversation_root(agent)
+    assert agent.conversation_root is True
+
+
+def test_handler_idempotent_when_already_true():
+    """Calling _maybe_mark_conversation_root twice does not change result."""
+    workflow = Workflow(name="wf")
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is True
+    TelemetryHandler._maybe_mark_conversation_root(workflow)
+    assert workflow.conversation_root is True
+
+
+def test_handler_skips_llm_invocation():
+    """LLMInvocation is never marked as conversation root."""
+    llm = LLMInvocation(request_model="test-model")
+    TelemetryHandler._maybe_mark_conversation_root(llm)
+    assert llm.conversation_root is None
+
+
+def test_handler_skips_step():
+    """Step entity is never marked as conversation root."""
+    step = Step(name="my_step")
+    TelemetryHandler._maybe_mark_conversation_root(step)
+    assert step.conversation_root is None
+
+
+def test_handler_skips_tool_call():
+    """ToolCall entity is never marked as conversation root."""
+    tool = ToolCall(name="my_tool")
+    TelemetryHandler._maybe_mark_conversation_root(tool)
+    assert tool.conversation_root is None
+
+
+def test_handler_skips_embedding_invocation():
+    """EmbeddingInvocation entity is never marked as conversation root."""
+    emb = EmbeddingInvocation(request_model="embed-model")
+    TelemetryHandler._maybe_mark_conversation_root(emb)
+    assert emb.conversation_root is None
+
+
+def test_handler_skips_agent_creation():
+    """AgentCreation is never marked as conversation root (only invocations)."""
+    creation = AgentCreation(name="new_agent")
+    TelemetryHandler._maybe_mark_conversation_root(creation)
+    assert creation.conversation_root is None
+
+
+def test_workflow_conversation_root_attribute_on_span():
+    """Workflow with conversation_root=True emits gen_ai.conversation_root on span."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+
+    workflow = Workflow(name="root_workflow", conversation_root=True)
+    emitter.on_start(workflow)
+    emitter.on_end(workflow)
+
+    span = workflow.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+def test_workflow_no_conversation_root_attribute_when_none():
+    """Workflow without conversation_root does not emit the attribute on span."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+
+    workflow = Workflow(name="child_workflow")
+    emitter.on_start(workflow)
+    emitter.on_end(workflow)
+
+    span = workflow.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert "gen_ai.conversation_root" not in attrs
+
+
+def test_llm_invocation_no_conversation_root():
+    """LLMInvocation does not emit conversation_root (only Workflow/Agent roots do)."""
+    provider = TracerProvider()
+    tracer = provider.get_tracer(__name__)
+    emitter = SpanEmitter(tracer=tracer, capture_content=False)
+
+    llm = LLMInvocation(request_model="test-model")
+    emitter.on_start(llm)
+    emitter.on_end(llm)
+
+    span = llm.span
+    assert span is not None
+    attrs = getattr(span, "attributes", None) or getattr(
+        span, "_attributes", {}
+    )
+    assert "gen_ai.conversation_root" not in attrs
+
+
+# ---- Non-GenAI parent span scenarios ------------------------------------
+#
+# These tests verify conversation_root detection when GenAI spans live under
+# a non-GenAI span (e.g. HTTP server span).  The heuristic checks entity-level
+# parent_span (GenAI parent), not the OTel trace parent.
+
+
+def _make_handler_with_exporter():
+    """Create a TelemetryHandler + span exporter for integration tests."""
+    from opentelemetry.sdk.trace.export import (
+        SimpleSpanProcessor,
+        SpanExporter,
+        SpanExportResult,
+    )
+
+    class _Collector(SpanExporter):
+        def __init__(self):
+            self.spans = []
+
+        def export(self, spans):
+            self.spans.extend(spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self):
+            pass
+
+    exporter = _Collector()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(exporter))
+    handler = TelemetryHandler(tracer_provider=tp)
+    return handler, exporter, tp
+
+
+def test_genai_root_under_http_span_gets_conversation_root():
+    """A GenAI agent under a non-GenAI HTTP span should still get
+    conversation_root=True because entity.parent_span is None."""
+    handler, exporter, tp = _make_handler_with_exporter()
+    tracer = tp.get_tracer(__name__)
+
+    # Simulate an HTTP server span as the trace root
+    with tracer.start_as_current_span("GET /chat", kind=None):
+        # GenAI agent created while the HTTP span is current context.
+        # No GenAI parent_span set — the handler should mark it as root.
+        agent = AgentInvocation(name="chat_agent")
+        agent.input_messages = [
+            InputMessage(role="user", parts=[Text("hello")])
+        ]
+        handler.start_agent(agent)
+        handler.stop_agent(agent)
+
+    tp.force_flush()
+
+    # Find spans by name
+    span_map = {s.name: s for s in exporter.spans}
+    assert "invoke_agent chat_agent" in span_map
+    assert "GET /chat" in span_map
+
+    agent_span = span_map["invoke_agent chat_agent"]
+    http_span_exported = span_map["GET /chat"]
+
+    # Agent span is a child of the HTTP span (OTel context propagation)
+    assert agent_span.parent is not None
+    assert agent_span.parent.span_id == http_span_exported.context.span_id
+
+    # Agent span still marked as conversation root
+    attrs = dict(agent_span.attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+def test_genai_workflow_under_http_span_gets_conversation_root():
+    """Same as above but with a Workflow entity."""
+    handler, exporter, tp = _make_handler_with_exporter()
+    tracer = tp.get_tracer(__name__)
+
+    with tracer.start_as_current_span("POST /run"):
+        wf = Workflow(name="my_pipeline")
+        wf.input_messages = [InputMessage(role="user", parts=[Text("run it")])]
+        handler.start_workflow(wf)
+        handler.stop_workflow(wf)
+
+    tp.force_flush()
+
+    span_map = {s.name: s for s in exporter.spans}
+    wf_span = span_map["workflow my_pipeline"]
+    http_exported = span_map["POST /run"]
+
+    # Workflow is child of HTTP span
+    assert wf_span.parent is not None
+    assert wf_span.parent.span_id == http_exported.context.span_id
+
+    # Workflow still marked as conversation root
+    attrs = dict(wf_span.attributes or {})
+    assert attrs.get("gen_ai.conversation_root") is True
+
+
+def test_two_parallel_agents_under_http_span_both_get_conversation_root():
+    """Two independent GenAI agents as siblings under an HTTP span.
+    Both have parent_span=None, so both get conversation_root=True.
+
+    This is the CURRENT behavior — not necessarily desired.  See
+    findings documentation for discussion.
+    """
+    handler, exporter, tp = _make_handler_with_exporter()
+    tracer = tp.get_tracer(__name__)
+
+    with tracer.start_as_current_span("POST /multi-agent"):
+        agent_a = AgentInvocation(name="agent_a")
+        agent_a.input_messages = [
+            InputMessage(role="user", parts=[Text("task A")])
+        ]
+        handler.start_agent(agent_a)
+        handler.stop_agent(agent_a)
+
+        agent_b = AgentInvocation(name="agent_b")
+        agent_b.input_messages = [
+            InputMessage(role="user", parts=[Text("task B")])
+        ]
+        handler.start_agent(agent_b)
+        handler.stop_agent(agent_b)
+
+    tp.force_flush()
+
+    agent_spans = [s for s in exporter.spans if "invoke_agent" in s.name]
+    assert len(agent_spans) == 2
+
+    # BOTH agents get conversation_root=True (current behavior)
+    for s in agent_spans:
+        attrs = dict(s.attributes or {})
+        assert attrs.get("gen_ai.conversation_root") is True, (
+            f"Expected conversation_root=True on {s.name}"
+        )
+
+
+def test_http_genai_nongenai_genai_mixed_hierarchy():
+    """HTTP → GenAI agent → non-GenAI span → nested GenAI agent.
+
+    The first GenAI agent has no GenAI parent_span → conversation_root=True.
+    The second GenAI agent, if given the first as parent_span, should NOT
+    be marked as root.
+    """
+    handler, exporter, tp = _make_handler_with_exporter()
+    tracer = tp.get_tracer(__name__)
+
+    with tracer.start_as_current_span("GET /pipeline"):
+        # First GenAI agent (root)
+        outer_agent = AgentInvocation(name="orchestrator")
+        outer_agent.input_messages = [
+            InputMessage(role="user", parts=[Text("go")])
+        ]
+        handler.start_agent(outer_agent)
+
+        # Non-GenAI middleware span (e.g. a database call or HTTP request)
+        with tracer.start_as_current_span("db.query"):
+            # Second GenAI agent — instrumentation sets parent_span
+            inner_agent = AgentInvocation(name="inner_agent")
+            inner_agent.parent_span = outer_agent.span
+            inner_agent.input_messages = [
+                InputMessage(role="user", parts=[Text("sub-task")])
+            ]
+            handler.start_agent(inner_agent)
+            handler.stop_agent(inner_agent)
+
+        handler.stop_agent(outer_agent)
+
+    tp.force_flush()
+
+    span_map = {s.name: s for s in exporter.spans}
+    outer_span = span_map["invoke_agent orchestrator"]
+    inner_span = span_map["invoke_agent inner_agent"]
+
+    # Outer agent IS conversation root
+    assert (
+        dict(outer_span.attributes or {}).get("gen_ai.conversation_root")
+        is True
+    )
+
+    # Inner agent is NOT conversation root (has parent_span)
+    assert "gen_ai.conversation_root" not in dict(inner_span.attributes or {})
+
+
+def test_mixed_hierarchy_without_parent_span_both_roots():
+    """HTTP → GenAI → non-GenAI → GenAI, but the inner GenAI does NOT
+    have parent_span explicitly set.
+
+    With _inherit_parent_span, the inner agent auto-inherits the outer
+    agent's span via _current_genai_span ContextVar, so only the outer
+    agent is marked conversation_root=True.
+    """
+    handler, exporter, tp = _make_handler_with_exporter()
+    tracer = tp.get_tracer(__name__)
+
+    with tracer.start_as_current_span("GET /pipeline"):
+        outer_agent = AgentInvocation(name="outer")
+        outer_agent.input_messages = [
+            InputMessage(role="user", parts=[Text("go")])
+        ]
+        handler.start_agent(outer_agent)
+
+        with tracer.start_as_current_span("middleware.call"):
+            inner_agent = AgentInvocation(name="inner")
+            inner_agent.input_messages = [
+                InputMessage(role="user", parts=[Text("sub")])
+            ]
+            handler.start_agent(inner_agent)
+            handler.stop_agent(inner_agent)
+
+        handler.stop_agent(outer_agent)
+
+    tp.force_flush()
+
+    agent_spans = [s for s in exporter.spans if "invoke_agent" in s.name]
+    assert len(agent_spans) == 2
+
+    outer_attrs = dict(
+        next(s for s in agent_spans if "outer" in s.name).attributes or {}
+    )
+    inner_attrs = dict(
+        next(s for s in agent_spans if "inner" in s.name).attributes or {}
+    )
+    assert outer_attrs.get("gen_ai.conversation_root") is True
+    assert inner_attrs.get("gen_ai.conversation_root") is None
+
+
+# ---- create_and_start_root factory method tests ----------------------------
+
+
+def test_create_and_start_root_creates_agent_by_default():
+    """Default (no env var) should create AgentInvocation."""
+    import os
+
+    # Ensure env var is not set
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", None)
+
+    handler, exporter, tp = _make_handler_with_exporter()
+
+    entity = handler.create_and_start_root(
+        "my_agent",
+        framework="test",
+        system="pytest",
+        input_messages=[InputMessage(role="user", parts=[Text("hello")])],
+    )
+
+    assert isinstance(entity, AgentInvocation)
+    assert entity.name == "my_agent"
+    assert entity.agent_name == "my_agent"
+    assert entity.framework == "test"
+    assert entity.system == "pytest"
+    assert entity.input_messages is not None
+    assert len(entity.input_messages) == 1
+
+    handler.finish(entity)
+    tp.force_flush()
+
+    # Should have created an agent span
+    spans = exporter.spans
+    assert len(spans) == 1
+    assert "invoke_agent my_agent" in spans[0].name
+
+
+def test_create_and_start_root_creates_workflow_with_env_var(monkeypatch):
+    """When env var is set, should create Workflow."""
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "true"
+    )
+
+    handler, exporter, tp = _make_handler_with_exporter()
+
+    entity = handler.create_and_start_root(
+        "my_workflow",
+        workflow_type="test.workflow",
+        framework="test",
+        system="pytest",
+    )
+
+    assert isinstance(entity, Workflow)
+    assert entity.name == "my_workflow"
+    assert entity.workflow_type == "test.workflow"
+
+    handler.finish(entity)
+    tp.force_flush()
+
+    spans = exporter.spans
+    assert len(spans) == 1
+    assert "workflow my_workflow" in spans[0].name
+
+
+def test_create_and_start_root_force_workflow_overrides_default():
+    """force_workflow=True should create Workflow even without env var."""
+    import os
+
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", None)
+
+    handler, exporter, tp = _make_handler_with_exporter()
+
+    entity = handler.create_and_start_root(
+        "my_agent",
+        force_workflow=True,
+        framework="test",
+    )
+
+    assert isinstance(entity, Workflow)
+    assert entity.name == "my_agent"
+
+    handler.finish(entity)
+    tp.force_flush()
+
+    spans = exporter.spans
+    assert "workflow my_agent" in spans[0].name
+
+
+def test_create_and_start_root_workflow_name_becomes_name():
+    """workflow_name='Custom Name' should use that as workflow name."""
+    import os
+
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", None)
+
+    handler, exporter, tp = _make_handler_with_exporter()
+
+    entity = handler.create_and_start_root(
+        "default_name",
+        workflow_name="Custom Workflow Name",
+    )
+
+    assert isinstance(entity, Workflow)
+    assert entity.name == "Custom Workflow Name"
+
+    handler.finish(entity)
+    tp.force_flush()
+
+    spans = exporter.spans
+    assert "workflow Custom Workflow Name" in spans[0].name
+
+
+def test_finish_dispatches_correctly():
+    """finish() should call stop_workflow or stop_agent based on type."""
+    import os
+
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", None)
+
+    handler, exporter, tp = _make_handler_with_exporter()
+
+    # Test with AgentInvocation
+    agent = handler.create_and_start_root("test_agent")
+    result = handler.finish(agent)
+    assert result is agent
+    assert isinstance(result, AgentInvocation)
+
+    # Test with Workflow
+    workflow = handler.create_and_start_root("test_wf", force_workflow=True)
+    result = handler.finish(workflow)
+    assert result is workflow
+    assert isinstance(result, Workflow)
+
+    tp.force_flush()
+
+    spans = exporter.spans
+    assert len(spans) == 2
+
+
+def test_fail_dispatches_correctly():
+    """fail() should fail the entity and end its span."""
+    import os
+
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", None)
+
+    handler, exporter, tp = _make_handler_with_exporter()
+
+    # Create and fail an agent
+    agent = handler.create_and_start_root("failing_agent")
+    error = Error(message="test error", type=ValueError)
+    result = handler.fail(agent, error)
+    assert result is agent
+
+    tp.force_flush()
+
+    spans = exporter.spans
+    assert len(spans) == 1
+    # The span should exist and be ended (error path)
