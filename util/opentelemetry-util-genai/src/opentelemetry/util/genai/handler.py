@@ -1093,9 +1093,6 @@ class TelemetryHandler:
         _apply_genai_context(agent)
         self._maybe_mark_conversation_root(agent)
         self._emitter.on_start(agent)
-        # Derive agent_id from span_id when not explicitly set by the framework
-        if agent.agent_id is None and agent.span_id is not None:
-            agent.agent_id = f"{agent.span_id:016x}"
         # Push agent identity context
         if isinstance(agent, AgentInvocation):
             try:
