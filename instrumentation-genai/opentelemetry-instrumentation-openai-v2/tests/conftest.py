@@ -88,8 +88,31 @@ def fixture_meter_provider(metric_reader):
 
 @pytest.fixture(autouse=True)
 def environment():
-    if not os.getenv("OPENAI_API_KEY"):
+    original_api_key = os.environ.get("OPENAI_API_KEY")
+    original_evals = os.environ.get(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
+    )
+
+    if not original_api_key:
         os.environ["OPENAI_API_KEY"] = "test_openai_api_key"
+    os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
+    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
+
+    yield
+
+    if original_api_key is None:
+        os.environ.pop("OPENAI_API_KEY", None)
+    else:
+        os.environ["OPENAI_API_KEY"] = original_api_key
+
+    if original_evals is None:
+        os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
+    else:
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = (
+            original_evals
+        )
+
+    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
 
 
 @pytest.fixture
@@ -102,7 +125,7 @@ def async_openai_client():
     return AsyncOpenAI()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def vcr_config():
     return {
         "filter_headers": [
@@ -113,7 +136,13 @@ def vcr_config():
         ],
         "decode_compressed_response": True,
         "before_record_response": scrub_response_headers,
+        "serializer": "yaml",
     }
+
+
+@pytest.fixture(scope="session")
+def vcr_cassette_dir():
+    return os.path.join(os.path.dirname(__file__), "cassettes")
 
 
 @pytest.fixture(scope="function")
@@ -260,9 +289,30 @@ class PrettyPrintJSONBody:
         return yaml.load(cassette_string, Loader=yaml.Loader)
 
 
-@pytest.fixture(scope="module", autouse=True)
+try:  # pragma: no cover - optional pytest-vcr dependency
+    import pytest_recording  # type: ignore # noqa: F401
+    import vcr as vcr_module  # type: ignore # noqa: F401
+
+    # Register custom YAML serializer globally
+    vcr_module.VCR().register_serializer("yaml", PrettyPrintJSONBody)
+
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - provide stub when plugin missing
+
+    @pytest.fixture(name="vcr", scope="module")
+    def _noop_vcr_fixture():
+        class _VCRStub:
+            def register_serializer(self, *_args, **_kwargs):
+                return None
+
+        return _VCRStub()
+
+
+@pytest.fixture(scope="function", autouse=True)
 def fixture_vcr(vcr):
-    vcr.register_serializer("yaml", PrettyPrintJSONBody)
+    # When pytest-recording is installed, vcr is a Cassette and we don't need to do anything
+    # The serializer is already registered on the VCR module above
     return vcr
 
 
