@@ -54,16 +54,6 @@ def _serialize(obj: Any) -> Optional[str]:
         return None
 
 
-def _make_workflow_input_message(inputs: dict[str, Any]) -> list[InputMessage]:
-    """Serialize workflow inputs dict as JSON into a single InputMessage."""
-    if not inputs:
-        return []
-    serialized = _serialize(inputs)
-    if serialized is None:
-        return []
-    return [InputMessage(role="user", parts=[Text(serialized)])]
-
-
 def _make_input_message(messages: dict[str, Any]) -> list[InputMessage]:
     """Create one InputMessage per value for known task/agent fields."""
     input_messages: list[InputMessage] = []
