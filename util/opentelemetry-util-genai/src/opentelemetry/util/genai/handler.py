@@ -320,7 +320,7 @@ class TelemetryHandler:
             __name__,
             __version__,
             tracer_provider,
-            schema_url=Schemas.V1_37_0.value,
+            schema_url=Schemas.V1_38_0.value,
         )
 
         # Logger for content events (uses Logs API, not Events API)
@@ -328,14 +328,14 @@ class TelemetryHandler:
             __name__,
             __version__,
             logger_provider=logger_provider,
-            schema_url=Schemas.V1_37_0.value,
+            schema_url=Schemas.V1_38_0.value,
         )
         self._meter_provider = meter_provider
         meter = get_meter(
             __name__,
             __version__,
             meter_provider=meter_provider,
-            schema_url=Schemas.V1_37_0.value,
+            schema_url=Schemas.V1_38_0.value,
         )
 
         self._event_logger = _otel_events.get_event_logger(__name__)
