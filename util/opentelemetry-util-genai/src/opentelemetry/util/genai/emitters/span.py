@@ -371,7 +371,7 @@ class SpanEmitter(EmitterMeta):
             if serialized is not None:
                 span.set_attribute(GEN_AI_OUTPUT_MESSAGES, serialized)
 
-    def _attach_span(
+    def _add_span_to_invocation(
         self,
         invocation: GenAIType,
         span: Span,
@@ -413,7 +413,7 @@ class SpanEmitter(EmitterMeta):
                 kind=SpanKind.CLIENT,
                 context=parent_ctx,
             )
-            self._attach_span(invocation, span)
+            self._add_span_to_invocation(invocation, span)
             self._apply_start_attrs(invocation)
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
@@ -523,7 +523,7 @@ class SpanEmitter(EmitterMeta):
             kind=SpanKind.CLIENT,
             context=parent_ctx,
         )
-        self._attach_span(workflow, span)
+        self._add_span_to_invocation(workflow, span)
 
         # Set workflow attributes
         # TODO: Align to enum when semconvs is updated.
@@ -608,7 +608,7 @@ class SpanEmitter(EmitterMeta):
             kind=SpanKind.CLIENT,
             context=parent_ctx,
         )
-        self._attach_span(agent, span)
+        self._add_span_to_invocation(agent, span)
 
         # Required attributes per semantic conventions
         # Set operation name based on agent operation (create or invoke)
@@ -708,7 +708,7 @@ class SpanEmitter(EmitterMeta):
             kind=SpanKind.CLIENT,
             context=parent_ctx,
         )
-        self._attach_span(step, span)
+        self._add_span_to_invocation(step, span)
 
         # Set step attributes
         span.set_attribute(GEN_AI_STEP_NAME, step.name)
@@ -779,7 +779,7 @@ class SpanEmitter(EmitterMeta):
             kind=SpanKind.INTERNAL,
             context=parent_ctx,
         )
-        self._attach_span(tool, span)
+        self._add_span_to_invocation(tool, span)
 
         # Required: gen_ai.operation.name = "execute_tool"
         span.set_attribute(
@@ -832,7 +832,7 @@ class SpanEmitter(EmitterMeta):
             kind=SpanKind.CLIENT,
             context=parent_ctx,
         )
-        self._attach_span(embedding, span)
+        self._add_span_to_invocation(embedding, span)
         self._apply_start_attrs(embedding)
 
         # Set embedding-specific start attributes
@@ -893,7 +893,7 @@ class SpanEmitter(EmitterMeta):
             kind=SpanKind.CLIENT,
             context=parent_ctx,
         )
-        self._attach_span(retrieval, span)
+        self._add_span_to_invocation(retrieval, span)
         self._apply_start_attrs(retrieval)
 
         # Set retrieval-specific start attributes
