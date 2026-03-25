@@ -570,11 +570,22 @@ class TelemetryHandler:
 
     @staticmethod
     def _pop_current_span(invocation: GenAI) -> None:
-        """After completion, restore current span to parent (effectively a pop)."""
+        """After completion, restore current span to parent (effectively a pop).
+
+        The detach may fail with ValueError when a framework (e.g. LangGraph)
+        executes callbacks inside ``copy_context().run()`` boundaries, causing
+        the token to belong to a different context copy.  This is harmless --
+        the GenAI parent-child hierarchy is managed by ``_current_genai_span``
+        and is unaffected.  We call the runtime context directly to avoid
+        the noisy ERROR log that ``context_api.detach`` emits on failure.
+        """
         _current_genai_span.set(getattr(invocation, "parent_span", None))
         token = getattr(invocation, "_otel_context_token", None)
         if token is not None:
-            context_api.detach(token)
+            try:
+                context_api._RUNTIME_CONTEXT.detach(token)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
 
     def start_llm(
         self,
