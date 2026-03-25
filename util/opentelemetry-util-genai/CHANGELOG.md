@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.11
+
+### Fixed
+- **OTel context detachment errors in async instrumentation** — Replaced `tracer.start_as_current_span()` with `tracer.start_span()` in `SpanEmitter` to prevent `ValueError: <Token> was created in a different Context` errors when spans are started and stopped in different `asyncio.Task`s. Removed all `context_token` / `cm.__exit__()` detach blocks.
+- **Centralized span parenting in TelemetryHandler** — Added `_current_genai_span` ContextVar with `_inherit_parent_span` / `_push_current_span` / `_pop_current_span` helpers. Sync instrumentations (CrewAI, FastMCP) get automatic parent-child linking without setting `parent_span`. In sync contexts, spans are also attached to OTel context for downstream non-GenAI instrumentation compatibility; skipped in async contexts to avoid cross-task detach errors.
+
 ## Version 0.1.10
 
 ### Added

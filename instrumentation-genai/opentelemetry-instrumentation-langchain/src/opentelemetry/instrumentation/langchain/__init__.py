@@ -1,5 +1,7 @@
 """OpenTelemetry Langchain instrumentation"""
 
+import asyncio
+import inspect
 import logging
 from typing import Collection
 
@@ -379,14 +381,65 @@ class _OpenAITracingWrapper:
         #     kwargs["extra_headers"] = extra_headers
 
         # In legacy chains like LLMChain, suppressing model instrumentations
-        # within create_llm_span doesn't work, so this should helps as a fallback
+        # within create_llm_span doesn't work, so this should helps as a fallback.
+        #
+        # For coroutine / generator targets, wrapped() returns a lazy
+        # object without executing its body.  Attach/detach must be
+        # deferred into wrappers that run during actual execution.
+        if asyncio.iscoroutinefunction(wrapped):
+            return self._wrap_coroutine(wrapped(*args, **kwargs))
+        if inspect.isasyncgenfunction(wrapped):
+            return self._wrap_async_generator(wrapped(*args, **kwargs))
+        if inspect.isgeneratorfunction(wrapped):
+            return self._wrap_sync_generator(wrapped(*args, **kwargs))
+
+        # Sync (non-generator) path: attach, execute, detach.
+        token = None
         try:
-            context_api.attach(
+            token = context_api.attach(
                 context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
             )
-        except Exception:
-            # If context setting fails, continue without suppression
-            # This is not critical for core functionality
-            pass
+            return wrapped(*args, **kwargs)
+        finally:
+            if token is not None:
+                context_api.detach(token)
 
-        return wrapped(*args, **kwargs)
+    @staticmethod
+    async def _wrap_coroutine(coro):
+        """Await a coroutine with LLM instrumentation suppressed."""
+        token = None
+        try:
+            token = context_api.attach(
+                context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+            )
+            return await coro
+        finally:
+            if token is not None:
+                context_api.detach(token)
+
+    @staticmethod
+    async def _wrap_async_generator(agen):
+        """Iterate an async generator with LLM instrumentation suppressed."""
+        token = None
+        try:
+            token = context_api.attach(
+                context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+            )
+            async for item in agen:
+                yield item
+        finally:
+            if token is not None:
+                context_api.detach(token)
+
+    @staticmethod
+    def _wrap_sync_generator(gen):
+        """Iterate a sync generator with LLM instrumentation suppressed."""
+        token = None
+        try:
+            token = context_api.attach(
+                context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+            )
+            yield from gen
+        finally:
+            if token is not None:
+                context_api.detach(token)

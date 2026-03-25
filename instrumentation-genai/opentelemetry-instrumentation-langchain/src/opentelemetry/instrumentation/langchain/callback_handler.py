@@ -372,6 +372,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 properties=prev.properties if prev.properties else None,
             )
 
+    def _resolve_parent_span(self, parent_run_id: Optional[UUID]):
+        """Look up the parent invocation's span for explicit parent-child linking."""
+        if parent_run_id is None:
+            return None
+        parent_entity = self._invocation_manager.get(parent_run_id)
+        if parent_entity is not None:
+            return getattr(parent_entity, "span", None)
+        return None
+
     def _find_nearest_agent(self, run_id: Optional[UUID]) -> Optional[AgentInvocation]:
         current = run_id
         visited = set()
@@ -414,11 +423,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 agent.model = _safe_str(metadata["model_name"])
             if metadata.get("system"):
                 agent.system = _safe_str(metadata["system"])
-        # Communicate parent hierarchy so the handler can detect roots.
-        if parent_run_id is not None:
-            parent_entity = self._invocation_manager.get(parent_run_id)
-            if parent_entity and getattr(parent_entity, "span", None):
-                agent.parent_span = parent_entity.span
+        agent.parent_span = self._resolve_parent_span(parent_run_id)
         self._handler.start_agent(agent)
         self._invocation_manager.add(run_id, parent_run_id, agent)
         return agent
@@ -590,6 +595,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     if context_agent is not None and context_agent_name is not None:
                         tool.agent_name = context_agent_name
                         tool.agent_id = _agent_span_id(context_agent)
+                    tool.parent_span = self._resolve_parent_span(parent_run_id)
                     self._handler.start_tool_call(tool)
                     self._invocation_manager.add(run_id, parent_run_id, tool)
                 if inputs is not None and getattr(tool, "arguments", None) is None:
@@ -608,6 +614,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     if context_agent_name is not None:
                         step.agent_name = context_agent_name
                     step.agent_id = _agent_span_id(context_agent)
+                step.parent_span = self._resolve_parent_span(parent_run_id)
                 self._handler.start_step(step)
                 self._invocation_manager.add(run_id, parent_run_id, step)
 
@@ -747,6 +754,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 agent_name_value = context_agent.agent_name or context_agent.name
                 inv.agent_name = _safe_str(agent_name_value)
                 inv.agent_id = _agent_span_id(context_agent)
+        inv.parent_span = self._resolve_parent_span(parent_run_id)
         self._handler.start_llm(inv)
         self._invocation_manager.add(run_id, parent_run_id, inv)
 
@@ -903,6 +911,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         if context_agent is not None and context_agent_name is not None:
             tool.agent_name = context_agent_name
             tool.agent_id = _agent_span_id(context_agent)
+        tool.parent_span = self._resolve_parent_span(parent_run_id)
         if arguments is not None:
             serialized_args = _serialize(arguments)
             if serialized_args is not None:

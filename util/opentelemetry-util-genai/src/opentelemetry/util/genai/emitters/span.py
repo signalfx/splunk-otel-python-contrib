@@ -371,14 +371,12 @@ class SpanEmitter(EmitterMeta):
             if serialized is not None:
                 span.set_attribute(GEN_AI_OUTPUT_MESSAGES, serialized)
 
-    def _attach_span(
+    def _add_span_to_invocation(
         self,
         invocation: GenAIType,
         span: Span,
-        context_manager: Any,
     ) -> None:
         invocation.span = span  # type: ignore[assignment]
-        invocation.context_token = context_manager  # type: ignore[assignment]
         store_span_context(invocation, extract_span_context(span))
 
     # ---- lifecycle -------------------------------------------------------
@@ -410,14 +408,12 @@ class SpanEmitter(EmitterMeta):
                 if parent_span is not None
                 else None
             )
-            cm = self._tracer.start_as_current_span(
+            span = self._tracer.start_span(
                 span_name,
                 kind=SpanKind.CLIENT,
-                end_on_exit=False,
                 context=parent_ctx,
             )
-            span = cm.__enter__()
-            self._attach_span(invocation, span, cm)
+            self._add_span_to_invocation(invocation, span)
             self._apply_start_attrs(invocation)
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
@@ -445,14 +441,6 @@ class SpanEmitter(EmitterMeta):
             )
             if is_recording:
                 self._apply_finish_attrs(invocation)
-            token = getattr(invocation, "context_token", None)
-            if token is not None and hasattr(token, "__exit__"):
-                try:  # pragma: no cover
-                    token.__exit__(None, None, None)  # type: ignore[misc]
-                except Exception:  # pragma: no cover
-                    pass
-            # Only end span if it's still recording
-            if is_recording:
                 span.end()
 
     def _apply_error_status(self, span: Span, error: Error) -> None:
@@ -518,12 +506,6 @@ class SpanEmitter(EmitterMeta):
                 return
             self._apply_error_status(span, error)
             self._apply_finish_attrs(invocation)
-            token = getattr(invocation, "context_token", None)
-            if token is not None and hasattr(token, "__exit__"):
-                try:  # pragma: no cover
-                    token.__exit__(None, None, None)  # type: ignore[misc]
-                except Exception:  # pragma: no cover
-                    pass
             span.end()
 
     # ---- Workflow lifecycle ----------------------------------------------
@@ -536,14 +518,12 @@ class SpanEmitter(EmitterMeta):
             if parent_span is not None
             else None
         )
-        cm = self._tracer.start_as_current_span(
+        span = self._tracer.start_span(
             span_name,
             kind=SpanKind.CLIENT,
-            end_on_exit=False,
             context=parent_ctx,
         )
-        span = cm.__enter__()
-        self._attach_span(workflow, span, cm)
+        self._add_span_to_invocation(workflow, span)
 
         # Set workflow attributes
         # TODO: Align to enum when semconvs is updated.
@@ -595,12 +575,6 @@ class SpanEmitter(EmitterMeta):
             )
             if semconv_subset:
                 _apply_gen_ai_semconv_attributes(span, semconv_subset)
-        token = workflow.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     def _error_workflow(self, error: Error, workflow: Workflow) -> None:
@@ -612,12 +586,6 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, workflow.semantic_convention_attributes()
         )
-        token = workflow.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     # ---- Agent lifecycle -------------------------------------------------
@@ -635,14 +603,12 @@ class SpanEmitter(EmitterMeta):
             if parent_span is not None
             else None
         )
-        cm = self._tracer.start_as_current_span(
+        span = self._tracer.start_span(
             span_name,
             kind=SpanKind.CLIENT,
-            end_on_exit=False,
             context=parent_ctx,
         )
-        span = cm.__enter__()
-        self._attach_span(agent, span, cm)
+        self._add_span_to_invocation(agent, span)
 
         # Required attributes per semantic conventions
         # Set operation name based on agent operation (create or invoke)
@@ -712,12 +678,6 @@ class SpanEmitter(EmitterMeta):
             )
             if semconv_subset:
                 _apply_gen_ai_semconv_attributes(span, semconv_subset)
-        token = agent.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     def _error_agent(
@@ -731,12 +691,6 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, agent.semantic_convention_attributes()
         )
-        token = agent.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     # ---- Step lifecycle --------------------------------------------------
@@ -749,14 +703,12 @@ class SpanEmitter(EmitterMeta):
             if parent_span is not None
             else None
         )
-        cm = self._tracer.start_as_current_span(
+        span = self._tracer.start_span(
             span_name,
             kind=SpanKind.CLIENT,
-            end_on_exit=False,
             context=parent_ctx,
         )
-        span = cm.__enter__()
-        self._attach_span(step, span, cm)
+        self._add_span_to_invocation(step, span)
 
         # Set step attributes
         span.set_attribute(GEN_AI_STEP_NAME, step.name)
@@ -785,12 +737,6 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
-        token = step.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     def _error_step(self, error: Error, step: Step) -> None:
@@ -810,12 +756,6 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
-        token = step.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     # ---- Tool Call lifecycle ---------------------------------------------
@@ -834,15 +774,12 @@ class SpanEmitter(EmitterMeta):
             if parent_span is not None
             else None
         )
-        # Span kind SHOULD be INTERNAL per semconv
-        cm = self._tracer.start_as_current_span(
+        span = self._tracer.start_span(
             span_name,
             kind=SpanKind.INTERNAL,
-            end_on_exit=False,
             context=parent_ctx,
         )
-        span = cm.__enter__()
-        self._attach_span(tool, span, cm)
+        self._add_span_to_invocation(tool, span)
 
         # Required: gen_ai.operation.name = "execute_tool"
         span.set_attribute(
@@ -865,17 +802,8 @@ class SpanEmitter(EmitterMeta):
         # Check if span is still recording
         is_recording = hasattr(span, "is_recording") and span.is_recording()
         if is_recording:
-            # Apply all semconv attributes (including tool_result if content capture)
             _apply_tool_semconv_attributes(span, tool, self._capture_content)
-            # Apply any supplemental custom attributes
             _apply_custom_attributes(span, getattr(tool, "attributes", None))
-        token = getattr(tool, "context_token", None)
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
-        if is_recording:
             span.end()
 
     def _error_tool_call(self, error: Error, tool: ToolCall) -> None:
@@ -885,16 +813,8 @@ class SpanEmitter(EmitterMeta):
             return
         self._apply_error_status(span, error)
         if span.is_recording():
-            # Apply all semconv attributes
             _apply_tool_semconv_attributes(span, tool, self._capture_content)
-            # Apply any supplemental custom attributes
             _apply_custom_attributes(span, getattr(tool, "attributes", None))
-        token = getattr(tool, "context_token", None)
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     # ---- Embedding lifecycle ---------------------------------------------
@@ -907,14 +827,12 @@ class SpanEmitter(EmitterMeta):
             if parent_span is not None
             else None
         )
-        cm = self._tracer.start_as_current_span(
+        span = self._tracer.start_span(
             span_name,
             kind=SpanKind.CLIENT,
-            end_on_exit=False,
             context=parent_ctx,
         )
-        span = cm.__enter__()
-        self._attach_span(embedding, span, cm)
+        self._add_span_to_invocation(embedding, span)
         self._apply_start_attrs(embedding)
 
         # Set embedding-specific start attributes
@@ -942,12 +860,6 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 GenAI.GEN_AI_USAGE_INPUT_TOKENS, embedding.input_tokens
             )
-        token = embedding.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     def _error_embedding(
@@ -963,12 +875,6 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 ErrorAttributes.ERROR_TYPE, embedding.error_type
             )
-        token = embedding.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     def _start_retrieval(self, retrieval: RetrievalInvocation) -> None:
@@ -982,14 +888,12 @@ class SpanEmitter(EmitterMeta):
             if parent_span is not None
             else None
         )
-        cm = self._tracer.start_as_current_span(
+        span = self._tracer.start_span(
             span_name,
             kind=SpanKind.CLIENT,
-            end_on_exit=False,
             context=parent_ctx,
         )
-        span = cm.__enter__()
-        self._attach_span(retrieval, span, cm)
+        self._add_span_to_invocation(retrieval, span)
         self._apply_start_attrs(retrieval)
 
         # Set retrieval-specific start attributes
@@ -1013,12 +917,6 @@ class SpanEmitter(EmitterMeta):
                 GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED,
                 retrieval.documents_retrieved,
             )
-        token = retrieval.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()
 
     def _error_retrieval(
@@ -1034,10 +932,4 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 ErrorAttributes.ERROR_TYPE, retrieval.error_type
             )
-        token = retrieval.context_token
-        if token is not None and hasattr(token, "__exit__"):
-            try:
-                token.__exit__(None, None, None)  # type: ignore[misc]
-            except Exception:
-                pass
         span.end()

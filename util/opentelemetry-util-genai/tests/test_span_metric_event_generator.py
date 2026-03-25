@@ -750,10 +750,11 @@ def test_http_genai_nongenai_genai_mixed_hierarchy():
 
 def test_mixed_hierarchy_without_parent_span_both_roots():
     """HTTP → GenAI → non-GenAI → GenAI, but the inner GenAI does NOT
-    have parent_span set (simulates an instrumentation that doesn't
-    communicate GenAI hierarchy).
+    have parent_span explicitly set.
 
-    Both GenAI agents get conversation_root=True — current behavior.
+    With _inherit_parent_span, the inner agent auto-inherits the outer
+    agent's span via _current_genai_span ContextVar, so only the outer
+    agent is marked conversation_root=True.
     """
     handler, exporter, tp = _make_handler_with_exporter()
     tracer = tp.get_tracer(__name__)
@@ -766,7 +767,6 @@ def test_mixed_hierarchy_without_parent_span_both_roots():
         handler.start_agent(outer_agent)
 
         with tracer.start_as_current_span("middleware.call"):
-            # Inner agent without parent_span — instrumentation gap
             inner_agent = AgentInvocation(name="inner")
             inner_agent.input_messages = [
                 InputMessage(role="user", parts=[Text("sub")])
@@ -781,12 +781,14 @@ def test_mixed_hierarchy_without_parent_span_both_roots():
     agent_spans = [s for s in exporter.spans if "invoke_agent" in s.name]
     assert len(agent_spans) == 2
 
-    # Both get conversation_root because neither has parent_span set
-    for s in agent_spans:
-        attrs = dict(s.attributes or {})
-        assert attrs.get("gen_ai.conversation_root") is True, (
-            f"Expected conversation_root=True on {s.name} (no parent_span)"
-        )
+    outer_attrs = dict(
+        next(s for s in agent_spans if "outer" in s.name).attributes or {}
+    )
+    inner_attrs = dict(
+        next(s for s in agent_spans if "inner" in s.name).attributes or {}
+    )
+    assert outer_attrs.get("gen_ai.conversation_root") is True
+    assert inner_attrs.get("gen_ai.conversation_root") is None
 
 
 # ---- create_and_start_root factory method tests ----------------------------
