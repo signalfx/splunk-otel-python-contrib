@@ -13,6 +13,7 @@ concurrency:
 env:
   PYTHONUNBUFFERED: "1"
   FORCE_COLOR: "1"
+  OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: "none"
 
 jobs:
   run:
@@ -42,31 +43,90 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest==7.4.4 pytest-cov==4.1.0
           pip install -r dev-genai-requirements.txt
+          pip install pytest-asyncio pyyaml
 
-      - name: Install all genai packages
+      - name: Install util packages
         run: |
           pip install -e util/opentelemetry-util-genai --no-deps
           pip install -e util/opentelemetry-util-genai-evals --no-deps
           pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
           pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
+          pip install -e util/opentelemetry-util-genai-emitters-test --no-deps
+
+      - name: Install instrumentation packages
+        run: |
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-langchain[instruments,test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-openai-v2[instruments]"
+          pip install -e instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2 --no-deps
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-llamaindex[instruments,test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-fastmcp[instruments,test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-crewai[instruments,test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-aidefense[test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-weaviate[instruments,test]"
 
       - name: Run tests - opentelemetry-util-genai
+        if: always()
         run: |
           python -m pytest util/opentelemetry-util-genai/tests/ -v --cov=opentelemetry.util.genai --cov-report=term-missing
 
       - name: Run tests - opentelemetry-util-genai-emitters-splunk
+        if: always()
         run: |
           python -m pytest util/opentelemetry-util-genai-emitters-splunk/tests/ -v
 
       - name: Run tests - opentelemetry-util-genai-evals
+        if: always()
         run: |
           python -m pytest util/opentelemetry-util-genai-evals/tests/ -v
 
       - name: Run tests - opentelemetry-util-genai-evals-deepeval
+        if: always()
+        env:
+          OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS: ""
         run: |
           python -m pytest util/opentelemetry-util-genai-evals-deepeval/tests/ -v
 
+      - name: Run tests - opentelemetry-util-genai-emitters-test
+        if: always()
+        run: |
+          python -m pytest util/opentelemetry-util-genai-emitters-test/tests/ -v
+
       - name: Run tests - opentelemetry-instrumentation-langchain
+        if: always()
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-langchain/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-openai-v2
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-openai-v2/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-openai-agents-v2
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-llamaindex
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-llamaindex/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-fastmcp
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-crewai
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-crewai/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-aidefense
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-aidefense/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-weaviate
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-weaviate/tests/ -v

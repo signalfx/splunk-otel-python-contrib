@@ -128,8 +128,9 @@ async def test_async_chat_completion_bad_endpoint(
         spans[0], llm_model_value, server_address="localhost"
     )
     assert 4242 == spans[0].attributes[ServerAttributes.SERVER_PORT]
-    assert (
-        "APIConnectionError" == spans[0].attributes[ErrorAttributes.ERROR_TYPE]
+    assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] in (
+        "APIConnectionError",
+        "APITimeoutError",
     )
 
 

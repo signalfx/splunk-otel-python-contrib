@@ -21,17 +21,17 @@ ruff==0.14.1
 opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-http
 
-# OpenTelemetry core (track latest v1.38.0 branch)
-opentelemetry-api @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-api&subdirectory=opentelemetry-api
-opentelemetry-sdk @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-sdk&subdirectory=opentelemetry-sdk
-opentelemetry-semantic-conventions @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-semantic-conventions&subdirectory=opentelemetry-semantic-conventions
-opentelemetry-test-utils @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-test-utils&subdirectory=tests/opentelemetry-test-utils
+# OpenTelemetry core (v1.38.0 / v0.59b0)
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-test-utils==0.59b0
 
-# Exporters / protocol (also track v1.38.0 for consistency)
-opentelemetry-exporter-otlp-proto-grpc @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-grpc&subdirectory=exporter/opentelemetry-exporter-otlp-proto-grpc
-opentelemetry-exporter-otlp-proto-common @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-exporter-otlp-proto-common&subdirectory=exporter/opentelemetry-exporter-otlp-proto-common
-opentelemetry-proto @ git+https://github.com/open-telemetry/opentelemetry-python.git@v1.38.0#egg=opentelemetry-proto&subdirectory=opentelemetry-proto
-opentelemetry-instrumentation @ git+https://github.com/open-telemetry/opentelemetry-python-contrib.git@v0.59b0#egg=opentelemetry-instrumentation&subdirectory=opentelemetry-instrumentation
+# Exporters / protocol
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-exporter-otlp-proto-common==1.38.0
+opentelemetry-proto==1.38.0
+opentelemetry-instrumentation==0.59b0
 
 # DeepEval dependency for opentelemetry-util-genai-evals-deepeval
 deepeval>=3.3.9,<3.8.0

@@ -178,6 +178,8 @@ class SplunkConversationEventsEmitter(EmitterMeta):
     def on_end(self, obj: Any) -> None:
         if self._event_logger is None:
             return
+        if not self._capture_content:
+            return
         # Emit semantic convention-aligned events for Workflow, LLM & Agent invocations.
         if isinstance(obj, Workflow):
             try:

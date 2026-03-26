@@ -55,18 +55,15 @@ def _serialize(obj: Any) -> Optional[str]:
 
 
 def _make_input_message(messages: dict[str, Any]) -> list[InputMessage]:
-    """Create structured input message with full data as JSON."""
+    """Create one InputMessage per value for known task/agent fields."""
     input_messages: list[InputMessage] = []
     if messages is None:
         return []
     for key, value in messages.items():
-        if value:
-            if key == "description" or key == "expected_output" or key == "inquiry":
-                input_message = InputMessage(
-                    role="user", parts=[Text(_safe_str(value))]
-                )
-                input_messages.append(input_message)
-
+        if value and key in ("description", "expected_output", "inquiry"):
+            input_messages.append(
+                InputMessage(role="user", parts=[Text(_safe_str(value))])
+            )
     return input_messages
 
 

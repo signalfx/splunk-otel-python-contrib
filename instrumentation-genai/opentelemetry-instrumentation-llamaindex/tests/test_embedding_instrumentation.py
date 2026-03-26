@@ -1,18 +1,26 @@
 """Test embedding instrumentation for LlamaIndex."""
 
+import pytest
+
 import os
 
 from llama_index.core import Settings
 from llama_index.core.callbacks import CallbackManager
 from llama_index.embeddings.openai import OpenAIEmbedding
+
 from opentelemetry import metrics, trace
+from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+)
 
-from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
-
+pytestmark = pytest.mark.skip(
+    reason="Requires live OpenAI API key; needs VCR cassettes"
+)
 
 # Global setup - shared across tests
 metric_reader = None

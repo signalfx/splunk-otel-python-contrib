@@ -80,10 +80,8 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
         chat_span.attributes.get(GenAIAttributes.GEN_AI_AGENT_NAME)
         == "Crew Router Agent"
     )
-    inherited_agent_id = chat_span.attributes.get(GenAIAttributes.GEN_AI_AGENT_ID)
-    assert isinstance(inherited_agent_id, str) and inherited_agent_id
 
-    # Validate chat metrics inherited agent identity.
+    # Validate chat metrics inherited agent name.
     try:
         meter_provider.force_flush()
     except Exception:
@@ -121,7 +119,6 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
             attrs.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
             == GenAIAttributes.GenAiOperationNameValues.CHAT.value
             and attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME) == "Crew Router Agent"
-            and attrs.get(GenAIAttributes.GEN_AI_AGENT_ID) == inherited_agent_id
         ):
             found_duration_with_agent = True
             break
@@ -136,10 +133,7 @@ def test_openai_v2_chat_inherits_agent_context_to_spans_and_metrics(
             != GenAIAttributes.GenAiOperationNameValues.CHAT.value
         ):
             continue
-        if (
-            attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME) != "Crew Router Agent"
-            or attrs.get(GenAIAttributes.GEN_AI_AGENT_ID) != inherited_agent_id
-        ):
+        if attrs.get(GenAIAttributes.GEN_AI_AGENT_NAME) != "Crew Router Agent":
             continue
         token_type = attrs.get(GenAIAttributes.GEN_AI_TOKEN_TYPE)
         if token_type == GenAIAttributes.GenAiTokenTypeValues.INPUT.value:

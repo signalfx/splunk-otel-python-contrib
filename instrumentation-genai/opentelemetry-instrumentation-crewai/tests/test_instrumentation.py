@@ -391,6 +391,33 @@ class TestAgentExecuteTaskMapping:
         assert agent.output_messages and len(agent.output_messages) > 0
         assert agent.output_messages[0].parts[0].content == ""
 
+    def test_agent_captures_description_and_expected_output(self, stub_handler):
+        """AgentInvocation should capture both description and expected_output as input_messages."""
+        crewai_module._handler = stub_handler
+
+        mock_agent = mock.MagicMock()
+        mock_agent.role = "Researcher"
+
+        mock_task = mock.MagicMock()
+        mock_task.description = "Research quantum computing"
+        mock_task.expected_output = "A summary report"
+
+        mock_wrapped = mock.MagicMock(return_value="Quantum computing is...")
+
+        crewai_module._wrap_agent_execute_task(
+            mock_wrapped, mock_agent, (), {"task": mock_task}
+        )
+
+        agent = stub_handler.started_agents[0]
+        assert len(agent.input_messages) == 2
+        contents = [m.parts[0].content for m in agent.input_messages]
+        assert "Research quantum computing" in contents
+        assert "A summary report" in contents
+
+        stopped = stub_handler.stopped_agents[0]
+        assert stopped.output_messages and len(stopped.output_messages) > 0
+        assert "Quantum computing is..." in stopped.output_messages[0].parts[0].content
+
     def test_agent_error_handling(self, stub_handler):
         """AgentInvocation should capture errors on failure."""
         crewai_module._handler = stub_handler

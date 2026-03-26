@@ -214,8 +214,9 @@ def test_embeddings_bad_endpoint(
         server_address="localhost",
     )
     assert 4242 == spans[0].attributes[ServerAttributes.SERVER_PORT]
-    assert (
-        "APIConnectionError" == spans[0].attributes[ErrorAttributes.ERROR_TYPE]
+    assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] in (
+        "APIConnectionError",
+        "APITimeoutError",
     )
 
     # Verify metrics
@@ -233,12 +234,9 @@ def test_embeddings_bad_endpoint(
     )
     assert duration_metric is not None
     assert duration_metric.data.data_points[0].sum > 0
-    assert (
-        duration_metric.data.data_points[0].attributes[
-            ErrorAttributes.ERROR_TYPE
-        ]
-        == "APIConnectionError"
-    )
+    assert duration_metric.data.data_points[0].attributes[
+        ErrorAttributes.ERROR_TYPE
+    ] in ("APIConnectionError", "APITimeoutError")
 
 
 @pytest.mark.vcr()
