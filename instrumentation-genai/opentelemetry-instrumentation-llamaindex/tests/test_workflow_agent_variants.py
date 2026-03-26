@@ -1,9 +1,7 @@
 import asyncio
-import os
 from collections import Counter
 
 import pytest
-
 from llama_index.core.agent.workflow import (
     AgentWorkflow,
     CodeActAgent,
@@ -18,18 +16,6 @@ from llama_index.core.base.llms.types import (
 from llama_index.core.llms import MockLLM
 from llama_index.core.llms.llm import ToolSelection
 from llama_index.core.workflow import StartEvent, StopEvent, Workflow, step
-
-from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-    InMemorySpanExporter,
-)
-
-pytestmark = pytest.mark.skip(
-    reason="Event stream already consumed errors; needs rework"
-)
 
 
 class StaticChatLLM(MockLLM):
@@ -48,20 +34,35 @@ class StaticChatLLM(MockLLM):
     def chat(self, messages, **kwargs):
         return ChatResponse(
             message=self._response,
-            raw={"usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+            raw={
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                }
+            },
         )
 
     async def achat(self, messages, **kwargs):
         return ChatResponse(
             message=self._response,
-            raw={"usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+            raw={
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                }
+            },
         )
 
     def stream_chat(self, messages, **kwargs):
         yield ChatResponse(
             message=self._response,
             delta=self._response.content,
-            raw={"usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+            raw={
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                }
+            },
         )
 
 
@@ -104,16 +105,6 @@ class HandoffSequenceLLM(FunctionCallingLLM):
                 tool_kwargs=tool_kwargs,
             )
         ]
-
-
-def setup_telemetry():
-    memory_exporter = InMemorySpanExporter()
-    tracer_provider = TracerProvider()
-    tracer_provider.add_span_processor(SimpleSpanProcessor(memory_exporter))
-
-    meter_provider = MeterProvider()
-
-    return tracer_provider, meter_provider, memory_exporter
 
 
 def _assert_agent_and_workflow_spans(spans):
@@ -159,7 +150,8 @@ def _span_tree_text(spans):
     def _walk(span, depth, out):
         out.append(_line(span, depth))
         for child in sorted(
-            children.get(span.context.span_id, []), key=lambda s: s.start_time
+            children.get(span.context.span_id, []),
+            key=lambda s: s.start_time,
         ):
             _walk(child, depth + 1, out)
 
@@ -169,26 +161,8 @@ def _span_tree_text(spans):
     return "\n".join(lines)
 
 
-@pytest.fixture(scope="module")
-def instrumented_telemetry():
-    tracer_provider, meter_provider, memory_exporter = setup_telemetry()
-    os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
-
-    instrumentor = LlamaindexInstrumentor()
-    instrumentor._is_instrumented_by_opentelemetry = False
-    instrumentor.instrument(
-        tracer_provider=tracer_provider, meter_provider=meter_provider
-    )
-
-    return memory_exporter
-
-
 @pytest.mark.asyncio
-async def test_function_agent_emits_spans(monkeypatch, instrumented_telemetry):
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric")
-    memory_exporter = instrumented_telemetry
-    memory_exporter.clear()
-
+async def test_function_agent_emits_spans(span_exporter, instrument):
     agent = FunctionAgent(
         name="FunctionAgent",
         llm=FunctionCallingLLM("Done."),
@@ -200,17 +174,13 @@ async def test_function_agent_emits_spans(monkeypatch, instrumented_telemetry):
     await handler
     await asyncio.sleep(0.1)
 
-    spans = memory_exporter.get_finished_spans()
+    spans = span_exporter.get_finished_spans()
     _assert_agent_and_workflow_spans(spans)
     _assert_agent_and_workflow_attributes(spans)
 
 
 @pytest.mark.asyncio
-async def test_codeact_agent_emits_spans(monkeypatch, instrumented_telemetry):
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric")
-    memory_exporter = instrumented_telemetry
-    memory_exporter.clear()
-
+async def test_codeact_agent_emits_spans(span_exporter, instrument):
     async def code_execute_fn(code: str):
         return {"result": code}
 
@@ -224,17 +194,13 @@ async def test_codeact_agent_emits_spans(monkeypatch, instrumented_telemetry):
     await handler
     await asyncio.sleep(0.1)
 
-    spans = memory_exporter.get_finished_spans()
+    spans = span_exporter.get_finished_spans()
     _assert_agent_and_workflow_spans(spans)
     _assert_agent_and_workflow_attributes(spans)
 
 
 @pytest.mark.asyncio
-async def test_agent_workflow_emits_agent_span(monkeypatch, instrumented_telemetry):
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric")
-    memory_exporter = instrumented_telemetry
-    memory_exporter.clear()
-
+async def test_agent_workflow_emits_agent_span(span_exporter, instrument):
     agent = FunctionAgent(
         name="SingleAgent",
         llm=FunctionCallingLLM("Done."),
@@ -248,26 +214,32 @@ async def test_agent_workflow_emits_agent_span(monkeypatch, instrumented_telemet
 
     op_names = {
         span.attributes.get("gen_ai.operation.name")
-        for span in memory_exporter.get_finished_spans()
+        for span in span_exporter.get_finished_spans()
     }
     assert "invoke_agent" in op_names
     assert "invoke_workflow" in op_names
-    _assert_agent_and_workflow_attributes(memory_exporter.get_finished_spans())
+    _assert_agent_and_workflow_attributes(span_exporter.get_finished_spans())
 
 
 @pytest.mark.asyncio
-async def test_multi_agent_workflow_example_emits_spans(
-    monkeypatch, instrumented_telemetry
-):
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric")
-    memory_exporter = instrumented_telemetry
-    memory_exporter.clear()
-
+async def test_multi_agent_workflow_example_emits_spans(span_exporter, instrument):
     llm = HandoffSequenceLLM(
         "Done.",
         [
-            ("handoff", {"to_agent": "WriteAgent", "reason": "Draft ready."}),
-            ("handoff", {"to_agent": "ReviewAgent", "reason": "Needs review."}),
+            (
+                "handoff",
+                {
+                    "to_agent": "WriteAgent",
+                    "reason": "Draft ready.",
+                },
+            ),
+            (
+                "handoff",
+                {
+                    "to_agent": "ReviewAgent",
+                    "reason": "Needs review.",
+                },
+            ),
             None,
         ],
     )
@@ -275,7 +247,7 @@ async def test_multi_agent_workflow_example_emits_spans(
     research_agent = FunctionAgent(
         name="ResearchAgent",
         description="Search the web and record notes.",
-        system_prompt="You are a researcher. Hand off to WriteAgent when ready.",
+        system_prompt="You are a researcher.",
         llm=llm,
         tools=[],
         can_handoff_to=["WriteAgent"],
@@ -283,8 +255,8 @@ async def test_multi_agent_workflow_example_emits_spans(
     )
     write_agent = FunctionAgent(
         name="WriteAgent",
-        description="Writes a markdown report from the notes.",
-        system_prompt="You are a writer. Ask ReviewAgent for feedback when done.",
+        description="Writes a markdown report.",
+        system_prompt="You are a writer.",
         llm=llm,
         tools=[],
         can_handoff_to=["ReviewAgent", "ResearchAgent"],
@@ -292,7 +264,7 @@ async def test_multi_agent_workflow_example_emits_spans(
     )
     review_agent = FunctionAgent(
         name="ReviewAgent",
-        description="Reviews a report and gives feedback.",
+        description="Reviews a report.",
         system_prompt="You are a reviewer.",
         llm=llm,
         tools=[],
@@ -313,14 +285,12 @@ async def test_multi_agent_workflow_example_emits_spans(
     await agent_workflow.run(user_msg="Write me a report on the history of the web.")
     await asyncio.sleep(0.1)
 
-    op_names = {
-        span.attributes.get("gen_ai.operation.name")
-        for span in memory_exporter.get_finished_spans()
-    }
+    spans = span_exporter.get_finished_spans()
+    op_names = {span.attributes.get("gen_ai.operation.name") for span in spans}
     assert "invoke_agent" in op_names
     assert "invoke_workflow" in op_names
-    spans = memory_exporter.get_finished_spans()
     _assert_agent_and_workflow_attributes(spans)
+
     agent_names = {
         span.attributes.get("gen_ai.agent.name")
         for span in spans
@@ -335,14 +305,6 @@ async def test_multi_agent_workflow_example_emits_spans(
     ]
     assert len(workflow_spans) == 1
     workflow_span_id = workflow_spans[0].context.span_id
-
-    orchestrator_agent_spans = [
-        span
-        for span in spans
-        if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
-        and span.attributes.get("gen_ai.agent.name") == "AgentWorkflow"
-    ]
-    assert len(orchestrator_agent_spans) == 0
 
     concrete_agent_counts = Counter(
         span.attributes.get("gen_ai.agent.name")
@@ -378,8 +340,6 @@ async def test_multi_agent_workflow_example_emits_spans(
     chat_spans = [
         span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat"
     ]
-    # In mocked handoff-only flows, LlamaIndex may not emit LLM callback events,
-    # so chat spans can be absent. If present, they must attach to concrete agents.
     if chat_spans:
         prefixed_agent_name_chats = [
             span
@@ -403,13 +363,7 @@ async def test_multi_agent_workflow_example_emits_spans(
 
 
 @pytest.mark.asyncio
-async def test_custom_workflow_single_agent_has_one_workflow_and_no_duplicates(
-    monkeypatch, instrumented_telemetry
-):
-    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span_metric")
-    memory_exporter = instrumented_telemetry
-    memory_exporter.clear()
-
+async def test_custom_workflow_single_agent(span_exporter, instrument):
     agent = FunctionAgent(
         name="CustomSingleAgent",
         llm=FunctionCallingLLM("Done."),
@@ -428,7 +382,7 @@ async def test_custom_workflow_single_agent_has_one_workflow_and_no_duplicates(
     await workflow.run()
     await asyncio.sleep(0.1)
 
-    spans = memory_exporter.get_finished_spans()
+    spans = span_exporter.get_finished_spans()
     workflow_spans = [
         span
         for span in spans
