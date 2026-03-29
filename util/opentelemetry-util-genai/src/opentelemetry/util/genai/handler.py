@@ -112,6 +112,7 @@ from .callbacks import CompletionCallback
 from .config import parse_env
 from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
@@ -533,6 +534,18 @@ class TelemetryHandler:
                         else:
                             desired = desired_span
                         em.set_capture_content(desired)  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+                # Propagate tool-definitions flag to span emitters
+                if hasattr(em, "set_capture_tool_definitions"):
+                    try:
+                        em.set_capture_tool_definitions(  # type: ignore[attr-defined]
+                            is_truthy_env(
+                                os.environ.get(
+                                    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS
+                                )
+                            )
+                        )
                     except Exception:
                         pass
         except Exception:

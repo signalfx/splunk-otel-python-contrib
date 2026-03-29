@@ -702,33 +702,42 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             attrs["tags"] = [str(t) for t in tags]
 
         # Process invocation_params - add with request_ prefix
+        # Extract request params from multiple sources (consistent with span_utils.py)
+        # Priority: invocation_params > serialized.kwargs > model_kwargs
+        serialized_kwargs = payload.get("kwargs", {})
+        request_temperature = None
+        request_max_tokens = None
         if invocation_params:
-            # Standard params get request_ prefix
+            # Standard params get request_ prefix in attrs
             for key in (
+                "temperature",
+                "max_tokens",
                 "top_p",
                 "seed",
-                "temperature",
                 "frequency_penalty",
                 "presence_penalty",
             ):
-                if key in invocation_params:
-                    attrs[f"request_{key}"] = invocation_params[key]
+                value = invocation_params.get(key) or serialized_kwargs.get(key)
+                if value is not None:
+                    attrs[f"request_{key}"] = value
 
-            # Handle nested model_kwargs
+            # Extract temperature and max_tokens for dedicated semconv fields
+            request_temperature = invocation_params.get(
+                "temperature"
+            ) or serialized_kwargs.get("temperature")
+            request_max_tokens = (
+                invocation_params.get("max_tokens")
+                or serialized_kwargs.get("max_tokens")
+                or serialized_kwargs.get("max_new_tokens")
+            )
+
+            # Fallback: check model_kwargs for max_tokens (common when users
+            # pass it via ChatOpenAI(model_kwargs={"max_tokens": ...}))
             if "model_kwargs" in invocation_params:
-                attrs["model_kwargs"] = invocation_params["model_kwargs"]
-                # Also check for max_tokens in model_kwargs
                 mk = invocation_params["model_kwargs"]
-                if isinstance(mk, dict) and "max_tokens" in mk:
-                    attrs["request_max_tokens"] = mk["max_tokens"]
-
-        # Handle max_tokens from metadata.ls_max_tokens
-        if (
-            metadata
-            and "ls_max_tokens" in metadata
-            and "request_max_tokens" not in attrs
-        ):
-            attrs["request_max_tokens"] = metadata["ls_max_tokens"]
+                attrs["model_kwargs"] = mk
+                if isinstance(mk, dict) and request_max_tokens is None:
+                    request_max_tokens = mk.get("max_tokens")
 
         # Add callback info from serialized
         if payload.get("name"):
@@ -746,6 +755,20 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             input_messages=input_messages,
             attributes=attrs,
         )
+        # Set dedicated semconv fields
+        if request_temperature is not None:
+            inv.request_temperature = request_temperature
+        if request_max_tokens is not None:
+            inv.request_max_tokens = request_max_tokens
+        # Extract tool/function definitions for gen_ai.request.function.* attributes
+        # Extract tool/function definitions as gen_ai.tool.definitions attribute
+        if invocation_params:
+            tools = invocation_params.get("tools") or invocation_params.get("functions")
+            if tools:
+                tool_defs = [fn.get("function", fn) for fn in tools]
+                serialized_defs = _serialize(tool_defs)
+                if serialized_defs:
+                    inv.tool_definitions = serialized_defs
         if provider:
             inv.provider = provider
         if parent_run_id is not None:
@@ -796,14 +819,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             return
         generations = getattr(response, "generations", [])
         content = None
+        finish_reason = None
         if generations and generations[0] and generations[0][0].message:
             content = getattr(generations[0][0].message, "content", None)
-        if content is not None:
             finish_reason = (
                 generations[0][0].generation_info.get("finish_reason")
                 if generations[0][0].generation_info
                 else None
             )
+        if content is not None:
             if finish_reason == "tool_calls":
                 inv.output_messages = [
                     OutputMessage(
@@ -820,6 +844,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         finish_reason=finish_reason or "stop",
                     )
                 ]
+        # Set response_finish_reasons semconv span attribute
+        if finish_reason:
+            inv.response_finish_reasons = [finish_reason]
         llm_output = getattr(response, "llm_output", {}) or {}
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
         inv.input_tokens = usage.get("prompt_tokens")

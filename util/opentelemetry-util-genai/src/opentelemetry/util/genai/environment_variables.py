@@ -24,6 +24,19 @@ content according to :envvar:`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
 Unset or falsey values disable content capture entirely.
 """
 
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS = (
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS
+
+Enable capture of ``gen_ai.tool.definitions`` on LLM invocation spans.
+Requires :envvar:`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` to also
+be enabled.  When both flags are truthy the JSON-serialised tool/function
+schemas passed to the model are recorded as a span attribute.  Defaults to
+``false`` because the payload can be large.
+"""
+
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE = (
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"
 )
@@ -351,6 +364,7 @@ __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE",
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS",
     "OTEL_INSTRUMENTATION_GENAI_UPLOAD_HOOK",
     "OTEL_INSTRUMENTATION_GENAI_UPLOAD_BASE_PATH",
     # evaluation

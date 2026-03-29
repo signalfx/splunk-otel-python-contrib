@@ -32,7 +32,10 @@ from opentelemetry.trace import Span, SpanContext
 if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 # Import security attribute from centralized attributes module
-from opentelemetry.util.genai.attributes import GEN_AI_SECURITY_EVENT_ID
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_SECURITY_EVENT_ID,
+    GEN_AI_TOOL_DEFINITIONS,
+)
 from opentelemetry.util.types import AttributeValue
 
 ContextToken = Token  # simple alias; avoid TypeAlias warning tools
@@ -335,6 +338,11 @@ class LLMInvocation(GenAI):
     )
     # Structured function/tool definitions for semantic convention emission
     request_functions: list[dict[str, Any]] = field(default_factory=list)
+    # Opt-In: gen_ai.tool.definitions (JSON-serialized tool schemas)
+    tool_definitions: Optional[str] = field(
+        default=None,
+        metadata={"semconv_content": GEN_AI_TOOL_DEFINITIONS},
+    )
     request_temperature: Optional[float] = field(
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_TEMPERATURE},

@@ -25,6 +25,7 @@ from pytest import MonkeyPatch
 from pydantic import SecretStr
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 from opentelemetry.semconv._incubating.attributes import gen_ai_attributes
@@ -32,6 +33,8 @@ from opentelemetry.semconv._incubating.metrics import gen_ai_metrics
 from opentelemetry.sdk.trace import ReadableSpan  # test-only type reference
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+from opentelemetry.util.genai.attributes import GEN_AI_TOOL_DEFINITIONS
 
 
 CHAT = gen_ai_attributes.GenAiOperationNameValues.CHAT.value
@@ -50,6 +53,7 @@ def test_langchain_call(
     model = "gpt-4o-mini"
     llm = ChatOpenAI(
         temperature=0.0,
+        max_tokens=100,
         api_key=SecretStr("test-api-key"),
         base_url="https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini",
         model=model,
@@ -95,6 +99,14 @@ def test_langchain_call(
     assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_MODEL) == model
     # Response model can differ (provider adds version); only assert presence
     assert attrs.get(gen_ai_attributes.GEN_AI_RESPONSE_MODEL) is not None
+    # --- New semconv attributes (HYBIM-559) ---
+    # gen_ai.request.temperature
+    assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_TEMPERATURE) == 0.0
+    # gen_ai.request.max_tokens
+    assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_MAX_TOKENS) == 100
+    # gen_ai.response.finish_reasons (cassette returns "stop")
+    assert attrs.get(gen_ai_attributes.GEN_AI_RESPONSE_FINISH_REASONS) == ("stop",)
+
     # If token usage captured ensure they are non-negative integers
     for key in (
         gen_ai_attributes.GEN_AI_USAGE_INPUT_TOKENS,
@@ -119,3 +131,84 @@ def test_langchain_call(
     assert found_duration, "Duration metric missing"
 
     # Do not fail test on absence of token usage metrics – optional.
+
+
+# --------------- Tool definitions test (HYBIM-559) ---------------
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two integers together."""
+    return a + b
+
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two integers together."""
+    return a * b
+
+
+@pytest.mark.vcr()
+def test_langchain_call_with_tools(
+    span_exporter: InMemorySpanExporter,
+    metric_reader: InMemoryMetricReader,
+    instrument_with_content: Any,
+    monkeypatch: MonkeyPatch,
+):
+    """Verify gen_ai.tool.definitions appears on chat span when tools are bound
+    and both CAPTURE_MESSAGE_CONTENT and CAPTURE_TOOL_DEFINITIONS are enabled."""
+    # Set env vars BEFORE any invocation so _refresh_capture_content picks them up
+    monkeypatch.setenv("OPENAI_API_KEY", "test-api-key")
+    monkeypatch.setenv("APPKEY", "test-app-key")
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS", "true")
+    # Force handler singleton to re-read env
+    import opentelemetry.util.genai.handler as _h
+
+    if hasattr(_h.get_telemetry_handler, "_default_handler"):
+        setattr(_h.get_telemetry_handler, "_default_handler", None)
+    model = "gpt-4o-mini"
+    llm = ChatOpenAI(
+        temperature=0.1,
+        api_key=SecretStr("test-api-key"),
+        base_url="https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini",
+        model=model,
+        default_headers={"api-key": "test-api-key"},
+        model_kwargs={"user": json.dumps({"appkey": "test-app-key"})},
+    )
+    llm_with_tools = llm.bind_tools([add, multiply])
+    _response = llm_with_tools.invoke("Please add 2 and 3, then multiply 2 and 3.")
+
+    spans: List[ReadableSpan] = span_exporter.get_finished_spans()  # type: ignore[assignment]
+    assert spans, "Expected at least one span"
+
+    # Find the first chat span (the LLM call that had tools bound)
+    chat_spans = [
+        s
+        for s in spans
+        if getattr(s, "attributes", {}).get(gen_ai_attributes.GEN_AI_OPERATION_NAME)
+        == CHAT
+    ]
+    assert chat_spans, "No chat operation span found"
+    first_chat = chat_spans[0]
+    attrs = getattr(first_chat, "attributes", {})
+
+    # gen_ai.request.temperature
+    assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_TEMPERATURE) == 0.1
+
+    # gen_ai.response.finish_reasons (first call returns "tool_calls")
+    finish_reasons = attrs.get(gen_ai_attributes.GEN_AI_RESPONSE_FINISH_REASONS)
+    assert finish_reasons == ("tool_calls",)
+
+    # gen_ai.tool.definitions — JSON string containing tool schemas
+    tool_defs_raw = attrs.get(GEN_AI_TOOL_DEFINITIONS)
+    assert tool_defs_raw is not None, (
+        "gen_ai.tool.definitions should be present when both "
+        "CAPTURE_MESSAGE_CONTENT and CAPTURE_TOOL_DEFINITIONS are enabled"
+    )
+    tool_defs = json.loads(tool_defs_raw)
+    assert isinstance(tool_defs, list)
+    # callback_handler extracts inner function objects via fn.get("function", fn)
+    tool_names = {t["name"] for t in tool_defs if "name" in t}
+    assert "add" in tool_names
+    assert "multiply" in tool_names
