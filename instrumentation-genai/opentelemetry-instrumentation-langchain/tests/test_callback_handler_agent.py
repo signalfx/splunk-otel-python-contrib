@@ -365,13 +365,13 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
             run_id=run_id,
             invocation_params={
                 "model_name": "gpt-5-nano",
+                "max_tokens": 256,
                 "top_p": 0.5,
                 "seed": 42,
                 "model_kwargs": {"user": "abc"},
             },
             metadata={
                 "ls_provider": "openai",
-                "ls_max_tokens": 256,
                 "custom_meta": "value",
             },
             tags=["agent"],
@@ -398,7 +398,6 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "traceloop.callback_name" not in attrs
     # ls_* fields are excluded from attributes - extracted to dedicated fields instead
     assert "ls_provider" not in attrs
-    assert "ls_max_tokens" not in attrs
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
