@@ -273,7 +273,8 @@ def test_embeddings_model_not_found(
         None,
     )
     assert duration_metric is not None
-    assert duration_metric.data.data_points[0].sum > 0
+    # Duration can be 0 with VCR mocks (instant responses)
+    assert duration_metric.data.data_points[0].sum >= 0
     assert (
         duration_metric.data.data_points[0].attributes[
             ErrorAttributes.ERROR_TYPE
