@@ -134,6 +134,7 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
         base_url = kwargs.get("base_url")
         server_address = kwargs.get("server_address")
         server_port = kwargs.get("server_port")
+        agent_name = kwargs.get("agent_name", "OpenAI Agent")
 
         # Create telemetry handler with tracer_provider and meter_provider
         # Handler will take care of generating metrics when meter_provider is passed
@@ -152,7 +153,7 @@ class OpenAIAgentsInstrumentor(BaseInstrumentor):
             base_url=base_url,
             server_address=server_address,
             server_port=server_port,
-            agent_name_default="OpenAI Agent",
+            agent_name_default=agent_name,
             agent_id_default="agent",
             agent_description_default="OpenAI Agents instrumentation",
             base_url_default="https://api.openai.com",
