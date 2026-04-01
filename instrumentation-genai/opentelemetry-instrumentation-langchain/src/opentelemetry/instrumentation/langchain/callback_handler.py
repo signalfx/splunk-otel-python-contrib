@@ -36,6 +36,9 @@ from opentelemetry.util.genai.attributes import (
     GEN_AI_FINISH_REASON,
     FINISH_REASON_INTERRUPTED,
 )
+from opentelemetry.util.genai.utils import (
+    should_capture_tool_definitions as _should_capture_tool_definitions,
+)
 
 # Error type names that indicate flow-control, not real errors.
 # Uses type name strings to avoid importing LangGraph at instrumentation time.
@@ -760,13 +763,13 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             inv.request_temperature = request_temperature
         if request_max_tokens is not None:
             inv.request_max_tokens = request_max_tokens
-        # Extract tool/function definitions for gen_ai.request.function.* attributes
         # Extract tool/function definitions as gen_ai.tool.definitions attribute
-        if invocation_params:
+        # Gated by env var to avoid serializing large payloads when disabled
+        if _should_capture_tool_definitions() and invocation_params:
             tools = invocation_params.get("tools") or invocation_params.get("functions")
             if tools:
-                tool_defs = [fn.get("function", fn) for fn in tools]
-                serialized_defs = _serialize(tool_defs)
+                # Preserve full tool definition structure (including type: "function")
+                serialized_defs = _serialize(tools)
                 if serialized_defs:
                     inv.tool_definitions = serialized_defs
         if provider:

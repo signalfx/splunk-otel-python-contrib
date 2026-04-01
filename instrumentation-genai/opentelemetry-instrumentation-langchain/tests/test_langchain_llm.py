@@ -208,7 +208,12 @@ def test_langchain_call_with_tools(
     )
     tool_defs = json.loads(tool_defs_raw)
     assert isinstance(tool_defs, list)
-    # callback_handler extracts inner function objects via fn.get("function", fn)
-    tool_names = {t["name"] for t in tool_defs if "name" in t}
+    # Full tool definition structure with type: "function" wrapper
+    tool_names = set()
+    for t in tool_defs:
+        if t.get("type") == "function" and "function" in t:
+            tool_names.add(t["function"]["name"])
+        elif "name" in t:
+            tool_names.add(t["name"])
     assert "add" in tool_names
     assert "multiply" in tool_names
