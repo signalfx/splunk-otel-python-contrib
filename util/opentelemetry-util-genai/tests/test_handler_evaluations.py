@@ -9,7 +9,10 @@ from opentelemetry.util.genai.environment_variables import (
 from opentelemetry.util.genai.evals.bootstrap import (
     EvaluatorCompletionCallback,
 )
-from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,

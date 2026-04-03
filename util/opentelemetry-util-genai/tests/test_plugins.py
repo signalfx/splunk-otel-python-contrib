@@ -11,7 +11,10 @@ from opentelemetry.util.genai.emitters.spec import EmitterSpec
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
-from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.plugins import load_emitter_specs
 
 

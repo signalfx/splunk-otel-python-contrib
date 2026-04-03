@@ -53,7 +53,7 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
 )
-from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
+from opentelemetry.util.genai.handler import TelemetryHandler
 
 
 def _fully_unwrap_callback_manager():

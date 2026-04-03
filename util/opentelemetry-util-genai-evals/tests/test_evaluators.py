@@ -17,7 +17,10 @@ from opentelemetry.util.genai.evals.registry import (
     clear_registry,
     register_evaluator,
 )
-from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     EvaluationResult,
