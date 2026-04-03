@@ -23,7 +23,7 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     Error,
@@ -53,11 +53,9 @@ class TestMetricsEmission(unittest.TestCase):
             metric_readers=[self.metric_reader]
         )
         # Reset handler singleton
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
         # Reset handler singleton
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
     def _invoke(
         self,
@@ -85,8 +83,7 @@ class TestMetricsEmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -142,8 +139,7 @@ class TestMetricsEmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -340,8 +336,7 @@ class TestMetricsEmission(unittest.TestCase):
             OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
         }
         with patch.dict(os.environ, env, clear=False):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,

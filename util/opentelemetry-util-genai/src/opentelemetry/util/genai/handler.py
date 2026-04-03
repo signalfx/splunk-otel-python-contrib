@@ -51,6 +51,7 @@ Usage:
 import asyncio
 import logging
 import os
+import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -329,7 +330,48 @@ class TelemetryHandler:
     High-level handler managing GenAI invocation lifecycles and emitting
     them as spans, metrics, and events. Evaluation execution & emission is
     delegated to EvaluationManager for extensibility (mirrors emitter design).
+
+    This class is a **singleton**: all calls to ``TelemetryHandler(...)`` and
+    ``get_telemetry_handler(...)`` return the same process-wide instance so
+    that handler-internal context stacks (workflow, agent) are shared across
+    instrumentation boundaries.
+
+    Use ``TelemetryHandler._reset_for_testing()`` in test teardown to clear
+    the singleton.
     """
+
+    _instance: Optional["TelemetryHandler"] = None
+    _lock: threading.Lock = threading.Lock()
+
+    def __new__(
+        cls,
+        tracer_provider: TracerProvider | None = None,
+        logger_provider: LoggerProvider | None = None,
+        meter_provider: MeterProvider | None = None,
+    ) -> "TelemetryHandler":
+        if cls._instance is not None:
+            return cls._instance
+        with cls._lock:
+            if cls._instance is not None:
+                return cls._instance
+            instance = super().__new__(cls)
+            cls._instance = instance
+            return instance
+
+    @classmethod
+    def _reset_for_testing(cls) -> None:
+        """Reset the singleton instance.
+
+        Intended **only** for test teardown.  Clears the singleton so the next
+        call to ``TelemetryHandler(...)`` or ``get_telemetry_handler(...)``
+        creates a fresh instance.
+        """
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance._initialized = False
+            cls._instance = None
+            if hasattr(get_telemetry_handler, "_default_handler"):
+                delattr(get_telemetry_handler, "_default_handler")
 
     def __init__(
         self,
@@ -337,6 +379,8 @@ class TelemetryHandler:
         logger_provider: LoggerProvider | None = None,
         meter_provider: MeterProvider | None = None,
     ):
+        if getattr(self, "_initialized", False):
+            return
         self._tracer = get_tracer(
             __name__,
             __version__,
@@ -462,6 +506,7 @@ class TelemetryHandler:
         # agent_id may be None if not provided by instrumentation
         self._agent_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
+        self._initialized = True
 
     def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
         try:
@@ -1403,16 +1448,14 @@ def get_telemetry_handler(
     logger_provider: LoggerProvider | None = None,
 ) -> TelemetryHandler:
     """
-    Returns a singleton TelemetryHandler instance.
+    Returns the process-wide singleton ``TelemetryHandler`` instance.
+
+    This is the **preferred** public API for obtaining a handler.  Both this
+    function and ``TelemetryHandler(...)`` return the same singleton;
+    ``TelemetryHandler.__new__`` handles the thread-safe singleton logic.
     """
-    handler: Optional[TelemetryHandler] = getattr(
-        get_telemetry_handler, "_default_handler", None
+    return TelemetryHandler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+        logger_provider=logger_provider,
     )
-    if handler is None:
-        handler = TelemetryHandler(
-            tracer_provider=tracer_provider,
-            meter_provider=meter_provider,
-            logger_provider=logger_provider,
-        )
-        setattr(get_telemetry_handler, "_default_handler", handler)
-    return handler

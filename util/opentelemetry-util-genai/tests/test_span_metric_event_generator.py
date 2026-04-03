@@ -597,6 +597,7 @@ def _make_handler_with_exporter():
     exporter = _Collector()
     tp = TracerProvider()
     tp.add_span_processor(SimpleSpanProcessor(exporter))
+    TelemetryHandler._reset_for_testing()
     handler = TelemetryHandler(tracer_provider=tp)
     return handler, exporter, tp
 
