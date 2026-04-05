@@ -85,9 +85,7 @@ Add **`gen_ai.workflow.name`** to metric attribute tables where the operation ca
 
 ## 5. Sample screenshots (Splunk Observability Cloud)
 
-This section mirrors the structure of **`agent_name.md` §5**, but for **`gen_ai.workflow.name`** on child spans and client metrics.
-
-The images below are **illustrative mockups** (generated via `scripts/generate_workflow_splunk_mockups.py`) styled like Splunk APM and chart builder layouts. They are **not** live product screenshots; you can replace them with real **Splunk Observability Cloud** captures from your environment when available—same filenames under `images/` preserve stable links.
+The images below are **illustrative mockups**
 
 ### 5.1 Trace view — inference (`chat`) span
 
