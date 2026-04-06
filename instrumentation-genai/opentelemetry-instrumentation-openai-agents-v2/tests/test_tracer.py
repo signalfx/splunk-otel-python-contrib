@@ -15,9 +15,6 @@ stub_path = TESTS_ROOT / "stubs"
 if str(stub_path) not in sys.path:
     sys.path.insert(0, str(stub_path))
 
-sys.modules.pop("agents", None)
-sys.modules.pop("agents.tracing", None)
-
 import agents.tracing as agents_tracing  # noqa: E402
 from agents.tracing import (  # noqa: E402
     agent_span,
@@ -101,7 +98,10 @@ def test_generation_span_creates_client_span():
             span for span in spans if span.kind is SpanKind.CLIENT
         )
 
-        assert client_span.attributes[GenAI.GEN_AI_OPERATION_NAME] == "chat"
+        assert (
+            client_span.attributes[GenAI.GEN_AI_OPERATION_NAME]
+            == GenAI.GenAiOperationNameValues.CHAT.value
+        )
         assert (
             client_span.attributes[GenAI.GEN_AI_REQUEST_MODEL] == "gpt-4o-mini"
         )
@@ -127,7 +127,8 @@ def test_generation_span_without_roles_uses_text_completion():
         chat_span = next(
             span
             for span in spans
-            if span.attributes.get(GenAI.GEN_AI_OPERATION_NAME) == "chat"
+            if span.attributes.get(GenAI.GEN_AI_OPERATION_NAME)
+            == GenAI.GenAiOperationNameValues.CHAT.value
         )
 
         assert chat_span.kind is SpanKind.CLIENT
@@ -155,9 +156,11 @@ def test_function_span_records_tool_attributes():
         )
 
         assert (
-            tool_span.attributes[GenAI.GEN_AI_OPERATION_NAME] == "execute_tool"
+            tool_span.attributes[GenAI.GEN_AI_OPERATION_NAME]
+            == GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value
         )
         assert tool_span.attributes[GenAI.GEN_AI_TOOL_NAME] == "fetch_weather"
+        assert tool_span.attributes[GenAI.GEN_AI_TOOL_TYPE] == "function"
     finally:
         instrumentor.uninstrument()
         exporter.clear()
@@ -389,6 +392,16 @@ def test_agent_span_collects_child_messages():
             )
 
             assert agent_span_found.name == "invoke_agent helper"
+
+            prompt = json.loads(
+                agent_span_found.attributes[GEN_AI_INPUT_MESSAGES]
+            )
+            assert prompt == [
+                {
+                    "role": "user",
+                    "parts": [{"type": "text", "content": "hi"}],
+                }
+            ]
 
             completion = json.loads(
                 agent_span_found.attributes[GEN_AI_OUTPUT_MESSAGES]

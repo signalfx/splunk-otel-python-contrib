@@ -491,6 +491,7 @@ def test_span_lifecycle_and_shutdown(processor_setup):
 
     assert statuses["execute_tool lookup"].status_code is StatusCode.ERROR
     assert "invoke_agent agent" in statuses
+    assert statuses["invoke_agent agent"].status_code is StatusCode.OK
     assert "invoke_agent" not in statuses
 
 

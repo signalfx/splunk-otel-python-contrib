@@ -660,8 +660,12 @@ class SpanEmitter(EmitterMeta):
         span = agent.span
         if span is None:
             return
-        # Set output if capture_content enabled
+        # Set input/output if capture_content enabled
         if self._capture_content and isinstance(agent, AgentInvocation):
+            if agent.input_messages:
+                serialized = _serialize_messages(agent.input_messages)
+                if serialized is not None:
+                    span.set_attribute("gen_ai.input.messages", serialized)
             if agent.output_messages:
                 serialized = _serialize_messages(agent.output_messages)
                 if serialized is not None:
@@ -678,6 +682,7 @@ class SpanEmitter(EmitterMeta):
             )
             if semconv_subset:
                 _apply_gen_ai_semconv_attributes(span, semconv_subset)
+        span.set_status(Status(StatusCode.OK))
         span.end()
 
     def _error_agent(

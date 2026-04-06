@@ -1721,6 +1721,7 @@ class GenAISemanticProcessor(TracingProcessor):
                 name=getattr(span.span_data, "name", span_name),
                 id=getattr(span.span_data, "call_id", None),
                 arguments=tool_args,
+                tool_type=validate_tool_type(GenAIToolType.FUNCTION),
                 attributes=tool_attrs,
             )
 
