@@ -678,7 +678,6 @@ class SpanEmitter(EmitterMeta):
             )
             if semconv_subset:
                 _apply_gen_ai_semconv_attributes(span, semconv_subset)
-        span.set_status(Status(StatusCode.OK))
         span.end()
 
     def _error_agent(
