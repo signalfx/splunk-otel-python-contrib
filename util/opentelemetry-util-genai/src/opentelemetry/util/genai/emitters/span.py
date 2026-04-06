@@ -660,7 +660,7 @@ class SpanEmitter(EmitterMeta):
         span = agent.span
         if span is None:
             return
-        # Set output if capture_content enabled (input is set in _start_agent)
+        # Set output if capture_content enabled
         if self._capture_content and isinstance(agent, AgentInvocation):
             if agent.output_messages:
                 serialized = _serialize_messages(agent.output_messages)
