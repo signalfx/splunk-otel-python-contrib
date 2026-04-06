@@ -365,7 +365,10 @@ def test_agent_span_collects_child_messages():
 
             with trace("workflow") as workflow:
                 agent_span_obj = provider.create_span(
-                    agents_tracing.AgentSpanData(name="helper"),
+                    agents_tracing.AgentSpanData(
+                        name="helper",
+                        input=[{"role": "user", "content": "hi"}],
+                    ),
                     parent=workflow,
                 )
                 agent_span_obj.start()

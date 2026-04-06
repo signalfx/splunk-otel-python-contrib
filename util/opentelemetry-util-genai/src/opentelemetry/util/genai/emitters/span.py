@@ -660,12 +660,8 @@ class SpanEmitter(EmitterMeta):
         span = agent.span
         if span is None:
             return
-        # Set input/output if capture_content enabled
+        # Set output if capture_content enabled (input is set in _start_agent)
         if self._capture_content and isinstance(agent, AgentInvocation):
-            if agent.input_messages:
-                serialized = _serialize_messages(agent.input_messages)
-                if serialized is not None:
-                    span.set_attribute("gen_ai.input.messages", serialized)
             if agent.output_messages:
                 serialized = _serialize_messages(agent.output_messages)
                 if serialized is not None:
