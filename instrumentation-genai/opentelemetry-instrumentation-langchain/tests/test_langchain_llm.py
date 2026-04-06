@@ -34,7 +34,11 @@ from opentelemetry.sdk.trace import ReadableSpan  # test-only type reference
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
-from opentelemetry.util.genai.attributes import GEN_AI_TOOL_DEFINITIONS
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_TOOL_DEFINITIONS,
+    GEN_AI_REQUEST_STREAMING,
+    GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN,
+)
 
 
 CHAT = gen_ai_attributes.GenAiOperationNameValues.CHAT.value
@@ -95,6 +99,12 @@ def test_langchain_call(
 
     # Span attribute sanity
     attrs = getattr(chat_span, "attributes", {})
+    
+    # Print raw span output
+    print("\n=== LLM Span (Raw) ===")
+    print(chat_span.to_json(indent=2))
+    print("======================\n")
+    
     assert attrs.get(gen_ai_attributes.GEN_AI_OPERATION_NAME) == CHAT
     assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_MODEL) == model
     # Response model can differ (provider adds version); only assert presence
@@ -106,6 +116,15 @@ def test_langchain_call(
     assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_MAX_TOKENS) == 100
     # gen_ai.response.finish_reasons (cassette returns "stop")
     assert attrs.get(gen_ai_attributes.GEN_AI_RESPONSE_FINISH_REASONS) == ("stop",)
+
+    # --- Streaming attributes ---
+    # For non-streaming .invoke() calls, request_streaming is False
+    # and time_to_first_token is not captured
+    streaming_val = attrs.get(GEN_AI_REQUEST_STREAMING)
+    ttft_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN)
+    # For .invoke(), streaming is False and no TTFT
+    assert streaming_val is False, "request_streaming should be False for non-streaming calls"
+    assert ttft_val is None, "time_to_first_token should be None for non-streaming calls"
 
     # If token usage captured ensure they are non-negative integers
     for key in (
@@ -217,3 +236,71 @@ def test_langchain_call_with_tools(
             tool_names.add(t["name"])
     assert "add" in tool_names
     assert "multiply" in tool_names
+
+
+# --------------- Streaming test (TTFT) ---------------
+
+
+@pytest.mark.vcr()
+def test_langchain_streaming_call(
+    span_exporter: InMemorySpanExporter,
+    metric_reader: InMemoryMetricReader,
+    instrument_with_content: Any,
+    monkeypatch: MonkeyPatch,
+):
+    """Verify streaming calls capture gen_ai.request.streaming=True and TTFT."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-api-key")
+    monkeypatch.setenv("APPKEY", "test-app-key")
+    model = "gpt-4o-mini"
+    llm = ChatOpenAI(
+        temperature=0.0,
+        max_tokens=50,
+        api_key=SecretStr("test-api-key"),
+        base_url="https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini",
+        model=model,
+        default_headers={"api-key": "test-api-key"},
+        model_kwargs={"user": json.dumps({"appkey": "test-app-key"})},
+        streaming=True,  # Enable streaming
+    )
+    messages = [
+        SystemMessage(content="You are a helpful assistant!"),
+        HumanMessage(content="Say hello in one word."),
+    ]
+
+    # Act - use stream() to trigger on_llm_new_token callbacks
+    response_content = ""
+    for chunk in llm.stream(messages):
+        if hasattr(chunk, "content") and chunk.content:
+            response_content += chunk.content
+
+    # Basic functional assertion
+    assert response_content, "Expected some response content from streaming"
+
+    # Find the chat span
+    spans: List[ReadableSpan] = span_exporter.get_finished_spans()
+    assert spans, "Expected at least one span"
+    chat_span = None
+    for s in spans:
+        attrs_obj = getattr(s, "attributes", None)
+        if attrs_obj and attrs_obj.get(gen_ai_attributes.GEN_AI_OPERATION_NAME) == CHAT:
+            chat_span = s
+            break
+    assert chat_span is not None, "No chat operation span found"
+
+    attrs = getattr(chat_span, "attributes", {})
+
+    # Print raw span output
+    print("\n=== Streaming LLM Span (Raw) ===")
+    print(chat_span.to_json(indent=2))
+    print("================================\n")
+
+    # --- Streaming attributes ---
+    streaming_val = attrs.get(GEN_AI_REQUEST_STREAMING)
+    ttft_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN)
+
+    # For streaming calls, these should be set
+    assert streaming_val is True, f"request_streaming should be True for streaming calls, got {streaming_val}"
+    assert ttft_val is not None, "time_to_first_token should be present for streaming calls"
+    assert isinstance(ttft_val, (int, float)), f"TTFT should be numeric, got {type(ttft_val)}"
+    assert ttft_val >= 0, f"TTFT should be non-negative, got {ttft_val}"
+    print(f"TTFT: {ttft_val:.4f} seconds")

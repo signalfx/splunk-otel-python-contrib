@@ -61,6 +61,10 @@ GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"
 GEN_AI_EMBEDDINGS_INPUT_TEXTS = "gen_ai.embeddings.input.texts"
 GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats"
 
+# Streaming attributes (custom, not in semconv yet)
+GEN_AI_REQUEST_STREAMING = "gen_ai.request.streaming"
+GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN = "gen_ai.response.time_to_first_token"
+
 # Retrieval attributes
 GEN_AI_RETRIEVAL_TYPE = "gen_ai.retrieval.type"
 GEN_AI_RETRIEVAL_QUERY_TEXT = "gen_ai.retrieval.query.text"

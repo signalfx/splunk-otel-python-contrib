@@ -33,6 +33,7 @@ if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 # Import security attribute from centralized attributes module
 from opentelemetry.util.genai.attributes import (
+    GEN_AI_REQUEST_STREAMING,
     GEN_AI_SECURITY_EVENT_ID,
     GEN_AI_TOOL_DEFINITIONS,
 )
@@ -414,6 +415,14 @@ class LLMInvocation(GenAI):
         default=None,
         metadata={"semconv": GEN_AI_SECURITY_EVENT_ID},
     )
+    # Streaming attribute (custom, not in semconv yet)
+    request_streaming: Optional[bool] = field(
+        default=None,
+        metadata={"semconv": GEN_AI_REQUEST_STREAMING},
+    )
+    # Note: gen_ai.response.time_to_first_token is captured as an attribute
+    # directly in the instrumentation (e.g., callback_handler.py) rather than
+    # as a dedicated field, since it's computed dynamically during streaming.
 
 
 class ErrorClassification(Enum):

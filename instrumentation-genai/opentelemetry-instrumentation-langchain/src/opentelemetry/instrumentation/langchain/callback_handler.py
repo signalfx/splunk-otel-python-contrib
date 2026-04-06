@@ -7,6 +7,8 @@ Complex logic removed (agent heuristics, child counting, prompt capture, events)
 from __future__ import annotations
 
 import json
+import time
+from dataclasses import dataclass, field
 from typing import Any, Optional, List, Dict
 from uuid import UUID
 
@@ -781,6 +783,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 inv.agent_name = _safe_str(agent_name_value)
                 inv.agent_id = _agent_span_id(context_agent)
         inv.parent_span = self._resolve_parent_span(parent_run_id)
+        # Store start time for TTFT calculation (will be used in on_llm_new_token)
+        inv._start_time = time.perf_counter()
         self._handler.start_llm(inv)
         self._invocation_manager.add(run_id, parent_run_id, inv)
 
@@ -873,8 +877,35 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 if inv.response_model_name:
                     break
 
+        # Set streaming to False if it wasn't set to True by on_llm_new_token
+        if inv.request_streaming is None:
+            inv.request_streaming = False
+
         self._handler.stop_llm(inv)
         self._invocation_manager.remove(run_id)
+
+    def on_llm_new_token(
+        self,
+        token: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **_kwargs: Any,
+    ) -> None:
+        """Called when a new token is received during streaming.
+        
+        Records TTFT on first token and marks as streaming.
+        """
+        inv = self._invocation_manager.get(run_id)
+        if not isinstance(inv, LLMInvocation):
+            return
+        # Only process first token (set TTFT once)
+        if not inv.request_streaming:
+            inv.request_streaming = True
+            start_time = getattr(inv, "_start_time", None)
+            if start_time is not None:
+                ttft = time.perf_counter() - start_time
+                inv.attributes["gen_ai.response.time_to_first_token"] = ttft
 
     def on_tool_start(
         self,
