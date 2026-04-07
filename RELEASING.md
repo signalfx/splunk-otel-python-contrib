@@ -22,7 +22,7 @@ How to release a new version of the GenAI packages:
 | splunk-otel-instrumentation-aidefense | `instrumentation-genai/opentelemetry-instrumentation-aidefense` | 0.2.1           | `instrumentation-aidefense-v0.Y.Z`  |
 | splunk-otel-instrumentation-weaviate | `instrumentation-genai/opentelemetry-instrumentation-weaviate` | 0.1.0           | `instrumentation-weaviate-v0.Y.Z`  |
 | splunk-otel-instrumentation-crewai | `instrumentation-genai/opentelemetry-instrumentation-crewai` | 0.1.3           | `instrumentation-crewai-v0.Y.Z`  |
-| splunk-otel-instrumentation-openai-agents | `instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2` | 0.1.2           | `instrumentation-openai-agents-v0.Y.Z`  |
+| splunk-otel-instrumentation-openai-agents | `instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2` | 0.1.3          | `instrumentation-openai-agents-v0.Y.Z`  |
 | splunk-otel-instrumentation-fastmcp | `instrumentation-genai/opentelemetry-instrumentation-fastmcp` | 0.1.1           | `instrumentation-fastmcp-v0.Y.Z`  |
 
 ### Release Steps
