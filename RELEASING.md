@@ -12,7 +12,7 @@ How to release a new version of the GenAI packages:
 |-------------|------|-----------------|-------------------------------------|
 | splunk-otel-util-genai | `util/opentelemetry-util-genai` | 0.1.11           | `util-genai-v0.Y.Z`                 |
 | splunk-otel-util-genai-evals | `util/opentelemetry-util-genai-evals` | 0.1.7           | `util-genai-evals-v0.Y.Z`           |
-| splunk-otel-genai-emitters-splunk | `util/opentelemetry-util-genai-emitters-splunk` | 0.1.8           | `genai-emitters-splunk-v0.Y.Z`      |
+| splunk-otel-genai-emitters-splunk | `util/opentelemetry-util-genai-emitters-splunk` | 0.1.6           | `genai-emitters-splunk-v0.Y.Z`      |
 | splunk-otel-genai-evals-deepeval | `util/opentelemetry-util-genai-evals-deepeval` | 0.1.12          | `genai-evals-deepeval-v0.Y.Z`       |
 | splunk-otel-util-genai-translator-traceloop | `util/opentelemetry-util-genai-traceloop-translator` | 0.1.7           | `genai-translator-traceloop-v0.Y.Z` |
 | splunk-otel-util-genai-translator-langsmith | `util/opentelemetry-util-genai-langsmith-translator` | 0.1.0           | `genai-translator-langsmith-v0.Y.Z` |
