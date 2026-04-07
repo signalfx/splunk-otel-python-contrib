@@ -28,7 +28,10 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     ContentCapturingMode,
     InputMessage,
@@ -124,8 +127,7 @@ class TestTelemetryHandler(unittest.TestCase):
         self.span_exporter = self.__class__.span_exporter
         self.span_exporter.clear()
         # Always recreate handler with our test provider to avoid stale singleton referencing old provider
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
         self.telemetry_handler = get_telemetry_handler(
             tracer_provider=self.__class__.tracer_provider
         )
@@ -133,8 +135,7 @@ class TestTelemetryHandler(unittest.TestCase):
     def tearDown(self):
         # Clear spans and reset the singleton telemetry handler so each test starts clean
         self.span_exporter.clear()
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
     @patch_capture_mode("SPAN_ONLY")
     def test_llm_start_and_stop_creates_span(self):  # pylint: disable=no-self-use
@@ -252,8 +253,7 @@ class TestTelemetryHandler(unittest.TestCase):
             {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"},
         ):
             # Reset singleton to pick up generator env var
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.__class__.tracer_provider
             )
@@ -292,8 +292,7 @@ class TestTelemetryHandler(unittest.TestCase):
             os.environ,
             {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"},
         ):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.__class__.tracer_provider
             )
@@ -331,8 +330,7 @@ class TestTelemetryHandler(unittest.TestCase):
             os.environ,
             {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"},
         ):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.__class__.tracer_provider
             )
@@ -365,8 +363,7 @@ class TestTelemetryHandler(unittest.TestCase):
         with patch.dict(
             os.environ, {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span"}
         ):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.__class__.tracer_provider
             )
@@ -395,8 +392,7 @@ class TestTelemetryHandler(unittest.TestCase):
         with patch.dict(
             os.environ, {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span"}
         ):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.__class__.tracer_provider
             )

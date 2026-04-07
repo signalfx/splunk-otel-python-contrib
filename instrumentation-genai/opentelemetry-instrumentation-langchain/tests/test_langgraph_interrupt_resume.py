@@ -95,8 +95,7 @@ def instrumented_graph():
 
     # Reset the singleton TelemetryHandler so a fresh one is created
     # with our test TracerProvider.
-    if hasattr(_handler_mod.get_telemetry_handler, "_default_handler"):
-        setattr(_handler_mod.get_telemetry_handler, "_default_handler", None)
+    _handler_mod.TelemetryHandler._reset_for_testing()
 
     exporter = _CollectingExporter()
     tp = TracerProvider()
@@ -124,7 +123,7 @@ def instrumented_graph():
     tp.shutdown()
     os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
     os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE", None)
-    setattr(_handler_mod.get_telemetry_handler, "_default_handler", None)
+    _handler_mod.TelemetryHandler._reset_for_testing()
 
 
 @pytest.mark.skipif(not DEPS_AVAILABLE, reason="langgraph or otel sdk not available")
