@@ -24,7 +24,10 @@ from opentelemetry.semconv._incubating.attributes import (
     server_attributes as _server_attributes,
 )
 from opentelemetry.trace import StatusCode
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 
 
 def _ensure_semconv_enums() -> None:
@@ -99,8 +102,7 @@ def _collect(iterator) -> dict[str, Any]:
 @pytest.fixture
 def processor_setup():
     # Reset singleton so each test gets a fresh handler/exporter pipeline.
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
     provider = TracerProvider()
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))

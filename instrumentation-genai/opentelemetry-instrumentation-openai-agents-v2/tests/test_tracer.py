@@ -61,10 +61,9 @@ GEN_AI_OUTPUT_MESSAGES = getattr(
 
 def _instrument_with_provider(**instrument_kwargs):
     # Reset singleton so each test gets a fresh handler/exporter pipeline.
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler
 
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     set_trace_processors([])
     provider = TracerProvider()
@@ -195,10 +194,12 @@ def test_agent_invoke_span_records_attributes():
 
 def _make_processor(**kwargs):
     """Create a GenAISemanticProcessor with a fresh handler for unit tests."""
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import (
+        TelemetryHandler,
+        get_telemetry_handler,
+    )
 
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
     handler = get_telemetry_handler(tracer_provider=TracerProvider())
     return GenAISemanticProcessor(handler=handler, **kwargs)
 

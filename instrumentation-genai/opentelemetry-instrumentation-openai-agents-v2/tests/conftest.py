@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -34,10 +35,10 @@ def _reset_all_telemetry_state():
     from opentelemetry.instrumentation.openai_agents import (
         OpenAIAgentsInstrumentor,
     )
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler
 
-    # 1. Handler singleton (match langchain/crewai pattern: setattr to None)
-    setattr(get_telemetry_handler, "_default_handler", None)
+    # 1. Handler singleton — use canonical reset method
+    TelemetryHandler._reset_for_testing()
     # 2. Stub trace-provider processor list — resolve at call time
     tracing = importlib.import_module("agents.tracing")
     tracing.set_trace_processors([])
@@ -54,3 +55,29 @@ def _reset_telemetry_state():
     _reset_all_telemetry_state()
     yield
     _reset_all_telemetry_state()
+
+
+@pytest.fixture(autouse=True)
+def environment():
+    """Set up test environment variables."""
+    original_evals = os.environ.get(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
+    )
+    original_emitters = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EMITTERS")
+
+    os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
+    os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric_event"
+
+    yield
+
+    if original_evals is None:
+        os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
+    else:
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = (
+            original_evals
+        )
+
+    if original_emitters is None:
+        os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EMITTERS", None)
+    else:
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = original_emitters
