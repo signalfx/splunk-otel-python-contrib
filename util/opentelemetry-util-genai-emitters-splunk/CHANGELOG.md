@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.8 - 2026-04-07
+
+### Changed
+- **Removed `run_id` from GenAI types** — The `run_id` field has been removed from GenAI dataclasses as it was not a general instrumentation concept.
+
 ## Version 0.1.7 - 2026-02-09
 
 ### Fixed
