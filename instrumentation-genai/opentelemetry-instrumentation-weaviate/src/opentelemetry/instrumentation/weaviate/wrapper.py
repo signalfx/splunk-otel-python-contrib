@@ -279,8 +279,9 @@ class _WeaviateOperationWrapper:
                 val = parent_attrs.get(attr)
                 if val is not None:
                     span.set_attribute(attr, val)
-        except Exception:
-            pass
+        except Exception as e:
+            if Config.exception_logger:
+                Config.exception_logger(e)
 
     def _is_similarity_search(self) -> bool:
         """Check if the operation is a similarity search or retrieval operation that returns documents."""
