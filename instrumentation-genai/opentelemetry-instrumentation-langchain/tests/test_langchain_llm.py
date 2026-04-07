@@ -99,12 +99,12 @@ def test_langchain_call(
 
     # Span attribute sanity
     attrs = getattr(chat_span, "attributes", {})
-    
+
     # Print raw span output
     print("\n=== LLM Span (Raw) ===")
     print(chat_span.to_json(indent=2))
     print("======================\n")
-    
+
     assert attrs.get(gen_ai_attributes.GEN_AI_OPERATION_NAME) == CHAT
     assert attrs.get(gen_ai_attributes.GEN_AI_REQUEST_MODEL) == model
     # Response model can differ (provider adds version); only assert presence
@@ -123,8 +123,12 @@ def test_langchain_call(
     streaming_val = attrs.get(GEN_AI_REQUEST_STREAM)
     ttfc_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK)
     # For .invoke(), streaming is False and no time to first chunk
-    assert streaming_val is False, "request_stream should be False for non-streaming calls"
-    assert ttfc_val is None, "time_to_first_chunk should be None for non-streaming calls"
+    assert streaming_val is False, (
+        "request_stream should be False for non-streaming calls"
+    )
+    assert ttfc_val is None, (
+        "time_to_first_chunk should be None for non-streaming calls"
+    )
 
     # If token usage captured ensure they are non-negative integers
     for key in (
@@ -299,8 +303,14 @@ def test_langchain_streaming_call(
     ttfc_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK)
 
     # For streaming calls, these should be set
-    assert streaming_val is True, f"request_stream should be True for streaming calls, got {streaming_val}"
-    assert ttfc_val is not None, "time_to_first_chunk should be present for streaming calls"
-    assert isinstance(ttfc_val, (int, float)), f"Time to first chunk should be numeric, got {type(ttfc_val)}"
+    assert streaming_val is True, (
+        f"request_stream should be True for streaming calls, got {streaming_val}"
+    )
+    assert ttfc_val is not None, (
+        "time_to_first_chunk should be present for streaming calls"
+    )
+    assert isinstance(ttfc_val, (int, float)), (
+        f"Time to first chunk should be numeric, got {type(ttfc_val)}"
+    )
     assert ttfc_val >= 0, f"Time to first chunk should be non-negative, got {ttfc_val}"
     print(f"Time to first chunk: {ttfc_val:.4f} seconds")
