@@ -2,9 +2,13 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.14 - 2026-04-07
+
+### Added
+- **Utility script** — Added helper script for DeepEval setup and configuration.
+
 ### Fixed
-- Remove hard-coded temperature argument from LiteLLMModel
-- Support temperature via environment variables for GPT 5 models as those require `TEMPERATURE=1.0`
+- **Remove hard-coded temperature argument from LiteLLMModel** — Temperature is now configurable via environment variables, supporting GPT 5 models that require `TEMPERATURE=1.0`.
 
 ## Version 0.1.13 - 2026-02-09
 
