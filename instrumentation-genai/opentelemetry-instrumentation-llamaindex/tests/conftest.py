@@ -45,7 +45,7 @@ def _instrument_once():
     """Instrument LlamaIndex once for the entire test session."""
     os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
     os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric"
-    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
+    genai_handler.TelemetryHandler._reset_for_testing()
 
     tracer_provider = TracerProvider()
     tracer_provider.add_span_processor(SimpleSpanProcessor(_session_span_exporter))
