@@ -2,6 +2,13 @@
 
 All notable changes to this repository are documented in this file.
 
+## Unreleased
+
+### Changed
+- **TelemetryHandler is now a process-wide singleton** — `TelemetryHandler` uses class-level `__new__` with double-checked locking to guarantee a single instance per process. Both `TelemetryHandler(...)` and `get_telemetry_handler(...)` return the same singleton, ensuring handler-internal context stacks (workflow, agent) are shared across instrumentation boundaries (e.g. aidefense + openai-v2 + crewai).
+- **`get_telemetry_handler()` simplified** — Now delegates directly to `TelemetryHandler()`; the singleton logic lives entirely in `__new__`.
+- **`TelemetryHandler._reset_for_testing()`** — New classmethod for test teardown. Replaces all manual `delattr(get_telemetry_handler, "_default_handler")` patterns across test suites.
+
 ## Version 0.1.11
 
 ### Fixed

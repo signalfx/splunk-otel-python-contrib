@@ -96,7 +96,7 @@ def environment():
     if not original_api_key:
         os.environ["OPENAI_API_KEY"] = "test_openai_api_key"
     os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
-    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
+    genai_handler.TelemetryHandler._reset_for_testing()
 
     yield
 
@@ -112,7 +112,7 @@ def environment():
             original_evals
         )
 
-    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
+    genai_handler.TelemetryHandler._reset_for_testing()
 
 
 @pytest.fixture
@@ -155,8 +155,7 @@ def instrument_no_content(tracer_provider, logger_provider, meter_provider):
     )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
-    if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
-        delattr(genai_handler.get_telemetry_handler, "_default_handler")
+    genai_handler.TelemetryHandler._reset_for_testing()
 
     instrumentor = OpenAIInstrumentor()
     instrumentor.instrument(
@@ -181,8 +180,7 @@ def instrument_with_content(tracer_provider, logger_provider, meter_provider):
     )
 
     # Clear cached handler so instrument() creates a fresh one with test providers
-    if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
-        delattr(genai_handler.get_telemetry_handler, "_default_handler")
+    genai_handler.TelemetryHandler._reset_for_testing()
 
     instrumentor = OpenAIInstrumentor()
     instrumentor.instrument(
@@ -212,8 +210,7 @@ def instrument_with_content_unsampled(
     tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
 
     # Clear cached handler so instrument() creates a fresh one with test providers
-    if hasattr(genai_handler.get_telemetry_handler, "_default_handler"):
-        delattr(genai_handler.get_telemetry_handler, "_default_handler")
+    genai_handler.TelemetryHandler._reset_for_testing()
 
     instrumentor = OpenAIInstrumentor()
     instrumentor.instrument(

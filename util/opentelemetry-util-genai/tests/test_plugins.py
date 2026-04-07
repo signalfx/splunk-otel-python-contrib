@@ -11,7 +11,10 @@ from opentelemetry.util.genai.emitters.spec import EmitterSpec
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.plugins import load_emitter_specs
 
 
@@ -97,8 +100,7 @@ def test_handler_uses_plugin_emitters(monkeypatch: pytest.MonkeyPatch) -> None:
         {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "splunk"},
         clear=True,
     ):
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
         handler = get_telemetry_handler()
 
     span_emitters = list(handler._emitter.emitters_for("span"))  # type: ignore[attr-defined]
@@ -106,5 +108,4 @@ def test_handler_uses_plugin_emitters(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(span_emitters[0], _SentinelEmitter)
     if hasattr(handler._evaluation_manager, "shutdown"):
         handler._evaluation_manager.shutdown()
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
