@@ -41,6 +41,7 @@ class AgentSpanData:
     agent_id: str | None = None
     model: str | None = None
     operation: str | None = None
+    input: list | None = None
 
     @property
     def type(self) -> str:
