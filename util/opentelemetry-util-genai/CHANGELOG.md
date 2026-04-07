@@ -2,7 +2,13 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.11
+## Version 0.1.11 - 2026-04-07
+
+### Added
+- **Conversation root span identification** — New `gen_ai.conversation_root` attribute marks the root GenAI span in a conversation tree. Root spans are promoted to `AgentInvocation` type for consistent observability.
+
+### Changed
+- **Removed `run_id` from GenAI types** — The `run_id` field has been removed from GenAI dataclasses as it was not a general instrumentation concept.
 
 ### Fixed
 - **OTel context detachment errors in async instrumentation** — Replaced `tracer.start_as_current_span()` with `tracer.start_span()` in `SpanEmitter` to prevent `ValueError: <Token> was created in a different Context` errors when spans are started and stopped in different `asyncio.Task`s. Removed all `context_token` / `cm.__exit__()` detach blocks.
