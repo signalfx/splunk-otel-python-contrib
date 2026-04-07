@@ -36,8 +36,8 @@ from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 from opentelemetry.util.genai.attributes import (
     GEN_AI_TOOL_DEFINITIONS,
-    GEN_AI_REQUEST_STREAMING,
-    GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN,
+    GEN_AI_REQUEST_STREAM,
+    GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK,
 )
 
 
@@ -118,13 +118,13 @@ def test_langchain_call(
     assert attrs.get(gen_ai_attributes.GEN_AI_RESPONSE_FINISH_REASONS) == ("stop",)
 
     # --- Streaming attributes ---
-    # For non-streaming .invoke() calls, request_streaming is False
-    # and time_to_first_token is not captured
-    streaming_val = attrs.get(GEN_AI_REQUEST_STREAMING)
-    ttft_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN)
-    # For .invoke(), streaming is False and no TTFT
-    assert streaming_val is False, "request_streaming should be False for non-streaming calls"
-    assert ttft_val is None, "time_to_first_token should be None for non-streaming calls"
+    # For non-streaming .invoke() calls, request_stream is False
+    # and time_to_first_chunk is not captured
+    streaming_val = attrs.get(GEN_AI_REQUEST_STREAM)
+    ttfc_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK)
+    # For .invoke(), streaming is False and no time to first chunk
+    assert streaming_val is False, "request_stream should be False for non-streaming calls"
+    assert ttfc_val is None, "time_to_first_chunk should be None for non-streaming calls"
 
     # If token usage captured ensure they are non-negative integers
     for key in (
@@ -248,7 +248,7 @@ def test_langchain_streaming_call(
     instrument_with_content: Any,
     monkeypatch: MonkeyPatch,
 ):
-    """Verify streaming calls capture gen_ai.request.streaming=True and TTFT."""
+    """Verify streaming calls capture gen_ai.request.stream=True and time to first chunk."""
     monkeypatch.setenv("OPENAI_API_KEY", "test-api-key")
     monkeypatch.setenv("APPKEY", "test-app-key")
     model = "gpt-4o-mini"
@@ -295,12 +295,12 @@ def test_langchain_streaming_call(
     print("================================\n")
 
     # --- Streaming attributes ---
-    streaming_val = attrs.get(GEN_AI_REQUEST_STREAMING)
-    ttft_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_TOKEN)
+    streaming_val = attrs.get(GEN_AI_REQUEST_STREAM)
+    ttfc_val = attrs.get(GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK)
 
     # For streaming calls, these should be set
-    assert streaming_val is True, f"request_streaming should be True for streaming calls, got {streaming_val}"
-    assert ttft_val is not None, "time_to_first_token should be present for streaming calls"
-    assert isinstance(ttft_val, (int, float)), f"TTFT should be numeric, got {type(ttft_val)}"
-    assert ttft_val >= 0, f"TTFT should be non-negative, got {ttft_val}"
-    print(f"TTFT: {ttft_val:.4f} seconds")
+    assert streaming_val is True, f"request_stream should be True for streaming calls, got {streaming_val}"
+    assert ttfc_val is not None, "time_to_first_chunk should be present for streaming calls"
+    assert isinstance(ttfc_val, (int, float)), f"Time to first chunk should be numeric, got {type(ttfc_val)}"
+    assert ttfc_val >= 0, f"Time to first chunk should be non-negative, got {ttfc_val}"
+    print(f"Time to first chunk: {ttfc_val:.4f} seconds")

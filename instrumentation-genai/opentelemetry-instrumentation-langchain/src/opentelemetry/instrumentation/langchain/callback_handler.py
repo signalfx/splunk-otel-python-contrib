@@ -878,8 +878,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     break
 
         # Set streaming to False if it wasn't set to True by on_llm_new_token
-        if inv.request_streaming is None:
-            inv.request_streaming = False
+        if inv.request_stream is None:
+            inv.request_stream = False
 
         self._handler.stop_llm(inv)
         self._invocation_manager.remove(run_id)
@@ -894,18 +894,18 @@ class LangchainCallbackHandler(BaseCallbackHandler):
     ) -> None:
         """Called when a new token is received during streaming.
         
-        Records TTFT on first token and marks as streaming.
+        Records time to first chunk on first token and marks as streaming.
         """
         inv = self._invocation_manager.get(run_id)
         if not isinstance(inv, LLMInvocation):
             return
-        # Only process first token (set TTFT once)
-        if not inv.request_streaming:
-            inv.request_streaming = True
+        # Only process first token (set time to first chunk once)
+        if not inv.request_stream:
+            inv.request_stream = True
             start_time = getattr(inv, "_start_time", None)
             if start_time is not None:
-                ttft = time.perf_counter() - start_time
-                inv.attributes["gen_ai.response.time_to_first_token"] = ttft
+                ttfc = time.perf_counter() - start_time
+                inv.attributes["gen_ai.response.time_to_first_chunk"] = ttfc
 
     def on_tool_start(
         self,
