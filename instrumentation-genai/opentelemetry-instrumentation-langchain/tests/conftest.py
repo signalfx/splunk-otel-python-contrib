@@ -171,6 +171,8 @@ def vcr_config():
         "decode_compressed_response": True,
         "before_record_response": scrub_response_headers,
         "serializer": "yaml",
+        # Allow tiktoken encoding downloads to pass through VCR
+        "ignore_hosts": ["openaipublic.blob.core.windows.net"],
     }
 
 

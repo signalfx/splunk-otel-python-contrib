@@ -171,6 +171,18 @@ class MetricsEmitter(EmitterMeta):
                     embedding_invocation.agent_id
                 )
 
+            # Add session context if configured
+            metric_attrs.update(
+                get_context_metric_attributes(embedding_invocation)
+            )
+
+            _record_token_metrics(
+                self._token_histogram,
+                embedding_invocation.input_tokens,
+                None,  # embeddings don't produce output tokens
+                metric_attrs,
+                span=getattr(embedding_invocation, "span", None),
+            )
             _record_duration(
                 self._duration_histogram,
                 embedding_invocation,
@@ -272,6 +284,13 @@ class MetricsEmitter(EmitterMeta):
                     error.type.__qualname__
                 )
 
+            _record_token_metrics(
+                self._token_histogram,
+                embedding_invocation.input_tokens,
+                None,  # embeddings don't produce output tokens
+                metric_attrs,
+                span=getattr(embedding_invocation, "span", None),
+            )
             _record_duration(
                 self._duration_histogram,
                 embedding_invocation,
