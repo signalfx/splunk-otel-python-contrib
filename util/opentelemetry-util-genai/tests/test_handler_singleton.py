@@ -14,6 +14,7 @@
 
 """Tests for get_telemetry_handler() singleton contract."""
 
+import logging
 import os
 import threading
 from unittest import mock
@@ -87,6 +88,30 @@ class TestGetTelemetryHandlerSingleton:
         handler1 = get_telemetry_handler(tracer_provider=TracerProvider())
         handler2 = get_telemetry_handler(tracer_provider=TracerProvider())
         assert handler1 is handler2
+
+    def test_singleton_warns_on_ignored_providers(self, caplog):
+        """A warning is logged when providers are passed to an already-initialized singleton."""
+        get_telemetry_handler()
+        with caplog.at_level(
+            logging.WARNING, logger="opentelemetry.util.genai.handler"
+        ):
+            get_telemetry_handler(tracer_provider=TracerProvider())
+        assert any(
+            "already been initialized" in rec.message
+            and "tracer_provider" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_singleton_no_warning_without_providers(self, caplog):
+        """No warning when the second call passes no providers."""
+        get_telemetry_handler()
+        with caplog.at_level(
+            logging.WARNING, logger="opentelemetry.util.genai.handler"
+        ):
+            get_telemetry_handler()
+        assert not any(
+            "already been initialized" in rec.message for rec in caplog.records
+        )
 
     def test_returns_telemetry_handler_instance(self):
         """The returned object is an instance of TelemetryHandler."""

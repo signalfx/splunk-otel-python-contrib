@@ -380,6 +380,23 @@ class TelemetryHandler:
         meter_provider: MeterProvider | None = None,
     ):
         if getattr(self, "_initialized", False):
+            supplied = {
+                name
+                for name, val in (
+                    ("tracer_provider", tracer_provider),
+                    ("logger_provider", logger_provider),
+                    ("meter_provider", meter_provider),
+                )
+                if val is not None
+            }
+            if supplied:
+                _LOGGER.warning(
+                    "TelemetryHandler is a singleton and has already been "
+                    "initialized; the following provider arguments are being "
+                    "ignored: %s. To use different providers, call "
+                    "TelemetryHandler._reset_for_testing() first (test only).",
+                    ", ".join(sorted(supplied)),
+                )
             return
         self._tracer = get_tracer(
             __name__,
