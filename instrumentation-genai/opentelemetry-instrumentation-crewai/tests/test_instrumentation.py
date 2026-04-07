@@ -883,10 +883,12 @@ class TestConversationRootOnSpan:
         self, tracer_provider, span_exporter, meter_provider
     ):
         """Crew.kickoff creates an agent via real handler; span should have conversation_root=True."""
-        from opentelemetry.util.genai.handler import get_telemetry_handler
+        from opentelemetry.util.genai.handler import (
+            TelemetryHandler,
+            get_telemetry_handler,
+        )
 
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
         real_handler = get_telemetry_handler(
             tracer_provider=tracer_provider,
@@ -913,10 +915,12 @@ class TestConversationRootOnSpan:
         self, tracer_provider, span_exporter, meter_provider
     ):
         """Agent started under an existing workflow should NOT have conversation_root."""
-        from opentelemetry.util.genai.handler import get_telemetry_handler
+        from opentelemetry.util.genai.handler import (
+            TelemetryHandler,
+            get_telemetry_handler,
+        )
 
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
         real_handler = get_telemetry_handler(
             tracer_provider=tracer_provider,

@@ -17,7 +17,10 @@ from opentelemetry.util.genai.evals.registry import (
     clear_registry,
     register_evaluator,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     EvaluationResult,
@@ -84,8 +87,7 @@ class _StaticEvaluator(Evaluator):
 
 class TestManagerConfiguration(unittest.TestCase):
     def setUp(self) -> None:
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
         clear_registry()
         _reload_builtin_evaluators()
         register_evaluator(
@@ -198,8 +200,7 @@ class TestManagerConfiguration(unittest.TestCase):
 
 class TestHandlerIntegration(unittest.TestCase):
     def setUp(self) -> None:
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
         clear_registry()
         _reload_builtin_evaluators()
         register_evaluator(

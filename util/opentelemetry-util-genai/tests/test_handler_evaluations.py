@@ -9,7 +9,10 @@ from opentelemetry.util.genai.environment_variables import (
 from opentelemetry.util.genai.evals.bootstrap import (
     EvaluatorCompletionCallback,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
@@ -28,8 +31,7 @@ class _RecordingCallback(CompletionCallback):
 
 class TestHandlerCompletionCallbacks(unittest.TestCase):
     def setUp(self) -> None:
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
     def _build_invocation(self) -> LLMInvocation:
         invocation = LLMInvocation(request_model="cb-model")

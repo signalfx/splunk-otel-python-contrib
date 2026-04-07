@@ -16,7 +16,16 @@ All notable changes to this repository are documented in this file.
   - `should_capture_tool_definitions()` helper in utils module for early gating (requires both message content and tool definitions capture enabled)
   - Environment variable `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS` (default: `true`)
 
-## Version 0.1.11
+## Version 0.1.11 - 2026-04-07
+
+### Added
+- **Conversation root span identification** — New `gen_ai.conversation_root` attribute marks the root GenAI span in a conversation tree. Root spans are promoted to `AgentInvocation` type for consistent observability.
+
+### Changed
+- **TelemetryHandler is now a process-wide singleton** — `TelemetryHandler` uses class-level `__new__` with double-checked locking to guarantee a single instance per process. Both `TelemetryHandler(...)` and `get_telemetry_handler(...)` return the same singleton, ensuring handler-internal context stacks (workflow, agent) are shared across instrumentation boundaries (e.g. aidefense + openai-v2 + crewai).
+- **`get_telemetry_handler()` simplified** — Now delegates directly to `TelemetryHandler()`; the singleton logic lives entirely in `__new__`.
+- **`TelemetryHandler._reset_for_testing()`** — New classmethod for test teardown. Replaces all manual `delattr(get_telemetry_handler, "_default_handler")` patterns across test suites.
+- **Removed `run_id` from GenAI types** — The `run_id` field has been removed from GenAI dataclasses as it was not a general instrumentation concept.
 
 ### Fixed
 - **OTel context detachment errors in async instrumentation** — Replaced `tracer.start_as_current_span()` with `tracer.start_span()` in `SpanEmitter` to prevent `ValueError: <Token> was created in a different Context` errors when spans are started and stopped in different `asyncio.Task`s. Removed all `context_token` / `cm.__exit__()` detach blocks.
