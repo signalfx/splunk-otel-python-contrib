@@ -9,11 +9,12 @@ This is the core use-case: auto-instrumented LangChain/LangGraph creates
 agent spans automatically, and user code adds manual tool/step spans
 inside those agent nodes.
 
-The bug: LangGraph runs node callbacks in copy_context().run() boundaries,
-so _current_genai_span (ContextVar) set by the SDOT callback handler in
-on_chain_start is NOT visible in the async node body.  When user code calls
-handler.start_tool_call(), _inherit_parent_span() reads _current_genai_span
-and finds None, so the tool span starts its own trace.
+Root cause: LangChain Core's callback manager dispatches sync handlers via
+copy_context().run() in a thread pool (langchain_core/callbacks/manager.py,
+_ahandle_event_for_handler line ~385).  This isolates any ContextVar
+modifications made in on_chain_start from the caller's context.  The fix is
+setting ``run_inline = True`` on LangchainCallbackHandler so callbacks run
+directly in the caller's context without copy_context() isolation.
 """
 
 from __future__ import annotations
@@ -370,3 +371,22 @@ class TestLangGraphManualInstrumentation:
                         f"Span '{s.name}' has parent not in same trace "
                         f"(orphan span detected)"
                     )
+
+    def test_callback_handler_runs_inline(self):
+        """LangchainCallbackHandler must have run_inline=True.
+
+        Without run_inline, LangChain Core's callback manager dispatches
+        sync handlers via copy_context().run() in a thread pool, which
+        isolates ContextVar modifications from the caller's context.
+        This breaks _current_genai_span propagation to LangGraph node
+        bodies where user code calls handler.start_tool_call() manually.
+        """
+        from opentelemetry.instrumentation.langchain.callback_handler import (
+            LangchainCallbackHandler,
+        )
+
+        handler = LangchainCallbackHandler()
+        assert handler.run_inline is True, (
+            "LangchainCallbackHandler.run_inline must be True to ensure "
+            "ContextVar propagation through LangGraph node boundaries"
+        )

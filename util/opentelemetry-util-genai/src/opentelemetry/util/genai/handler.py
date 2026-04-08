@@ -519,14 +519,9 @@ class TelemetryHandler:
         self._emitter = composite
         self._capture_control = capture_control
         self._evaluation_manager = None
-        # Active agent identity stack (name, id, span) for implicit propagation
-        # to nested operations.  The span reference is used as a fallback parent
-        # when _current_genai_span is None (e.g. inside LangGraph async node
-        # bodies where copy_context().run() isolates the ContextVar).
-        # agent_id may be None if not provided by instrumentation.
-        self._agent_context_stack: list[
-            tuple[str, Optional[str], Optional[Span]]
-        ] = []
+        # Active agent identity stack (name, id) for implicit propagation to nested operations
+        # agent_id may be None if not provided by instrumentation
+        self._agent_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
         self._initialized = True
 
@@ -606,39 +601,19 @@ class TelemetryHandler:
             pass
 
     # -- Span parenting helpers -----------------------------------------------
-    # These maintain a ContextVar-based "current GenAI span" so that
-    # instrumentations get correct parent-child links without needing to
-    # set parent_span themselves.  When the ContextVar is unavailable
-    # (e.g. inside LangGraph async node bodies where copy_context().run()
-    # isolates the ContextVar), _inherit_parent_span falls back to the
-    # agent context stack which is instance-level and not context-isolated.
+    # These maintain a ContextVar-based "current GenAI span" so that sync
+    # instrumentations (CrewAI, FastMCP) get correct parent-child links
+    # without needing to set parent_span themselves.  Async instrumentations
+    # (LangChain, OpenAI Agents) already set parent_span explicitly; the
+    # ContextVar fallback is simply ignored for them.
 
-    def _inherit_parent_span(self, invocation: GenAI) -> None:
-        """If parent_span is unset, inherit from the current GenAI span.
-
-        Falls back to the agent context stack when ``_current_genai_span``
-        is ``None``.  This handles frameworks like LangGraph that run
-        callbacks inside ``copy_context().run()`` boundaries, isolating
-        the ContextVar from the async node body where user code calls
-        ``start_tool_call()`` / ``start_step()`` manually.
-
-        The fallback only applies to child entity types (ToolCall, Step,
-        LLMInvocation, EmbeddingInvocation, RetrievalInvocation) — never
-        to AgentInvocation or Workflow, which are root-level and should
-        not be parented to a stale agent stack entry (e.g. after an
-        interrupt/resume cycle).
-        """
+    @staticmethod
+    def _inherit_parent_span(invocation: GenAI) -> None:
+        """If parent_span is unset, inherit from the current GenAI span."""
         if getattr(invocation, "parent_span", None) is None:
             current = _current_genai_span.get()
             if current is not None:
                 invocation.parent_span = current
-            elif self._agent_context_stack and not isinstance(
-                invocation, (AgentInvocation, AgentCreation, Workflow)
-            ):
-                # Fallback: use the span from the top of the agent stack.
-                _, _, agent_span = self._agent_context_stack[-1]
-                if agent_span is not None:
-                    invocation.parent_span = agent_span
 
     @staticmethod
     def _push_current_span(invocation: GenAI) -> None:
@@ -688,7 +663,7 @@ class TelemetryHandler:
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
-            top_name, top_id, _ = self._agent_context_stack[-1]
+            top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
@@ -801,7 +776,7 @@ class TelemetryHandler:
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
-            top_name, top_id, _ = self._agent_context_stack[-1]
+            top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
@@ -864,7 +839,7 @@ class TelemetryHandler:
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
-            top_name, top_id, _ = self._agent_context_stack[-1]
+            top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
@@ -924,7 +899,7 @@ class TelemetryHandler:
         if (
             not invocation.agent_name or not invocation.agent_id
         ) and self._agent_context_stack:
-            top_name, top_id, _ = self._agent_context_stack[-1]
+            top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
@@ -1256,16 +1231,12 @@ class TelemetryHandler:
         self._maybe_mark_conversation_root(agent)
         self._emitter.on_start(agent)
         self._push_current_span(agent)
-        # Push agent identity context (including span for fallback parenting)
+        # Push agent identity context
         if isinstance(agent, AgentInvocation):
             try:
                 if agent.name:
                     self._agent_context_stack.append(
-                        (
-                            agent.name,
-                            agent.agent_id,
-                            getattr(agent, "span", None),
-                        )
+                        (agent.name, agent.agent_id)
                     )
             except Exception:  # pragma: no cover - defensive
                 pass
@@ -1296,7 +1267,7 @@ class TelemetryHandler:
         if isinstance(agent, AgentInvocation):
             try:
                 if self._agent_context_stack and agent.agent_id is not None:
-                    top_name, top_id, _ = self._agent_context_stack[-1]
+                    top_name, top_id = self._agent_context_stack[-1]
                     if top_name == agent.name and top_id == agent.agent_id:
                         self._agent_context_stack.pop()
             except Exception:
@@ -1323,7 +1294,7 @@ class TelemetryHandler:
         if isinstance(agent, AgentInvocation):
             try:
                 if self._agent_context_stack and agent.agent_id is not None:
-                    top_name, top_id, _ = self._agent_context_stack[-1]
+                    top_name, top_id = self._agent_context_stack[-1]
                     if top_name == agent.name and top_id == agent.agent_id:
                         self._agent_context_stack.pop()
             except Exception:

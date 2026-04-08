@@ -352,6 +352,14 @@ class _InvocationManager:
 
 
 class LangchainCallbackHandler(BaseCallbackHandler):
+    # Run callback methods directly in the caller's context instead of
+    # dispatching to a thread pool via copy_context().run().  Without this,
+    # LangChain Core's callback manager isolates each handler invocation in
+    # a copied context, making ContextVar modifications (e.g. the
+    # _current_genai_span set by _push_current_span) invisible to the node
+    # body where user code may call handler.start_tool_call() manually.
+    run_inline = True
+
     def __init__(
         self,
         telemetry_handler: Optional[TelemetryHandler] = None,
