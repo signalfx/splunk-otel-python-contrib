@@ -127,8 +127,10 @@ def _make_command_input_message(command: Any) -> list[InputMessage]:
     return [InputMessage(role="user", parts=[Text(_safe_str(command))])]
 
 
-def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
+def _make_input_message(data: Any) -> list[InputMessage]:
     """Create structured input message with full data as JSON."""
+    if not isinstance(data, dict):
+        return []
     input_messages: list[InputMessage] = []
     messages = data.get("messages")
     if messages is None:
@@ -142,8 +144,10 @@ def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
     return input_messages
 
 
-def _make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
+def _make_output_message(data: Any) -> list[OutputMessage]:
     """Create structured output message with full data as JSON."""
+    if not isinstance(data, dict):
+        return []
     output_messages: list[OutputMessage] = []
     messages = data.get("messages")
     if messages is None:
@@ -172,14 +176,14 @@ def _make_last_output_message(data: dict[str, Any]) -> list[OutputMessage]:
     return []
 
 
-def _make_workflow_output_fallback(data: dict[str, Any]) -> Optional[str]:
+def _make_workflow_output_fallback(data: Any) -> Optional[str]:
     """Create output summary from non-message state fields.
 
     Fallback for when workflow output doesn't contain AI messages.
     This is common in LangGraph where agent nodes update structured
     state fields rather than the message list.
     """
-    if not data:
+    if not isinstance(data, dict):
         return None
     # Exclude messages and internal fields that don't represent output
     exclude_keys = {"messages", "intermediate_steps"}
