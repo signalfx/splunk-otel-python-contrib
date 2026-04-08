@@ -1543,6 +1543,13 @@ class GenAISemanticProcessor(TracingProcessor):
                 attributes=agent_attrs,
             )
 
+            # Populate input_messages from span data if available
+            span_input = getattr(span.span_data, "input", None)
+            if span_input and isinstance(span_input, (list, tuple)):
+                agent_invocation.input_messages = self._make_input_messages(
+                    self._normalize_messages_to_role_parts(span_input)
+                )
+
             if self._workflow is not None:
                 if hasattr(self._workflow, "span") and self._workflow.span:
                     agent_invocation.parent_span = self._workflow.span
@@ -1721,6 +1728,7 @@ class GenAISemanticProcessor(TracingProcessor):
                 name=getattr(span.span_data, "name", span_name),
                 id=getattr(span.span_data, "call_id", None),
                 arguments=tool_args,
+                tool_type=validate_tool_type(GenAIToolType.FUNCTION),
                 attributes=tool_attrs,
             )
 

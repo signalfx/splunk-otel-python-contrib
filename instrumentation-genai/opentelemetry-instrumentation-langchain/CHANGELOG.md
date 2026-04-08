@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.10
+## Version 0.1.11
 
 ### Added
 - **GenAI semantic convention attributes** — Added support for standard and streaming attributes:
@@ -16,11 +16,17 @@ All notable changes to this repository are documented in this file.
 - **Early gating for tool definitions** — Added `should_capture_tool_definitions()` helper to avoid serialization overhead when disabled
 - **Test coverage** — Added `test_langchain_call_with_tools` for tool definitions and `test_langchain_streaming_call` for streaming attributes with VCR cassettes
 
+## Version 0.1.10 - 2026-04-07
+
+### Added
+- **Deployment name for embeddings** — Added `gen_ai.request.deployment_name` attribute for embedding operations.
+
 ## Version 0.1.9
 
 ### Fixed
 - **Context suppression leak in `_OpenAITracingWrapper`** — `context_api.attach()` was called without `detach()`, leaking the suppression context. Now properly scoped with `try/finally` for all four callable types: sync, sync generator (`_stream`), async coroutine (`_agenerate`), and async generator (`_astream`).
 - **Missing `parent_span` after run_id removal** — Added `_resolve_parent_span()` to look up parent invocation spans via `_InvocationManager`. Set `parent_span` explicitly in all 5 invocation start paths (agent, tool, step, LLM, tool from `on_tool_start`) to restore parent-child span relationships.
+- **Capture workflow output when nodes don't propagate AI messages** — Fixed output capture for workflows where intermediate nodes don't pass through AIMessage objects.
 
 ## Version 0.1.8
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Version 0.1.3 - 2026-04-07
+
+### Added
+- **Conversation root span identification** — New `gen_ai.conversation_root` attribute marks the root GenAI span in a conversation tree.
+
+### Fixed
+- **Use shared singleton TelemetryHandler** — `CrewAIInstrumentor` now shares the process-wide singleton handler with other instrumentations (openai-v2, aidefense), ensuring workflow/agent context stacks are properly inherited.
+
 ## Version 0.1.2 - 2026-01-28
 
 ### Changed
