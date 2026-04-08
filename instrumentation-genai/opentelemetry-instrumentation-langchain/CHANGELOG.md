@@ -12,6 +12,7 @@ All notable changes to this repository are documented in this file.
   - `gen_ai.tool.definitions` (str, JSON) — Opt-in via `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true`; captures full tool definition structure including `type: "function"` wrapper
   - `gen_ai.request.stream` (boolean) — Whether the request uses streaming mode; set to `true` for streaming calls, `false` for non-streaming
   - `gen_ai.response.time_to_first_chunk` (float) — Client-side time in seconds from request sent to first chunk received; only present for streaming calls
+- **Time to first chunk metric** — Histogram metric `gen_ai.client.operation.time_to_first_chunk` automatically emitted for streaming calls with the same value as `gen_ai.response.time_to_first_chunk`
 - **Streaming detection** — `on_llm_new_token` callback detects streaming mode and captures time to first chunk
 - **Early gating for tool definitions** — Added `should_capture_tool_definitions()` helper to avoid serialization overhead when disabled
 - **Test coverage** — Added `test_langchain_call_with_tools` for tool definitions and `test_langchain_streaming_call` for streaming attributes with VCR cassettes

@@ -10,6 +10,11 @@ All notable changes to this repository are documented in this file.
   - `gen_ai.response.time_to_first_chunk` (float) — Client-side time in seconds from request sent to first chunk received
   - Added `request_stream` field to `LLMInvocation` dataclass with semconv metadata
   - Added `GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK` to span emitter's allowed supplemental keys
+- **Time to first chunk metric** — New histogram metric `gen_ai.client.operation.time_to_first_chunk` for streaming operations:
+  - Recorded only when `gen_ai.request.stream` is `true`
+  - Value matches `gen_ai.response.time_to_first_chunk` span attribute
+  - Uses same bucket boundaries as operation duration
+  - Follows OpenTelemetry semantic conventions spec
 - **Tool definitions attribute** — New `gen_ai.tool.definitions` attribute for capturing tool/function schemas:
   - `GEN_AI_TOOL_DEFINITIONS` constant in attributes module
   - `tool_definitions` field on `LLMInvocation` dataclass with opt-in semconv_content metadata
