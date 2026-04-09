@@ -18,7 +18,13 @@ import logging
 from typing import Any, Dict
 
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import Error, LLMInvocation, OutputMessage, Text, ToolCall
+from opentelemetry.util.genai.types import (
+    Error,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+    ToolCall,
+)
 
 from .utils import convert_strands_messages, safe_json_dumps, safe_str
 
@@ -69,7 +75,9 @@ class StrandsHookProvider:
         """
         try:
             # Extract model information
-            model_id = safe_str(getattr(event, "model", None) or getattr(event, "model_id", None))
+            model_id = safe_str(
+                getattr(event, "model", None) or getattr(event, "model_id", None)
+            )
 
             # Extract input messages
             input_messages = []
@@ -136,8 +144,7 @@ class StrandsHookProvider:
                 error_message = safe_str(error or exception)
                 error_type = type(exception).__name__ if exception else "unknown"
                 self.handler.fail_llm(
-                    invocation,
-                    Error(type=error_type, message=error_message)
+                    invocation, Error(type=error_type, message=error_message)
                 )
             else:
                 # Extract response data
@@ -151,22 +158,29 @@ class StrandsHookProvider:
                     # Extract token usage
                     usage = getattr(response, "usage", None)
                     if usage:
-                        invocation.usage_input_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
-                        invocation.usage_output_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
+                        invocation.usage_input_tokens = getattr(
+                            usage, "prompt_tokens", None
+                        ) or getattr(usage, "input_tokens", None)
+                        invocation.usage_output_tokens = getattr(
+                            usage, "completion_tokens", None
+                        ) or getattr(usage, "output_tokens", None)
 
                     # Extract output messages
                     content = getattr(response, "content", None)
                     if content:
                         output_message = OutputMessage(
-                            role="assistant",
-                            parts=[Text(content=safe_str(content))]
+                            role="assistant", parts=[Text(content=safe_str(content))]
                         )
                         invocation.output_messages = [output_message]
 
                     # Extract finish reason
-                    finish_reason = getattr(response, "finish_reason", None) or getattr(response, "stop_reason", None)
+                    finish_reason = getattr(response, "finish_reason", None) or getattr(
+                        response, "stop_reason", None
+                    )
                     if finish_reason and invocation.output_messages:
-                        invocation.output_messages[0].finish_reason = safe_str(finish_reason)
+                        invocation.output_messages[0].finish_reason = safe_str(
+                            finish_reason
+                        )
 
                 # Stop the invocation successfully
                 self.handler.stop_llm(invocation)
@@ -185,11 +199,19 @@ class StrandsHookProvider:
         """
         try:
             # Extract tool information
-            tool_name = safe_str(getattr(event, "tool_name", None) or getattr(event, "name", None) or "unknown")
-            tool_use_id = safe_str(getattr(event, "tool_use_id", None) or getattr(event, "id", None))
+            tool_name = safe_str(
+                getattr(event, "tool_name", None)
+                or getattr(event, "name", None)
+                or "unknown"
+            )
+            tool_use_id = safe_str(
+                getattr(event, "tool_use_id", None) or getattr(event, "id", None)
+            )
 
             # Extract arguments
-            arguments = getattr(event, "arguments", None) or getattr(event, "input", None)
+            arguments = getattr(event, "arguments", None) or getattr(
+                event, "input", None
+            )
             arguments_str = None
             if arguments:
                 arguments_str = safe_json_dumps(arguments)
@@ -225,7 +247,9 @@ class StrandsHookProvider:
         """
         try:
             # Find the matching tool call
-            tool_use_id = safe_str(getattr(event, "tool_use_id", None) or getattr(event, "id", None))
+            tool_use_id = safe_str(
+                getattr(event, "tool_use_id", None) or getattr(event, "id", None)
+            )
             if not tool_use_id:
                 return
 
@@ -242,14 +266,17 @@ class StrandsHookProvider:
                 error_message = safe_str(error or exception)
                 error_type = type(exception).__name__ if exception else "unknown"
                 self.handler.fail_tool_call(
-                    tool_call,
-                    Error(type=error_type, message=error_message)
+                    tool_call, Error(type=error_type, message=error_message)
                 )
             else:
                 # Extract result
                 result = getattr(event, "result", None)
                 if result is not None:
-                    tool_call.tool_result = safe_json_dumps(result) if not isinstance(result, str) else result
+                    tool_call.tool_result = (
+                        safe_json_dumps(result)
+                        if not isinstance(result, str)
+                        else result
+                    )
 
                 # Stop the tool call successfully
                 self.handler.stop_tool_call(tool_call)

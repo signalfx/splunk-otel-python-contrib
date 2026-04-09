@@ -14,8 +14,6 @@
 
 """Tests for StrandsHookProvider."""
 
-import pytest
-
 from opentelemetry.instrumentation.strands.hooks import StrandsHookProvider
 
 

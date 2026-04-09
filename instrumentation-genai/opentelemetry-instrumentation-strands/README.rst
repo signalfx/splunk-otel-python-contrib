@@ -46,10 +46,34 @@ What Gets Instrumented
 
 This instrumentation captures:
 
-- **BedrockAgentCoreApp** → Mapped to ``Workflow`` spans (optional)
+**Strands Agents SDK:**
+
 - **Agent Invocations** → Mapped to ``AgentInvocation`` spans
 - **LLM Calls** → Mapped to ``LLMInvocation`` spans (via Strands hooks)
 - **Tool Calls** → Mapped to ``ToolCall`` spans (via Strands hooks)
+
+**Bedrock AgentCore Components:**
+
+- **BedrockAgentCoreApp** → Mapped to ``Workflow`` spans (optional)
+- **Memory Operations** (MemoryClient) → Mapped to ``RetrievalInvocation`` spans
+
+  - retrieve_memory_records
+  - create_event
+  - batch_create_memory_records
+  - list_events
+
+- **Code Interpreter** (CodeInterpreter) → Mapped to ``ToolCall`` spans
+
+  - start/stop sessions
+  - execute_code
+  - install_packages
+  - upload_file
+
+- **Browser Automation** (BrowserClient) → Mapped to ``ToolCall`` spans
+
+  - start/stop sessions
+  - take_control/release_control
+  - get_session
 
 All spans are properly nested with correct parent-child relationships and include
 rich attributes about the operation.

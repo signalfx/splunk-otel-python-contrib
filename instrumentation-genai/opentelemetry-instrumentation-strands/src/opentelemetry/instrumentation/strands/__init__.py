@@ -30,6 +30,26 @@ from wrapt import wrap_function_wrapper
 from .hooks import StrandsHookProvider
 from .package import _instruments
 from .version import __version__
+from .browser_wrappers import (
+    wrap_browser_get_session,
+    wrap_browser_release_control,
+    wrap_browser_start,
+    wrap_browser_stop,
+    wrap_browser_take_control,
+)
+from .code_interpreter_wrappers import (
+    wrap_code_interpreter_execute,
+    wrap_code_interpreter_install_packages,
+    wrap_code_interpreter_start,
+    wrap_code_interpreter_stop,
+    wrap_code_interpreter_upload_file,
+)
+from .memory_wrappers import (
+    wrap_memory_batch_create,
+    wrap_memory_create_event,
+    wrap_memory_list_events,
+    wrap_memory_retrieve,
+)
 from .wrappers import (
     restore_builtin_tracer,
     suppress_builtin_tracer,
@@ -54,13 +74,16 @@ _hook_provider: Optional[StrandsHookProvider] = None
 
 class StrandsInstrumentor(BaseInstrumentor):
     """
-    OpenTelemetry instrumentation for Strands Agents SDK using splunk-otel-util-genai.
+    OpenTelemetry instrumentation for Strands Agents SDK and Bedrock AgentCore components.
 
     This instrumentor provides standardized telemetry for:
-    - Agent invocations (Agent.__call__, Agent.invoke_async)
-    - LLM calls (via Strands hooks)
-    - Tool calls (via Strands hooks)
-    - BedrockAgentCoreApp entrypoint (optional)
+    - Agent invocations (Agent.__call__, Agent.invoke_async) → AgentInvocation spans
+    - LLM calls (via Strands hooks) → LLMInvocation spans
+    - Tool calls (via Strands hooks) → ToolCall spans
+    - BedrockAgentCoreApp entrypoint (optional) → Workflow spans
+    - Memory operations (MemoryClient) → RetrievalInvocation spans
+    - Code Interpreter (CodeInterpreter) → ToolCall spans
+    - Browser automation (BrowserClient) → ToolCall spans
 
     Configuration:
         OTEL_INSTRUMENTATION_STRANDS_SUPPRESS_BUILTIN_TRACER:
@@ -68,7 +91,7 @@ class StrandsInstrumentor(BaseInstrumentor):
             double-tracing. Set to "false" to keep both Strands and instrumentation spans.
 
     Note: This instrumentation uses a hybrid approach:
-    - Wrapt wrappers for Agent lifecycle spans
+    - Wrapt wrappers for Agent lifecycle spans and AgentCore components
     - Strands hooks for LLM and tool call spans
     """
 
@@ -154,7 +177,117 @@ class StrandsInstrumentor(BaseInstrumentor):
         _safe_wrap(
             "bedrock_agentcore",
             "BedrockAgentCoreApp.entrypoint",
-            lambda wrapped, instance, args, kwargs: wrap_bedrock_agentcore_app_entrypoint(
+            lambda wrapped,
+            instance,
+            args,
+            kwargs: wrap_bedrock_agentcore_app_entrypoint(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+
+        # Wrap MemoryClient operations
+        _safe_wrap(
+            "bedrock_agentcore.memory.client",
+            "MemoryClient.retrieve_memory_records",
+            lambda wrapped, instance, args, kwargs: wrap_memory_retrieve(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.memory.client",
+            "MemoryClient.create_event",
+            lambda wrapped, instance, args, kwargs: wrap_memory_create_event(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.memory.client",
+            "MemoryClient.batch_create_memory_records",
+            lambda wrapped, instance, args, kwargs: wrap_memory_batch_create(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.memory.client",
+            "MemoryClient.list_events",
+            lambda wrapped, instance, args, kwargs: wrap_memory_list_events(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+
+        # Wrap CodeInterpreter operations
+        _safe_wrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.start",
+            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_start(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.stop",
+            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_stop(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.execute_code",
+            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_execute(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.install_packages",
+            lambda wrapped,
+            instance,
+            args,
+            kwargs: wrap_code_interpreter_install_packages(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.upload_file",
+            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_upload_file(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+
+        # Wrap BrowserClient operations
+        _safe_wrap(
+            "bedrock_agentcore.tools.browser_client",
+            "BrowserClient.start",
+            lambda wrapped, instance, args, kwargs: wrap_browser_start(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.browser_client",
+            "BrowserClient.stop",
+            lambda wrapped, instance, args, kwargs: wrap_browser_stop(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.browser_client",
+            "BrowserClient.take_control",
+            lambda wrapped, instance, args, kwargs: wrap_browser_take_control(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.browser_client",
+            "BrowserClient.release_control",
+            lambda wrapped, instance, args, kwargs: wrap_browser_release_control(
+                wrapped, instance, args, kwargs, _handler
+            ),
+        )
+        _safe_wrap(
+            "bedrock_agentcore.tools.browser_client",
+            "BrowserClient.get_session",
+            lambda wrapped, instance, args, kwargs: wrap_browser_get_session(
                 wrapped, instance, args, kwargs, _handler
             ),
         )
@@ -189,3 +322,47 @@ class StrandsInstrumentor(BaseInstrumentor):
         _safe_unwrap("strands.agent.agent", "Agent.__call__")
         _safe_unwrap("strands.agent.agent", "Agent.invoke_async")
         _safe_unwrap("bedrock_agentcore", "BedrockAgentCoreApp.entrypoint")
+
+        # Unwrap MemoryClient methods
+        _safe_unwrap(
+            "bedrock_agentcore.memory.client", "MemoryClient.retrieve_memory_records"
+        )
+        _safe_unwrap("bedrock_agentcore.memory.client", "MemoryClient.create_event")
+        _safe_unwrap(
+            "bedrock_agentcore.memory.client",
+            "MemoryClient.batch_create_memory_records",
+        )
+        _safe_unwrap("bedrock_agentcore.memory.client", "MemoryClient.list_events")
+
+        # Unwrap CodeInterpreter methods
+        _safe_unwrap(
+            "bedrock_agentcore.tools.code_interpreter_client", "CodeInterpreter.start"
+        )
+        _safe_unwrap(
+            "bedrock_agentcore.tools.code_interpreter_client", "CodeInterpreter.stop"
+        )
+        _safe_unwrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.execute_code",
+        )
+        _safe_unwrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.install_packages",
+        )
+        _safe_unwrap(
+            "bedrock_agentcore.tools.code_interpreter_client",
+            "CodeInterpreter.upload_file",
+        )
+
+        # Unwrap BrowserClient methods
+        _safe_unwrap("bedrock_agentcore.tools.browser_client", "BrowserClient.start")
+        _safe_unwrap("bedrock_agentcore.tools.browser_client", "BrowserClient.stop")
+        _safe_unwrap(
+            "bedrock_agentcore.tools.browser_client", "BrowserClient.take_control"
+        )
+        _safe_unwrap(
+            "bedrock_agentcore.tools.browser_client", "BrowserClient.release_control"
+        )
+        _safe_unwrap(
+            "bedrock_agentcore.tools.browser_client", "BrowserClient.get_session"
+        )

@@ -97,9 +97,7 @@ def convert_strands_messages(messages: Any) -> list[InputMessage]:
                     )
                 # Handle string in list
                 elif isinstance(msg, str):
-                    result.append(
-                        InputMessage(role="user", parts=[Text(content=msg)])
-                    )
+                    result.append(InputMessage(role="user", parts=[Text(content=msg)]))
             except Exception:
                 # Skip malformed messages
                 continue

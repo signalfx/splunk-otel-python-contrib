@@ -12,4 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-_instruments = ("strands-agents >= 1.0.0",)
+_instruments = (
+    "strands-agents >= 1.0.0",
+    "bedrock-agentcore >= 1.0.0",
+)

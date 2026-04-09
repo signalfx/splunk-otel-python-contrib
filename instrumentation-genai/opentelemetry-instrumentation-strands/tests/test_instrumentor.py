@@ -16,7 +16,6 @@
 
 import os
 
-import pytest
 
 from opentelemetry.instrumentation.strands import StrandsInstrumentor
 

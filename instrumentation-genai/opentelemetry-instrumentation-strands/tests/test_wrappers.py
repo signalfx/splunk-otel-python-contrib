@@ -85,7 +85,7 @@ def test_agent_init_injects_hook_provider(stub_handler):
         pass
 
     # Wrap the init
-    result = wrap_agent_init(original_init, agent, (), {}, hook_provider)
+    wrap_agent_init(original_init, agent, (), {}, hook_provider)
 
     # Verify hook provider was injected
     assert agent.hook_registry is not None
@@ -97,9 +97,7 @@ def test_agent_call_creates_agent_invocation(stub_handler):
     agent = MockAgent(name="test_agent", model="anthropic.claude-v2")
 
     # Call wrapped method
-    result = wrap_agent_call(
-        agent.__call__, agent, ("What is AI?",), {}, stub_handler
-    )
+    result = wrap_agent_call(agent.__call__, agent, ("What is AI?",), {}, stub_handler)
 
     # Verify invocation was started and stopped
     assert len(stub_handler.started_agents) == 1
@@ -122,9 +120,7 @@ def test_agent_call_captures_tools(stub_handler):
     agent = MockAgent(name="test_agent", tools=tools)
 
     # Call wrapped method
-    result = wrap_agent_call(
-        agent.__call__, agent, ("Calculate 2+2",), {}, stub_handler
-    )
+    wrap_agent_call(agent.__call__, agent, ("Calculate 2+2",), {}, stub_handler)
 
     # Verify tools were captured
     invocation = stub_handler.started_agents[0]

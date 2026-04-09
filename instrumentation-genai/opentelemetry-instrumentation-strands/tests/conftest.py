@@ -106,9 +106,9 @@ def environment():
     if original_suppress is None:
         os.environ.pop("OTEL_INSTRUMENTATION_STRANDS_SUPPRESS_BUILTIN_TRACER", None)
     else:
-        os.environ[
-            "OTEL_INSTRUMENTATION_STRANDS_SUPPRESS_BUILTIN_TRACER"
-        ] = original_suppress
+        os.environ["OTEL_INSTRUMENTATION_STRANDS_SUPPRESS_BUILTIN_TRACER"] = (
+            original_suppress
+        )
 
 
 class StubTelemetryHandler:

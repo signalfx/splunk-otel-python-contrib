@@ -15,10 +15,16 @@
 """Wrapt wrappers for Strands Agent lifecycle instrumentation."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import AgentInvocation, Error, OutputMessage, Text, Workflow
+from opentelemetry.util.genai.types import (
+    AgentInvocation,
+    Error,
+    OutputMessage,
+    Text,
+    Workflow,
+)
 
 from .utils import (
     convert_strands_messages,
@@ -112,7 +118,9 @@ def wrap_agent_call(
             # Handle error
             error_message = safe_str(e)
             error_type = type(e).__name__
-            handler.fail_agent(invocation, Error(type=error_type, message=error_message))
+            handler.fail_agent(
+                invocation, Error(type=error_type, message=error_message)
+            )
             raise
     except Exception:
         # If invocation creation failed, just call original
@@ -160,7 +168,9 @@ async def wrap_agent_invoke_async(
             # Handle error
             error_message = safe_str(e)
             error_type = type(e).__name__
-            handler.fail_agent(invocation, Error(type=error_type, message=error_message))
+            handler.fail_agent(
+                invocation, Error(type=error_type, message=error_message)
+            )
             raise
     except Exception:
         # If invocation creation failed, just call original
@@ -209,7 +219,9 @@ def wrap_bedrock_agentcore_app_entrypoint(
             # Handle error
             error_message = safe_str(e)
             error_type = type(e).__name__
-            handler.fail_workflow(workflow, Error(type=error_type, message=error_message))
+            handler.fail_workflow(
+                workflow, Error(type=error_type, message=error_message)
+            )
             raise
     except Exception:
         # If workflow creation failed, just call original
@@ -283,19 +295,19 @@ def _populate_agent_result(invocation: AgentInvocation, result: Any) -> None:
         if result:
             # Handle AgentResult object
             if hasattr(result, "output") or hasattr(result, "content"):
-                content = getattr(result, "output", None) or getattr(result, "content", None)
+                content = getattr(result, "output", None) or getattr(
+                    result, "content", None
+                )
                 if content:
                     output_message = OutputMessage(
-                        role="assistant",
-                        parts=[Text(content=safe_str(content))]
+                        role="assistant", parts=[Text(content=safe_str(content))]
                     )
                     invocation.output_messages = [output_message]
 
             # Handle string result
             elif isinstance(result, str):
                 output_message = OutputMessage(
-                    role="assistant",
-                    parts=[Text(content=result)]
+                    role="assistant", parts=[Text(content=result)]
                 )
                 invocation.output_messages = [output_message]
 
@@ -303,8 +315,12 @@ def _populate_agent_result(invocation: AgentInvocation, result: Any) -> None:
             if hasattr(result, "usage"):
                 usage = getattr(result, "usage", None)
                 if usage:
-                    invocation.usage_input_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
-                    invocation.usage_output_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
+                    invocation.usage_input_tokens = getattr(
+                        usage, "prompt_tokens", None
+                    ) or getattr(usage, "input_tokens", None)
+                    invocation.usage_output_tokens = getattr(
+                        usage, "completion_tokens", None
+                    ) or getattr(usage, "output_tokens", None)
     except Exception as e:
         _LOGGER.debug("Error populating agent result: %s", e)
 

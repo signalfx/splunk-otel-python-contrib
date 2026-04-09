@@ -118,9 +118,7 @@ def main():
 
     except ImportError as e:
         logger.error(f"Failed to import Strands: {e}")
-        logger.error(
-            "Please install strands-agents: pip install strands-agents"
-        )
+        logger.error("Please install strands-agents: pip install strands-agents")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Error running example: {e}", exc_info=True)
