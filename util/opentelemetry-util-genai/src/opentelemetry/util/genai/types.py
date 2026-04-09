@@ -437,6 +437,8 @@ class EvaluationResult:
     explanation: Optional[str] = None
     error: Optional[Error] = None
     attributes: Dict[str, Any] = field(default_factory=dict)
+    duration_s: Optional[float] = None
+    evaluator_name: Optional[str] = None
 
 
 @dataclass

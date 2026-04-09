@@ -6,12 +6,17 @@ from types import MethodType
 from typing import Any, Dict, Iterable, List, Sequence
 
 from ..config import Settings
+from ..instruments import Instruments
 from ..interfaces import EmitterProtocol
 from ..plugins import load_emitter_specs
 from ..types import ContentCapturingMode
 from .composite import CompositeEmitter
 from .content_events import ContentEventsEmitter
-from .evaluation import EvaluationEventsEmitter, EvaluationMetricsEmitter
+from .evaluation import (
+    EvaluationEventsEmitter,
+    EvaluationMetricsEmitter,
+    EvaluationMonitoringEmitter,
+)
 from .metrics import MetricsEmitter
 from .span import SpanEmitter
 from .spec import CategoryOverride, EmitterFactoryContext, EmitterSpec
@@ -151,6 +156,19 @@ def build_emitter_pipeline(
         )
     )
 
+    if settings.enable_evaluation_monitoring:
+        _register(
+            EmitterSpec(
+                name="EvaluationMonitoring",
+                category=_CATEGORY_EVALUATION,
+                factory=lambda ctx: EvaluationMonitoringEmitter(
+                    Instruments(
+                        ctx.meter
+                    ).evaluation_client_operation_duration,
+                ),
+            )
+        )
+
     for spec in load_emitter_specs(settings.extra_emitters):
         if spec.category not in {
             _CATEGORY_SPAN,
@@ -268,6 +286,14 @@ def _apply_category_overrides(
                     builtin_metrics = spec_registry.get("EvaluationMetrics")
                     if builtin_metrics and builtin_metrics not in replacement:
                         replacement.insert(0, builtin_metrics)
+                    builtin_monitoring = spec_registry.get(
+                        "EvaluationMonitoring"
+                    )
+                    if (
+                        builtin_monitoring
+                        and builtin_monitoring not in replacement
+                    ):
+                        replacement.append(builtin_monitoring)
                 category_specs[category] = replacement
             continue
         if override.mode == "prepend":

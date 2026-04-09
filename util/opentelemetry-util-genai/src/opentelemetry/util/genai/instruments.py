@@ -121,3 +121,10 @@ class Instruments:
             description="Size of the tool call output in bytes. "
             "This output typically becomes part of the LLM input context.",
         )
+        # Evaluation pipeline monitoring
+        self.evaluation_client_operation_duration: Histogram = meter.create_histogram(
+            name="gen_ai.evaluation.client.operation.duration",
+            unit="s",
+            description="Duration of evaluator calls",
+            explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
+        )

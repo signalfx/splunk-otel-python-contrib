@@ -15,6 +15,7 @@ from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_SPAN,
+    OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING,
     OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE,
 )
 from .types import ContentCapturingMode
@@ -39,6 +40,7 @@ class Settings:
     emit_legacy_evaluation_event: bool
     category_overrides: Dict[str, CategoryOverride]
     evaluation_sample_rate: float = 1.0
+    enable_evaluation_monitoring: bool = False
 
 
 def parse_env() -> Settings:
@@ -129,6 +131,16 @@ def parse_env() -> Settings:
     if evaluation_sample_rate > 1.0:
         evaluation_sample_rate = 1.0
 
+    monitoring_raw = os.environ.get(
+        OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING, ""
+    ).strip()
+    enable_evaluation_monitoring = monitoring_raw.lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     return Settings(
         enable_span=enable_span,
         enable_metrics=enable_metrics,
@@ -142,6 +154,7 @@ def parse_env() -> Settings:
         emit_legacy_evaluation_event=emit_legacy_event,
         category_overrides=overrides,
         evaluation_sample_rate=evaluation_sample_rate,
+        enable_evaluation_monitoring=enable_evaluation_monitoring,
     )
 
 
