@@ -68,6 +68,30 @@ spec:
                 # DeepEval configuration
                 - name: DEEPEVAL_FILE_SYSTEM
                   value: "READ_ONLY"
+                # Evaluator config - which metrics to run
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
+                  value: "deepeval(LLMInvocation(bias,toxicity,relevance))"
+                # DeepEval LLM judge config (uses Circuit OAuth2)
+                - name: DEEPEVAL_LLM_BASE_URL
+                  value: "https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini"
+                - name: DEEPEVAL_LLM_MODEL
+                  value: "gpt-4o-mini"
+                - name: DEEPEVAL_LLM_PROVIDER
+                  value: "openai"
+                - name: DEEPEVAL_LLM_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: circuit-oauth-secrets
+                      key: client-id
+                - name: DEEPEVAL_LLM_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: circuit-oauth-secrets
+                      key: client-secret
+                - name: DEEPEVAL_LLM_TOKEN_URL
+                  value: "https://id.cisco.com/oauth2/default/v1/token"
+                - name: DEEPEVAL_LLM_CLIENT_APP_NAME
+                  value: "egai-prd-other-020027861-qna-1770140676144"
                 # OpenAI API key from secret
                 - name: OPENAI_API_KEY
                   valueFrom:
