@@ -586,8 +586,8 @@ def main(manual_instrumentation: bool = False) -> None:
     else:
         print("🔑 Using standard OPENAI_API_KEY authentication")
 
-    if manual_instrumentation:
-        _configure_manual_instrumentation()
+    #if manual_instrumentation:
+    _configure_manual_instrumentation()
 
     session_id = str(uuid4())
     user_request = (
