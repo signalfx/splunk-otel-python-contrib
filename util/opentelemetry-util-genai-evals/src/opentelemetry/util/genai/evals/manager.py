@@ -708,7 +708,7 @@ class Manager(CompletionCallback):
             evaluator_name = getattr(
                 descriptor, "__class__", type(descriptor)
             ).__name__
-            t0 = time.monotonic()
+            eval_start_time = time.monotonic()
             try:
                 results = descriptor.evaluate(invocation)
             except Exception as exc:  # pragma: no cover - defensive
@@ -736,10 +736,10 @@ class Manager(CompletionCallback):
                     details={"invocation_type": type_name},
                 )
                 continue
-            duration_s = time.monotonic() - t0
+            eval_duration_s = time.monotonic() - eval_start_time
             if results:
                 for res in results:
-                    res.duration_s = duration_s
+                    res.duration_s = eval_duration_s
                     res.evaluator_name = evaluator_name
                 buckets.append(list(results))
         return buckets
