@@ -162,9 +162,12 @@ def build_emitter_pipeline(
                 name="EvaluationMonitoring",
                 category=_CATEGORY_EVALUATION,
                 factory=lambda ctx: EvaluationMonitoringEmitter(
-                    Instruments(
+                    duration_histogram=Instruments(
                         ctx.meter
                     ).evaluation_client_operation_duration,
+                    cost_histogram=Instruments(
+                        ctx.meter
+                    ).evaluation_client_usage_cost,
                 ),
             )
         )

@@ -128,3 +128,8 @@ class Instruments:
             description="Duration of evaluator calls",
             explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
         )
+        self.evaluation_client_usage_cost: Histogram = meter.create_histogram(
+            name="gen_ai.evaluation.client.usage.cost",
+            unit="{usd}",
+            description="Cost of evaluator calls in USD",
+        )

@@ -1,4 +1,4 @@
-"""Tests for evaluation monitoring metrics (operation duration histogram)."""
+"""Tests for evaluation monitoring metrics (duration + cost histograms)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
 )
 
-_METRIC_NAME = "gen_ai.evaluation.client.operation.duration"
+_DURATION_METRIC = "gen_ai.evaluation.client.operation.duration"
+_COST_METRIC = "gen_ai.evaluation.client.usage.cost"
 
 
 class _StubHandler:
@@ -52,12 +53,19 @@ def _get_metric_data(reader: InMemoryMetricReader, metric_name: str):
 # ============================================================================
 
 
+def _make_emitter(meter):
+    instruments = Instruments(meter)
+    return EvaluationMonitoringEmitter(
+        duration_histogram=instruments.evaluation_client_operation_duration,
+        cost_histogram=instruments.evaluation_client_usage_cost,
+    )
+
+
 def test_emitter_records_duration():
     """EvaluationMonitoringEmitter reads duration_s from EvaluationResult."""
     meter_provider, reader = _make_meter_and_reader()
     meter = meter_provider.get_meter("test")
-    histogram = Instruments(meter).evaluation_client_operation_duration
-    emitter = EvaluationMonitoringEmitter(histogram)
+    emitter = _make_emitter(meter)
 
     results = [
         EvaluationResult(
@@ -70,7 +78,7 @@ def test_emitter_records_duration():
     emitter.on_evaluation_results(results, None)
 
     meter_provider.force_flush()
-    metric = _get_metric_data(reader, _METRIC_NAME)
+    metric = _get_metric_data(reader, _DURATION_METRIC)
 
     assert metric is not None
     assert metric.unit == "s"
@@ -88,8 +96,7 @@ def test_emitter_skips_results_without_duration():
     """Results without duration_s are ignored by the monitoring emitter."""
     meter_provider, reader = _make_meter_and_reader()
     meter = meter_provider.get_meter("test")
-    histogram = Instruments(meter).evaluation_client_operation_duration
-    emitter = EvaluationMonitoringEmitter(histogram)
+    emitter = _make_emitter(meter)
 
     results = [
         EvaluationResult(metric_name="bias", score=0.1),
@@ -97,7 +104,7 @@ def test_emitter_skips_results_without_duration():
     emitter.on_evaluation_results(results, None)
 
     meter_provider.force_flush()
-    metric = _get_metric_data(reader, _METRIC_NAME)
+    metric = _get_metric_data(reader, _DURATION_METRIC)
     assert metric is None
 
 
@@ -105,8 +112,7 @@ def test_emitter_multiple_evaluators():
     """Each result with different evaluator_name produces separate data points."""
     meter_provider, reader = _make_meter_and_reader()
     meter = meter_provider.get_meter("test")
-    histogram = Instruments(meter).evaluation_client_operation_duration
-    emitter = EvaluationMonitoringEmitter(histogram)
+    emitter = _make_emitter(meter)
 
     results = [
         EvaluationResult(
@@ -125,7 +131,7 @@ def test_emitter_multiple_evaluators():
     emitter.on_evaluation_results(results, None)
 
     meter_provider.force_flush()
-    metric = _get_metric_data(reader, _METRIC_NAME)
+    metric = _get_metric_data(reader, _DURATION_METRIC)
 
     assert metric is not None
     data_points = list(metric.data.data_points)
@@ -136,6 +142,122 @@ def test_emitter_multiple_evaluators():
         for dp in data_points
     }
     assert evaluator_names == {"EvalA", "EvalB"}
+
+
+# ============================================================================
+# Unit: EvaluationMonitoringEmitter records evaluation cost
+# ============================================================================
+
+
+def test_emitter_records_cost():
+    """EvaluationMonitoringEmitter records evaluation_cost from EvaluationResult."""
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    emitter = _make_emitter(meter)
+
+    results = [
+        EvaluationResult(
+            metric_name="bias",
+            score=0.1,
+            duration_s=1.5,
+            evaluator_name="MyEvaluator",
+            evaluation_cost=0.0023,
+        ),
+    ]
+    emitter.on_evaluation_results(results, None)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _COST_METRIC)
+
+    assert metric is not None
+    assert metric.unit == "{usd}"
+    data_points = list(metric.data.data_points)
+    assert len(data_points) == 1
+    assert data_points[0].sum >= 0.002  # float comparison
+    assert data_points[0].count == 1
+    assert (
+        dict(data_points[0].attributes)["gen_ai.evaluation.evaluator"]
+        == "MyEvaluator"
+    )
+    assert dict(data_points[0].attributes)["gen_ai.evaluation.name"] == "bias"
+
+
+def test_emitter_skips_results_without_cost():
+    """Results without evaluation_cost do not produce cost metric data points."""
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    emitter = _make_emitter(meter)
+
+    results = [
+        EvaluationResult(
+            metric_name="bias",
+            score=0.1,
+            duration_s=1.5,
+            evaluator_name="MyEvaluator",
+        ),
+    ]
+    emitter.on_evaluation_results(results, None)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _COST_METRIC)
+    assert metric is None
+
+
+def test_emitter_records_cost_with_invocation_attrs():
+    """Cost metric carries shared attributes from invocation."""
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    emitter = _make_emitter(meter)
+
+    invocation = LLMInvocation(request_model="gpt-4o", provider="azure")
+    invocation.agent_name = "coordinator"
+
+    results = [
+        EvaluationResult(
+            metric_name="toxicity",
+            score=0.0,
+            evaluator_name="DeepevalEvaluator",
+            evaluation_cost=0.005,
+        ),
+    ]
+    emitter.on_evaluation_results(results, invocation)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _COST_METRIC)
+    assert metric is not None
+    data_points = list(metric.data.data_points)
+    assert len(data_points) == 1
+
+    attrs = dict(data_points[0].attributes)
+    assert attrs["gen_ai.agent.name"] == "coordinator"
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+    assert attrs["gen_ai.provider.name"] == "azure"
+    assert attrs["gen_ai.evaluation.name"] == "toxicity"
+
+
+def test_emitter_records_zero_cost():
+    """Zero cost is a valid value and should be recorded."""
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    emitter = _make_emitter(meter)
+
+    results = [
+        EvaluationResult(
+            metric_name="bias",
+            score=0.1,
+            evaluator_name="MyEval",
+            evaluation_cost=0,
+        ),
+    ]
+    emitter.on_evaluation_results(results, None)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _COST_METRIC)
+    assert metric is not None
+    data_points = list(metric.data.data_points)
+    assert len(data_points) == 1
+    assert data_points[0].sum == 0
+    assert data_points[0].count == 1
 
 
 # ============================================================================
