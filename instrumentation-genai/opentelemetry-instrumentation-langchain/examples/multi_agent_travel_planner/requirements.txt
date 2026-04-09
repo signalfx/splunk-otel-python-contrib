@@ -5,6 +5,8 @@ python-dotenv>=1.0.0
 deepeval
 litellm
 
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+
 # Splunk OpenTelemetry GenAI packages
 #splunk-otel-util-genai==0.1.9
 #splunk-otel-util-genai-evals==0.1.7
