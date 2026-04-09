@@ -196,9 +196,14 @@ class _WeaviateOperationWrapper:
                 if connection_port is not None:
                     metric_attributes[ServerAttributes.SERVER_PORT] = connection_port
 
-                # Record the duration metric (automatically linked to current span context)
+                # Record the duration metric with span context to link metric to trace
+                try:
+                    context = trace.set_span_in_context(span)
+                except (TypeError, ValueError, AttributeError):
+                    context = None
+
                 self.duration_histogram.record(
-                    duration_ms, attributes=metric_attributes
+                    duration_ms, attributes=metric_attributes, context=context
                 )
 
             # Extract documents from similarity search operations
