@@ -214,8 +214,33 @@ Purpose: Instrumentation package for Langchain/Langgraph frameworks
 
 ```text
 instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/instrumentation/langchain
-  LangchainCallbackHandler               # implements Langchain callback handler to aquire telemetry 
+  LangchainCallbackHandler               # implements Langchain callback handler to aquire telemetry
 ```
+
+---
+
+## Strands Instrumentation Package: `opentelemetry-instrumentation-strands`
+
+Purpose: Instrumentation package for Strands Agents SDK (AWS Bedrock AgentCore runtime)
+
+Strategy: Hybrid hooks + wrapt approach
+- Strands SDK lifecycle hooks (`BeforeModelCallEvent`, `AfterModelCallEvent`, `BeforeToolCallEvent`, `AfterToolCallEvent`) for LLM and tool telemetry
+- Wrapt monkey-patching for agent lifecycle spans (`Agent.__call__`, `Agent.invoke_async`)
+- Optional built-in tracer suppression via `OTEL_INSTRUMENTATION_STRANDS_SUPPRESS_BUILTIN_TRACER` (default: `true`)
+
+```text
+instrumentation-genai/opentelemetry-instrumentation-strands/src/opentelemetry/instrumentation/strands
+  __init__.py                            # StrandsInstrumentor (BaseInstrumentor)
+  hooks.py                               # StrandsHookProvider - registers LLM & tool callbacks
+  wrappers.py                            # Wrapt wrappers for Agent lifecycle + tracer suppression
+  utils.py                               # Message conversion, model ID extraction, serialization
+```
+
+GenAI Type Mapping:
+- `Agent.__call__` / `Agent.invoke_async` → `AgentInvocation`
+- `BeforeModelCallEvent` / `AfterModelCallEvent` → `LLMInvocation`
+- `BeforeToolCallEvent` / `AfterToolCallEvent` → `ToolCall`
+- `BedrockAgentCoreApp.entrypoint` (optional) → `Workflow`
 
 ---
 
