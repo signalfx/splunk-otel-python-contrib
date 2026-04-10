@@ -46,6 +46,9 @@ class MetricsEmitter(EmitterMeta):
             instruments.operation_duration_histogram
         )
         self._token_histogram: Histogram = instruments.token_usage_histogram
+        self._time_to_first_chunk_histogram: Histogram = (
+            instruments.time_to_first_chunk_histogram
+        )
         self._workflow_duration_histogram: Histogram = (
             instruments.workflow_duration_histogram
         )
@@ -119,6 +122,26 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs,
                 span=getattr(llm_invocation, "span", None),
             )
+            # Record time to first chunk for streaming operations
+            if llm_invocation.request_stream:
+                ttfc = llm_invocation.attributes.get(
+                    "gen_ai.response.time_to_first_chunk"
+                )
+                if ttfc is not None:
+                    span = getattr(llm_invocation, "span", None)
+                    context = None
+                    if span is not None:
+                        try:
+                            context = trace.set_span_in_context(span)
+                        except (
+                            TypeError,
+                            ValueError,
+                            AttributeError,
+                        ):  # pragma: no cover - defensive
+                            context = None
+                    self._time_to_first_chunk_histogram.record(
+                        ttfc, attributes=metric_attrs, context=context
+                    )
             return
         if isinstance(obj, ToolCall):
             tool_invocation = obj

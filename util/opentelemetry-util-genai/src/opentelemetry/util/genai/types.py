@@ -32,7 +32,11 @@ from opentelemetry.trace import Span, SpanContext
 if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 # Import security attribute from centralized attributes module
-from opentelemetry.util.genai.attributes import GEN_AI_SECURITY_EVENT_ID
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_REQUEST_STREAM,
+    GEN_AI_SECURITY_EVENT_ID,
+    GEN_AI_TOOL_DEFINITIONS,
+)
 from opentelemetry.util.types import AttributeValue
 
 ContextToken = Token  # simple alias; avoid TypeAlias warning tools
@@ -335,6 +339,11 @@ class LLMInvocation(GenAI):
     )
     # Structured function/tool definitions for semantic convention emission
     request_functions: list[dict[str, Any]] = field(default_factory=list)
+    # Opt-In: gen_ai.tool.definitions (JSON-serialized tool schemas)
+    tool_definitions: Optional[str] = field(
+        default=None,
+        metadata={"semconv_content": GEN_AI_TOOL_DEFINITIONS},
+    )
     request_temperature: Optional[float] = field(
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_TEMPERATURE},
@@ -406,6 +415,14 @@ class LLMInvocation(GenAI):
         default=None,
         metadata={"semconv": GEN_AI_SECURITY_EVENT_ID},
     )
+    # Streaming attribute (custom, not in semconv yet)
+    request_stream: Optional[bool] = field(
+        default=None,
+        metadata={"semconv": GEN_AI_REQUEST_STREAM},
+    )
+    # Note: gen_ai.response.time_to_first_chunk is captured as an attribute
+    # directly in the instrumentation (e.g., callback_handler.py) rather than
+    # as a dedicated field, since it's computed dynamically during streaming.
 
 
 class ErrorClassification(Enum):

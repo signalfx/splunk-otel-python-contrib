@@ -7,6 +7,7 @@ Complex logic removed (agent heuristics, child counting, prompt capture, events)
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Optional, List, Dict
 from uuid import UUID
 
@@ -35,6 +36,9 @@ from opentelemetry.util.genai.attributes import (
     GEN_AI_COMMAND,
     GEN_AI_FINISH_REASON,
     FINISH_REASON_INTERRUPTED,
+)
+from opentelemetry.util.genai.utils import (
+    should_capture_tool_definitions as _should_capture_tool_definitions,
 )
 
 # Error type names that indicate flow-control, not real errors.
@@ -702,33 +706,42 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             attrs["tags"] = [str(t) for t in tags]
 
         # Process invocation_params - add with request_ prefix
+        # Extract request params from multiple sources (consistent with span_utils.py)
+        # Priority: invocation_params > serialized.kwargs > model_kwargs
+        serialized_kwargs = payload.get("kwargs", {})
+        request_temperature = None
+        request_max_tokens = None
         if invocation_params:
-            # Standard params get request_ prefix
+            # Standard params get request_ prefix in attrs
             for key in (
+                "temperature",
+                "max_tokens",
                 "top_p",
                 "seed",
-                "temperature",
                 "frequency_penalty",
                 "presence_penalty",
             ):
-                if key in invocation_params:
-                    attrs[f"request_{key}"] = invocation_params[key]
+                value = invocation_params.get(key) or serialized_kwargs.get(key)
+                if value is not None:
+                    attrs[f"request_{key}"] = value
 
-            # Handle nested model_kwargs
+            # Extract temperature and max_tokens for dedicated semconv fields
+            request_temperature = invocation_params.get(
+                "temperature"
+            ) or serialized_kwargs.get("temperature")
+            request_max_tokens = (
+                invocation_params.get("max_tokens")
+                or serialized_kwargs.get("max_tokens")
+                or serialized_kwargs.get("max_new_tokens")
+            )
+
+            # Fallback: check model_kwargs for max_tokens (common when users
+            # pass it via ChatOpenAI(model_kwargs={"max_tokens": ...}))
             if "model_kwargs" in invocation_params:
-                attrs["model_kwargs"] = invocation_params["model_kwargs"]
-                # Also check for max_tokens in model_kwargs
                 mk = invocation_params["model_kwargs"]
-                if isinstance(mk, dict) and "max_tokens" in mk:
-                    attrs["request_max_tokens"] = mk["max_tokens"]
-
-        # Handle max_tokens from metadata.ls_max_tokens
-        if (
-            metadata
-            and "ls_max_tokens" in metadata
-            and "request_max_tokens" not in attrs
-        ):
-            attrs["request_max_tokens"] = metadata["ls_max_tokens"]
+                attrs["model_kwargs"] = mk
+                if isinstance(mk, dict) and request_max_tokens is None:
+                    request_max_tokens = mk.get("max_tokens")
 
         # Add callback info from serialized
         if payload.get("name"):
@@ -746,6 +759,20 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             input_messages=input_messages,
             attributes=attrs,
         )
+        # Set dedicated semconv fields
+        if request_temperature is not None:
+            inv.request_temperature = request_temperature
+        if request_max_tokens is not None:
+            inv.request_max_tokens = request_max_tokens
+        # Extract tool/function definitions as gen_ai.tool.definitions attribute
+        # Gated by env var to avoid serializing large payloads when disabled
+        if _should_capture_tool_definitions() and invocation_params:
+            tools = invocation_params.get("tools") or invocation_params.get("functions")
+            if tools:
+                # Preserve full tool definition structure (including type: "function")
+                serialized_defs = _serialize(tools)
+                if serialized_defs:
+                    inv.tool_definitions = serialized_defs
         if provider:
             inv.provider = provider
         if parent_run_id is not None:
@@ -755,6 +782,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 inv.agent_name = _safe_str(agent_name_value)
                 inv.agent_id = _agent_span_id(context_agent)
         inv.parent_span = self._resolve_parent_span(parent_run_id)
+        # Store start time for TTFT calculation (will be used in on_llm_new_token)
+        inv._start_time = time.perf_counter()
         self._handler.start_llm(inv)
         self._invocation_manager.add(run_id, parent_run_id, inv)
 
@@ -796,14 +825,15 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             return
         generations = getattr(response, "generations", [])
         content = None
+        finish_reason = None
         if generations and generations[0] and generations[0][0].message:
             content = getattr(generations[0][0].message, "content", None)
-        if content is not None:
             finish_reason = (
                 generations[0][0].generation_info.get("finish_reason")
                 if generations[0][0].generation_info
                 else None
             )
+        if content is not None:
             if finish_reason == "tool_calls":
                 inv.output_messages = [
                     OutputMessage(
@@ -820,6 +850,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                         finish_reason=finish_reason or "stop",
                     )
                 ]
+        # Set response_finish_reasons semconv span attribute
+        if finish_reason:
+            inv.response_finish_reasons = [finish_reason]
         llm_output = getattr(response, "llm_output", {}) or {}
         usage = llm_output.get("usage") or llm_output.get("token_usage") or {}
         inv.input_tokens = usage.get("prompt_tokens")
@@ -843,8 +876,35 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 if inv.response_model_name:
                     break
 
+        # Set streaming to False if it wasn't set to True by on_llm_new_token
+        if inv.request_stream is None:
+            inv.request_stream = False
+
         self._handler.stop_llm(inv)
         self._invocation_manager.remove(run_id)
+
+    def on_llm_new_token(
+        self,
+        token: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **_kwargs: Any,
+    ) -> None:
+        """Called when a new token is received during streaming.
+
+        Records time to first chunk on first token and marks as streaming.
+        """
+        inv = self._invocation_manager.get(run_id)
+        if not isinstance(inv, LLMInvocation):
+            return
+        # Only process first token (set time to first chunk once)
+        if not inv.request_stream:
+            inv.request_stream = True
+            start_time = getattr(inv, "_start_time", None)
+            if start_time is not None:
+                ttfc = time.perf_counter() - start_time
+                inv.attributes["gen_ai.response.time_to_first_chunk"] = ttfc
 
     def on_tool_start(
         self,

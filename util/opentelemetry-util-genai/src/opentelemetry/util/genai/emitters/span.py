@@ -32,6 +32,7 @@ from ..attributes import (
     GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_ENCODING_FORMATS,
+    GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK,
     GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED,
     GEN_AI_RETRIEVAL_QUERY_TEXT,
     GEN_AI_RETRIEVAL_TOP_K,
@@ -41,6 +42,7 @@ from ..attributes import (
     GEN_AI_STEP_SOURCE,
     GEN_AI_STEP_STATUS,
     GEN_AI_STEP_TYPE,
+    GEN_AI_TOOL_DEFINITIONS,
     GEN_AI_WORKFLOW_DESCRIPTION,
     GEN_AI_WORKFLOW_NAME,
     GEN_AI_WORKFLOW_TYPE,
@@ -78,6 +80,7 @@ _SPAN_ALLOWED_SUPPLEMENTAL_KEYS: tuple[str, ...] = (
     "gen_ai.request.id",
     GEN_AI_COMMAND,
     GEN_AI_FINISH_REASON,
+    GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK,
     GEN_AI_WORKFLOW_NAME,
 )
 _SPAN_BLOCKED_SUPPLEMENTAL_KEYS: set[str] = {"request_top_p", "ls_temperature"}
@@ -236,12 +239,18 @@ class SpanEmitter(EmitterMeta):
     ):
         self._tracer: Tracer = tracer or trace.get_tracer(__name__)
         self._capture_content = capture_content
+        self._capture_tool_definitions = False
         self._content_mode = ContentCapturingMode.NO_CONTENT
 
     def set_capture_content(
         self, value: bool
     ):  # pragma: no cover - trivial mutator
         self._capture_content = value
+
+    def set_capture_tool_definitions(
+        self, value: bool
+    ):  # pragma: no cover - trivial mutator
+        self._capture_tool_definitions = value
 
     def set_content_mode(
         self, mode: ContentCapturingMode
@@ -317,6 +326,15 @@ class SpanEmitter(EmitterMeta):
         # function definitions (semantic conv derived from structured list)
         if isinstance(invocation, LLMInvocation):
             _apply_function_definitions(span, invocation.request_functions)
+            # Opt-in: gen_ai.tool.definitions (requires capture_content + capture_tool_definitions)
+            if (
+                self._capture_content
+                and self._capture_tool_definitions
+                and invocation.tool_definitions
+            ):
+                span.set_attribute(
+                    GEN_AI_TOOL_DEFINITIONS, invocation.tool_definitions
+                )
         # Agent context (already covered by semconv metadata on base fields)
 
     def _apply_finish_attrs(
