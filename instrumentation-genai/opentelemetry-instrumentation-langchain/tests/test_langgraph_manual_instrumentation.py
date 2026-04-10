@@ -21,38 +21,20 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
-from pathlib import Path
 from typing import TypedDict
 
 import pytest
-
-_PACKAGE_SRC = Path(__file__).resolve().parents[1] / "src"
-if _PACKAGE_SRC.exists():
-    sys.path.insert(0, str(_PACKAGE_SRC))
-
-try:
-    from langgraph.graph import StateGraph, END
-except ModuleNotFoundError:
-    StateGraph = None  # type: ignore[assignment]
-
-try:
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import (
-        SimpleSpanProcessor,
-        SpanExporter,
-        SpanExportResult,
-    )
-except ModuleNotFoundError:
-    TracerProvider = None  # type: ignore[assignment]
+from langgraph.graph import StateGraph
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 from opentelemetry.util.genai.handler import get_telemetry_handler, TelemetryHandler
 from opentelemetry.util.genai.types import ToolCall, Step
-
-LANGGRAPH_AVAILABLE = StateGraph is not None
-OTEL_SDK_AVAILABLE = TracerProvider is not None
-DEPS_AVAILABLE = LANGGRAPH_AVAILABLE and OTEL_SDK_AVAILABLE
 
 
 class _CollectingExporter(SpanExporter):
@@ -150,8 +132,9 @@ def instrumented_tool_graph():
     instrumentor.instrument(tracer_provider=tp)
 
     builder = StateGraph(State)
-    builder.add_node("agent_node", node_with_tool_call,
-                      metadata={"agent_name": "test-agent"})
+    builder.add_node(
+        "agent_node", node_with_tool_call, metadata={"agent_name": "test-agent"}
+    )
     builder.add_edge("__start__", "agent_node")
     builder.add_edge("agent_node", "__end__")
     graph = builder.compile()
@@ -179,8 +162,7 @@ def instrumented_step_graph():
     instrumentor.instrument(tracer_provider=tp)
 
     builder = StateGraph(State)
-    builder.add_node("step_node", node_with_step,
-                      metadata={"agent_name": "test-agent"})
+    builder.add_node("step_node", node_with_step, metadata={"agent_name": "test-agent"})
     builder.add_edge("__start__", "step_node")
     builder.add_edge("step_node", "__end__")
     graph = builder.compile()
@@ -236,10 +218,8 @@ def instrumented_multi_node_graph():
         return {"value": state["value"] + " -> b"}
 
     builder = StateGraph(State)
-    builder.add_node("node_a", node_a,
-                      metadata={"agent_name": "agent-a"})
-    builder.add_node("node_b", node_b,
-                      metadata={"agent_name": "agent-b"})
+    builder.add_node("node_a", node_a, metadata={"agent_name": "agent-a"})
+    builder.add_node("node_b", node_b, metadata={"agent_name": "agent-b"})
     builder.add_edge("__start__", "node_a")
     builder.add_edge("node_a", "node_b")
     builder.add_edge("node_b", "__end__")
@@ -257,7 +237,6 @@ def instrumented_multi_node_graph():
 # -- Tests --
 
 
-@pytest.mark.skipif(not DEPS_AVAILABLE, reason="langgraph or otel sdk not available")
 class TestLangGraphManualInstrumentation:
     """Tests that manual handler.start_tool_call() / start_step() inside
     async LangGraph nodes produce spans on the same trace as the

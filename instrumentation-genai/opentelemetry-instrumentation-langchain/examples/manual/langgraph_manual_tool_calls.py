@@ -17,7 +17,6 @@ Usage:
 """
 
 import asyncio
-import time
 
 from opentelemetry import _events, _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
@@ -56,7 +55,7 @@ configure_instrumentation()
 
 from typing import TypedDict  # noqa: E402
 
-from langgraph.graph import StateGraph, END  # noqa: E402
+from langgraph.graph import StateGraph  # noqa: E402
 from opentelemetry.util.genai.handler import get_telemetry_handler  # noqa: E402
 from opentelemetry.util.genai.types import ToolCall, Step  # noqa: E402
 
@@ -120,9 +119,7 @@ async def main():
 
     # metadata={"agent_name": ...} makes the auto-instrumented span carry
     # gen_ai.agent.name, and enables the handler's agent context stack.
-    builder.add_node(
-        "lookup", lookup_node, metadata={"agent_name": "lookup-agent"}
-    )
+    builder.add_node("lookup", lookup_node, metadata={"agent_name": "lookup-agent"})
     builder.add_node(
         "analysis", analysis_node, metadata={"agent_name": "analysis-agent"}
     )
@@ -132,9 +129,7 @@ async def main():
 
     graph = builder.compile()
 
-    result = await graph.ainvoke(
-        {"query": "customer 42 order status", "result": ""}
-    )
+    result = await graph.ainvoke({"query": "customer 42 order status", "result": ""})
     print(f"Result: {result['result']}")
 
 
