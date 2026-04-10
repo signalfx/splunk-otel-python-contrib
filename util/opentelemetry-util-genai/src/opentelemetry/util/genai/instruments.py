@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from opentelemetry.metrics import Histogram, Meter
+from opentelemetry.metrics import Counter, Histogram, Meter, UpDownCounter
 
 # Bucket boundaries per OpenTelemetry semantic conventions:
 # https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md
@@ -132,4 +132,14 @@ class Instruments:
             name="gen_ai.evaluation.client.usage.cost",
             unit="{usd}",
             description="Cost of evaluator calls in USD",
+        )
+        self.evaluation_client_queue_size: UpDownCounter = meter.create_up_down_counter(
+            name="gen_ai.evaluation.client.queue.size",
+            unit="{invocation}",
+            description="Current number of invocations in the evaluation queue",
+        )
+        self.evaluation_client_enqueue_errors: Counter = meter.create_counter(
+            name="gen_ai.evaluation.client.enqueue.errors",
+            unit="{error}",
+            description="Number of invocations that failed to enqueue for evaluation",
         )

@@ -105,8 +105,12 @@ class Manager(CompletionCallback):
         queue_size: int | None = None,
         concurrent_mode: bool | None = None,
         worker_count: int | None = None,
+        queue_size_counter: Any | None = None,
+        enqueue_error_counter: Any | None = None,
     ) -> None:
         self._handler = handler
+        self._queue_size_counter = queue_size_counter
+        self._enqueue_error_counter = enqueue_error_counter
         self._interval = interval if interval is not None else read_interval()
         self._aggregate_results = (
             aggregate_results
@@ -240,6 +244,8 @@ class Manager(CompletionCallback):
             return
         try:
             self._queue.put_nowait(invocation)
+            if self._queue_size_counter is not None:
+                self._queue_size_counter.add(1)
         except queue.Full:
             # Bounded queue is full - apply backpressure by dropping
             invocation.evaluation_error = "client_evaluation_queue_full"
@@ -274,6 +280,10 @@ class Manager(CompletionCallback):
                     "queue_depth": self._queue.qsize(),
                 },
             )
+            if self._enqueue_error_counter is not None:
+                self._enqueue_error_counter.add(
+                    1, {"error.type": "queue_full"}
+                )
         except Exception as exc:  # pragma: no cover - defensive
             invocation_id = getattr(invocation, "span_id", None) or getattr(
                 invocation, "trace_id", None
@@ -298,6 +308,10 @@ class Manager(CompletionCallback):
                 recovery_action="invocation_dropped",
                 operational_impact="Evaluation skipped for this invocation",
             )
+            if self._enqueue_error_counter is not None:
+                self._enqueue_error_counter.add(
+                    1, {"error.type": "queue_error"}
+                )
 
     def wait_for_all(self, timeout: float | None = None) -> None:
         if not self.has_evaluators:
@@ -454,6 +468,8 @@ class Manager(CompletionCallback):
                 invocation = self._queue.get(timeout=self._interval)
             except queue.Empty:
                 continue
+            if self._queue_size_counter is not None:
+                self._queue_size_counter.add(-1)
             try:
                 # Apply rate limiting on processing side
                 allowed, reason = self._admission.allow()
@@ -533,6 +549,8 @@ class Manager(CompletionCallback):
                     invocation = self._queue.get(timeout=self._interval)
                 except queue.Empty:
                     continue
+                if self._queue_size_counter is not None:
+                    self._queue_size_counter.add(-1)
                 try:
                     # Apply rate limiting on processing side
                     allowed, reason = loop.run_until_complete(

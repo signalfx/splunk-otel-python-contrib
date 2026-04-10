@@ -57,10 +57,47 @@ def create_evaluation_manager(
             )
             # Fall through to in-process mode
 
+    queue_size_counter = None
+    enqueue_error_counter = None
+    try:
+        from opentelemetry.util.genai.config import parse_env  # noqa: PLC0415
+        from opentelemetry.util.genai.instruments import (
+            Instruments,  # noqa: PLC0415
+        )
+
+        settings = parse_env()
+        if settings.enable_evaluation_monitoring:
+            meter_provider = getattr(handler, "_meter_provider", None)
+            if meter_provider is not None:
+                from opentelemetry.metrics import get_meter  # noqa: PLC0415
+
+                meter = get_meter(
+                    __name__,
+                    meter_provider=meter_provider,
+                )
+            else:
+                from opentelemetry.metrics import get_meter  # noqa: PLC0415
+
+                meter = get_meter(__name__)
+            instruments = Instruments(meter)
+            queue_size_counter = instruments.evaluation_client_queue_size
+            enqueue_error_counter = (
+                instruments.evaluation_client_enqueue_errors
+            )
+            _LOGGER.debug(
+                "Evaluation monitoring counters enabled (queue_size, enqueue_errors)"
+            )
+    except Exception:  # pragma: no cover - defensive
+        _LOGGER.debug(
+            "Evaluation monitoring counters not available", exc_info=True
+        )
+
     return Manager(
         handler,
         interval=interval,
         aggregate_results=aggregate_results,
+        queue_size_counter=queue_size_counter,
+        enqueue_error_counter=enqueue_error_counter,
     )
 
 

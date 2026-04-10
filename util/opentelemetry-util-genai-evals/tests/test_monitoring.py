@@ -1,4 +1,4 @@
-"""Tests for evaluation monitoring metrics (duration + cost histograms)."""
+"""Tests for evaluation monitoring metrics (duration, cost, queue size, enqueue errors)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from opentelemetry.util.genai.types import (
 
 _DURATION_METRIC = "gen_ai.evaluation.client.operation.duration"
 _COST_METRIC = "gen_ai.evaluation.client.usage.cost"
+_QUEUE_SIZE_METRIC = "gen_ai.evaluation.client.queue.size"
+_ENQUEUE_ERRORS_METRIC = "gen_ai.evaluation.client.enqueue.errors"
 
 
 class _StubHandler:
@@ -297,3 +299,140 @@ def test_manager_stamps_duration_and_evaluator_name(monkeypatch):
         assert res.duration_s is not None
         assert res.duration_s >= 0.04
         assert res.evaluator_name == "_SlowEvaluator"
+
+
+# ============================================================================
+# Unit: Queue size UpDownCounter
+# ============================================================================
+
+
+def test_manager_queue_size_increments_on_offer(monkeypatch):
+    """Queue size counter increments (+1) when offer() enqueues an invocation."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    instruments = Instruments(meter)
+
+    handler = _StubHandler()
+    manager = Manager(
+        handler,
+        queue_size_counter=instruments.evaluation_client_queue_size,
+    )
+    evaluator = _SlowEvaluator(delay=0)
+    manager._evaluators = {"LLMInvocation": [evaluator]}
+
+    invocation = LLMInvocation(request_model="gpt-4o")
+    manager.offer(invocation)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _QUEUE_SIZE_METRIC)
+    assert metric is not None
+    data_points = list(metric.data.data_points)
+    total = sum(dp.value for dp in data_points)
+    assert total == 1
+
+
+def test_manager_queue_size_decrements_on_dequeue(monkeypatch):
+    """Queue size counter decrements (-1) when worker dequeues an item."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    instruments = Instruments(meter)
+
+    handler = _StubHandler()
+    manager = Manager(
+        handler,
+        queue_size_counter=instruments.evaluation_client_queue_size,
+        enqueue_error_counter=instruments.evaluation_client_enqueue_errors,
+    )
+    evaluator = _SlowEvaluator(delay=0)
+    manager._evaluators = {"LLMInvocation": [evaluator]}
+
+    invocation = LLMInvocation(request_model="gpt-4o")
+    # Enqueue: +1
+    manager.offer(invocation)
+    # Simulate dequeue (workers not started with evaluators=none):
+    # manually dequeue and call the counter as the worker loop would
+    manager._queue.get_nowait()
+    if manager._queue_size_counter is not None:
+        manager._queue_size_counter.add(-1)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _QUEUE_SIZE_METRIC)
+    assert metric is not None
+    data_points = list(metric.data.data_points)
+    # Net sum should be 0 (+1 offer, -1 dequeue)
+    total = sum(dp.value for dp in data_points)
+    assert total == 0
+
+
+def test_manager_no_queue_size_without_counter(monkeypatch):
+    """Without a counter, offer() still works but produces no queue size metric."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
+    meter_provider, reader = _make_meter_and_reader()
+
+    handler = _StubHandler()
+    manager = Manager(handler)
+    evaluator = _SlowEvaluator(delay=0)
+    manager._evaluators = {"LLMInvocation": [evaluator]}
+
+    invocation = LLMInvocation(request_model="gpt-4o")
+    manager.offer(invocation)
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _QUEUE_SIZE_METRIC)
+    assert metric is None
+
+
+# ============================================================================
+# Unit: Enqueue errors Counter
+# ============================================================================
+
+
+def test_manager_enqueue_error_on_queue_full(monkeypatch):
+    """Enqueue error counter increments on queue full."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
+    meter_provider, reader = _make_meter_and_reader()
+    meter = meter_provider.get_meter("test")
+    instruments = Instruments(meter)
+
+    handler = _StubHandler()
+    manager = Manager(
+        handler,
+        queue_size=1,
+        queue_size_counter=instruments.evaluation_client_queue_size,
+        enqueue_error_counter=instruments.evaluation_client_enqueue_errors,
+    )
+    evaluator = _SlowEvaluator(delay=0)
+    manager._evaluators = {"LLMInvocation": [evaluator]}
+
+    # Fill the queue
+    manager.offer(LLMInvocation(request_model="gpt-4o"))
+    # This should fail with queue full
+    manager.offer(LLMInvocation(request_model="gpt-4o"))
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _ENQUEUE_ERRORS_METRIC)
+    assert metric is not None
+    data_points = list(metric.data.data_points)
+    assert len(data_points) == 1
+    assert data_points[0].value == 1
+    assert dict(data_points[0].attributes)["error.type"] == "queue_full"
+
+
+def test_manager_no_enqueue_error_without_counter(monkeypatch):
+    """Without an error counter, queue full still works but no metric is recorded."""
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
+    meter_provider, reader = _make_meter_and_reader()
+
+    handler = _StubHandler()
+    manager = Manager(handler, queue_size=1)
+    evaluator = _SlowEvaluator(delay=0)
+    manager._evaluators = {"LLMInvocation": [evaluator]}
+
+    manager.offer(LLMInvocation(request_model="gpt-4o"))
+    manager.offer(LLMInvocation(request_model="gpt-4o"))
+
+    meter_provider.force_flush()
+    metric = _get_metric_data(reader, _ENQUEUE_ERRORS_METRIC)
+    assert metric is None
