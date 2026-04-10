@@ -1219,6 +1219,9 @@ class TelemetryHandler:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
         _apply_genai_context(agent)
+        # Implicit workflow inheritance
+        agent.workflow_name = baggage.get_baggage("workflow.name")
+
         self._inherit_parent_span(agent)
         self._maybe_mark_conversation_root(agent)
         self._emitter.on_start(agent)
@@ -1274,6 +1277,10 @@ class TelemetryHandler:
         """Start a step and create a pending span entry."""
         self._refresh_capture_content()
         _apply_genai_context(step)
+        # Implicit agent inheritance
+        step.workflow_name = baggage.get_baggage("workflow.name")
+        step.agent_name = baggage.get_baggage("agent.name")
+        step.agent_id = baggage.get_baggage("agent.id")
         self._inherit_parent_span(step)
         self._emitter.on_start(step)
         self._push_current_span(step)
