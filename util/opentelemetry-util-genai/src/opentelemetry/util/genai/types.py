@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-import time
+import timeit
 from contextvars import Token
 from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
@@ -71,7 +71,7 @@ class GenAI:
     trace_id: Optional[int] = None
     span_id: Optional[int] = None
     trace_flags: Optional[int] = None
-    start_time: float = field(default_factory=time.time)
+    start_time: float = field(default_factory=timeit.default_timer)
     end_time: Optional[float] = None
     provider: Optional[str] = field(
         default=None,
