@@ -131,23 +131,40 @@ def _make_command_input_message(command: Any) -> list[InputMessage]:
     return [InputMessage(role="user", parts=[Text(_safe_str(command))])]
 
 
-def _make_input_message(data: dict[str, Any]) -> list[InputMessage]:
+def _make_input_message(data: Any) -> list[InputMessage]:
     """Create structured input message with full data as JSON."""
+    if not isinstance(data, dict):
+        return []
     input_messages: list[InputMessage] = []
     messages = data.get("messages")
-    if messages is None:
-        return []
-    for msg in messages:
-        content = getattr(msg, "content", "")
-        if content:
-            # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
-            input_message = InputMessage(role="user", parts=[Text(_safe_str(content))])
-            input_messages.append(input_message)
+    if messages is not None:
+        for msg in messages:
+            content = getattr(msg, "content", "")
+            if content:
+                # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
+                input_message = InputMessage(
+                    role="user", parts=[Text(_safe_str(content))]
+                )
+                input_messages.append(input_message)
+        return input_messages
+    # Fallback: serialize non-message state fields as input.
+    # Common in LangGraph where nodes use structured state fields
+    # (e.g., user_query) rather than a message list.
+    exclude_keys = {"messages", "intermediate_steps"}
+    input_data = {
+        k: v for k, v in data.items() if k not in exclude_keys and v is not None
+    }
+    if input_data:
+        serialized = _serialize(input_data)
+        if serialized:
+            return [InputMessage(role="user", parts=[Text(serialized)])]
     return input_messages
 
 
-def _make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
+def _make_output_message(data: Any) -> list[OutputMessage]:
     """Create structured output message with full data as JSON."""
+    if not isinstance(data, dict):
+        return []
     output_messages: list[OutputMessage] = []
     messages = data.get("messages")
     if messages is None:
@@ -176,14 +193,14 @@ def _make_last_output_message(data: dict[str, Any]) -> list[OutputMessage]:
     return []
 
 
-def _make_workflow_output_fallback(data: dict[str, Any]) -> Optional[str]:
+def _make_workflow_output_fallback(data: Any) -> Optional[str]:
     """Create output summary from non-message state fields.
 
     Fallback for when workflow output doesn't contain AI messages.
     This is common in LangGraph where agent nodes update structured
     state fields rather than the message list.
     """
-    if not data:
+    if not isinstance(data, dict):
         return None
     # Exclude messages and internal fields that don't represent output
     exclude_keys = {"messages", "intermediate_steps"}
@@ -356,6 +373,14 @@ class _InvocationManager:
 
 
 class LangchainCallbackHandler(BaseCallbackHandler):
+    # Run callback methods directly in the caller's context instead of
+    # dispatching to a thread pool via copy_context().run().  Without this,
+    # LangChain Core's callback manager isolates each handler invocation in
+    # a copied context, making ContextVar modifications (e.g. the
+    # _current_genai_span set by _push_current_span) invisible to the node
+    # body where user code may call handler.start_tool_call() manually.
+    run_inline = True
+
     def __init__(
         self,
         telemetry_handler: Optional[TelemetryHandler] = None,
