@@ -103,6 +103,10 @@ class GenAI:
         default=None,
         metadata={"semconv": GenAIAttributes.GEN_AI_DATA_SOURCE_ID},
     )
+    workflow_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.workflow.name"},
+    )
     # Association properties for context tracking.
     # Emitted on spans as gen_ai.association.properties.<key>.
     association_properties: Dict[str, Any] = field(default_factory=dict)

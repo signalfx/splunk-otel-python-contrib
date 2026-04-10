@@ -67,6 +67,7 @@ except Exception:  # pragma: no cover - fallback if debug module missing
 
 
 from opentelemetry import _events as _otel_events
+from opentelemetry import baggage
 from opentelemetry import context as context_api
 from opentelemetry import trace
 from opentelemetry._logs import Logger, LoggerProvider, get_logger
@@ -521,7 +522,6 @@ class TelemetryHandler:
         self._evaluation_manager = None
         # Active agent identity stack (name, id) for implicit propagation to nested operations
         # agent_id may be None if not provided by instrumentation
-        self._agent_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
         self._initialized = True
 
@@ -628,6 +628,11 @@ class TelemetryHandler:
             _current_genai_span.set(span)
             if not _is_async_context():
                 ctx = trace.set_span_in_context(span)
+                if isinstance(invocation, Workflow):
+                    ctx = baggage.set_baggage("workflow.name", invocation.name, context=ctx)
+                if isinstance(invocation, AgentInvocation):
+                    ctx = baggage.set_baggage("agent.name", invocation.agent_name, context=ctx)
+                    ctx = baggage.set_baggage("agent.id", invocation.agent_id, context=ctx)
                 invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
 
     @staticmethod
@@ -660,14 +665,10 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
         # Implicit agent inheritance
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        invocation.workflow_name = baggage.get_baggage("workflow.name")
+        invocation.agent_name = baggage.get_baggage("agent.name")
+        invocation.agent_id = baggage.get_baggage("agent.id")
+
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -773,14 +774,11 @@ class TelemetryHandler:
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        # Implicit agent inheritance
+        invocation.workflow_name = baggage.get_baggage("workflow.name")
+        invocation.agent_name = baggage.get_baggage("agent.name")
+        invocation.agent_id = baggage.get_baggage("agent.id")
+
         invocation.start_time = time.time()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
@@ -836,14 +834,11 @@ class TelemetryHandler:
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        # Implicit agent inheritance
+        invocation.workflow_name = baggage.get_baggage("workflow.name")
+        invocation.agent_name = baggage.get_baggage("agent.name")
+        invocation.agent_id = baggage.get_baggage("agent.id")
+
         invocation.start_time = time.time()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
@@ -896,14 +891,11 @@ class TelemetryHandler:
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        # Implicit agent inheritance
+        invocation.workflow_name = baggage.get_baggage("workflow.name")
+        invocation.agent_name = baggage.get_baggage("agent.name")
+        invocation.agent_id = baggage.get_baggage("agent.id")
+
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -1227,19 +1219,14 @@ class TelemetryHandler:
         """Start an agent operation (create or invoke) and create a pending span entry."""
         self._refresh_capture_content()
         _apply_genai_context(agent)
+        # Implicit workflow inheritance
+        agent.workflow_name = baggage.get_baggage("workflow.name")
+
         self._inherit_parent_span(agent)
         self._maybe_mark_conversation_root(agent)
         self._emitter.on_start(agent)
         self._push_current_span(agent)
-        # Push agent identity context
-        if isinstance(agent, AgentInvocation):
-            try:
-                if agent.name:
-                    self._agent_context_stack.append(
-                        (agent.name, agent.agent_id)
-                    )
-            except Exception:  # pragma: no cover - defensive
-                pass
+
         return agent
 
     def stop_agent(
@@ -1263,15 +1250,7 @@ class TelemetryHandler:
                 self._meter_provider.force_flush()  # type: ignore[attr-defined]
             except Exception:
                 pass
-        # Pop context if matches top
-        if isinstance(agent, AgentInvocation):
-            try:
-                if self._agent_context_stack and agent.agent_id is not None:
-                    top_name, top_id = self._agent_context_stack[-1]
-                    if top_name == agent.name and top_id == agent.agent_id:
-                        self._agent_context_stack.pop()
-            except Exception:
-                pass
+
         return agent
 
     def fail_agent(
@@ -1290,15 +1269,7 @@ class TelemetryHandler:
                 self._meter_provider.force_flush()  # type: ignore[attr-defined]
             except Exception:
                 pass
-        # Pop context if this agent is active
-        if isinstance(agent, AgentInvocation):
-            try:
-                if self._agent_context_stack and agent.agent_id is not None:
-                    top_name, top_id = self._agent_context_stack[-1]
-                    if top_name == agent.name and top_id == agent.agent_id:
-                        self._agent_context_stack.pop()
-            except Exception:
-                pass
+
         return agent
 
     # Step lifecycle ------------------------------------------------------
@@ -1306,6 +1277,10 @@ class TelemetryHandler:
         """Start a step and create a pending span entry."""
         self._refresh_capture_content()
         _apply_genai_context(step)
+        # Implicit agent inheritance
+        step.workflow_name = baggage.get_baggage("workflow.name")
+        step.agent_name = baggage.get_baggage("agent.name")
+        step.agent_id = baggage.get_baggage("agent.id")
         self._inherit_parent_span(step)
         self._emitter.on_start(step)
         self._push_current_span(step)

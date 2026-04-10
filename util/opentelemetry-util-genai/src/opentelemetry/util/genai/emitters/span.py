@@ -654,6 +654,7 @@ class SpanEmitter(EmitterMeta):
             )
             if semconv_subset:
                 _apply_gen_ai_semconv_attributes(span, semconv_subset)
+        span.set_attribute(GEN_AI_WORKFLOW_NAME, agent.workflow_name)
 
     def _finish_agent(self, agent: AgentCreation | AgentInvocation) -> None:
         """Finish an agent span."""
@@ -725,6 +726,7 @@ class SpanEmitter(EmitterMeta):
         _apply_gen_ai_semconv_attributes(
             span, step.semantic_convention_attributes()
         )
+        span.set_attribute(GEN_AI_WORKFLOW_NAME, step.workflow_name)
 
     def _finish_step(self, step: Step) -> None:
         """Finish a step span."""
@@ -793,6 +795,7 @@ class SpanEmitter(EmitterMeta):
 
         # Apply any supplemental custom attributes
         _apply_custom_attributes(span, getattr(tool, "attributes", None))
+        span.set_attribute(GEN_AI_WORKFLOW_NAME, tool.workflow_name)
 
     def _finish_tool_call(self, tool: ToolCall) -> None:
         """Finish a tool call span."""
@@ -845,6 +848,7 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 GEN_AI_EMBEDDINGS_INPUT_TEXTS, embedding.input_texts
             )
+        span.set_attribute(GEN_AI_WORKFLOW_NAME, embedding.workflow_name)
 
     def _finish_embedding(self, embedding: EmbeddingInvocation) -> None:
         """Finish an embedding span."""
@@ -905,6 +909,7 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(GEN_AI_RETRIEVAL_TOP_K, retrieval.top_k)
         if self._capture_content and retrieval.query:
             span.set_attribute(GEN_AI_RETRIEVAL_QUERY_TEXT, retrieval.query)
+        span.set_attribute(GEN_AI_WORKFLOW_NAME, retrieval.workflow_name)
 
     def _finish_retrieval(self, retrieval: RetrievalInvocation) -> None:
         """Finish a retrieval span."""
