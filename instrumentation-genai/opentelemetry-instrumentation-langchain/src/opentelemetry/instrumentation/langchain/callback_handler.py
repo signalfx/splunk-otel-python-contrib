@@ -133,14 +133,25 @@ def _make_input_message(data: Any) -> list[InputMessage]:
         return []
     input_messages: list[InputMessage] = []
     messages = data.get("messages")
-    if messages is None:
-        return []
-    for msg in messages:
-        content = getattr(msg, "content", "")
-        if content:
-            # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
-            input_message = InputMessage(role="user", parts=[Text(_safe_str(content))])
-            input_messages.append(input_message)
+    if messages is not None:
+        for msg in messages:
+            content = getattr(msg, "content", "")
+            if content:
+                # TODO: for invoke_agent type invocation, when system_messages is added, can filter SystemMessage separately if needed and only add here HumanMessage, currently all messages are added
+                input_message = InputMessage(role="user", parts=[Text(_safe_str(content))])
+                input_messages.append(input_message)
+        return input_messages
+    # Fallback: serialize non-message state fields as input.
+    # Common in LangGraph where nodes use structured state fields
+    # (e.g., user_query) rather than a message list.
+    exclude_keys = {"messages", "intermediate_steps"}
+    input_data = {
+        k: v for k, v in data.items() if k not in exclude_keys and v is not None
+    }
+    if input_data:
+        serialized = _serialize(input_data)
+        if serialized:
+            return [InputMessage(role="user", parts=[Text(serialized)])]
     return input_messages
 
 
