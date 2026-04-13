@@ -4,6 +4,10 @@ All notable changes to this repository are documented in this file.
 
 ## Unreleased
 
+### Fixed
+- **MCP span naming aligned with OTel MCP semantic conventions** — `MCPToolCall` spans now use `{mcp.method.name} {tool_name}` format (e.g. `tools/call add`) instead of `execute_tool {tool_name}`. SpanKind is `CLIENT` or `SERVER` based on `is_client` flag, matching the MCP semconv spec.
+- **MCP metric histogram bucket boundaries** — All MCP duration histograms (`mcp.client.operation.duration`, `mcp.server.operation.duration`, `mcp.client.session.duration`, `mcp.server.session.duration`) now use the semconv-specified bucket boundaries `[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]`.
+
 ### Changed
 - **TelemetryHandler is now a process-wide singleton** — `TelemetryHandler` uses class-level `__new__` with double-checked locking to guarantee a single instance per process. Both `TelemetryHandler(...)` and `get_telemetry_handler(...)` return the same singleton, ensuring handler-internal context stacks (workflow, agent) are shared across instrumentation boundaries (e.g. aidefense + openai-v2 + crewai).
 - **`get_telemetry_handler()` simplified** — Now delegates directly to `TelemetryHandler()`; the singleton logic lives entirely in `__new__`.
