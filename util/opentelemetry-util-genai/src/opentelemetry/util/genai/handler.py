@@ -164,6 +164,27 @@ _current_genai_span: ContextVar[Optional[Span]] = ContextVar(
     "_current_genai_span", default=None
 )
 
+# Context-scoped attributes (PR #4931 pattern).
+# These replace baggage as the primary in-process propagation mechanism.
+# In-process only — not propagated across wire boundaries.
+_ctx_workflow_name: ContextVar[Optional[str]] = ContextVar(
+    "genai_workflow_name", default=None
+)
+_ctx_agent_name: ContextVar[Optional[str]] = ContextVar(
+    "genai_agent_name", default=None
+)
+_ctx_agent_id: ContextVar[Optional[str]] = ContextVar(
+    "genai_agent_id", default=None
+)
+
+
+def _get_ctx_attr(ctx_var: ContextVar[Optional[str]], baggage_key: str) -> Optional[str]:
+    """Read from context-scoped var first, fall back to baggage."""
+    value = ctx_var.get()
+    if value is None:
+        value = baggage.get_baggage(baggage_key)
+    return value
+
 
 def _is_async_context() -> bool:
     """Return True when called inside a running asyncio event loop."""
@@ -629,11 +650,17 @@ class TelemetryHandler:
             if not _is_async_context():
                 ctx = trace.set_span_in_context(span)
                 if isinstance(invocation, Workflow):
-                    workflow_name = baggage.get_baggage("workflow.name")
                     ctx = baggage.set_baggage("workflow.name", invocation.name, context=ctx)
+                    invocation._ctx_tokens = [  # type: ignore[attr-defined]
+                        (_ctx_workflow_name, _ctx_workflow_name.set(invocation.name)),
+                    ]
                 if isinstance(invocation, AgentInvocation):
                     ctx = baggage.set_baggage("agent.name", invocation.agent_name, context=ctx)
                     ctx = baggage.set_baggage("agent.id", invocation.agent_id, context=ctx)
+                    invocation._ctx_tokens = [  # type: ignore[attr-defined]
+                        (_ctx_agent_name, _ctx_agent_name.set(invocation.agent_name)),
+                        (_ctx_agent_id, _ctx_agent_id.set(invocation.agent_id)),
+                    ]
                 invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
 
     @staticmethod
@@ -654,6 +681,11 @@ class TelemetryHandler:
                 context_api._RUNTIME_CONTEXT.detach(token)  # type: ignore[attr-defined]
             except Exception:  # noqa: BLE001
                 pass
+        for ctx_var, ctx_token in getattr(invocation, "_ctx_tokens", []):
+            try:
+                ctx_var.reset(ctx_token)
+            except Exception:  # noqa: BLE001
+                pass
 
     def start_llm(
         self,
@@ -666,9 +698,9 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
         # Implicit agent inheritance
-        invocation.workflow_name = baggage.get_baggage("workflow.name")
-        invocation.agent_name = baggage.get_baggage("agent.name")
-        invocation.agent_id = baggage.get_baggage("agent.id")
+        invocation.workflow_name = _get_ctx_attr(_ctx_workflow_name, "workflow.name")
+        invocation.agent_name = _get_ctx_attr(_ctx_agent_name, "agent.name")
+        invocation.agent_id = _get_ctx_attr(_ctx_agent_id, "agent.id")
 
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
@@ -776,9 +808,9 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
         # Implicit agent inheritance
-        invocation.workflow_name = baggage.get_baggage("workflow.name")
-        invocation.agent_name = baggage.get_baggage("agent.name")
-        invocation.agent_id = baggage.get_baggage("agent.id")
+        invocation.workflow_name = _get_ctx_attr(_ctx_workflow_name, "workflow.name")
+        invocation.agent_name = _get_ctx_attr(_ctx_agent_name, "agent.name")
+        invocation.agent_id = _get_ctx_attr(_ctx_agent_id, "agent.id")
 
         invocation.start_time = time.time()
         self._inherit_parent_span(invocation)
@@ -836,9 +868,9 @@ class TelemetryHandler:
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
         # Implicit agent inheritance
-        invocation.workflow_name = baggage.get_baggage("workflow.name")
-        invocation.agent_name = baggage.get_baggage("agent.name")
-        invocation.agent_id = baggage.get_baggage("agent.id")
+        invocation.workflow_name = _get_ctx_attr(_ctx_workflow_name, "workflow.name")
+        invocation.agent_name = _get_ctx_attr(_ctx_agent_name, "agent.name")
+        invocation.agent_id = _get_ctx_attr(_ctx_agent_id, "agent.id")
 
         invocation.start_time = time.time()
         self._inherit_parent_span(invocation)
@@ -893,9 +925,9 @@ class TelemetryHandler:
         """Start a tool call invocation and create a pending span entry."""
         _apply_genai_context(invocation)
         # Implicit agent inheritance
-        invocation.workflow_name = baggage.get_baggage("workflow.name")
-        invocation.agent_name = baggage.get_baggage("agent.name")
-        invocation.agent_id = baggage.get_baggage("agent.id")
+        invocation.workflow_name = _get_ctx_attr(_ctx_workflow_name, "workflow.name")
+        invocation.agent_name = _get_ctx_attr(_ctx_agent_name, "agent.name")
+        invocation.agent_id = _get_ctx_attr(_ctx_agent_id, "agent.id")
 
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
@@ -1221,7 +1253,7 @@ class TelemetryHandler:
         self._refresh_capture_content()
         _apply_genai_context(agent)
         # Implicit workflow inheritance
-        agent.workflow_name = baggage.get_baggage("workflow.name")
+        agent.workflow_name = _get_ctx_attr(_ctx_workflow_name, "workflow.name")
 
         self._inherit_parent_span(agent)
         self._maybe_mark_conversation_root(agent)
@@ -1279,9 +1311,9 @@ class TelemetryHandler:
         self._refresh_capture_content()
         _apply_genai_context(step)
         # Implicit agent inheritance
-        step.workflow_name = baggage.get_baggage("workflow.name")
-        step.agent_name = baggage.get_baggage("agent.name")
-        step.agent_id = baggage.get_baggage("agent.id")
+        step.workflow_name = _get_ctx_attr(_ctx_workflow_name, "workflow.name")
+        step.agent_name = _get_ctx_attr(_ctx_agent_name, "agent.name")
+        step.agent_id = _get_ctx_attr(_ctx_agent_id, "agent.id")
         self._inherit_parent_span(step)
         self._emitter.on_start(step)
         self._push_current_span(step)
