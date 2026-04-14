@@ -142,6 +142,25 @@ def is_instrumentation_enabled() -> bool:
     return env_value in ("true", "1", "yes", "on")
 
 
+def detect_transport(instance: object) -> str:
+    """Best-effort transport detection from a FastMCP Client or MCP Server.
+
+    Inspects the instance (or its ``transport`` attribute) class name for
+    keywords that indicate a network-based transport.
+
+    Returns:
+        ``"tcp"`` for SSE / streamable-HTTP transports, ``"pipe"`` otherwise.
+    """
+    try:
+        target = getattr(instance, "transport", instance)
+        cls_name = type(target).__name__.lower()
+        if "sse" in cls_name or "streamable" in cls_name:
+            return "tcp"
+    except Exception:
+        pass
+    return "pipe"
+
+
 def extract_tool_info(args: tuple, kwargs: dict) -> tuple[str, Any]:
     """Extract tool name and arguments from call_tool parameters.
 

@@ -36,19 +36,9 @@ from opentelemetry.instrumentation.fastmcp._mcp_context import (
     clear_mcp_request_context,
     set_mcp_request_context,
 )
+from opentelemetry.instrumentation.fastmcp.utils import detect_transport
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _detect_server_transport(instance: Any) -> str:
-    """Best-effort transport detection from MCP Server instance."""
-    try:
-        cls_name = type(instance).__name__.lower()
-        if "sse" in cls_name or "streamable" in cls_name:
-            return "tcp"
-    except Exception:
-        pass
-    return "pipe"
 
 
 def _extract_carrier_from_meta(request_meta: Any) -> dict[str, str]:
@@ -191,7 +181,7 @@ class TransportInstrumentor:
                 carrier: dict[str, str] = {}
                 jsonrpc_id: str | None = None
                 method_name: str | None = None
-                transport = _detect_server_transport(instance)
+                transport = detect_transport(instance)
 
                 if message and hasattr(message, "request_meta"):
                     carrier = _extract_carrier_from_meta(message.request_meta)

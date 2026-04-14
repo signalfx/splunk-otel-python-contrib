@@ -50,18 +50,6 @@ def _enrich_from_request_context(op: MCPOperation) -> None:
         op.jsonrpc_request_id = ctx.jsonrpc_request_id
     if ctx.network_transport and op.network_transport is None:
         op.network_transport = ctx.network_transport
-    if ctx.network_protocol_name and op.network_protocol_name is None:
-        op.network_protocol_name = ctx.network_protocol_name
-    if ctx.network_protocol_version and op.network_protocol_version is None:
-        op.network_protocol_version = ctx.network_protocol_version
-    if ctx.client_address and op.client_address is None:
-        op.client_address = ctx.client_address
-    if ctx.client_port and op.client_port is None:
-        op.client_port = ctx.client_port
-    if ctx.server_address and op.server_address is None:
-        op.server_address = ctx.server_address
-    if ctx.server_port and op.server_port is None:
-        op.server_port = ctx.server_port
 
 
 class ServerInstrumentor:

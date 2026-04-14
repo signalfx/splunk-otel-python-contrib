@@ -22,7 +22,7 @@ network.transport, etc.) without coupling directly to transport internals.
 from __future__ import annotations
 
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -33,13 +33,6 @@ class MCPRequestContext:
     jsonrpc_request_id: Optional[str] = None
     mcp_method_name: Optional[str] = None
     network_transport: Optional[str] = None
-    network_protocol_name: Optional[str] = None
-    network_protocol_version: Optional[str] = None
-    client_address: Optional[str] = None
-    client_port: Optional[int] = None
-    server_address: Optional[str] = None
-    server_port: Optional[int] = None
-    baggage: dict[str, str] = field(default_factory=dict)
 
 
 _mcp_request_context: ContextVar[Optional[MCPRequestContext]] = ContextVar(

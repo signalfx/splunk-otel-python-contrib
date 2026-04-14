@@ -16,6 +16,7 @@
 
 import logging
 import time
+from typing import Any, Callable
 
 from wrapt import register_post_import_hook, wrap_function_wrapper
 
@@ -27,6 +28,7 @@ from opentelemetry.util.genai.types import (
     MCPToolCall,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    detect_transport,
     safe_serialize,
     should_capture_content,
     truncate_if_needed,
@@ -35,17 +37,35 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _detect_client_transport(client_instance: object) -> str:
-    """Best-effort transport detection from a FastMCP Client instance."""
-    try:
-        transport = getattr(client_instance, "transport", None)
-        if transport is not None:
-            cls_name = type(transport).__name__.lower()
-            if "sse" in cls_name or "streamable" in cls_name:
-                return "tcp"
-    except Exception:
-        pass
-    return "pipe"
+def _traced_mcp_operation(
+    handler: TelemetryHandler,
+    build_op: Callable[[Any, str], MCPOperation],
+) -> Callable:
+    """Generic async wrapper for MCPOperation lifecycle.
+
+    ``build_op(instance, transport)`` must return a ready-to-start
+    :class:`MCPOperation`. The wrapper handles start / stop / fail
+    and duration timing.
+    """
+
+    async def wrapper(wrapped, instance, args, kwargs):
+        transport = detect_transport(instance)
+        op = build_op(instance, transport)
+
+        handler.start_mcp_operation(op)
+        start_time = time.time()
+        try:
+            result = await wrapped(*args, **kwargs)
+            op.duration_s = time.time() - start_time
+            handler.stop_mcp_operation(op)
+            return result
+        except Exception as e:
+            op.duration_s = time.time() - start_time
+            op.is_error = True
+            handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
+            raise
+
+    return wrapper
 
 
 class ClientInstrumentor:
@@ -63,59 +83,21 @@ class ClientInstrumentor:
 
     def instrument(self):
         """Apply FastMCP client-side instrumentation."""
-        register_post_import_hook(
-            lambda _: wrap_function_wrapper(
+        hooks = {
+            "Client.__aenter__": self._client_enter_wrapper(),
+            "Client.__aexit__": self._client_exit_wrapper(),
+            "Client.call_tool": self._client_call_tool_wrapper(),
+            "Client.list_tools": self._client_list_tools_wrapper(),
+            "Client.read_resource": self._client_read_resource_wrapper(),
+            "Client.get_prompt": self._client_get_prompt_wrapper(),
+        }
+        for target, wrapper in hooks.items():
+            register_post_import_hook(
+                lambda _, t=target, w=wrapper: wrap_function_wrapper(
+                    "fastmcp.client", t, w
+                ),
                 "fastmcp.client",
-                "Client.__aenter__",
-                self._client_enter_wrapper(),
-            ),
-            "fastmcp.client",
-        )
-
-        register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.client",
-                "Client.__aexit__",
-                self._client_exit_wrapper(),
-            ),
-            "fastmcp.client",
-        )
-
-        register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.client",
-                "Client.call_tool",
-                self._client_call_tool_wrapper(),
-            ),
-            "fastmcp.client",
-        )
-
-        register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.client",
-                "Client.list_tools",
-                self._client_list_tools_wrapper(),
-            ),
-            "fastmcp.client",
-        )
-
-        register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.client",
-                "Client.read_resource",
-                self._client_read_resource_wrapper(),
-            ),
-            "fastmcp.client",
-        )
-
-        register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.client",
-                "Client.get_prompt",
-                self._client_get_prompt_wrapper(),
-            ),
-            "fastmcp.client",
-        )
+            )
 
     def uninstrument(self):
         """Remove FastMCP client-side instrumentation.
@@ -183,7 +165,7 @@ class ClientInstrumentor:
         return traced_exit
 
     # ------------------------------------------------------------------
-    # tools/call
+    # tools/call (unique logic — not DRY-able with MCPOperation helpers)
     # ------------------------------------------------------------------
     def _client_call_tool_wrapper(self):
         """Wrapper for FastMCP Client.call_tool."""
@@ -197,7 +179,7 @@ class ClientInstrumentor:
             tool_args = args[1] if len(args) > 1 else kwargs.get("arguments", {})
 
             parent_session = instrumentor._active_sessions.get(id(instance))
-            transport = _detect_client_transport(instance)
+            transport = detect_transport(instance)
 
             tool_call = MCPToolCall(
                 name=tool_name,
@@ -258,56 +240,29 @@ class ClientInstrumentor:
         return traced_call_tool
 
     # ------------------------------------------------------------------
-    # tools/list  (MCPOperation instead of Step)
+    # MCPOperation wrappers (list, read, get)
     # ------------------------------------------------------------------
     def _client_list_tools_wrapper(self):
         """Wrapper for FastMCP Client.list_tools."""
-        handler = self._handler
-
-        async def traced_list_tools(wrapped, instance, args, kwargs):
-            transport = _detect_client_transport(instance)
-            op = MCPOperation(
+        return _traced_mcp_operation(
+            self._handler,
+            lambda _inst, transport: MCPOperation(
                 target="",
                 mcp_method_name="tools/list",
                 network_transport=transport,
                 is_client=True,
                 framework="fastmcp",
                 system="mcp",
-            )
+            ),
+        )
 
-            handler.start_mcp_operation(op)
-
-            start_time = time.time()
-            try:
-                result = await wrapped(*args, **kwargs)
-
-                op.duration_s = time.time() - start_time
-                handler.stop_mcp_operation(op)
-                return result
-
-            except Exception as e:
-                op.duration_s = time.time() - start_time
-                op.is_error = True
-                handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
-                raise
-
-        return traced_list_tools
-
-    # ------------------------------------------------------------------
-    # resources/read
-    # ------------------------------------------------------------------
     def _client_read_resource_wrapper(self):
         """Wrapper for FastMCP Client.read_resource."""
         handler = self._handler
 
         async def traced_read_resource(wrapped, instance, args, kwargs):
-            uri = ""
-            if args:
-                uri = str(args[0])
-            elif "uri" in kwargs:
-                uri = str(kwargs["uri"])
-
-            transport = _detect_client_transport(instance)
+            uri = str(args[0]) if args else str(kwargs.get("uri", ""))
+            transport = detect_transport(instance)
             op = MCPOperation(
                 target=uri,
                 mcp_method_name="resources/read",
@@ -319,7 +274,6 @@ class ClientInstrumentor:
             )
 
             handler.start_mcp_operation(op)
-
             start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
@@ -334,21 +288,13 @@ class ClientInstrumentor:
 
         return traced_read_resource
 
-    # ------------------------------------------------------------------
-    # prompts/get
-    # ------------------------------------------------------------------
     def _client_get_prompt_wrapper(self):
         """Wrapper for FastMCP Client.get_prompt."""
         handler = self._handler
 
         async def traced_get_prompt(wrapped, instance, args, kwargs):
-            prompt_name = ""
-            if args:
-                prompt_name = str(args[0])
-            elif "name" in kwargs:
-                prompt_name = str(kwargs["name"])
-
-            transport = _detect_client_transport(instance)
+            prompt_name = str(args[0]) if args else str(kwargs.get("name", ""))
+            transport = detect_transport(instance)
             op = MCPOperation(
                 target=prompt_name,
                 mcp_method_name="prompts/get",
@@ -360,7 +306,6 @@ class ClientInstrumentor:
             )
 
             handler.start_mcp_operation(op)
-
             start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
