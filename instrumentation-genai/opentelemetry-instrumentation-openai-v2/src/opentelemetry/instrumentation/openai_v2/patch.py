@@ -15,6 +15,7 @@
 
 import asyncio
 import inspect
+import time
 from typing import Any, Iterable, Optional
 
 from openai import Stream
@@ -43,6 +44,10 @@ from opentelemetry.util.genai.types import (
 )
 from opentelemetry.util.genai.types import (
     ToolCall as GenAIToolCall,
+)
+from opentelemetry.util.genai.utils import (
+    gen_ai_json_dumps,
+    should_capture_tool_definitions,
 )
 
 from .utils import (
@@ -189,6 +194,11 @@ def _build_chat_invocation(
         service_tier = extra_body.get("service_tier")
     if value_is_set(service_tier) and service_tier != "auto":
         invocation.request_service_tier = service_tier
+
+    # Opt-in: tool_definitions (JSON-serialized tool schemas)
+    tools = kwargs.get("tools")
+    if tools and capture_content and should_capture_tool_definitions():
+        invocation.tool_definitions = gen_ai_json_dumps(tools)
 
     return invocation
 
@@ -387,6 +397,10 @@ def chat_completions_create(capture_content: bool, handler):
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
         )
+        # Set streaming flag and start time for TTFC calculation
+        if is_streaming(kwargs):
+            invocation.request_stream = True
+            invocation._start_time = time.perf_counter()
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
@@ -440,6 +454,10 @@ def async_chat_completions_create(capture_content: bool, handler):
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
         )
+        # Set streaming flag and start time for TTFC calculation
+        if is_streaming(kwargs):
+            invocation.request_stream = True
+            invocation._start_time = time.perf_counter()
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
@@ -791,6 +809,7 @@ class StreamWrapper:
         self.capture_content = capture_content
         self._telemetry_stopped = False
         self._error: Optional[Exception] = None
+        self._first_chunk_processed = False
         self.setup()
 
     def setup(self):
@@ -1020,6 +1039,15 @@ class StreamWrapper:
             self.prompt_tokens = chunk.usage.prompt_tokens
 
     def process_chunk(self, chunk):
+        # Capture time to first chunk on very first chunk
+        if not self._first_chunk_processed:
+            self._first_chunk_processed = True
+            start_time = getattr(self.invocation, "_start_time", None)
+            if start_time is not None:
+                ttfc = time.perf_counter() - start_time
+                self.invocation.attributes[
+                    "gen_ai.response.time_to_first_chunk"
+                ] = ttfc
         self.set_response_id(chunk)
         self.set_response_model(chunk)
         self.set_response_service_tier(chunk)
