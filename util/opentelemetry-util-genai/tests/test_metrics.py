@@ -20,7 +20,6 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
-    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
 from opentelemetry.util.genai.handler import (
@@ -76,13 +75,14 @@ class TestMetricsEmission(unittest.TestCase):
         }
         if capture_mode is not None:
             upper_mode = capture_mode.upper()
-            capture_enabled = upper_mode != "NONE"
-            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
-                "true" if capture_enabled else "false"
-            )
-            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE] = (
-                upper_mode
-            )
+            if upper_mode == "NONE":
+                env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
+                    "NO_CONTENT"
+                )
+            else:
+                env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
+                    upper_mode
+                )
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
@@ -335,8 +335,7 @@ class TestMetricsEmission(unittest.TestCase):
         env = {
             **STABILITY_EXPERIMENTAL,
             OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_ONLY",
         }
         with patch.dict(os.environ, env, clear=False):
             TelemetryHandler._reset_for_testing()

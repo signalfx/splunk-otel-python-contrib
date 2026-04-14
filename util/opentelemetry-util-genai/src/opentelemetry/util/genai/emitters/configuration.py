@@ -9,6 +9,7 @@ from ..config import Settings
 from ..interfaces import EmitterProtocol
 from ..plugins import load_emitter_specs
 from ..types import ContentCapturingMode
+from ..utils import should_emit_event
 from .composite import CompositeEmitter
 from .content_events import ContentEventsEmitter
 from .evaluation import EvaluationEventsEmitter, EvaluationMetricsEmitter
@@ -52,8 +53,10 @@ def build_emitter_pipeline(
         ContentCapturingMode.SPAN_ONLY,
         ContentCapturingMode.SPAN_AND_EVENT,
     )
-    events_initial = settings.enable_content_events and (
-        settings.capture_messages_mode
+    events_initial = (
+        settings.enable_content_events
+        and should_emit_event()
+        and settings.capture_messages_mode
         in (
             ContentCapturingMode.EVENT_ONLY,
             ContentCapturingMode.SPAN_AND_EVENT,

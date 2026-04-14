@@ -106,13 +106,13 @@ from opentelemetry.util.genai.utils import (
     is_truthy_env,
     load_completion_callbacks,
     parse_callback_filter,
+    should_emit_event,
 )
 from opentelemetry.util.genai.version import __version__
 
 from .callbacks import CompletionCallback
 from .config import parse_env
 from .environment_variables import (
-    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
@@ -555,6 +555,7 @@ class TelemetryHandler:
     ):  # re-evaluate env each start in case singleton created before patching
         try:
             mode = get_content_capturing_mode()
+            emit_events = should_emit_event()
             emitters = list(
                 self._emitter.iter_emitters(("span", "content_events"))
             )
@@ -567,14 +568,8 @@ class TelemetryHandler:
             span_capture_allowed = True
             if control is not None:
                 span_capture_allowed = control.span_allowed
-            if is_truthy_env(
-                os.environ.get(
-                    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-                )
-            ):
-                span_capture_allowed = True
             # Respect the content capture mode for all generator kinds
-            new_value_events = mode in (
+            new_value_events = emit_events and mode in (
                 ContentCapturingMode.EVENT_ONLY,
                 ContentCapturingMode.SPAN_AND_EVENT,
             )

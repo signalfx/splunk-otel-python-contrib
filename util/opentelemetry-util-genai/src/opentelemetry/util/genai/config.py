@@ -9,7 +9,7 @@ from .emitters.spec import CategoryOverride
 from .environment_variables import (
     OTEL_GENAI_EVALUATION_EVENT_LEGACY,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
-    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
+    OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION,
@@ -78,13 +78,15 @@ def parse_env() -> Settings:
         baseline, (True, False, False)
     )
 
+    _legacy_mode_key = (
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"
+    )
     capture_messages_override = any(
-        env is not None
+        env is not None and str(env).strip() != ""
         for env in (
             os.environ.get(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT),
-            os.environ.get(
-                OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
-            ),
+            os.environ.get(OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT),
+            os.environ.get(_legacy_mode_key),
         )
     )
     capture_mode = get_content_capturing_mode()

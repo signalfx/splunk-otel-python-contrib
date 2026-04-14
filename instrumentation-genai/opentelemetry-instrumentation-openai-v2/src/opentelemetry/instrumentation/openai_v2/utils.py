@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from os import environ
 from typing import Mapping
 from urllib.parse import urlparse
 
@@ -38,11 +37,10 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = (
 
 
 def is_content_enabled() -> bool:
-    capture_content = environ.get(
-        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, "false"
-    )
+    from opentelemetry.util.genai.types import ContentCapturingMode
+    from opentelemetry.util.genai.utils import get_content_capturing_mode
 
-    return capture_content.lower() == "true"
+    return get_content_capturing_mode() != ContentCapturingMode.NO_CONTENT
 
 
 def set_server_address_and_port(client_instance, attributes):
