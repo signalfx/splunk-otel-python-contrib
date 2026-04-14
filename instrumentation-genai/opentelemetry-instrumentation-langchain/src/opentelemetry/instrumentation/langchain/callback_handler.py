@@ -499,8 +499,9 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             force_workflow = self._handler.should_use_workflow_root(
                 workflow_name=workflow_name_override
             )
-
-            if force_workflow:
+            from opentelemetry import baggage
+            workflow_name = baggage.get_baggage("workflow.name")
+            if force_workflow and not workflow_name:
                 wf = Workflow(name=workflow_name_override or name, attributes=attrs)
                 wf.input_messages = command_input_messages or _make_input_message(
                     inputs

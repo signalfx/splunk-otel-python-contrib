@@ -639,8 +639,8 @@ def main():
         sys.exit(1)
 
     # Configure manual instrumentation if requested
-    if args.manual_instrumentation:
-        _configure_manual_instrumentation(config)
+    #if args.manual_instrumentation:
+    _configure_manual_instrumentation(config)
 
     # Set up OpenTelemetry environment
     os.environ.setdefault("OTEL_SERVICE_NAME", config.otel_service_name)

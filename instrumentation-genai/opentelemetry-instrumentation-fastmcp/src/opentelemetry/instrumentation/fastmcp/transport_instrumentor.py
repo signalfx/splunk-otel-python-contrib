@@ -183,11 +183,15 @@ class TransportInstrumentor:
                         if tracestate:
                             carrier["tracestate"] = tracestate
 
+                        baggage = getattr(request_meta, "baggage", None)
+                        if baggage:
+                            carrier["baggage"] = baggage
+
                         # Also try model_extra for pydantic v2 extra fields
                         if not carrier and hasattr(request_meta, "model_extra"):
                             extra = request_meta.model_extra
                             if extra:
-                                for key in ["traceparent", "tracestate"]:
+                                for key in ["traceparent", "tracestate", "baggage"]:
                                     if key in extra:
                                         carrier[key] = extra[key]
 
@@ -195,7 +199,7 @@ class TransportInstrumentor:
                             ctx = propagate.extract(carrier)
                             token = context.attach(ctx)
                             _LOGGER.debug(
-                                f"Attached trace context in _handle_request: "
+                                f"Attached trace context and baggage in _handle_request: "
                                 f"carrier={carrier}"
                             )
 

@@ -629,6 +629,7 @@ class TelemetryHandler:
             if not _is_async_context():
                 ctx = trace.set_span_in_context(span)
                 if isinstance(invocation, Workflow):
+                    workflow_name = baggage.get_baggage("workflow.name")
                     ctx = baggage.set_baggage("workflow.name", invocation.name, context=ctx)
                 if isinstance(invocation, AgentInvocation):
                     ctx = baggage.set_baggage("agent.name", invocation.agent_name, context=ctx)

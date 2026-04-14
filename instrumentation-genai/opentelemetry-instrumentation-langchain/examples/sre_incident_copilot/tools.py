@@ -366,6 +366,12 @@ def notifier(message: str, channel: str = "incidents") -> str:
     }
     return json.dumps(notification, indent=2)
 
+def _configure_manual_instrumentation():
+    """Configure manual OpenTelemetry instrumentation."""
+
+    from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor
+    instrumentor2 = FastMCPInstrumentor()
+    instrumentor2.instrument()
 
 @tool
 def investigation_agent_mcp(
@@ -383,7 +389,7 @@ def investigation_agent_mcp(
     Returns:
         JSON string with investigation results
     """
-
+    _configure_manual_instrumentation()
     mcp_script_path = os.path.join(
         os.path.dirname(__file__), "mcp_tools", "investigation_agent_mcp.py"
     )
