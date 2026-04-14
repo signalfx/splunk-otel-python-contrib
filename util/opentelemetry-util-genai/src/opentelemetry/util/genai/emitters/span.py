@@ -369,6 +369,17 @@ class SpanEmitter(EmitterMeta):
         # Finish-time semconv attributes (response + usage tokens + functions)
         if isinstance(invocation, LLMInvocation):
             _apply_llm_finish_semconv(span, invocation)
+            # Opt-in: gen_ai.tool.definitions (requires capture_content + capture_tool_definitions)
+            # Applied at finish time since some instrumentations populate this field at end time
+            if (
+                self._capture_content
+                and self._capture_tool_definitions
+                and invocation.tool_definitions
+                and GEN_AI_TOOL_DEFINITIONS not in (span.attributes or {})
+            ):
+                span.set_attribute(
+                    GEN_AI_TOOL_DEFINITIONS, invocation.tool_definitions
+                )
         _apply_gen_ai_semconv_attributes(
             span, invocation.semantic_convention_attributes()
         )
