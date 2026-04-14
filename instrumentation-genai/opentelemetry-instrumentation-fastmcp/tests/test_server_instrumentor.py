@@ -92,7 +92,7 @@ class TestServerInstrumentor:
         assert tool_call.name == "my_tool"
         assert tool_call.framework == "fastmcp"
         assert tool_call.system == "mcp"
-        assert tool_call.mcp_server_name == "test-server"
+        assert tool_call.sdot_mcp_server_name == "test-server"
 
     @pytest.mark.asyncio
     async def test_tool_call_wrapper_failure(self, mock_telemetry_handler):

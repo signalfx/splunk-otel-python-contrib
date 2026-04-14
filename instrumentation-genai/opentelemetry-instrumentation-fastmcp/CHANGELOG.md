@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- **`resources/read` and `prompts/get` instrumentation** — Server and client-side hooks for `FastMCP.read_resource` / `Client.read_resource` and `FastMCP.get_prompt` / `Client.get_prompt`. Produces `MCPOperation` spans with `{mcp.method.name} {target}` naming.
+- **Transport context bridge** — `MCPRequestContext` ContextVar populated by the transport instrumentor on the server side, allowing the server instrumentor to read `jsonrpc.request.id`, `network.transport`, etc.
+- **Transport detection** — Client automatically detects `pipe` vs `tcp` transport from `Client.transport` type.
+- **Baggage propagation** — Transport instrumentor now extracts W3C `baggage` header alongside `traceparent`/`tracestate`.
+
+### Changed
+- **`list_tools` uses `MCPOperation` instead of `Step`** — Client `list_tools` now produces a `tools/list` span via `MCPOperation` with proper MCP semconv naming and `SpanKind.CLIENT`, instead of the previous `Step` type.
+- **Server hooks on `fastmcp.server.server.FastMCP`** — Tool call hook now targets `FastMCP.call_tool` directly (in addition to the legacy `ToolManager.call_tool` path) for compatibility with FastMCP 3.x.
+- **Renamed `mcp_server_name` → `sdot_mcp_server_name`** — **Breaking**: callers using `mcp_server_name=` on `MCPToolCall` must update to `sdot_mcp_server_name=`.
+
 ### Fixed
 - **MCP span naming aligned with OTel MCP semantic conventions** — Tool call spans now use `tools/call {tool_name}` format with `SpanKind.CLIENT` (client-side) or `SpanKind.SERVER` (server-side), matching the [OTel MCP semconv spec](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/). Previously used `execute_tool {tool_name}` with `SpanKind.INTERNAL`.
 

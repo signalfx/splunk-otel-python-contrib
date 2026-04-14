@@ -96,6 +96,7 @@ from opentelemetry.util.genai.types import (
     GenAI,
     InputMessage,
     LLMInvocation,
+    MCPOperation,
     RetrievalInvocation,
     Step,
     ToolCall,
@@ -942,6 +943,39 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
         return invocation
+
+    # MCPOperation lifecycle (non-tool-call MCP operations) ----------------
+    def start_mcp_operation(self, op: MCPOperation) -> MCPOperation:
+        """Start a non-tool-call MCP operation (list, read, get, etc.)."""
+        _apply_genai_context(op)
+        if (
+            not op.agent_name or not op.agent_id
+        ) and self._agent_context_stack:
+            top_name, top_id = self._agent_context_stack[-1]
+            if not op.agent_name:
+                op.agent_name = top_name
+            if not op.agent_id:
+                op.agent_id = top_id
+        self._inherit_parent_span(op)
+        self._emitter.on_start(op)
+        self._push_current_span(op)
+        return op
+
+    def stop_mcp_operation(self, op: MCPOperation) -> MCPOperation:
+        """Finalize a non-tool-call MCP operation successfully."""
+        op.end_time = timeit.default_timer()
+        self._emitter.on_end(op)
+        self._pop_current_span(op)
+        return op
+
+    def fail_mcp_operation(
+        self, op: MCPOperation, error: Error
+    ) -> MCPOperation:
+        """Fail a non-tool-call MCP operation."""
+        op.end_time = timeit.default_timer()
+        self._emitter.on_error(error, op)
+        self._pop_current_span(op)
+        return op
 
     @staticmethod
     def _maybe_mark_conversation_root(entity: GenAI) -> None:
