@@ -36,7 +36,7 @@ from opentelemetry.instrumentation.fastmcp.utils import is_instrumentation_enabl
 
 _LOGGER = logging.getLogger(__name__)
 
-_instruments = ("fastmcp >= 2.0.0",)
+_instruments = ("fastmcp >= 2.0.0, < 4",)
 
 
 class FastMCPInstrumentor(BaseInstrumentor):

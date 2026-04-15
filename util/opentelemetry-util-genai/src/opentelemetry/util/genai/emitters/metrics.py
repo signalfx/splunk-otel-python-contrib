@@ -160,12 +160,20 @@ class MetricsEmitter(EmitterMeta):
                 if obj.agent_id:
                     metric_attrs[GenAI.GEN_AI_AGENT_ID] = obj.agent_id
                 metric_attrs.update(get_context_metric_attributes(obj))
-                _record_duration(
-                    self._duration_histogram,
-                    obj,
-                    metric_attrs,
-                    span=getattr(obj, "span", None),
-                )
+                duration = obj.duration_s
+                if duration is None and obj.end_time is not None:
+                    duration = obj.end_time - obj.start_time
+                if duration is not None:
+                    context = None
+                    span = getattr(obj, "span", None)
+                    if span is not None:
+                        try:
+                            context = trace.set_span_in_context(span)
+                        except (TypeError, ValueError, AttributeError):
+                            context = None
+                    self._duration_histogram.record(
+                        duration, attributes=metric_attrs, context=context
+                    )
             return
 
         if isinstance(obj, ToolCall):
@@ -266,6 +274,37 @@ class MetricsEmitter(EmitterMeta):
             if getattr(error, "type", None) is not None:
                 obj.mcp_error_type = error.type.__qualname__
             self._record_mcp_operation_metrics(obj)
+            if isinstance(obj, MCPToolCall):
+                metric_attrs = _get_metric_attributes(
+                    obj.name,
+                    None,
+                    GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+                    obj.provider,
+                    obj.framework,
+                )
+                if obj.agent_name:
+                    metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
+                if obj.agent_id:
+                    metric_attrs[GenAI.GEN_AI_AGENT_ID] = obj.agent_id
+                if getattr(error, "type", None) is not None:
+                    metric_attrs[ErrorAttributes.ERROR_TYPE] = (
+                        error.type.__qualname__
+                    )
+                metric_attrs.update(get_context_metric_attributes(obj))
+                duration = obj.duration_s
+                if duration is None and obj.end_time is not None:
+                    duration = obj.end_time - obj.start_time
+                if duration is not None:
+                    context = None
+                    span = getattr(obj, "span", None)
+                    if span is not None:
+                        try:
+                            context = trace.set_span_in_context(span)
+                        except (TypeError, ValueError, AttributeError):
+                            context = None
+                    self._duration_histogram.record(
+                        duration, attributes=metric_attrs, context=context
+                    )
             return
 
         if isinstance(obj, ToolCall):

@@ -32,6 +32,7 @@ from opentelemetry.instrumentation.fastmcp._mcp_context import (
     get_mcp_request_context,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    detect_transport,
     extract_tool_info,
     extract_result_content,
     should_capture_content,
@@ -39,6 +40,22 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _has_native_telemetry() -> bool:
+    """Return True if FastMCP ships its own ``server_span`` tracing.
+
+    FastMCP >= 3.x added ``fastmcp.server.telemetry.server_span`` which
+    already creates SERVER spans for ``call_tool``, ``read_resource``, and
+    ``render_prompt``.  When present we skip our own server-side spans to
+    avoid duplicate instrumentation.
+    """
+    try:
+        from fastmcp.server.telemetry import server_span  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 def _enrich_from_request_context(op: MCPOperation) -> None:
@@ -57,9 +74,13 @@ class ServerInstrumentor:
 
     Instruments:
     - FastMCP.__init__: Capture server name for context
-    - FastMCP.call_tool: Trace individual tool executions
+    - FastMCP.call_tool / ToolManager.call_tool: Trace tool executions
     - FastMCP.read_resource: Trace resource reads
-    - FastMCP.get_prompt: Trace prompt gets
+    - FastMCP.render_prompt: Trace prompt rendering (the MCP ``prompts/get``
+      handler; ``get_prompt`` is only the internal lookup)
+
+    When FastMCP >= 3.x ships its own ``server_span`` telemetry, our server
+    wrappers detect this and skip creating duplicate SDOT spans.
     """
 
     def __init__(self, telemetry_handler: TelemetryHandler):
@@ -78,9 +99,6 @@ class ServerInstrumentor:
             "fastmcp",
         )
 
-        # Hook FastMCP.call_tool on the server object directly.
-        # Older fastmcp versions had ToolManager.call_tool; we hook
-        # both paths so the first that imports wins.
         register_post_import_hook(
             lambda _: wrap_function_wrapper(
                 "fastmcp.server.server",
@@ -98,7 +116,6 @@ class ServerInstrumentor:
             "fastmcp.tools.tool_manager",
         )
 
-        # Resources & prompts
         register_post_import_hook(
             lambda _: wrap_function_wrapper(
                 "fastmcp.server.server",
@@ -107,14 +124,31 @@ class ServerInstrumentor:
             ),
             "fastmcp.server.server",
         )
+
+        # FastMCP 3.x uses render_prompt as the MCP prompts/get handler;
+        # FastMCP 2.x used get_prompt directly.  Hook both with graceful
+        # failure so the instrumentor works across major versions.
+        prompt_wrapper = self._render_prompt_wrapper()
         register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.server.server",
-                "FastMCP.get_prompt",
-                self._get_prompt_wrapper(),
+            lambda _: self._try_wrap(
+                "fastmcp.server.server", "FastMCP.render_prompt", prompt_wrapper
             ),
             "fastmcp.server.server",
         )
+        register_post_import_hook(
+            lambda _: self._try_wrap(
+                "fastmcp.server.server", "FastMCP.get_prompt", prompt_wrapper
+            ),
+            "fastmcp.server.server",
+        )
+
+    @staticmethod
+    def _try_wrap(module: str, name: str, wrapper) -> None:
+        """Attempt to wrap a target; silently skip if it doesn't exist."""
+        try:
+            wrap_function_wrapper(module, name, wrapper)
+        except (ImportError, AttributeError):
+            _LOGGER.debug("Skipping wrap %s.%s (not available)", module, name)
 
     def uninstrument(self):
         """Remove FastMCP server-side instrumentation.
@@ -158,7 +192,11 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_tool_call(wrapped, instance, args, kwargs):
+            if _has_native_telemetry():
+                return await wrapped(*args, **kwargs)
+
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
+            transport = detect_transport(instance)
 
             tool_call = MCPToolCall(
                 name=tool_name,
@@ -168,7 +206,7 @@ class ServerInstrumentor:
                 system="mcp",
                 tool_type="extension",
                 mcp_method_name="tools/call",
-                network_transport="pipe",
+                network_transport=transport,
                 sdot_mcp_server_name=instrumentor._server_name,
                 is_client=False,
             )
@@ -221,16 +259,16 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_read_resource(wrapped, instance, args, kwargs):
-            uri = ""
-            if args:
-                uri = str(args[0])
-            elif "uri" in kwargs:
-                uri = str(kwargs["uri"])
+            if _has_native_telemetry():
+                return await wrapped(*args, **kwargs)
+
+            uri = str(args[0]) if args else str(kwargs.get("uri", ""))
+            transport = detect_transport(instance)
 
             op = MCPOperation(
                 target=uri,
                 mcp_method_name="resources/read",
-                network_transport="pipe",
+                network_transport=transport,
                 mcp_resource_uri=uri or None,
                 sdot_mcp_server_name=instrumentor._server_name,
                 is_client=False,
@@ -256,24 +294,30 @@ class ServerInstrumentor:
         return traced_read_resource
 
     # ------------------------------------------------------------------
-    # prompts/get
+    # prompts/get  (maps to FastMCP.render_prompt, not get_prompt)
     # ------------------------------------------------------------------
-    def _get_prompt_wrapper(self):
-        """Wrapper for FastMCP.get_prompt."""
+    def _render_prompt_wrapper(self):
+        """Wrapper for FastMCP.render_prompt.
+
+        ``render_prompt`` is the server-side handler for the MCP
+        ``prompts/get`` protocol method.  ``get_prompt`` is only the
+        internal prompt definition lookup and is never invoked by
+        the MCP request path.
+        """
         instrumentor = self
         handler = self._handler
 
-        async def traced_get_prompt(wrapped, instance, args, kwargs):
-            prompt_name = ""
-            if args:
-                prompt_name = str(args[0])
-            elif "name" in kwargs:
-                prompt_name = str(kwargs["name"])
+        async def traced_render_prompt(wrapped, instance, args, kwargs):
+            if _has_native_telemetry():
+                return await wrapped(*args, **kwargs)
+
+            prompt_name = str(args[0]) if args else str(kwargs.get("name", ""))
+            transport = detect_transport(instance)
 
             op = MCPOperation(
                 target=prompt_name,
                 mcp_method_name="prompts/get",
-                network_transport="pipe",
+                network_transport=transport,
                 gen_ai_prompt_name=prompt_name or None,
                 sdot_mcp_server_name=instrumentor._server_name,
                 is_client=False,
@@ -296,4 +340,9 @@ class ServerInstrumentor:
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
-        return traced_get_prompt
+        return traced_render_prompt
+
+    # Kept for backward compatibility with existing tests
+    def _get_prompt_wrapper(self):
+        """Deprecated: use _render_prompt_wrapper instead."""
+        return self._render_prompt_wrapper()

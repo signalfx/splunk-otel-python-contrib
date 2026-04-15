@@ -1,5 +1,7 @@
 """Tests for ToolCall, MCPToolCall, and MCPOperation span attributes."""
 
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -9,8 +11,14 @@ from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
 from opentelemetry.trace import SpanKind
+from opentelemetry.util.genai.emitters.metrics import MetricsEmitter
 from opentelemetry.util.genai.emitters.span import SpanEmitter
-from opentelemetry.util.genai.types import MCPOperation, MCPToolCall, ToolCall
+from opentelemetry.util.genai.types import (
+    Error,
+    MCPOperation,
+    MCPToolCall,
+    ToolCall,
+)
 
 
 def _make_emitter():
@@ -280,3 +288,75 @@ def test_mcp_operation_new_semconv_attrs():
     assert attrs.get("client.port") == 54321
     assert attrs.get("mcp.session.id") == "sess-abc"
     assert attrs.get("jsonrpc.request.id") == "7"
+
+
+# --- MCPToolCall metrics error-path tests ---
+
+
+def _make_metrics_emitter():
+    reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(metric_readers=[reader])
+    meter = meter_provider.get_meter(__name__)
+    emitter = MetricsEmitter(meter=meter)
+    return emitter, reader, meter_provider
+
+
+def _collect_metric_names(reader, meter_provider):
+    """Flush and return the set of metric names that have data points."""
+    try:
+        meter_provider.force_flush()
+    except Exception:
+        pass
+    names = set()
+    for metric in reader.get_metrics_data().resource_metrics:
+        for sm in metric.scope_metrics:
+            for m in sm.metrics:
+                if hasattr(m, "data") and getattr(m.data, "data_points", None):
+                    if len(m.data.data_points) > 0:
+                        names.add(m.name)
+    return names
+
+
+def test_mcp_tool_call_error_records_generic_duration():
+    """on_error for MCPToolCall must record both MCP and generic duration."""
+    emitter, reader, meter_provider = _make_metrics_emitter()
+    tool = MCPToolCall(
+        name="divide",
+        id="tc-1",
+        mcp_method_name="tools/call",
+        network_transport="pipe",
+        is_client=True,
+        framework="fastmcp",
+    )
+    tool.duration_s = 0.05
+
+    emitter.on_error(
+        Error(type=ValueError, message="division by zero"),
+        tool,
+    )
+
+    names = _collect_metric_names(reader, meter_provider)
+    assert "mcp.client.operation.duration" in names, (
+        "MCP-specific duration metric should be recorded on error"
+    )
+    assert "gen_ai.client.operation.duration" in names, (
+        "Generic execute-tool duration metric should also be recorded on error"
+    )
+
+
+def test_mcp_operation_error_does_not_record_generic_duration():
+    """on_error for plain MCPOperation (non-tool) should only record MCP metric."""
+    emitter, reader, meter_provider = _make_metrics_emitter()
+    op = MCPOperation(
+        target="",
+        mcp_method_name="tools/list",
+        network_transport="pipe",
+        is_client=True,
+    )
+    op.duration_s = 0.03
+
+    emitter.on_error(Error(type=RuntimeError, message="oops"), op)
+
+    names = _collect_metric_names(reader, meter_provider)
+    assert "mcp.client.operation.duration" in names
+    assert "gen_ai.client.operation.duration" not in names
