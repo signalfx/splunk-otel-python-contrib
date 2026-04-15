@@ -16,7 +16,7 @@
 """
 Example demonstrating Strands + Bedrock AgentCore instrumentation with OpenTelemetry.
 
-Covers all three HYBIM-448 requirements:
+Covers:
   1. Agents and tools telemetry (Strands Agents SDK)
   2. AgentCore components monitoring (Memory, CodeInterpreter, Browser)
   3. Observability integration - telemetry forwarded to collector / Splunk Platform

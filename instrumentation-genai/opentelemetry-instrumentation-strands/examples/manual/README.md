@@ -1,6 +1,6 @@
 # Strands Instrumentation Example
 
-This example demonstrates how to use the OpenTelemetry Strands instrumentation to capture telemetry from Strands agents. It runs a real agent against Bedrock that uses two HTTP tools (`fetch_page`, `get_ip_info`) backed by public APIs — no mock data.
+This example demonstrates how to use the OpenTelemetry Strands instrumentation to capture telemetry from Strands agents. It runs a real agent against Bedrock that uses an HTTP tool (`fetch_page`) backed by a public API — no mock data.
 
 ## Requirements
 
@@ -26,11 +26,6 @@ aws bedrock get-inference-profile \
   --region us-west-2
 ```
 
-If `get-inference-profile` returns an `AccessDeniedException`, you need to enable model access:
-1. Go to AWS Console → Bedrock → Model access
-2. Request access to **Claude 3.5 Sonnet v2** under Anthropic
-3. Wait for access to be granted, then re-run the check above
-
 ## Installation
 
 ```bash
@@ -44,11 +39,6 @@ pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-grpc
 ## Usage
 
 ```bash
-# AWS credentials
-export AWS_DEFAULT_REGION=us-west-2
-export AWS_ACCESS_KEY_ID=your-key
-export AWS_SECRET_ACCESS_KEY=your-secret
-
 # Collector endpoint
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 
@@ -103,44 +93,6 @@ export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 # Configure emitters
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event
 ```
-
-## Troubleshooting
-
-### Import Error: strands-agents not found
-
-```bash
-pip install -e "../../[instruments]"
-```
-
-### AWS Credentials Error
-
-```bash
-aws configure
-# or set environment variables
-export AWS_DEFAULT_REGION=us-west-2
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-```
-
-### Missing Dependency: botocore[crt] (SSO users only)
-
-If you authenticate via AWS SSO and see `Missing Dependency: Using the login credential provider requires an additional dependency`:
-
-```bash
-pip install "botocore[crt]"
-```
-
-This installs the AWS Common Runtime required by the SSO credential provider. Not needed if using static IAM credentials.
-
-### Bedrock Model Access Error
-
-See **Verify AWS Credentials** above. The model must be explicitly enabled per AWS account.
-
-### No Spans Exported
-
-- Confirm your collector is running and reachable at `OTEL_EXPORTER_OTLP_ENDPOINT`
-- Spans also print to console — if you see those but not in your collector, it's a network/config issue
-- Check that instrumentation is called before importing Strands
 
 ## See Also
 
