@@ -80,12 +80,69 @@ Trace Context Propagation
 -------------------------
 
 The instrumentation automatically propagates W3C TraceContext (traceparent, tracestate)
-between MCP client and server processes. This enables distributed tracing across
-process boundaries:
+and baggage between MCP client and server processes. This enables distributed tracing
+across process boundaries:
 
 - Client spans and server spans share the same ``trace_id``
 - Server tool execution spans are children of client tool call spans
 - No code changes required in your MCP server or client
+
+Transport bridge (``transport_instrumentor.py``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The MCP Python SDK v1.x (current stable, up to 1.27.0) does not natively
+propagate OpenTelemetry context.  This instrumentation includes a
+**transport-layer bridge** (``transport_instrumentor.py``) that:
+
+- **Client side**: wraps ``BaseSession.send_request`` to inject ``traceparent``,
+  ``tracestate``, and ``baggage`` into ``params.meta`` (serialized as ``_meta``
+  on the wire).
+- **Server side**: wraps ``Server._handle_request`` to extract trace context
+  from ``request_meta`` and populate an ``MCPRequestContext`` (via
+  ``ContextVar``) for the server instrumentor to read transport-level attributes
+  like ``jsonrpc.request.id`` and ``network.transport``.
+
+Upstream native support (mcp v2.x)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Native OTel support has been merged to the upstream SDK's ``main`` branch,
+targeting **v2.x** (not yet released as of Apr 2026):
+
+- `#2298 <https://github.com/modelcontextprotocol/python-sdk/pull/2298>`_
+  (merged Mar 31) — propagate ``contextvars.Context`` through anyio streams.
+  Supersedes `#1996 <https://github.com/modelcontextprotocol/python-sdk/pull/1996>`_
+  (closed).
+- `#2381 <https://github.com/modelcontextprotocol/python-sdk/pull/2381>`_
+  (merged Mar 31) — native CLIENT + SERVER spans, W3C trace-context
+  inject/extract via ``params.meta``, and ``opentelemetry-api`` as a mandatory
+  dependency.
+
+Related open/draft PRs that may further extend the native support:
+
+- `#2093 <https://github.com/modelcontextprotocol/python-sdk/pull/2093>`_
+  — enhanced inject logic (open).
+- `#2133 <https://github.com/modelcontextprotocol/python-sdk/pull/2133>`_
+  — enhanced extract logic (draft, depends on #2298).
+- `#2132 <https://github.com/modelcontextprotocol/python-sdk/pull/2132>`_
+  — richer CLIENT span attributes (draft, depends on #2298).
+
+Migration plan
+^^^^^^^^^^^^^^
+
+Once ``mcp >= 2.x`` is released and the minimum supported version is raised:
+
+- ``_send_request_wrapper`` (client-side inject) can be **removed**.
+- The trace-context extract/attach portion of ``_server_handle_request_wrapper``
+  can be **removed**.  The ``MCPRequestContext`` population
+  (``jsonrpc.request.id``, ``network.transport``) should remain because the
+  v2.x native spans (per #2381) only surface ``mcp.method.name`` and
+  ``jsonrpc.request.id``; ``network.transport`` is not included.
+  Re-evaluate as the upstream spans mature.
+- ``_extract_carrier_from_meta`` can be **removed**.
+
+A feature-detection guard (similar to ``_has_native_telemetry`` in the server
+instrumentor) should be added so the wrappers gracefully become no-ops when
+running against ``mcp >= 2.x``, allowing a wider version range.
 
 Telemetry
 ---------

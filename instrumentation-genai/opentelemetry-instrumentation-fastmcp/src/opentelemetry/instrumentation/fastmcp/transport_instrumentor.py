@@ -15,13 +15,16 @@
 """
 MCP Transport layer instrumentation for trace context propagation.
 
-This module instruments the low-level MCP SDK transport to ensure trace context
-(traceparent, tracestate) and baggage are propagated between client and server.
+Temporary bridge for ``mcp`` v1.x which does not natively propagate
+OpenTelemetry context.  Can be removed once ``mcp >= 2.x`` is adopted
+(native support landed on the upstream ``main`` branch via PRs #2298 and
+#2381).  See the package README for upstream tracking details.
 
-Approach:
-- Client side: Wrap BaseSession.send_request to inject trace context into _meta
-- Server side: Wrap Server._handle_request to extract from request_meta and
-  populate MCPRequestContext for downstream instrumentors.
+- Client side: wraps ``BaseSession.send_request`` to inject trace context
+  into ``params.meta`` (serialized as ``_meta``).
+- Server side: wraps ``Server._handle_request`` to extract trace context
+  from ``request_meta`` and populate ``MCPRequestContext`` for downstream
+  instrumentors.
 """
 
 import logging
@@ -46,6 +49,8 @@ def _extract_carrier_from_meta(request_meta: Any) -> dict[str, str]:
 
     Checks both first-class attributes and ``model_extra`` so that
     traceparent, tracestate, and baggage are all captured.
+
+    TODO: Remove when mcp >= 2.x is adopted (see README).
     """
     carrier: dict[str, str] = {}
     if request_meta is None:
@@ -113,6 +118,8 @@ class TransportInstrumentor:
 
         Runs on the client side before sending any MCP request.  Injects
         traceparent, tracestate, and baggage into params.meta.
+
+        TODO: Remove when mcp >= 2.x is adopted (see README).
         """
 
         async def traced_send_request(wrapped, instance, args, kwargs) -> Any:
@@ -166,6 +173,9 @@ class TransportInstrumentor:
 
         Runs on the server side.  Extracts W3C context from ``request_meta``
         and populates :class:`MCPRequestContext` for the server instrumentor.
+
+        TODO: Trace-context extract/attach removable when mcp >= 2.x is
+        adopted; MCPRequestContext population must remain (see README).
 
         Method signature:
             _handle_request(self, message, req, session, lifespan_context,
