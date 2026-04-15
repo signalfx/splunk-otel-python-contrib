@@ -95,18 +95,6 @@ class FastMCPInstrumentor(BaseInstrumentor):
         meter_provider = kwargs.get("meter_provider")
         logger_provider = kwargs.get("logger_provider")
 
-        if tracer_provider is None:
-            from opentelemetry import trace
-            tracer_provider = trace.get_tracer_provider()
-
-        if meter_provider is None:
-            from opentelemetry import metrics
-            meter_provider = metrics.get_meter_provider()
-
-        if logger_provider is None:
-            from opentelemetry import _logs
-            logger_provider = _logs.get_logger_provider()
-
         # Get the telemetry handler from util-genai
         self._telemetry_handler = get_telemetry_handler(
             tracer_provider=tracer_provider,
