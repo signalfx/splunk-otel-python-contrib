@@ -123,6 +123,8 @@ class StubTelemetryHandler:
         self.stopped_llm = []
         self.started_tool_calls = []
         self.stopped_tool_calls = []
+        self.started_retrievals = []
+        self.stopped_retrievals = []
         self.failed_entities = []
 
     def start_workflow(self, workflow):
@@ -174,11 +176,11 @@ class StubTelemetryHandler:
         return tool_call
 
     def start_retrieval(self, invocation):
-        self.started_llm.append(invocation)
+        self.started_retrievals.append(invocation)
         return invocation
 
     def stop_retrieval(self, invocation):
-        self.stopped_llm.append(invocation)
+        self.stopped_retrievals.append(invocation)
         return invocation
 
     def fail_retrieval(self, invocation, error):

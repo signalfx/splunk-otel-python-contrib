@@ -79,56 +79,6 @@ def wrap_agent_init(
         return wrapped(*args, **kwargs)
 
 
-def wrap_agent_call(
-    wrapped: Any,
-    instance: Any,
-    args: tuple,
-    kwargs: dict,
-    handler: TelemetryHandler,
-) -> Any:
-    """Wrap Agent.__call__ to create AgentInvocation span.
-
-    Args:
-        wrapped: Original __call__ method
-        instance: Agent instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-
-    Returns:
-        Result of original __call__
-    """
-    try:
-        # Create AgentInvocation
-        invocation = _create_agent_invocation(instance, args, kwargs)
-
-        # Start the invocation
-        handler.start_agent(invocation)
-
-        try:
-            # Call original method
-            result = wrapped(*args, **kwargs)
-
-            # Populate result data
-            _populate_agent_result(invocation, result)
-
-            # Stop the invocation successfully
-            handler.stop_agent(invocation)
-
-            return result
-        except Exception as e:
-            # Handle error
-            error_message = safe_str(e)
-            error_type = type(e).__name__
-            handler.fail_agent(
-                invocation, Error(type=error_type, message=error_message)
-            )
-            raise
-    except Exception:
-        # If invocation creation failed, just call original
-        return wrapped(*args, **kwargs)
-
-
 async def wrap_agent_invoke_async(
     wrapped: Any,
     instance: Any,
