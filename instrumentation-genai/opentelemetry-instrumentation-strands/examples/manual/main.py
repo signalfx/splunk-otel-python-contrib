@@ -25,12 +25,12 @@ All components run within a single BedrockAgentCoreApp entrypoint, producing a
 cohesive span hierarchy:
 
   Workflow
-  ├── RetrievalInvocation  (memory.retrieve - load prior context)
+  ├── RetrievalInvocation  (memory.retrieve_memories - load prior context)
   ├── AgentInvocation
   │    ├── LLMInvocation
   │    └── ToolCall        (fetch_page)
-  ├── RetrievalInvocation  (memory.create_event - store result)
-  ├── ToolCall             (code_interpreter.execute)
+  ├── ToolCall             (memory.create_event - store result)
+  ├── ToolCall             (code_interpreter.start / execute_code / stop)
   └── ToolCall             (browser.start / get_session / stop)
 
 Requirements:
@@ -174,7 +174,7 @@ def main():
             agent_result = agent(query)
             logger.info(f"Agent response: {agent_result}")
 
-            # 3. Memory: store the result (RetrievalInvocation span)
+            # 3. Memory: store the result (ToolCall span)
             if memory_client:
                 try:
                     memory_client.create_event(

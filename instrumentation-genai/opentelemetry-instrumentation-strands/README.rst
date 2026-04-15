@@ -97,7 +97,10 @@ registers hook callbacks via ``HookProvider`` to capture:
 Agent-level spans are created by wrapping:
 
 - ``Agent.__init__`` → Injects hook provider into agent's hook registry
-- ``Agent.__call__`` / ``Agent.invoke_async`` → Creates ``AgentInvocation`` spans
+- ``Agent.invoke_async`` → Creates ``AgentInvocation`` spans
+
+``Agent.__call__`` is not wrapped separately because it delegates to ``invoke_async``
+internally, so wrapping both would produce duplicate spans.
 
 
 Built-in Tracer Suppression
