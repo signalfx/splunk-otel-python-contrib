@@ -50,6 +50,22 @@ _GEN_AI_CLIENT_TOKEN_USAGE_BUCKETS = [
     67108864,
 ]
 
+# Cost bucket boundaries for evaluation metrics (USD).
+# Covers typical LLM evaluator costs: sub-cent calls up to ~$10.
+_GEN_AI_EVALUATION_COST_BUCKETS = [
+    0.0001,
+    0.0005,
+    0.001,
+    0.005,
+    0.01,
+    0.05,
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    10.0,
+]
+
 
 class Instruments:
     """
@@ -132,6 +148,7 @@ class Instruments:
             name="gen_ai.evaluation.client.usage.cost",
             unit="{usd}",
             description="Cost of evaluator calls in USD",
+            explicit_bucket_boundaries_advisory=_GEN_AI_EVALUATION_COST_BUCKETS,
         )
         self.evaluation_client_queue_size: UpDownCounter = meter.create_up_down_counter(
             name="gen_ai.evaluation.client.queue.size",

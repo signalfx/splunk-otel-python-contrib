@@ -568,14 +568,10 @@ class EvaluationMonitoringEmitter(_EvaluationEmitterBase):
     Metrics:
       - gen_ai.evaluation.client.operation.duration (Histogram, seconds)
       - gen_ai.evaluation.client.usage.cost (Histogram, USD)
-      - gen_ai.evaluation.client.queue.size (UpDownCounter) — managed by Manager
-      - gen_ai.evaluation.client.enqueue.errors (Counter) — managed by Manager
 
     Gated by OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true.
     Reads duration_s, evaluation_cost, and evaluator_name from EvaluationResult
     fields populated by the evaluation Manager.
-    Queue size and enqueue error counters are managed directly by the Manager
-    at enqueue/dequeue time.
     """
 
     role = "evaluation_monitoring"
