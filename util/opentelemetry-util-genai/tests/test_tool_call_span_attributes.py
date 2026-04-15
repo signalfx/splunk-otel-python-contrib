@@ -360,3 +360,109 @@ def test_mcp_operation_error_does_not_record_generic_duration():
     names = _collect_metric_names(reader, meter_provider)
     assert "mcp.client.operation.duration" in names
     assert "gen_ai.client.operation.duration" not in names
+
+
+# --- MetricsEmitter.handles() tests ---
+
+
+def test_handles_accepts_mcp_operation():
+    """MetricsEmitter.handles() returns True for plain MCPOperation."""
+    emitter, _, _ = _make_metrics_emitter()
+    op = MCPOperation(target="", mcp_method_name="tools/list", is_client=True)
+    assert emitter.handles(op) is True
+
+
+def test_handles_accepts_mcp_tool_call():
+    """MetricsEmitter.handles() returns True for MCPToolCall."""
+    emitter, _, _ = _make_metrics_emitter()
+    tc = MCPToolCall(name="add", mcp_method_name="tools/call", is_client=True)
+    assert emitter.handles(tc) is True
+
+
+def test_handles_accepts_plain_tool_call():
+    """MetricsEmitter.handles() returns True for plain ToolCall."""
+    emitter, _, _ = _make_metrics_emitter()
+    tc = ToolCall(name="summarize", id="tc-1")
+    assert emitter.handles(tc) is True
+
+
+# --- MCPOperation on_end metrics tests ---
+
+
+def _collect_metric_data_points(reader, meter_provider, metric_name):
+    """Flush and return data points for a specific metric."""
+    try:
+        meter_provider.force_flush()
+    except Exception:
+        pass
+    for resource_metrics in reader.get_metrics_data().resource_metrics:
+        for sm in resource_metrics.scope_metrics:
+            for m in sm.metrics:
+                if m.name == metric_name and hasattr(m, "data"):
+                    return list(m.data.data_points)
+    return []
+
+
+def test_mcp_operation_on_end_records_client_duration():
+    """on_end for plain MCPOperation records mcp.client.operation.duration."""
+    emitter, reader, meter_provider = _make_metrics_emitter()
+    op = MCPOperation(
+        target="",
+        mcp_method_name="tools/list",
+        network_transport="pipe",
+        is_client=True,
+    )
+    op.duration_s = 0.05
+
+    emitter.on_end(op)
+
+    names = _collect_metric_names(reader, meter_provider)
+    assert "mcp.client.operation.duration" in names
+
+
+def test_mcp_operation_on_end_records_server_duration():
+    """on_end for server-side MCPOperation records mcp.server.operation.duration."""
+    emitter, reader, meter_provider = _make_metrics_emitter()
+    op = MCPOperation(
+        target="",
+        mcp_method_name="resources/read",
+        network_transport="tcp",
+        is_client=False,
+    )
+    op.duration_s = 0.02
+
+    emitter.on_end(op)
+
+    names = _collect_metric_names(reader, meter_provider)
+    assert "mcp.server.operation.duration" in names
+
+
+def test_mcp_operation_metrics_have_correct_method_name():
+    """MCP operation metrics include mcp.method.name attribute."""
+    emitter, reader, meter_provider = _make_metrics_emitter()
+
+    for method in (
+        "tools/list",
+        "resources/read",
+        "prompts/get",
+        "prompts/list",
+    ):
+        op = MCPOperation(
+            target="",
+            mcp_method_name=method,
+            network_transport="pipe",
+            is_client=True,
+        )
+        op.duration_s = 0.01
+        emitter.on_end(op)
+
+    data_points = _collect_metric_data_points(
+        reader, meter_provider, "mcp.client.operation.duration"
+    )
+    recorded_methods = {
+        dp.attributes.get("mcp.method.name") for dp in data_points
+    }
+    assert "tools/list" in recorded_methods
+    assert "resources/read" in recorded_methods
+    assert "prompts/get" in recorded_methods
+    assert "prompts/list" in recorded_methods

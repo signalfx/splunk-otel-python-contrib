@@ -375,6 +375,7 @@ class MetricsEmitter(EmitterMeta):
             (
                 LLMInvocation,
                 ToolCall,
+                MCPOperation,
                 Workflow,
                 AgentInvocation,
                 EmbeddingInvocation,
