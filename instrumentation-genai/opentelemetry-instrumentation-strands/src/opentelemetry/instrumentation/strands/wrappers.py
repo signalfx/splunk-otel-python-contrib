@@ -14,6 +14,7 @@
 
 """Wrapt wrappers for Strands Agent lifecycle instrumentation."""
 
+import functools
 import logging
 from typing import Any
 
@@ -63,9 +64,9 @@ def wrap_agent_init(
         # Call original __init__
         result = wrapped(*args, **kwargs)
 
-        # Inject hook provider into agent's hook registry
+        # Inject hook provider into agent's hook registry (attribute is `hooks`, not `hook_registry`)
         try:
-            hook_registry = getattr(instance, "hook_registry", None)
+            hook_registry = getattr(instance, "hooks", None)
             if hook_registry and hasattr(hook_provider, "register_hooks"):
                 hook_provider.register_hooks(hook_registry)
         except Exception as e:
@@ -184,47 +185,45 @@ def wrap_bedrock_agentcore_app_entrypoint(
     kwargs: dict,
     handler: TelemetryHandler,
 ) -> Any:
-    """Wrap BedrockAgentCoreApp.entrypoint to create Workflow span.
+    """Wrap BedrockAgentCoreApp.entrypoint to create Workflow span per invocation.
+
+    entrypoint is a decorator factory: it takes a function and returns a wrapped
+    function. We intercept it and further wrap the returned function so that each
+    call to the entrypoint function creates a Workflow span at invocation time,
+    not at decoration time.
 
     Args:
-        wrapped: Original entrypoint method
+        wrapped: Original entrypoint decorator method
         instance: BedrockAgentCoreApp instance
-        args: Positional arguments
+        args: Positional arguments (the function being decorated)
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
 
     Returns:
-        Result of original entrypoint
+        Decorated function that creates a Workflow span on each call
     """
     try:
-        # Create Workflow
+        # Call original entrypoint decorator to get the decorated function
+        decorated_func = wrapped(*args, **kwargs)
+
         workflow_name = getattr(instance, "name", None) or "BedrockAgentCore"
-        workflow = Workflow(
-            name=workflow_name,
-            system="strands",
-        )
 
-        # Start the workflow
-        handler.start_workflow(workflow)
+        @functools.wraps(decorated_func)
+        def workflow_wrapper(*call_args, **call_kwargs):
+            workflow = Workflow(name=workflow_name, system="strands")
+            handler.start_workflow(workflow)
+            try:
+                result = decorated_func(*call_args, **call_kwargs)
+                handler.stop_workflow(workflow)
+                return result
+            except Exception as e:
+                handler.fail_workflow(
+                    workflow, Error(type=type(e).__name__, message=safe_str(e))
+                )
+                raise
 
-        try:
-            # Call original method
-            result = wrapped(*args, **kwargs)
-
-            # Stop the workflow successfully
-            handler.stop_workflow(workflow)
-
-            return result
-        except Exception as e:
-            # Handle error
-            error_message = safe_str(e)
-            error_type = type(e).__name__
-            handler.fail_workflow(
-                workflow, Error(type=error_type, message=error_message)
-            )
-            raise
+        return workflow_wrapper
     except Exception:
-        # If workflow creation failed, just call original
         return wrapped(*args, **kwargs)
 
 
@@ -263,22 +262,23 @@ def _create_agent_invocation(
     elif "message" in kwargs:
         input_messages = convert_strands_messages(kwargs["message"])
 
-    # Create invocation
-    invocation = AgentInvocation(
-        agent_name=agent_name,
-        input_messages=input_messages,
-        system="strands",
-        request_model=model_id,
+    # Extract system instructions
+    system_instructions = getattr(instance, "system_prompt", None) or getattr(
+        instance, "instructions", None
     )
 
-    # Add tools as attribute if available
-    if tools:
-        invocation.attributes["gen_ai.tools"] = tools
-
-    # Extract instructions/system prompt if available
-    instructions = getattr(instance, "instructions", None)
-    if instructions:
-        invocation.attributes["gen_ai.agent.instructions"] = safe_str(instructions)
+    # Create invocation
+    invocation = AgentInvocation(
+        name=agent_name,
+        model=model_id,
+        input_messages=input_messages,
+        system="strands",
+        framework="strands",
+        tools=tools,
+        system_instructions=safe_str(system_instructions)
+        if system_instructions
+        else None,
+    )
 
     return invocation
 
@@ -331,29 +331,34 @@ def suppress_builtin_tracer() -> None:
     Stores original methods for later restoration.
     """
     try:
-        # Import Strands tracer
         from strands.telemetry.tracer import Tracer
 
-        # Store and replace span creation methods
-        if hasattr(Tracer, "start_span"):
-            _original_tracer_methods["start_span"] = Tracer.start_span
-            Tracer.start_span = lambda self, *args, **kwargs: None
+        _noop = lambda self, *args, **kwargs: None  # noqa: E731
 
-        if hasattr(Tracer, "end_span"):
-            _original_tracer_methods["end_span"] = Tracer.end_span
-            Tracer.end_span = lambda self, *args, **kwargs: None
+        _methods = [
+            "start_agent_span",
+            "end_agent_span",
+            "start_tool_call_span",
+            "end_tool_call_span",
+            "start_model_invoke_span",
+            "end_model_invoke_span",
+            "start_event_loop_cycle_span",
+            "end_event_loop_cycle_span",
+            "start_multiagent_span",
+            "start_swarm_span",
+            "end_swarm_span",
+            "end_span_with_error",
+            # legacy names kept for safety
+            "start_span",
+            "end_span",
+            "start_llm_span",
+            "start_tool_span",
+        ]
 
-        if hasattr(Tracer, "start_agent_span"):
-            _original_tracer_methods["start_agent_span"] = Tracer.start_agent_span
-            Tracer.start_agent_span = lambda self, *args, **kwargs: None
-
-        if hasattr(Tracer, "start_tool_span"):
-            _original_tracer_methods["start_tool_span"] = Tracer.start_tool_span
-            Tracer.start_tool_span = lambda self, *args, **kwargs: None
-
-        if hasattr(Tracer, "start_llm_span"):
-            _original_tracer_methods["start_llm_span"] = Tracer.start_llm_span
-            Tracer.start_llm_span = lambda self, *args, **kwargs: None
+        for method in _methods:
+            if hasattr(Tracer, method):
+                _original_tracer_methods[method] = getattr(Tracer, method)
+                setattr(Tracer, method, _noop)
 
         _LOGGER.debug("Suppressed Strands built-in tracer")
     except (ImportError, AttributeError) as e:

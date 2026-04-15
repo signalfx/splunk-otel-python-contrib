@@ -45,7 +45,7 @@ from .code_interpreter_wrappers import (
     wrap_code_interpreter_upload_file,
 )
 from .memory_wrappers import (
-    wrap_memory_batch_create,
+    wrap_memory_create_blob_event,
     wrap_memory_create_event,
     wrap_memory_list_events,
     wrap_memory_retrieve,
@@ -53,7 +53,6 @@ from .memory_wrappers import (
 from .wrappers import (
     restore_builtin_tracer,
     suppress_builtin_tracer,
-    wrap_agent_call,
     wrap_agent_init,
     wrap_agent_invoke_async,
     wrap_bedrock_agentcore_app_entrypoint,
@@ -155,16 +154,8 @@ class StrandsInstrumentor(BaseInstrumentor):
             ),
         )
 
-        # Wrap Agent.__call__ for sync invocation
-        _safe_wrap(
-            "strands.agent.agent",
-            "Agent.__call__",
-            lambda wrapped, instance, args, kwargs: wrap_agent_call(
-                wrapped, instance, args, kwargs, _handler
-            ),
-        )
-
-        # Wrap Agent.invoke_async for async invocation
+        # Wrap Agent.invoke_async only — Agent.__call__ delegates to invoke_async
+        # via run_async(), so wrapping both would create duplicate agent spans.
         _safe_wrap(
             "strands.agent.agent",
             "Agent.invoke_async",
@@ -188,7 +179,7 @@ class StrandsInstrumentor(BaseInstrumentor):
         # Wrap MemoryClient operations
         _safe_wrap(
             "bedrock_agentcore.memory.client",
-            "MemoryClient.retrieve_memory_records",
+            "MemoryClient.retrieve_memories",
             lambda wrapped, instance, args, kwargs: wrap_memory_retrieve(
                 wrapped, instance, args, kwargs, _handler
             ),
@@ -202,8 +193,8 @@ class StrandsInstrumentor(BaseInstrumentor):
         )
         _safe_wrap(
             "bedrock_agentcore.memory.client",
-            "MemoryClient.batch_create_memory_records",
-            lambda wrapped, instance, args, kwargs: wrap_memory_batch_create(
+            "MemoryClient.create_blob_event",
+            lambda wrapped, instance, args, kwargs: wrap_memory_create_blob_event(
                 wrapped, instance, args, kwargs, _handler
             ),
         )
@@ -319,18 +310,17 @@ class StrandsInstrumentor(BaseInstrumentor):
 
         # Unwrap all wrapped methods
         _safe_unwrap("strands.agent.agent", "Agent.__init__")
-        _safe_unwrap("strands.agent.agent", "Agent.__call__")
         _safe_unwrap("strands.agent.agent", "Agent.invoke_async")
         _safe_unwrap("bedrock_agentcore", "BedrockAgentCoreApp.entrypoint")
 
         # Unwrap MemoryClient methods
         _safe_unwrap(
-            "bedrock_agentcore.memory.client", "MemoryClient.retrieve_memory_records"
+            "bedrock_agentcore.memory.client", "MemoryClient.retrieve_memories"
         )
         _safe_unwrap("bedrock_agentcore.memory.client", "MemoryClient.create_event")
         _safe_unwrap(
             "bedrock_agentcore.memory.client",
-            "MemoryClient.batch_create_memory_records",
+            "MemoryClient.create_blob_event",
         )
         _safe_unwrap("bedrock_agentcore.memory.client", "MemoryClient.list_events")
 

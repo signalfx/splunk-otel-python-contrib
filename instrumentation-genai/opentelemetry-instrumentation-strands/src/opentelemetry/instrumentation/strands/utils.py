@@ -129,7 +129,16 @@ def extract_model_id(agent: Any) -> Optional[str]:
             model = getattr(agent, "model", None)
             if isinstance(model, str):
                 return model
-            # Model object with model_id
+            # BedrockModel stores model_id in config dict: model.config["model_id"]
+            if hasattr(model, "config"):
+                config = getattr(model, "config", None)
+                if isinstance(config, dict):
+                    model_id = config.get("model_id")
+                    if model_id:
+                        return str(model_id)
+                elif config and hasattr(config, "model_id"):
+                    return getattr(config, "model_id", None)
+            # Model object with direct model_id
             if hasattr(model, "model_id"):
                 return getattr(model, "model_id", None)
 
