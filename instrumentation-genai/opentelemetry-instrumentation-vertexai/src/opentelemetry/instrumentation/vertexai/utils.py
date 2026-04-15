@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
+    Any,
     Mapping,
     Sequence,
 )
@@ -37,6 +38,7 @@ from opentelemetry.util.genai.types import (
     FinishReason,
     MessagePart,
     Text,
+    ToolCall,
     ToolCallResponse,
 )
 from opentelemetry.util.genai.utils import get_content_capturing_mode
@@ -175,9 +177,12 @@ def convert_content_to_message_parts(
 ) -> list[MessagePart]:
     """Convert Vertex AI Content proto to a list of util-genai MessagePart objects.
 
-    Only Text and ToolCallResponse parts are supported in this version.
-    Unsupported part types (inline_data, file_data, function_call) are
-    skipped until the corresponding util-genai types are available (HYBIM-604).
+    Maps Vertex AI part types to util-genai equivalents:
+      function_call → ToolCall, function_response → ToolCallResponse, text → Text.
+    Unsupported types (inline_data, file_data) are skipped (HYBIM-604).
+
+    Note: ``._pb`` is used to access the underlying protobuf message because
+    proto-plus wrappers don't support direct ``MessageToDict`` conversion.
     """
     parts: list[MessagePart] = []
     for idx, part in enumerate(content.parts):
@@ -185,14 +190,19 @@ def convert_content_to_message_parts(
             part = part.function_response
             parts.append(
                 ToolCallResponse(
-                    id=f"{part.name}_{idx}",
+                    id=f"{part.name}_{idx}",  # synthetic (Vertex AI has no call id)
                     response=json_format.MessageToDict(part._pb.response),  # type: ignore[reportUnknownMemberType]
                 )
             )
         elif "function_call" in part:
-            # ToolCallRequest not yet in util-genai (HYBIM-604) — skip
-            logging.debug(
-                "function_call part skipped (ToolCallRequest not yet supported)"
+            fc = part.function_call
+            args = json_format.MessageToDict(fc._pb.args) if fc.args else {}  # type: ignore[reportUnknownMemberType]
+            parts.append(
+                ToolCall(
+                    name=fc.name,
+                    arguments=args,
+                    id=f"{fc.name}_{idx}",  # synthetic (Vertex AI has no call id)
+                )
             )
         elif "text" in part:
             parts.append(Text(content=part.text))
@@ -227,3 +237,31 @@ def _map_finish_reason(
 
     # If there is no 1:1 mapping to an OTel preferred enum value, use the exact vertex reason
     return finish_reason.name
+
+
+def extract_tool_definitions(
+    tools: Sequence[tool.Tool] | Sequence[tool_v1beta1.Tool] | None,
+) -> list[dict[str, Any]]:
+    """Extract function declarations from Vertex AI Tools into a list of dicts.
+
+    Each dict has keys: name, description, parameters (matching the format
+    used by LLMInvocation.request_functions).
+
+    Note: Only ``function_declarations`` are extracted.  Other tool types
+    (Google Search, retrieval, code execution) do not carry function
+    metadata and are silently skipped.
+    """
+    if not tools:
+        return []
+    result: list[dict] = []
+    for t in tools:
+        for fd in t.function_declarations:
+            entry: dict = {"name": fd.name}
+            if fd.description:
+                entry["description"] = fd.description
+            if fd.parameters:
+                entry["parameters"] = json_format.MessageToDict(
+                    fd.parameters._pb
+                )  # type: ignore[reportUnknownMemberType]
+            result.append(entry)
+    return result

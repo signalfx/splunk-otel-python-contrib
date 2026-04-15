@@ -25,6 +25,7 @@ from opentelemetry.instrumentation.vertexai.utils import (
     GenerateContentParams,
     _map_finish_reason,
     convert_content_to_message_parts,
+    extract_tool_definitions,
     get_genai_request_attributes,
     get_server_attributes,
 )
@@ -129,6 +130,9 @@ def _build_invocation(
                     )
                 )
 
+    # Tool definitions are request metadata, not message content.
+    request_functions = extract_tool_definitions(params.tools)
+
     invocation = LLMInvocation(
         request_model=request_attributes.get(
             GenAIAttributes.GEN_AI_REQUEST_MODEL, ""
@@ -161,6 +165,7 @@ def _build_invocation(
         request_seed=request_attributes.get(
             GenAIAttributes.GEN_AI_REQUEST_SEED
         ),
+        request_functions=request_functions,
     )
 
     # Propagate extra attributes that don't map to LLMInvocation fields
@@ -200,14 +205,15 @@ def _apply_response_to_invocation(
     finish_reasons = []
     output_messages: list[OutputMessage] = []
     for candidate in response.candidates:
+        # Vertex AI has no TOOL_CALLS finish reason; STOP is returned even for function calls.
         fr = _map_finish_reason(candidate.finish_reason)
-        finish_reasons.append(fr)
         parts = []
         if capture_content:
             parts = convert_content_to_message_parts(candidate.content)
+        finish_reasons.append(fr)
         output_messages.append(
             OutputMessage(
-                role=candidate.content.role or "model",
+                role=getattr(candidate.content, "role", None) or "model",
                 parts=parts,
                 finish_reason=fr,
             )
