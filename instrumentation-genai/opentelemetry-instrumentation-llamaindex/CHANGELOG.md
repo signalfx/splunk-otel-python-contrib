@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- LLM span attributes for feature parity with LangChain instrumentation:
+  - `gen_ai.response.model` extracted from raw LLM response with fallback chain
+  - `gen_ai.response.finish_reasons` from response choices
+  - `gen_ai.request.max_tokens` from LLM metadata/Settings
+  - `gen_ai.request.stream` flag (true when streaming detected)
+  - `gen_ai.response.time_to_first_chunk` (TTFT) for streaming calls
+  - `gen_ai.tool.definitions` via agent context propagation (gated by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS`)
+- TTFT tracking via LlamaIndex event system (`event_handler.py`):
+  - `TTFTTracker` class for recording start times and calculating TTFT
+  - `LlamaindexEventHandler` listening to `LLMChatInProgressEvent` for per-chunk timing
+  - ContextVar correlation bridging callback handler and event handler
+- `gen_ai.client.operation.time_to_first_chunk` histogram metric emission for streaming LLM calls
+- Agent tool registration in `wrap_agent_run()` for tool definitions propagation across async boundaries
+- `find_agent_with_tools()` fallback in invocation manager for ContextVar propagation
+
 ## [0.1.1] - 2026-01-30
 
 ### Fixed
