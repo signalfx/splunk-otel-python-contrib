@@ -14,6 +14,7 @@
 
 """Wrapt wrappers for Strands Agent lifecycle instrumentation."""
 
+import asyncio
 import functools
 import logging
 from typing import Any
@@ -207,6 +208,24 @@ def wrap_bedrock_agentcore_app_entrypoint(
         decorated_func = wrapped(*args, **kwargs)
 
         workflow_name = getattr(instance, "name", None) or "BedrockAgentCore"
+
+        if asyncio.iscoroutinefunction(decorated_func):
+
+            @functools.wraps(decorated_func)
+            async def async_workflow_wrapper(*call_args, **call_kwargs):
+                workflow = Workflow(name=workflow_name, system="strands")
+                handler.start_workflow(workflow)
+                try:
+                    result = await decorated_func(*call_args, **call_kwargs)
+                    handler.stop_workflow(workflow)
+                    return result
+                except Exception as e:
+                    handler.fail_workflow(
+                        workflow, Error(type=type(e).__name__, message=safe_str(e))
+                    )
+                    raise
+
+            return async_workflow_wrapper
 
         @functools.wraps(decorated_func)
         def workflow_wrapper(*call_args, **call_kwargs):

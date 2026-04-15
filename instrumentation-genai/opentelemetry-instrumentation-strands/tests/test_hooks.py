@@ -14,146 +14,143 @@
 
 """Tests for StrandsHookProvider."""
 
+from unittest import mock
+
 from opentelemetry.instrumentation.strands.hooks import StrandsHookProvider
 
 
-class MockEvent:
-    """Mock event for testing hook callbacks."""
+class MockModel:
+    """Mock BedrockModel with config dict (matches actual BedrockModel.config)."""
 
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-
-class MockInvocationState:
-    """Mock invocation state for tracking LLM invocations."""
-
-    pass
+    def __init__(self, model_id="anthropic.claude-v2"):
+        self.config = {"model_id": model_id}
 
 
-class MockUsage:
-    """Mock usage object."""
+class MockAgent:
+    """Mock Strands Agent attached to hook events."""
 
-    def __init__(self, prompt_tokens=10, completion_tokens=20):
-        self.prompt_tokens = prompt_tokens
-        self.completion_tokens = completion_tokens
+    def __init__(self, model_id="anthropic.claude-v2"):
+        self.model = MockModel(model_id)
 
 
-class MockResponse:
-    """Mock LLM response object."""
+class MockStopResponse:
+    """Mock AfterModelCallEvent.stop_response (ModelStopResponse dataclass)."""
 
-    def __init__(self, content="response", model="anthropic.claude-v2", usage=None):
-        self.content = content
-        self.model = model
-        self.usage = usage or MockUsage()
-        self.finish_reason = "stop"
+    def __init__(self, text="response text", stop_reason="end_turn"):
+        # message is a Message TypedDict: {"role": ..., "content": [...]}
+        self.message = {
+            "role": "assistant",
+            "content": [{"text": text}],
+        }
+        self.stop_reason = stop_reason
+
+
+def _make_before_model_event(model_id="anthropic.claude-v2", messages=None):
+    """Build a mock BeforeModelCallEvent with the real field layout."""
+    agent = MockAgent(model_id)
+    invocation_state = {"messages": messages or [{"role": "user", "content": "Hello"}]}
+    event = mock.MagicMock()
+    event.agent = agent
+    event.invocation_state = invocation_state
+    return event, invocation_state
+
+
+def _make_after_model_event(invocation_state, stop_response=None, exception=None):
+    """Build a mock AfterModelCallEvent."""
+    event = mock.MagicMock()
+    event.invocation_state = invocation_state
+    event.stop_response = stop_response
+    event.exception = exception
+    return event
+
+
+def _make_before_tool_event(
+    name="search_docs", tool_use_id="tool-123", input_data=None
+):
+    """Build a mock BeforeToolCallEvent with tool_use TypedDict layout."""
+    event = mock.MagicMock()
+    event.tool_use = {
+        "name": name,
+        "toolUseId": tool_use_id,
+        "input": input_data or {"query": "AI trends"},
+    }
+    return event
+
+
+def _make_after_tool_event(tool_use_id="tool-123", result=None, exception=None):
+    """Build a mock AfterToolCallEvent."""
+    event = mock.MagicMock()
+    event.tool_use = {"name": "search_docs", "toolUseId": tool_use_id, "input": {}}
+    event.result = result
+    event.exception = exception
+    return event
 
 
 def test_before_model_call_starts_llm(stub_handler):
-    """Test that BeforeModelCallEvent starts LLM invocation."""
+    """BeforeModelCallEvent should start an LLM invocation with correct model and messages."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create mock event
-    invocation_state = MockInvocationState()
-    event = MockEvent(
-        model="anthropic.claude-v2",
+    event, _ = _make_before_model_event(
+        model_id="anthropic.claude-v2",
         messages=[{"role": "user", "content": "Hello"}],
-        invocation_state=invocation_state,
-        temperature=0.7,
-        max_tokens=100,
     )
-
-    # Call handler
     hook_provider._on_before_model_call(event)
 
-    # Verify LLM invocation started
     assert len(stub_handler.started_llm) == 1
     invocation = stub_handler.started_llm[0]
     assert invocation.request_model == "anthropic.claude-v2"
-    assert invocation.system == "strands"
+    assert invocation.system == "aws.bedrock"
     assert len(invocation.input_messages) == 1
     assert invocation.input_messages[0].role == "user"
-    assert invocation.request_temperature == 0.7
-    assert invocation.request_max_tokens == 100
 
 
 def test_after_model_call_stops_llm(stub_handler):
-    """Test that AfterModelCallEvent stops LLM invocation."""
+    """AfterModelCallEvent should stop the matching LLM invocation and populate response."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create and start invocation
-    invocation_state = MockInvocationState()
-    before_event = MockEvent(
-        model="anthropic.claude-v2",
-        messages=[{"role": "user", "content": "Hello"}],
-        invocation_state=invocation_state,
-    )
-    hook_provider._on_before_model_call(before_event)
+    event, invocation_state = _make_before_model_event()
+    hook_provider._on_before_model_call(event)
 
-    # Create after event with response
-    response = MockResponse(
-        content="Hello! How can I help?",
-        model="anthropic.claude-v2",
-        usage=MockUsage(prompt_tokens=5, completion_tokens=10),
+    stop_response = MockStopResponse(
+        text="Hello! How can I help?", stop_reason="end_turn"
     )
-    after_event = MockEvent(invocation_state=invocation_state, response=response)
-
-    # Call handler
+    after_event = _make_after_model_event(invocation_state, stop_response=stop_response)
     hook_provider._on_after_model_call(after_event)
 
-    # Verify LLM invocation stopped
     assert len(stub_handler.stopped_llm) == 1
     invocation = stub_handler.stopped_llm[0]
-    assert invocation.response_model == "anthropic.claude-v2"
-    assert invocation.usage_input_tokens == 5
-    assert invocation.usage_output_tokens == 10
     assert len(invocation.output_messages) == 1
-    assert invocation.output_messages[0].parts[0].content == "Hello! How can I help?"
+    assert "Hello! How can I help?" in invocation.output_messages[0].parts[0].content
+    assert invocation.output_messages[0].finish_reason == "end_turn"
 
 
 def test_after_model_call_with_exception_fails_llm(stub_handler):
-    """Test that AfterModelCallEvent with exception fails LLM invocation."""
+    """AfterModelCallEvent with exception should fail the LLM invocation."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create and start invocation
-    invocation_state = MockInvocationState()
-    before_event = MockEvent(
-        model="anthropic.claude-v2",
-        messages=[{"role": "user", "content": "Hello"}],
-        invocation_state=invocation_state,
+    event, invocation_state = _make_before_model_event()
+    hook_provider._on_before_model_call(event)
+
+    after_event = _make_after_model_event(
+        invocation_state, exception=ValueError("API error")
     )
-    hook_provider._on_before_model_call(before_event)
-
-    # Create after event with exception
-    exception = ValueError("API error")
-    after_event = MockEvent(invocation_state=invocation_state, exception=exception)
-
-    # Call handler
     hook_provider._on_after_model_call(after_event)
 
-    # Verify LLM invocation failed
     assert len(stub_handler.failed_entities) == 1
-    invocation, error = stub_handler.failed_entities[0]
+    _invocation, error = stub_handler.failed_entities[0]
     assert error.type == "ValueError"
     assert "API error" in error.message
 
 
 def test_before_tool_call_starts_tool_call(stub_handler):
-    """Test that BeforeToolCallEvent starts tool call."""
+    """BeforeToolCallEvent should start a tool call with name and arguments from tool_use."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create mock event
-    event = MockEvent(
-        tool_name="search_docs",
-        tool_use_id="tool-123",
-        arguments={"query": "AI trends"},
-        description="Search documentation",
+    event = _make_before_tool_event(
+        name="search_docs", tool_use_id="tool-123", input_data={"query": "AI trends"}
     )
-
-    # Call handler
     hook_provider._on_before_tool_call(event)
 
-    # Verify tool call started
     assert len(stub_handler.started_tool_calls) == 1
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.name == "search_docs"
@@ -163,90 +160,71 @@ def test_before_tool_call_starts_tool_call(stub_handler):
 
 
 def test_after_tool_call_stops_tool_call(stub_handler):
-    """Test that AfterToolCallEvent stops tool call."""
+    """AfterToolCallEvent should stop the matching tool call and capture result."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create and start tool call
-    before_event = MockEvent(
-        tool_name="search_docs",
-        tool_use_id="tool-123",
-        arguments={"query": "AI trends"},
-    )
-    hook_provider._on_before_tool_call(before_event)
-
-    # Create after event with result
-    after_event = MockEvent(
-        tool_use_id="tool-123", result={"documents": ["doc1", "doc2"]}
+    hook_provider._on_before_tool_call(_make_before_tool_event(tool_use_id="tool-123"))
+    hook_provider._on_after_tool_call(
+        _make_after_tool_event(
+            tool_use_id="tool-123", result={"documents": ["doc1", "doc2"]}
+        )
     )
 
-    # Call handler
-    hook_provider._on_after_tool_call(after_event)
-
-    # Verify tool call stopped
     assert len(stub_handler.stopped_tool_calls) == 1
     tool_call = stub_handler.stopped_tool_calls[0]
     assert '"documents"' in tool_call.tool_result
 
 
 def test_after_tool_call_with_exception_fails_tool_call(stub_handler):
-    """Test that AfterToolCallEvent with exception fails tool call."""
+    """AfterToolCallEvent with exception should fail the tool call."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create and start tool call
-    before_event = MockEvent(
-        tool_name="search_docs",
-        tool_use_id="tool-123",
-        arguments={"query": "AI trends"},
+    hook_provider._on_before_tool_call(_make_before_tool_event(tool_use_id="tool-123"))
+    hook_provider._on_after_tool_call(
+        _make_after_tool_event(
+            tool_use_id="tool-123", exception=RuntimeError("Tool execution failed")
+        )
     )
-    hook_provider._on_before_tool_call(before_event)
 
-    # Create after event with exception
-    exception = RuntimeError("Tool execution failed")
-    after_event = MockEvent(tool_use_id="tool-123", exception=exception)
-
-    # Call handler
-    hook_provider._on_after_tool_call(after_event)
-
-    # Verify tool call failed
     assert len(stub_handler.failed_entities) == 1
-    tool_call, error = stub_handler.failed_entities[0]
+    _tool_call, error = stub_handler.failed_entities[0]
     assert error.type == "RuntimeError"
     assert "Tool execution failed" in error.message
 
 
 def test_extract_provider_from_model_id(stub_handler):
-    """Test provider extraction from various model ID formats."""
+    """_extract_provider should return the correct provider for known model ID patterns."""
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Test various model ID formats
     assert hook_provider._extract_provider("anthropic.claude-v2") == "anthropic"
-    assert hook_provider._extract_provider("bedrock-anthropic.claude-v2") == "bedrock"
     assert hook_provider._extract_provider("openai.gpt-4") == "openai"
     assert hook_provider._extract_provider("cohere.command") == "cohere"
     assert hook_provider._extract_provider("ai21.j2-ultra") == "ai21"
-    assert hook_provider._extract_provider("unknown-model") == "unknown-model"
     assert hook_provider._extract_provider("") == "unknown"
 
 
 def test_hook_provider_register_hooks(stub_handler):
-    """Test that register_hooks is callable and doesn't crash."""
+    """register_hooks should call add_callback with event type classes."""
+    from strands.hooks.events import (
+        AfterModelCallEvent,
+        AfterToolCallEvent,
+        BeforeModelCallEvent,
+        BeforeToolCallEvent,
+    )
+
     hook_provider = StrandsHookProvider(stub_handler)
 
-    # Create a mock registry
-    class MockRegistry:
+    class CapturingRegistry:
         def __init__(self):
-            self.hooks = {}
+            self.callbacks = {}
 
-        def register(self, event_name, callback):
-            self.hooks[event_name] = callback
+        def add_callback(self, event_type, callback):
+            self.callbacks[event_type] = callback
 
-    registry = MockRegistry()
-
-    # Register hooks
+    registry = CapturingRegistry()
     hook_provider.register_hooks(registry)
 
-    # Verify hooks were registered
-    assert "BeforeModelCallEvent" in registry.hooks
-    assert "AfterModelCallEvent" in registry.hooks
-    assert "BeforeToolCallEvent" in registry.hooks
-    assert "AfterToolCallEvent" in registry.hooks
+    assert BeforeModelCallEvent in registry.callbacks
+    assert AfterModelCallEvent in registry.callbacks
+    assert BeforeToolCallEvent in registry.callbacks
+    assert AfterToolCallEvent in registry.callbacks

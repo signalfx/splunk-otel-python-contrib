@@ -173,6 +173,18 @@ class StubTelemetryHandler:
         self.failed_entities.append((tool_call, error))
         return tool_call
 
+    def start_retrieval(self, invocation):
+        self.started_llm.append(invocation)
+        return invocation
+
+    def stop_retrieval(self, invocation):
+        self.stopped_llm.append(invocation)
+        return invocation
+
+    def fail_retrieval(self, invocation, error):
+        self.failed_entities.append((invocation, error))
+        return invocation
+
 
 @pytest.fixture
 def stub_handler():

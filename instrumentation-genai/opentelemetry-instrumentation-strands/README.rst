@@ -55,12 +55,10 @@ This instrumentation captures:
 **Bedrock AgentCore Components:**
 
 - **BedrockAgentCoreApp** → Mapped to ``Workflow`` spans (optional)
-- **Memory Operations** (MemoryClient) → Mapped to ``RetrievalInvocation`` spans
+- **Memory Operations** (MemoryClient)
 
-  - retrieve_memory_records
-  - create_event
-  - batch_create_memory_records
-  - list_events
+  - ``retrieve_memories`` → ``RetrievalInvocation`` span
+  - ``create_event``, ``create_blob_event``, ``list_events`` → ``ToolCall`` spans
 
 - **Code Interpreter** (CodeInterpreter) → Mapped to ``ToolCall`` spans
 
@@ -226,8 +224,8 @@ Limitations
   agent invocations are supported.
 - **LLM Provider Details**: Captured via Strands hooks. For additional provider-specific
   telemetry, use provider instrumentation (e.g., ``opentelemetry-instrumentation-bedrock``).
-- **AgentCore Components**: Currently instruments agents and runtime. Gateway, Memory,
-  and ServerTools monitoring planned for future releases.
+- **AgentCore Components**: Memory, Code Interpreter, and Browser Automation are
+  instrumented. Gateway and ServerTools are not yet available in the SDK.
 
 
 Contributing

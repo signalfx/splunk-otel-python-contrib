@@ -54,6 +54,44 @@ def safe_str(value: Any) -> str:
         return ""
 
 
+def _extract_content_parts(content: Any) -> list[Text]:
+    """Extract Text parts from a message content field.
+
+    Handles both plain strings and lists of content blocks
+    (e.g., Bedrock multi-modal blocks: [{"type": "text", "text": "..."}, ...]).
+
+    Args:
+        content: Message content — a string, a list of blocks, or any other value
+
+    Returns:
+        List of Text parts with non-empty text
+    """
+    if not content:
+        return [Text(content="")]
+
+    # Plain string
+    if isinstance(content, str):
+        return [Text(content=content)]
+
+    # List of content blocks (Bedrock / Strands multi-modal format)
+    if isinstance(content, list):
+        parts: list[Text] = []
+        for block in content:
+            text = None
+            if isinstance(block, dict):
+                text = block.get("text") or block.get("content")
+            elif hasattr(block, "text"):
+                text = getattr(block, "text", None)
+            elif hasattr(block, "content"):
+                text = getattr(block, "content", None)
+            if text:
+                parts.append(Text(content=safe_str(text)))
+        return parts if parts else [Text(content="")]
+
+    # Fallback for unexpected types
+    return [Text(content=safe_str(content))]
+
+
 def convert_strands_messages(messages: Any) -> list[InputMessage]:
     """Convert Strands message format to GenAI InputMessage format.
 
@@ -85,16 +123,14 @@ def convert_strands_messages(messages: Any) -> list[InputMessage]:
                 if isinstance(msg, dict):
                     role = msg.get("role", "user")
                     content = msg.get("content", "")
-                    result.append(
-                        InputMessage(role=role, parts=[Text(content=safe_str(content))])
-                    )
+                    parts = _extract_content_parts(content)
+                    result.append(InputMessage(role=role, parts=parts))
                 # Handle object with attributes
                 elif hasattr(msg, "role") and hasattr(msg, "content"):
                     role = getattr(msg, "role", "user")
                     content = getattr(msg, "content", "")
-                    result.append(
-                        InputMessage(role=role, parts=[Text(content=safe_str(content))])
-                    )
+                    parts = _extract_content_parts(content)
+                    result.append(InputMessage(role=role, parts=parts))
                 # Handle string in list
                 elif isinstance(msg, str):
                     result.append(InputMessage(role="user", parts=[Text(content=msg)]))
