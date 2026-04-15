@@ -61,6 +61,10 @@ GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"
 GEN_AI_EMBEDDINGS_INPUT_TEXTS = "gen_ai.embeddings.input.texts"
 GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats"
 
+# Streaming attributes (custom, not in semconv yet)
+GEN_AI_REQUEST_STREAM = "gen_ai.request.stream"
+GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK = "gen_ai.response.time_to_first_chunk"
+
 # Retrieval attributes
 GEN_AI_RETRIEVAL_TYPE = "gen_ai.retrieval.type"
 GEN_AI_RETRIEVAL_QUERY_TEXT = "gen_ai.retrieval.query.text"
@@ -75,6 +79,7 @@ GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
 GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
 GEN_AI_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments"
 GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
+GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
 
 # Server attributes (from semantic conventions)
 SERVER_ADDRESS = "server.address"

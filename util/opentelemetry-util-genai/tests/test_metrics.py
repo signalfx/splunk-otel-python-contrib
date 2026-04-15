@@ -427,6 +427,162 @@ class TestMetricsEmission(unittest.TestCase):
             f"Expected duration metric datapoint to include {error_key}",
         )
 
+    def _invoke_streaming(
+        self,
+        generator: str,
+        capture_mode: str,
+        *,
+        is_streaming: bool = True,
+        ttfc_value: float = 0.123,
+    ) -> LLMInvocation:
+        """Helper to simulate streaming LLM invocation with time to first chunk."""
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: generator,
+        }
+        if capture_mode is not None:
+            upper_mode = capture_mode.upper()
+            capture_enabled = upper_mode != "NONE"
+            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
+                "true" if capture_enabled else "false"
+            )
+            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE] = (
+                upper_mode
+            )
+        with patch.dict(os.environ, env, clear=False):
+            _OpenTelemetrySemanticConventionStability._initialized = False
+            _OpenTelemetrySemanticConventionStability._initialize()
+            TelemetryHandler._reset_for_testing()
+            handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            inv = LLMInvocation(
+                request_model="gpt-4o-mini",
+                input_messages=[
+                    InputMessage(role="user", parts=[Text(content="hello")])
+                ],
+            )
+            inv.provider = "openai"
+            inv.request_stream = is_streaming
+            if is_streaming:
+                # Simulate streaming: set time to first chunk in attributes
+                inv.attributes["gen_ai.response.time_to_first_chunk"] = (
+                    ttfc_value
+                )
+            handler.start_llm(inv)
+            time.sleep(0.01)  # ensure measurable duration
+            inv.output_messages = [
+                OutputMessage(
+                    role="assistant",
+                    parts=[Text(content="Hi!")],
+                    finish_reason="stop",
+                )
+            ]
+            inv.input_tokens = 3
+            inv.output_tokens = 2
+            handler.stop_llm(inv)
+            # Force flush isolated meter provider
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            time.sleep(0.005)
+            try:
+                self.metric_reader.collect()
+            except Exception:
+                pass
+        return inv
+
+    def test_streaming_time_to_first_chunk_metric_emitted(self):
+        """Verify time_to_first_chunk metric is emitted for streaming calls."""
+        ttfc_value = 0.234
+        self._invoke_streaming(
+            "span_metric", "span", is_streaming=True, ttfc_value=ttfc_value
+        )
+        metrics_list = self._collect_metrics()
+
+        # Find the time_to_first_chunk metric
+        ttfc_metric = None
+        for metric in metrics_list:
+            if metric.name == "gen_ai.client.operation.time_to_first_chunk":
+                ttfc_metric = metric
+                break
+
+        self.assertIsNotNone(
+            ttfc_metric,
+            "Expected gen_ai.client.operation.time_to_first_chunk metric for streaming call",
+        )
+
+        # Verify the metric has datapoints with correct value
+        data = getattr(ttfc_metric, "data", None)
+        self.assertIsNotNone(data, "Expected metric to have data")
+        data_points = getattr(data, "data_points", []) or []
+        self.assertTrue(
+            data_points, "Expected at least one datapoint for TTFC metric"
+        )
+
+        # Verify the recorded value matches
+        found_correct_value = False
+        for dp in data_points:
+            # For histogram, check sum or bucket counts
+            if hasattr(dp, "sum"):
+                # The sum should be approximately the TTFC value
+                if abs(dp.sum - ttfc_value) < 0.001:
+                    found_correct_value = True
+                    break
+
+        self.assertTrue(
+            found_correct_value,
+            f"Expected TTFC metric to record value ~{ttfc_value}",
+        )
+
+        # Verify attributes match (same as duration/token metrics)
+        for dp in data_points:
+            attrs = getattr(dp, "attributes", {}) or {}
+            self.assertEqual(
+                attrs.get("gen_ai.request.model"),
+                "gpt-4o-mini",
+                "Expected request model in TTFC metric attributes",
+            )
+            self.assertEqual(
+                attrs.get("gen_ai.provider.name"),
+                "openai",
+                "Expected provider in TTFC metric attributes",
+            )
+
+    def test_non_streaming_does_not_emit_time_to_first_chunk_metric(self):
+        """Verify time_to_first_chunk metric is NOT emitted for non-streaming calls."""
+        self._invoke_streaming(
+            "span_metric", "span", is_streaming=False, ttfc_value=0.0
+        )
+        metrics_list = self._collect_metrics()
+
+        # Verify the time_to_first_chunk metric is NOT present
+        ttfc_metric = None
+        for metric in metrics_list:
+            if metric.name == "gen_ai.client.operation.time_to_first_chunk":
+                ttfc_metric = metric
+                break
+
+        self.assertIsNone(
+            ttfc_metric,
+            "Expected NO gen_ai.client.operation.time_to_first_chunk metric for non-streaming call",
+        )
+
+        # Verify standard metrics are still emitted
+        names = {m.name for m in metrics_list}
+        self.assertIn(
+            "gen_ai.client.operation.duration",
+            names,
+            "Expected duration metric for non-streaming call",
+        )
+        self.assertIn(
+            "gen_ai.client.token.usage",
+            names,
+            "Expected token usage metric for non-streaming call",
+        )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

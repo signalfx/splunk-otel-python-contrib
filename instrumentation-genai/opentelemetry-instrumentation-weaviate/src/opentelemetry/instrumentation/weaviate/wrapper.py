@@ -40,6 +40,13 @@ from .utils import (
     parse_url_to_host_port,
 )
 
+# GenAI context attributes to propagate from parent agent/workflow spans
+_GENAI_PROPAGATE_ATTRS = (
+    "gen_ai.agent.name",
+    "gen_ai.agent.id",
+    "gen_ai.workflow.name",
+)
+
 
 # Context variable for passing connection info within operation call stacks
 _connection_host_context: ContextVar[Optional[str]] = ContextVar(
@@ -163,6 +170,10 @@ class _WeaviateOperationWrapper:
             wrapped, instance, args, kwargs, module_name, function_name
         )
 
+        # Capture parent span before entering the new span so we can propagate
+        # gen_ai agent/workflow attributes set by LangChain, CrewAI, LlamaIndex, etc.
+        parent_span = trace.get_current_span()
+
         with self.tracer.start_as_current_span(name, kind=SpanKind.CLIENT) as span:
             span.set_attribute(DbAttributes.DB_SYSTEM_NAME, "weaviate")
 
@@ -175,6 +186,8 @@ class _WeaviateOperationWrapper:
                 span.set_attribute(ServerAttributes.SERVER_ADDRESS, connection_host)
             if connection_port is not None:
                 span.set_attribute(ServerAttributes.SERVER_PORT, connection_port)
+
+            self._propagate_genai_context(span, parent_span)
 
             # Record operation duration as a metric
             start_time = time.perf_counter()
@@ -196,14 +209,9 @@ class _WeaviateOperationWrapper:
                 if connection_port is not None:
                     metric_attributes[ServerAttributes.SERVER_PORT] = connection_port
 
-                # Record the duration metric with span context to link metric to trace
-                try:
-                    context = trace.set_span_in_context(span)
-                except (TypeError, ValueError, AttributeError):
-                    context = None
-
+                # Record the duration metric (automatically linked to current span context)
                 self.duration_histogram.record(
-                    duration_ms, attributes=metric_attributes, context=context
+                    duration_ms, attributes=metric_attributes
                 )
 
             # Extract documents from similarity search operations
@@ -246,6 +254,29 @@ class _WeaviateOperationWrapper:
                             span.add_event("weaviate.document", attributes=attributes)
 
         return return_value
+
+    def _propagate_genai_context(self, span: Any, parent_span: Any) -> None:
+        """Copy gen_ai agent/workflow attributes from the parent span into the Weaviate span.
+
+        This allows Weaviate spans to inherit context (e.g. gen_ai.agent.name,
+        gen_ai.workflow.name) set by upstream instrumentations such as LangChain,
+        CrewAI, or LlamaIndex, without taking a dependency on splunk-otel-util-genai.
+        """
+        try:
+            if parent_span is None or not parent_span.is_recording():
+                return
+            parent_attrs = getattr(parent_span, "_attributes", None) or getattr(
+                parent_span, "attributes", None
+            )
+            if not parent_attrs:
+                return
+            for attr in _GENAI_PROPAGATE_ATTRS:
+                val = parent_attrs.get(attr)
+                if val is not None:
+                    span.set_attribute(attr, val)
+        except Exception as e:
+            if Config.exception_logger:
+                Config.exception_logger(e)
 
     def _is_similarity_search(self) -> bool:
         """Check if the operation is a similarity search or retrieval operation that returns documents."""

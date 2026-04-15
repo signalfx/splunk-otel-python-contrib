@@ -85,6 +85,14 @@ class Instruments:
             description="Number of input and output tokens used",
             explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_TOKEN_USAGE_BUCKETS,
         )
+        # Time to first chunk for streaming operations
+        # Spec: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md
+        self.time_to_first_chunk_histogram: Histogram = meter.create_histogram(
+            name="gen_ai.client.operation.time_to_first_chunk",
+            unit="s",
+            description="Time to first chunk for streaming GenAI operations",
+            explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
+        )
         # Agentic AI metrics
         # Use the same bucket boundaries as operation duration since all duration metrics
         # are measured in seconds and should follow the same distribution patterns

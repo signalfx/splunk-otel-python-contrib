@@ -223,8 +223,16 @@ VS Code launch configurations are in `.vscode/launch.json` for debugging example
 - Always keep backward compatibility in mind when refactoring existing
 - Follow DRY and SOLID software engineering principles when readability and maintainability is not compromised.
 
+## Git Commit Rules
+
+- **Never add `Co-Authored-By` trailers** (or any similar attribution trailers such as `Co-authored-by`, `Signed-off-by`, etc.) that reference AI assistants, bots, or automated tools in commit messages. This includes but is not limited to Claude, Copilot, ChatGPT, or any `noreply@` addresses from AI vendors.
+- Commit messages should only attribute human contributors.
+
 ## Common Pitfalls to Avoid
 
 - Do not try to mock libraries if import in the current env fail. If in doubt - clearly communicate the problem to user
 - Always refer to `README.md` and `README.packages.architecture.md` for context.
 - avoid creating multiple copies of example apps, when can introduce parameters and reuse the same demo app
+- **Do not use `try/except` guards around test imports.** Test dependencies must be declared in `pyproject.toml` `[project.optional-dependencies] test` and are expected to be present at test time. If they are missing, the test should fail with an `ImportError`, not silently skip.
+- **Do not use `sys.path` hacks** (e.g., inserting `src/` into `sys.path`) in test files. Packages should be installed in editable mode (`pip install -e .`) and imports should work without path manipulation.
+- **Do not use `pytest.mark.skipif` to guard against missing test dependencies.** If a dependency is required for a test, add it to the test requirements and import it directly.
