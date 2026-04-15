@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.13
+
+### Fixed
+- **MCP session duration metrics now recorded** — `mcp.client.session.duration` and `mcp.server.session.duration` histogram instruments were declared in `instruments.py` but never `.record()`ed. Added `_record_mcp_session_metrics()` to `MetricsEmitter` that detects MCP sessions (`system="mcp"`, `agent_type` in `{"mcp_client", "mcp_server"}`) within `_record_agent_metrics()` and records the appropriate histogram with semconv attributes (`network.transport`, `mcp.protocol.version`, `server.address`, `server.port`, `error.type`).
+
 ## Version 0.1.12
 
 ### Added

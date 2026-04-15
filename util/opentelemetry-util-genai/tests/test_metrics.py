@@ -584,5 +584,204 @@ class TestMetricsEmission(unittest.TestCase):
         )
 
 
+class TestMCPSessionDurationMetrics(unittest.TestCase):
+    """Tests for mcp.client.session.duration and mcp.server.session.duration."""
+
+    def setUp(self):
+        self.span_exporter = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(
+            SimpleSpanProcessor(self.span_exporter)
+        )
+        trace.set_tracer_provider(tracer_provider)
+        self.tracer_provider = tracer_provider
+        self.metric_reader = InMemoryMetricReader()
+        self.meter_provider = MeterProvider(
+            metric_readers=[self.metric_reader]
+        )
+        TelemetryHandler._reset_for_testing()
+
+    def _collect_metrics(self, retries: int = 5, delay: float = 0.1):
+        for attempt in range(retries):
+            try:
+                self.metric_reader.collect()
+            except Exception:
+                pass
+            data: Any = None
+            try:
+                data = self.metric_reader.get_metrics_data()
+            except Exception:
+                data = None
+            points: list[Any] = []
+            if data is not None:
+                data_any = cast(Any, data)
+                for rm in getattr(data_any, "resource_metrics", []) or []:
+                    for scope_metrics in (
+                        getattr(rm, "scope_metrics", []) or []
+                    ):
+                        for metric in (
+                            getattr(scope_metrics, "metrics", []) or []
+                        ):
+                            points.append(metric)
+            if points or attempt == retries - 1:
+                return points
+            time.sleep(delay)
+        return []
+
+    def _get_handler(self):
+        env = {
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            TelemetryHandler._reset_for_testing()
+            return get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+
+    def test_mcp_client_session_duration_on_normal_close(self):
+        """mcp.client.session.duration is recorded when a client MCP session closes normally."""
+        handler = self._get_handler()
+
+        session = AgentInvocation(
+            name="mcp.client",
+            agent_type="mcp_client",
+            system="mcp",
+        )
+        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
+        session.attributes["network.transport"] = "pipe"
+
+        handler.start_agent(session)
+        time.sleep(0.01)
+        handler.stop_agent(session)
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertIn(
+            "mcp.client.session.duration",
+            names,
+            f"Expected mcp.client.session.duration in {names}",
+        )
+
+        # Verify attributes
+        for metric in metrics_list:
+            if metric.name != "mcp.client.session.duration":
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                attrs = getattr(dp, "attributes", {}) or {}
+                self.assertEqual(attrs.get("network.transport"), "pipe")
+                self.assertNotIn("error.type", attrs)
+
+    def test_mcp_client_session_duration_on_error_close(self):
+        """mcp.client.session.duration includes error.type when session fails."""
+        handler = self._get_handler()
+
+        session = AgentInvocation(
+            name="mcp.client",
+            agent_type="mcp_client",
+            system="mcp",
+        )
+        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
+        session.attributes["network.transport"] = "pipe"
+        session.attributes["error.type"] = "ConnectionError"
+
+        handler.start_agent(session)
+        time.sleep(0.01)
+        handler.fail_agent(
+            session, Error(type=ConnectionError, message="connection lost")
+        )
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertIn(
+            "mcp.client.session.duration",
+            names,
+            f"Expected mcp.client.session.duration in {names}",
+        )
+
+        # Verify error.type attribute
+        for metric in metrics_list:
+            if metric.name != "mcp.client.session.duration":
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                attrs = getattr(dp, "attributes", {}) or {}
+                self.assertEqual(attrs.get("error.type"), "ConnectionError")
+
+    def test_mcp_server_session_duration_recorded(self):
+        """mcp.server.session.duration is recorded for server-side MCP sessions."""
+        handler = self._get_handler()
+
+        session = AgentInvocation(
+            name="mcp.server",
+            agent_type="mcp_server",
+            system="mcp",
+        )
+        session.attributes["gen_ai.operation.name"] = "mcp.server_session"
+        session.attributes["network.transport"] = "tcp"
+
+        handler.start_agent(session)
+        time.sleep(0.01)
+        handler.stop_agent(session)
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertIn(
+            "mcp.server.session.duration",
+            names,
+            f"Expected mcp.server.session.duration in {names}",
+        )
+
+    def test_non_mcp_agent_does_not_emit_session_duration(self):
+        """Regular agent invocations should NOT emit mcp.*.session.duration."""
+        handler = self._get_handler()
+
+        agent = AgentInvocation(
+            name="regular_agent",
+            agent_type="researcher",
+        )
+
+        handler.start_agent(agent)
+        time.sleep(0.01)
+        handler.stop_agent(agent)
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertNotIn("mcp.client.session.duration", names)
+        self.assertNotIn("mcp.server.session.duration", names)
+        self.assertIn("gen_ai.agent.duration", names)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

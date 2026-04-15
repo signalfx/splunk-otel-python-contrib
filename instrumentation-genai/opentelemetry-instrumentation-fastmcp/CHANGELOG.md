@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2]
+
+### Added
+- **Server session lifecycle tracking** — `server_instrumentor` now wraps `mcp.server.lowlevel.Server.run` with an `AgentInvocation(agent_type="mcp_server")` to track server session duration, enabling `mcp.server.session.duration` metric emission via `MetricsEmitter`.
+
+### Fixed
+- **MCP session attributes for duration metrics** — `client_instrumentor` now sets `network.transport` and `error.type` on the `AgentInvocation` attributes dict so that `MetricsEmitter` can record `mcp.client.session.duration` with proper semconv attributes.
+
 ## [0.1.1] - 2026-01-27
 
 ### Changed
