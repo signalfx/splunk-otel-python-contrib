@@ -57,6 +57,12 @@ def create_evaluation_manager(
             )
             # Fall through to in-process mode
 
+    # Queue-level monitoring counters (queue_size, enqueue_errors) are created
+    # here rather than inside a CompositeEmitter because they track Manager
+    # infrastructure health — enqueue failures and backpressure — which occur
+    # *before* any emitter lifecycle hook fires.  The meter_provider is read
+    # from the handler so that these counters share the same MeterProvider
+    # (and therefore the same export pipeline) as the rest of GenAI metrics.
     queue_size_counter = None
     enqueue_error_counter = None
     try:
