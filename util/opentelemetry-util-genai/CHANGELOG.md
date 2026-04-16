@@ -2,6 +2,14 @@
 
 All notable changes to this repository are documented in this file.
 
+## [Unreleased]
+
+### Added
+- Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
+
+### Changed
+- Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
+
 ## Version 0.1.12
 
 ### Added
