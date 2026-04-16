@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **MCP session attributes for duration metrics** — `client_instrumentor` now sets `network.transport` and `error.type` on the `AgentInvocation` attributes dict so that `MetricsEmitter` can record `mcp.client.session.duration` with proper semconv attributes.
+- **MCP span naming aligned with OTel MCP semantic conventions** — Tool call spans now use `tools/call {tool_name}` format with `SpanKind.CLIENT` (client-side) or `SpanKind.SERVER` (server-side), matching the [OTel MCP semconv spec](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/). Previously used `execute_tool {tool_name}` with `SpanKind.INTERNAL`.
 
 ## [0.1.1] - 2026-01-27
 
