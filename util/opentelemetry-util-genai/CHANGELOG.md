@@ -11,11 +11,13 @@ All notable changes to this repository are documented in this file.
 - **TelemetryHandler MCPOperation lifecycle** — `start_mcp_operation`, `stop_mcp_operation`, `fail_mcp_operation` methods.
 - **SpanEmitter MCPOperation dispatch** — Unified `_start_mcp_operation`/`_finish_mcp_operation`/`_error_mcp_operation` handles both `MCPToolCall` and `MCPOperation`.
 - **MetricsEmitter MCPOperation dispatch** — MCP duration metrics now emitted for all MCP operations (not just tool calls), including on the error path.
+- Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
 
 ### Changed
 - **`MCPToolCall` now inherits from `MCPOperation`** — MRO: `MCPToolCall → MCPOperation → ToolCall → GenAI`. All MCP transport/protocol attributes are defined on `MCPOperation` and inherited by `MCPToolCall`.
 - **Renamed `mcp_server_name` → `sdot_mcp_server_name`** — SDOT-custom attribute now uses `sdot.mcp.server_name` to distinguish from OTel semconv attributes. **Breaking**: callers using `mcp_server_name=` must update.
 - **Renamed `_record_mcp_tool_metrics` → `_record_mcp_operation_metrics`** — Generalized to handle all MCP operation types.
+- Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
 
 ## Version 0.1.12
 

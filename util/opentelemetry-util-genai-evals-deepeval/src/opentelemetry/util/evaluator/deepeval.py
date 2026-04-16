@@ -724,6 +724,7 @@ class DeepevalEvaluator(Evaluator):
                 ctx.score = score
                 passed = _derive_passed(label, ctx.success)
 
+                eval_cost = ctx.attributes.get("deepeval.evaluation_cost")
                 result = EvaluationResult(
                     metric_name=ctx.name,
                     score=score,
@@ -731,6 +732,9 @@ class DeepevalEvaluator(Evaluator):
                     explanation=ctx.reason,
                     error=ctx.error,
                     attributes=ctx.attributes,
+                    evaluation_cost=float(eval_cost)
+                    if isinstance(eval_cost, (int, float))
+                    else None,
                 )
                 results.append(result)
                 if passed is not None:

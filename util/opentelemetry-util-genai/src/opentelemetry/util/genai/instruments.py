@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from opentelemetry.metrics import Histogram, Meter
+from opentelemetry.metrics import Counter, Histogram, Meter, UpDownCounter
 
 # Bucket boundaries per OpenTelemetry semantic conventions:
 # https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md
@@ -67,6 +67,22 @@ _MCP_OPERATION_DURATION_BUCKETS = [
     60,
     120,
     300,
+]
+
+# Cost bucket boundaries for evaluation metrics (USD).
+# Covers typical LLM evaluator costs: sub-cent calls up to ~$10.
+_GEN_AI_EVALUATION_COST_BUCKETS = [
+    0.0001,
+    0.0005,
+    0.001,
+    0.005,
+    0.01,
+    0.05,
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    10.0,
 ]
 
 
@@ -151,4 +167,27 @@ class Instruments:
             unit="{byte}",
             description="Size of the tool call output in bytes. "
             "This output typically becomes part of the LLM input context.",
+        )
+        # Evaluation pipeline monitoring
+        self.evaluation_client_operation_duration: Histogram = meter.create_histogram(
+            name="gen_ai.evaluation.client.operation.duration",
+            unit="s",
+            description="Duration of evaluator calls",
+            explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
+        )
+        self.evaluation_client_usage_cost: Histogram = meter.create_histogram(
+            name="gen_ai.evaluation.client.usage.cost",
+            unit="{usd}",
+            description="Cost of evaluator calls in USD",
+            explicit_bucket_boundaries_advisory=_GEN_AI_EVALUATION_COST_BUCKETS,
+        )
+        self.evaluation_client_queue_size: UpDownCounter = meter.create_up_down_counter(
+            name="gen_ai.evaluation.client.queue.size",
+            unit="{invocation}",
+            description="Current number of invocations in the evaluation queue",
+        )
+        self.evaluation_client_enqueue_errors: Counter = meter.create_counter(
+            name="gen_ai.evaluation.client.enqueue.errors",
+            unit="{error}",
+            description="Number of invocations that failed to enqueue for evaluation",
         )
