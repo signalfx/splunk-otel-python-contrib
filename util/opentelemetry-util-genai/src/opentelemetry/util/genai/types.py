@@ -31,6 +31,7 @@ from opentelemetry.trace import Span, SpanContext
 # Backward compatibility: older semconv builds may miss new GEN_AI attributes
 if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
+
 # Import security attribute from centralized attributes module
 from opentelemetry.util.genai.attributes import (
     GEN_AI_REQUEST_STREAM,
@@ -454,6 +455,9 @@ class EvaluationResult:
     explanation: Optional[str] = None
     error: Optional[Error] = None
     attributes: Dict[str, Any] = field(default_factory=dict)
+    duration_s: Optional[float] = None
+    evaluator_name: Optional[str] = None
+    evaluation_cost: Optional[float] = None
 
 
 @dataclass
