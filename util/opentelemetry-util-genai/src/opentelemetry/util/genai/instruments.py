@@ -50,6 +50,25 @@ _GEN_AI_CLIENT_TOKEN_USAGE_BUCKETS = [
     67108864,
 ]
 
+# MCP operation duration bucket boundaries per OTel semantic conventions:
+# https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/
+_MCP_OPERATION_DURATION_BUCKETS = [
+    0.01,
+    0.02,
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1,
+    2,
+    5,
+    10,
+    30,
+    60,
+    120,
+    300,
+]
+
 # Cost bucket boundaries for evaluation metrics (USD).
 # Covers typical LLM evaluator costs: sub-cent calls up to ~$10.
 _GEN_AI_EVALUATION_COST_BUCKETS = [
@@ -121,22 +140,26 @@ class Instruments:
             unit="s",
             description="Duration of MCP request or notification as observed on "
             "the sender from the time it was sent until response or ack is received",
+            explicit_bucket_boundaries_advisory=_MCP_OPERATION_DURATION_BUCKETS,
         )
         self.mcp_server_operation_duration: Histogram = meter.create_histogram(
             name="mcp.server.operation.duration",
             unit="s",
             description="MCP request or notification duration as observed on "
             "the receiver from the time it was received until result or ack is sent",
+            explicit_bucket_boundaries_advisory=_MCP_OPERATION_DURATION_BUCKETS,
         )
         self.mcp_client_session_duration: Histogram = meter.create_histogram(
             name="mcp.client.session.duration",
             unit="s",
             description="Duration of the MCP session as observed on the MCP client",
+            explicit_bucket_boundaries_advisory=_MCP_OPERATION_DURATION_BUCKETS,
         )
         self.mcp_server_session_duration: Histogram = meter.create_histogram(
             name="mcp.server.session.duration",
             unit="s",
             description="Duration of the MCP session as observed on the MCP server",
+            explicit_bucket_boundaries_advisory=_MCP_OPERATION_DURATION_BUCKETS,
         )
         # Custom metric: Track tool output size (impacts LLM token usage when passed as context)
         self.mcp_tool_output_size: Histogram = meter.create_histogram(
