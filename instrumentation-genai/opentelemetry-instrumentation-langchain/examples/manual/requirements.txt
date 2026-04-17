@@ -2,7 +2,7 @@ deepeval
 langchain==1.0.2
 #langchain-classic==1.0.0
 langchain-core==1.0.1
-langchain-openai==1.0.1
+langchain-openai==1.1.14
 langchain-text-splitters==1.0.0
 langgraph==1.0.1
 #langgraph-api==0.4.46
