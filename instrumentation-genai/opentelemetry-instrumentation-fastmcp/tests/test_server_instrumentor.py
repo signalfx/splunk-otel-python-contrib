@@ -104,9 +104,7 @@ class TestServerInstrumentor:
             assert not mock_telemetry_handler.stop_tool_call.called
 
     @pytest.mark.asyncio
-    async def test_tool_call_wrapper_with_content_capture(
-        self, mock_telemetry_handler
-    ):
+    async def test_tool_call_wrapper_with_content_capture(self, mock_telemetry_handler):
         """Test tool call wrapper with content capture enabled."""
         with (
             patch(_PATCH_NO_NATIVE, return_value=False),
@@ -130,9 +128,7 @@ class TestServerInstrumentor:
             assert mock_telemetry_handler.stop_tool_call.called
 
     @pytest.mark.asyncio
-    async def test_tool_call_wrapper_with_error_result(
-        self, mock_telemetry_handler
-    ):
+    async def test_tool_call_wrapper_with_error_result(self, mock_telemetry_handler):
         """Test tool call wrapper when result indicates an error."""
         with patch(_PATCH_NO_NATIVE, return_value=False):
             instrumentor = ServerInstrumentor(mock_telemetry_handler)
@@ -165,9 +161,7 @@ class TestServerInstrumentor:
             wrapper = instrumentor._read_resource_wrapper()
 
             mock_wrapped = AsyncMock(return_value="resource content")
-            result = await wrapper(
-                mock_wrapped, MagicMock(), ("system://info",), {}
-            )
+            result = await wrapper(mock_wrapped, MagicMock(), ("system://info",), {})
 
             assert result == "resource content"
             assert mock_telemetry_handler.start_mcp_operation.called
@@ -191,9 +185,7 @@ class TestServerInstrumentor:
             mock_wrapped = AsyncMock(side_effect=FileNotFoundError("not found"))
 
             with pytest.raises(FileNotFoundError):
-                await wrapper(
-                    mock_wrapped, MagicMock(), ("system://missing",), {}
-                )
+                await wrapper(mock_wrapped, MagicMock(), ("system://missing",), {})
 
             assert mock_telemetry_handler.start_mcp_operation.called
             assert mock_telemetry_handler.fail_mcp_operation.called
@@ -210,9 +202,7 @@ class TestServerInstrumentor:
             wrapper = instrumentor._render_prompt_wrapper()
 
             mock_wrapped = AsyncMock(return_value="rendered prompt")
-            result = await wrapper(
-                mock_wrapped, MagicMock(), ("weather_forecast",), {}
-            )
+            result = await wrapper(mock_wrapped, MagicMock(), ("weather_forecast",), {})
 
             assert result == "rendered prompt"
             assert mock_telemetry_handler.start_mcp_operation.called
@@ -236,9 +226,7 @@ class TestServerInstrumentor:
             mock_wrapped = AsyncMock(side_effect=KeyError("no such prompt"))
 
             with pytest.raises(KeyError):
-                await wrapper(
-                    mock_wrapped, MagicMock(), ("nonexistent",), {}
-                )
+                await wrapper(mock_wrapped, MagicMock(), ("nonexistent",), {})
 
             assert mock_telemetry_handler.start_mcp_operation.called
             assert mock_telemetry_handler.fail_mcp_operation.called
@@ -247,9 +235,7 @@ class TestServerInstrumentor:
     # Native telemetry dedupe
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_tool_call_skips_when_native_telemetry(
-        self, mock_telemetry_handler
-    ):
+    async def test_tool_call_skips_when_native_telemetry(self, mock_telemetry_handler):
         """Server wrappers pass through when FastMCP has native telemetry."""
         with patch(_PATCH_NO_NATIVE, return_value=True):
             instrumentor = ServerInstrumentor(mock_telemetry_handler)
@@ -271,9 +257,7 @@ class TestServerInstrumentor:
             wrapper = instrumentor._read_resource_wrapper()
 
             mock_wrapped = AsyncMock(return_value="native result")
-            result = await wrapper(
-                mock_wrapped, MagicMock(), ("system://info",), {}
-            )
+            result = await wrapper(mock_wrapped, MagicMock(), ("system://info",), {})
 
             assert result == "native result"
             assert not mock_telemetry_handler.start_mcp_operation.called

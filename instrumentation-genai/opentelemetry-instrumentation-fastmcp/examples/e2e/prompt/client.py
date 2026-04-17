@@ -114,7 +114,9 @@ async def run_prompt_demo(server_url: str | None = None):
         )
         for msg in result.messages:
             role = msg.role
-            text = msg.content.text if hasattr(msg.content, "text") else str(msg.content)
+            text = (
+                msg.content.text if hasattr(msg.content, "text") else str(msg.content)
+            )
             print(f"    [{role}] {text[:120]}")
         print()
 
@@ -127,7 +129,9 @@ async def run_prompt_demo(server_url: str | None = None):
         )
         for msg in result.messages:
             role = msg.role
-            text = msg.content.text if hasattr(msg.content, "text") else str(msg.content)
+            text = (
+                msg.content.text if hasattr(msg.content, "text") else str(msg.content)
+            )
             print(f"    [{role}] {text[:120]}")
         print()
 

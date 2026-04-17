@@ -47,8 +47,7 @@ def system_uptime() -> str:
     hours, remainder = divmod(int(elapsed), 3600)
     minutes, seconds = divmod(remainder, 60)
     return (
-        f"uptime_seconds: {elapsed:.1f}\n"
-        f"uptime_human: {hours}h {minutes}m {seconds}s"
+        f"uptime_seconds: {elapsed:.1f}\nuptime_human: {hours}h {minutes}m {seconds}s"
     )
 
 
