@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transport context bridge** — `MCPRequestContext` ContextVar populated by the transport instrumentor on the server side, allowing the server instrumentor to read `jsonrpc.request.id`, `network.transport`, etc.
 - **Transport detection** — Client automatically detects `pipe` vs `tcp` transport from `Client.transport` type.
 - **Baggage propagation** — Transport instrumentor now extracts W3C `baggage` header alongside `traceparent`/`tracestate`.
+- **`error.type` attribute (GAP 5)** — Set on spans and metrics when an MCP operation fails: exception class name for exceptions, `"tool_error"` when `CallToolResult.isError` is true.
+- **HTTP transport metadata (GAP 5)** — For `tcp` transport: `network.protocol.name`, `network.protocol.version`, `server.address`/`server.port` (client spans), `client.address`/`client.port` (server spans).
+- **`mcp.session.id` attribute (GAP 5)** — Extracted from client session and server HTTP `mcp-session-id` header.
+- **`mcp.protocol.version` attribute (GAP 5)** — Populated from MCP initialize handshake result.
+- **`rpc.response.status_code` on MCP metrics** — Included in MCP operation duration metric attributes when set.
+- **`gen_ai.prompt.name` on MCP metrics** — Included in MCP operation duration metric attributes for `prompts/get`.
 
 ### Changed
 - **`list_tools` uses `MCPOperation` instead of `Step`** — Client `list_tools` now produces a `tools/list` span via `MCPOperation` with proper MCP semconv naming and `SpanKind.CLIENT`, instead of the previous `Step` type.

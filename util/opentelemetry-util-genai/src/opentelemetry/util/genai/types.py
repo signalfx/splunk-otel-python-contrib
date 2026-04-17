@@ -238,6 +238,10 @@ class MCPOperation(GenAI):
         default=None,
         metadata={"semconv": "rpc.response.status_code"},
     )
+    error_type: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "error.type"},
+    )
 
     # --- Recommended ---
     mcp_protocol_version: Optional[str] = field(
@@ -287,7 +291,6 @@ class MCPOperation(GenAI):
     is_client: bool = True
     duration_s: Optional[float] = None
     is_error: bool = False
-    mcp_error_type: Optional[str] = None
 
 
 @dataclass()

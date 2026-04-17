@@ -33,6 +33,13 @@ class MCPRequestContext:
     jsonrpc_request_id: Optional[str] = None
     mcp_method_name: Optional[str] = None
     network_transport: Optional[str] = None
+    network_protocol_name: Optional[str] = None
+    network_protocol_version: Optional[str] = None
+    client_address: Optional[str] = None
+    client_port: Optional[int] = None
+    server_address: Optional[str] = None
+    server_port: Optional[int] = None
+    mcp_session_id: Optional[str] = None
 
 
 _mcp_request_context: ContextVar[Optional[MCPRequestContext]] = ContextVar(

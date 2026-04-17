@@ -12,6 +12,8 @@ All notable changes to this repository are documented in this file.
 - **SpanEmitter MCPOperation dispatch** — Unified `_start_mcp_operation`/`_finish_mcp_operation`/`_error_mcp_operation` handles both `MCPToolCall` and `MCPOperation`.
 - **MetricsEmitter MCPOperation dispatch** — MCP duration metrics now emitted for all MCP operations (not just tool calls), including on the error path.
 - Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
+- **`error.type` on `MCPOperation`** — Conditionally required `error.type` attribute (semconv metadata) added to `MCPOperation` for non-tool-call operations. Previously only available via `ToolCall` inheritance.
+- **Enhanced MCP metric attributes** — `gen_ai.prompt.name`, `network.protocol.name`, `network.protocol.version`, `rpc.response.status_code`, `server.address`, `server.port` now included on MCP operation duration metrics when present.
 
 ### Changed
 - **`MCPToolCall` now inherits from `MCPOperation`** — MRO: `MCPToolCall → MCPOperation → ToolCall → GenAI`. All MCP transport/protocol attributes are defined on `MCPOperation` and inherited by `MCPToolCall`.

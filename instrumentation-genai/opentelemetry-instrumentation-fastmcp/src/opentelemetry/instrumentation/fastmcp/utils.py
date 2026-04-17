@@ -20,6 +20,7 @@ import logging
 import os
 from importlib import import_module
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,6 +176,91 @@ def detect_transport(instance: object) -> str:
         pass
 
     return "pipe"
+
+
+def extract_server_info(instance: object) -> tuple[Optional[str], Optional[int]]:
+    """Extract server address and port from a FastMCP Client instance.
+
+    Inspects the transport URL stored on the client or its transport object.
+
+    Returns:
+        (server_address, server_port) – both None when unavailable or stdio.
+    """
+    url_str: Optional[str] = None
+
+    try:
+        transport_obj = getattr(instance, "transport", None)
+        if transport_obj is not None:
+            url_str = getattr(transport_obj, "url", None)
+            if url_str is None:
+                url_str = getattr(transport_obj, "base_url", None)
+            if url_str is not None:
+                url_str = str(url_str)
+    except Exception:
+        pass
+
+    if not url_str:
+        try:
+            url_str = getattr(instance, "_base_url", None) or getattr(
+                instance, "base_url", None
+            )
+            if url_str is not None:
+                url_str = str(url_str)
+        except Exception:
+            pass
+
+    if not url_str:
+        return None, None
+
+    try:
+        parsed = urlparse(url_str)
+        host = parsed.hostname
+        port = parsed.port
+        if host:
+            return host, port
+    except Exception:
+        pass
+
+    return None, None
+
+
+def extract_session_id(instance: object) -> Optional[str]:
+    """Extract the MCP session ID from a FastMCP Client instance.
+
+    The session ID is set by the server during the initialize handshake
+    and stored on the client session object.
+    """
+    try:
+        session = getattr(instance, "session", None) or getattr(
+            instance, "_session", None
+        )
+        if session is not None:
+            sid = getattr(session, "session_id", None)
+            if sid is not None:
+                return str(sid)
+    except Exception:
+        pass
+    return None
+
+
+def extract_protocol_version(instance: object) -> Optional[str]:
+    """Extract the negotiated MCP protocol version from a Client.
+
+    FastMCP stores the server-reported protocol version after ``initialize``.
+    """
+    try:
+        session = getattr(instance, "session", None) or getattr(
+            instance, "_session", None
+        )
+        if session is not None:
+            init_result = getattr(session, "initialize_result", None)
+            if init_result is not None:
+                ver = getattr(init_result, "protocolVersion", None)
+                if ver is not None:
+                    return str(ver)
+    except Exception:
+        pass
+    return None
 
 
 def extract_tool_info(args: tuple, kwargs: dict) -> tuple[str, Any]:

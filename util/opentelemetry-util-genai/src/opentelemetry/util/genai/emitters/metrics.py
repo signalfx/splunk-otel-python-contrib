@@ -271,8 +271,8 @@ class MetricsEmitter(EmitterMeta):
 
         if isinstance(obj, MCPOperation):
             obj.is_error = True
-            if getattr(error, "type", None) is not None:
-                obj.mcp_error_type = error.type.__qualname__
+            if not obj.error_type and getattr(error, "type", None) is not None:
+                obj.error_type = error.type.__qualname__
             self._record_mcp_operation_metrics(obj)
             if isinstance(obj, MCPToolCall):
                 metric_attrs = _get_metric_attributes(
@@ -500,12 +500,25 @@ class MetricsEmitter(EmitterMeta):
                     GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value
                 )
 
+        if op.gen_ai_prompt_name:
+            mcp_attrs["gen_ai.prompt.name"] = op.gen_ai_prompt_name
         if op.network_transport:
             mcp_attrs["network.transport"] = op.network_transport
+        if op.network_protocol_name:
+            mcp_attrs["network.protocol.name"] = op.network_protocol_name
+        if op.network_protocol_version:
+            mcp_attrs["network.protocol.version"] = op.network_protocol_version
         if op.mcp_protocol_version:
             mcp_attrs["mcp.protocol.version"] = op.mcp_protocol_version
-        if op.is_error and op.mcp_error_type:
-            mcp_attrs["error.type"] = op.mcp_error_type
+        if op.rpc_response_status_code:
+            mcp_attrs["rpc.response.status_code"] = op.rpc_response_status_code
+        if op.is_client:
+            if op.server_address:
+                mcp_attrs["server.address"] = op.server_address
+            if op.server_port:
+                mcp_attrs["server.port"] = op.server_port
+        if op.is_error and op.error_type:
+            mcp_attrs["error.type"] = op.error_type
         elif op.is_error:
             mcp_attrs["error.type"] = "operation_error"
 

@@ -29,12 +29,35 @@ from opentelemetry.util.genai.types import (
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
     detect_transport,
+    extract_protocol_version,
+    extract_server_info,
+    extract_session_id,
     safe_serialize,
     should_capture_content,
     truncate_if_needed,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _enrich_client_op(op: MCPOperation, instance: object) -> None:
+    """Populate transport-derived fields on a client-side MCP operation."""
+    if op.network_transport == "tcp":
+        op.network_protocol_name = "http"
+        op.network_protocol_version = op.network_protocol_version or "1.1"
+        addr, port = extract_server_info(instance)
+        if addr:
+            op.server_address = addr
+        if port:
+            op.server_port = port
+
+    sid = extract_session_id(instance)
+    if sid:
+        op.mcp_session_id = sid
+
+    pv = extract_protocol_version(instance)
+    if pv:
+        op.mcp_protocol_version = pv
 
 
 def _traced_mcp_operation(
@@ -51,6 +74,7 @@ def _traced_mcp_operation(
     async def wrapper(wrapped, instance, args, kwargs):
         transport = detect_transport(instance)
         op = build_op(instance, transport)
+        _enrich_client_op(op, instance)
 
         handler.start_mcp_operation(op)
         start_time = time.time()
@@ -62,6 +86,7 @@ def _traced_mcp_operation(
         except Exception as e:
             op.duration_s = time.time() - start_time
             op.is_error = True
+            op.error_type = type(e).__name__
             handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
             raise
 
@@ -192,6 +217,7 @@ class ClientInstrumentor:
                 network_transport=transport,
                 is_client=True,
             )
+            _enrich_client_op(tool_call, instance)
 
             if parent_session:
                 tool_call.agent_name = parent_session.name
@@ -234,6 +260,7 @@ class ClientInstrumentor:
                 duration = time.time() - start_time
                 tool_call.duration_s = duration
                 tool_call.is_error = True
+                tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
                 raise
 
@@ -272,6 +299,7 @@ class ClientInstrumentor:
                 framework="fastmcp",
                 system="mcp",
             )
+            _enrich_client_op(op, instance)
 
             handler.start_mcp_operation(op)
             start_time = time.time()
@@ -283,6 +311,7 @@ class ClientInstrumentor:
             except Exception as e:
                 op.duration_s = time.time() - start_time
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
@@ -304,6 +333,7 @@ class ClientInstrumentor:
                 framework="fastmcp",
                 system="mcp",
             )
+            _enrich_client_op(op, instance)
 
             handler.start_mcp_operation(op)
             start_time = time.time()
@@ -315,6 +345,7 @@ class ClientInstrumentor:
             except Exception as e:
                 op.duration_s = time.time() - start_time
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
