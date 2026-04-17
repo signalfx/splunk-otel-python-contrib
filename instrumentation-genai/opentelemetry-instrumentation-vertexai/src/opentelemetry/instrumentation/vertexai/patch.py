@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -166,6 +167,14 @@ def _build_invocation(
     if GenAIAttributes.GEN_AI_OUTPUT_TYPE in request_attributes:
         invocation.attributes[GenAIAttributes.GEN_AI_OUTPUT_TYPE] = (
             request_attributes[GenAIAttributes.GEN_AI_OUTPUT_TYPE]
+        )
+
+    if capture_content and params.tools:
+        from google.protobuf import json_format as _jf
+
+        tool_defs = [_jf.MessageToDict(t._pb) for t in params.tools]  # type: ignore[union-attr]
+        invocation.attributes[GenAIAttributes.GEN_AI_TOOL_DEFINITIONS] = (
+            json.dumps(tool_defs)
         )
 
     return invocation

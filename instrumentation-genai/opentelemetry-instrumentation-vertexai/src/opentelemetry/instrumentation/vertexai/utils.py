@@ -209,8 +209,11 @@ def convert_content_to_message_parts(
 
 def _map_finish_reason(
     finish_reason: content.Candidate.FinishReason
-    | content_v1beta1.Candidate.FinishReason,
+    | content_v1beta1.Candidate.FinishReason
+    | None,
 ) -> FinishReason | str:
+    if finish_reason is None:
+        return "error"
     EnumType = type(finish_reason)  # pylint: disable=invalid-name
     if (
         finish_reason is EnumType.FINISH_REASON_UNSPECIFIED
