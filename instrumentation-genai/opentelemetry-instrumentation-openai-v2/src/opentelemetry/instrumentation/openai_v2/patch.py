@@ -15,7 +15,7 @@
 
 import asyncio
 import inspect
-import time
+import timeit
 from typing import Any, Iterable, Optional
 
 from openai import Stream
@@ -397,10 +397,9 @@ def chat_completions_create(capture_content: bool, handler):
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
         )
-        # Set streaming flag and start time for TTFC calculation
+        # Set streaming flag for TTFC calculation (start_time already set by dataclass)
         if is_streaming(kwargs):
             invocation.request_stream = True
-            invocation._start_time = time.perf_counter()
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
@@ -454,10 +453,9 @@ def async_chat_completions_create(capture_content: bool, handler):
         invocation = _build_chat_invocation(
             kwargs, capture_content, span_attributes
         )
-        # Set streaming flag and start time for TTFC calculation
+        # Set streaming flag for TTFC calculation (start_time already set by dataclass)
         if is_streaming(kwargs):
             invocation.request_stream = True
-            invocation._start_time = time.perf_counter()
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
@@ -1042,9 +1040,9 @@ class StreamWrapper:
         # Capture time to first chunk on very first chunk
         if not self._first_chunk_processed:
             self._first_chunk_processed = True
-            start_time = getattr(self.invocation, "_start_time", None)
+            start_time = getattr(self.invocation, "start_time", None)
             if start_time is not None:
-                ttfc = time.perf_counter() - start_time
+                ttfc = timeit.default_timer() - start_time
                 self.invocation.attributes[
                     "gen_ai.response.time_to_first_chunk"
                 ] = ttfc
