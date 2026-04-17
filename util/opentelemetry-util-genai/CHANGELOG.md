@@ -19,6 +19,9 @@ All notable changes to this repository are documented in this file.
 - **Renamed `_record_mcp_tool_metrics` → `_record_mcp_operation_metrics`** — Generalized to handle all MCP operation types.
 - Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
 
+### Fixed
+- **MCP session duration metrics now recorded** — `mcp.client.session.duration` and `mcp.server.session.duration` histogram instruments were declared in `instruments.py` but never `.record()`ed. Added `_record_mcp_session_metrics()` to `MetricsEmitter` that detects MCP sessions (`system="mcp"`, `agent_type` in `{"mcp_client", "mcp_server"}`) within `_record_agent_metrics()` and records the appropriate histogram with semconv attributes (`network.transport`, `mcp.protocol.version`, `server.address`, `server.port`, `error.type`).
+
 ## Version 0.1.12
 
 ### Added

@@ -125,6 +125,7 @@ class ClientInstrumentor:
                     system="mcp",
                 )
                 session.attributes["gen_ai.operation.name"] = "mcp.client_session"
+                session.attributes["network.transport"] = "pipe"  # stdio = pipe
 
                 instrumentor._active_sessions[id(instance)] = session
                 handler.start_agent(session)
@@ -147,6 +148,11 @@ class ClientInstrumentor:
 
                 if session:
                     if exc_type:
+                        session.attributes["error.type"] = (
+                            exc_type.__qualname__
+                            if isinstance(exc_type, type)
+                            else str(exc_type)
+                        )
                         handler.fail_agent(
                             session,
                             Error(

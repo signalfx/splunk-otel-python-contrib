@@ -23,6 +23,7 @@ from wrapt import register_post_import_hook, wrap_function_wrapper
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
+    AgentInvocation,
     Error,
     MCPOperation,
     MCPToolCall,
@@ -74,6 +75,7 @@ class ServerInstrumentor:
 
     Instruments:
     - FastMCP.__init__: Capture server name for context
+    - Server.run: Track server session lifecycle (mcp.server.session.duration)
     - FastMCP.call_tool / ToolManager.call_tool: Trace tool executions
     - FastMCP.read_resource: Trace resource reads
     - FastMCP.render_prompt: Trace prompt rendering (the MCP ``prompts/get``
@@ -97,6 +99,16 @@ class ServerInstrumentor:
                 self._fastmcp_init_wrapper(),
             ),
             "fastmcp",
+        )
+
+        # Instrument Server.run to track server session lifecycle
+        register_post_import_hook(
+            lambda _: wrap_function_wrapper(
+                "mcp.server.lowlevel.server",
+                "Server.run",
+                self._server_run_wrapper(),
+            ),
+            "mcp.server.lowlevel.server",
         )
 
         register_post_import_hook(
@@ -182,6 +194,42 @@ class ServerInstrumentor:
                 return wrapped(*args, **kwargs)
 
         return traced_init
+
+    def _server_run_wrapper(self):
+        """Wrapper for mcp.server.lowlevel.Server.run to track server session.
+
+        Creates an AgentInvocation(agent_type="mcp_server") that spans the
+        entire Server.run() lifetime, enabling mcp.server.session.duration
+        metric recording via MetricsEmitter.
+        """
+        instrumentor = self
+        handler = self._handler
+
+        async def traced_server_run(wrapped, instance, args, kwargs):
+            server_name = instrumentor._server_name or "mcp_server"
+            session = AgentInvocation(
+                name=f"mcp.server.{server_name}",
+                agent_type="mcp_server",
+                framework="fastmcp",
+                system="mcp",
+            )
+            session.attributes["gen_ai.operation.name"] = "mcp.server_session"
+            session.attributes["network.transport"] = "pipe"  # stdio = pipe
+
+            handler.start_agent(session)
+            try:
+                result = await wrapped(*args, **kwargs)
+                handler.stop_agent(session)
+                return result
+            except Exception as e:
+                session.attributes["error.type"] = type(e).__qualname__
+                handler.fail_agent(
+                    session,
+                    Error(type=type(e), message=str(e)),
+                )
+                raise
+
+        return traced_server_run
 
     # ------------------------------------------------------------------
     # tools/call
