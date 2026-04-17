@@ -328,14 +328,14 @@ class SpanEmitter(EmitterMeta):
         if isinstance(invocation, LLMInvocation):
             _apply_function_definitions(span, invocation.request_functions)
             # Opt-in: gen_ai.tool.definitions (requires capture_content + capture_tool_definitions)
+            tool_defs = invocation.tool_definitions
             if (
                 self._capture_content
                 and self._capture_tool_definitions
-                and invocation.tool_definitions
+                and tool_defs
+                and tool_defs not in ("[]", "null", "{}")
             ):
-                span.set_attribute(
-                    GEN_AI_TOOL_DEFINITIONS, invocation.tool_definitions
-                )
+                span.set_attribute(GEN_AI_TOOL_DEFINITIONS, tool_defs)
         # Agent context (already covered by semconv metadata on base fields)
 
     def _apply_finish_attrs(
@@ -370,6 +370,17 @@ class SpanEmitter(EmitterMeta):
         # Finish-time semconv attributes (response + usage tokens + functions)
         if isinstance(invocation, LLMInvocation):
             _apply_llm_finish_semconv(span, invocation)
+            # Opt-in: gen_ai.tool.definitions (requires capture_content + capture_tool_definitions)
+            # Applied at finish time since some instrumentations populate this field at end time
+            tool_defs = invocation.tool_definitions
+            if (
+                self._capture_content
+                and self._capture_tool_definitions
+                and tool_defs
+                and tool_defs not in ("[]", "null", "{}")
+                and GEN_AI_TOOL_DEFINITIONS not in (span.attributes or {})
+            ):
+                span.set_attribute(GEN_AI_TOOL_DEFINITIONS, tool_defs)
         _apply_gen_ai_semconv_attributes(
             span, invocation.semantic_convention_attributes()
         )
