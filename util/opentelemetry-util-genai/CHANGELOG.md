@@ -4,6 +4,12 @@ All notable changes to this repository are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
+- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
+
+## Version 0.1.13
+
 ### Added
 - Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
 
@@ -11,8 +17,7 @@ All notable changes to this repository are documented in this file.
 - Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
 
 ### Fixed
-- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
-- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
+- **MCP session duration metrics now recorded** — `mcp.client.session.duration` and `mcp.server.session.duration` histogram instruments were declared in `instruments.py` but never `.record()`ed. Added `_record_mcp_session_metrics()` to `MetricsEmitter` that detects MCP sessions (`system="mcp"`, `agent_type` in `{"mcp_client", "mcp_server"}`) within `_record_agent_metrics()` and records the appropriate histogram with semconv attributes (`network.transport`, `mcp.protocol.version`, `server.address`, `server.port`, `error.type`).
 
 ## Version 0.1.12
 
