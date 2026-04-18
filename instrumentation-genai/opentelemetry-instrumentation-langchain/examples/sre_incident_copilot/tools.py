@@ -88,8 +88,8 @@ async def _call_mcp_tool(
     env.setdefault("PYTHONUNBUFFERED", "1")
 
     server_params = StdioServerParameters(
-        command="python",
-        args=[mcp_script_path],
+        command="opentelemetry-instrument",
+        args=["python", mcp_script_path],
         env=env,
     )
 

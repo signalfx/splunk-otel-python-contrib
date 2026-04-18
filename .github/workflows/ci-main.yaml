@@ -53,6 +53,10 @@ jobs:
           pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
           pip install -e util/opentelemetry-util-genai-emitters-test --no-deps
 
+      - name: Pin langgraph (workaround for breaking change in 1.1.7)
+        run: |
+          pip install "langgraph>=0.4.0,<=1.1.6"
+
       - name: Install instrumentation packages
         run: |
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-langchain[instruments,test]"

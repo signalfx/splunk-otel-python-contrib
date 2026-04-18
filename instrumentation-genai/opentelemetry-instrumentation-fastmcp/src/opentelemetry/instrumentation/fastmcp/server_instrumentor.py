@@ -43,22 +43,6 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _has_native_telemetry() -> bool:
-    """Return True if FastMCP ships its own ``server_span`` tracing.
-
-    FastMCP >= 3.x added ``fastmcp.server.telemetry.server_span`` which
-    already creates SERVER spans for ``call_tool``, ``read_resource``, and
-    ``render_prompt``.  When present we skip our own server-side spans to
-    avoid duplicate instrumentation.
-    """
-    try:
-        from fastmcp.server.telemetry import server_span  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
 def _enrich_from_request_context(op: MCPOperation) -> None:
     """Copy transport-layer metadata from the ContextVar into an operation."""
     ctx = get_mcp_request_context()
@@ -80,9 +64,6 @@ class ServerInstrumentor:
     - FastMCP.read_resource: Trace resource reads
     - FastMCP.render_prompt: Trace prompt rendering (the MCP ``prompts/get``
       handler; ``get_prompt`` is only the internal lookup)
-
-    When FastMCP >= 3.x ships its own ``server_span`` telemetry, our server
-    wrappers detect this and skip creating duplicate SDOT spans.
     """
 
     def __init__(self, telemetry_handler: TelemetryHandler):
@@ -111,28 +92,31 @@ class ServerInstrumentor:
             "mcp.server.lowlevel.server",
         )
 
+        # FastMCP 3.x exposes call_tool/read_resource as public methods;
+        # FastMCP 2.x uses ToolManager.call_tool and _call_tool/_read_resource.
+        # Use _try_wrap so the instrumentor works across major versions.
+        tool_wrapper = self._tool_call_wrapper()
         register_post_import_hook(
-            lambda _: wrap_function_wrapper(
-                "fastmcp.server.server",
-                "FastMCP.call_tool",
-                self._tool_call_wrapper(),
+            lambda _: self._try_wrap(
+                "fastmcp.server.server", "FastMCP.call_tool", tool_wrapper
             ),
             "fastmcp.server.server",
         )
         register_post_import_hook(
-            lambda _: wrap_function_wrapper(
+            lambda _: self._try_wrap(
                 "fastmcp.tools.tool_manager",
                 "ToolManager.call_tool",
-                self._tool_call_wrapper(),
+                tool_wrapper,
             ),
             "fastmcp.tools.tool_manager",
         )
 
+        resource_wrapper = self._read_resource_wrapper()
         register_post_import_hook(
-            lambda _: wrap_function_wrapper(
+            lambda _: self._try_wrap(
                 "fastmcp.server.server",
                 "FastMCP.read_resource",
-                self._read_resource_wrapper(),
+                resource_wrapper,
             ),
             "fastmcp.server.server",
         )
@@ -240,9 +224,6 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_tool_call(wrapped, instance, args, kwargs):
-            if _has_native_telemetry():
-                return await wrapped(*args, **kwargs)
-
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
             transport = detect_transport(instance)
 
@@ -307,9 +288,6 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_read_resource(wrapped, instance, args, kwargs):
-            if _has_native_telemetry():
-                return await wrapped(*args, **kwargs)
-
             uri = str(args[0]) if args else str(kwargs.get("uri", ""))
             transport = detect_transport(instance)
 
@@ -356,9 +334,6 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_render_prompt(wrapped, instance, args, kwargs):
-            if _has_native_telemetry():
-                return await wrapped(*args, **kwargs)
-
             prompt_name = str(args[0]) if args else str(kwargs.get("name", ""))
             transport = detect_transport(instance)
 
