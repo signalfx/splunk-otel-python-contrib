@@ -185,9 +185,13 @@ class StrandsHookProvider:
                             # Strands uses "tool_use"; map to "tool_calls" which
                             # is the finish reason is_tool_only_llm recognises.
                             if stop_reason_str == "tool_use":
-                                invocation.attributes["gen_ai.response.finish_reasons"] = ["tool_calls"]
+                                invocation.attributes[
+                                    "gen_ai.response.finish_reasons"
+                                ] = ["tool_calls"]
                             else:
-                                invocation.attributes["gen_ai.response.finish_reasons"] = [stop_reason_str]
+                                invocation.attributes[
+                                    "gen_ai.response.finish_reasons"
+                                ] = [stop_reason_str]
                         invocation.output_messages = [output_msg]
 
                 # Stop the invocation successfully
