@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Streaming TTFT (Time To First Token) support for LLM spans:
+  - `gen_ai.response.time_to_first_chunk` attribute measuring latency to first streaming token
+  - `gen_ai.request.stream` flag (true when streaming detected, false otherwise)
+- TTFT tracking via LlamaIndex event system (`event_handler.py`):
+  - `TTFTTracker` class for recording start times and calculating TTFT
+  - `LlamaindexEventHandler` listening to `LLMChatStartEvent`/`LLMChatInProgressEvent` for per-chunk timing
+  - ContextVar correlation bridging callback handler (event_id) with event handler (span_id)
+
 ### Fixed
 - Corrected retrieval span `gen_ai.operation.name` from `"retrieve"` to `"retrieval"` per OpenTelemetry semantic conventions. Removed explicit override in callback handler; now uses the `RetrievalInvocation` dataclass default from `util-genai`.
 

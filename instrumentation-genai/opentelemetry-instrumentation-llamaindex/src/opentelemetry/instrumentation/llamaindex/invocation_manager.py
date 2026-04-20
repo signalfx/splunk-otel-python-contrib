@@ -14,7 +14,7 @@
 
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -24,6 +24,9 @@ from opentelemetry.util.genai.types import (
     Workflow,
     ToolCall,
 )
+
+if TYPE_CHECKING:
+    from .event_handler import TTFTTracker
 
 __all__ = ["_InvocationManager"]
 
@@ -126,3 +129,29 @@ class _InvocationManager:
         if not key:
             return None
         return self._agent_invocation_by_key.get(key)
+
+    # ==================== TTFT Tracking Methods ====================
+
+    def set_ttft_tracker(self, tracker: "TTFTTracker") -> None:
+        """Set the TTFTTracker instance for TTFT correlation."""
+        self._ttft_tracker = tracker
+
+    def get_ttft_for_event(self, event_id: str) -> Optional[float]:
+        """Get TTFT for a callback event_id, if available."""
+        tracker = getattr(self, "_ttft_tracker", None)
+        if tracker:
+            return tracker.get_ttft_by_event(event_id)
+        return None
+
+    def is_streaming_event(self, event_id: str) -> bool:
+        """Check if streaming has started for a callback event_id."""
+        tracker = getattr(self, "_ttft_tracker", None)
+        if tracker:
+            return tracker.is_streaming_by_event(event_id)
+        return False
+
+    def cleanup_event_tracking(self, event_id: str) -> None:
+        """Clean up TTFT tracking data for an event_id."""
+        tracker = getattr(self, "_ttft_tracker", None)
+        if tracker:
+            tracker.cleanup_by_event(event_id)

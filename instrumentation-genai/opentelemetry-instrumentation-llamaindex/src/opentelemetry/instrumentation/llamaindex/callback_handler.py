@@ -19,6 +19,7 @@ from opentelemetry.util.genai.types import (
 
 from .invocation_manager import _InvocationManager
 from .vendor_detection import detect_vendor_from_class
+from .event_handler import set_current_llm_event_id
 
 
 def _safe_str(value: Any) -> str:
@@ -121,6 +122,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
     def __init__(
         self,
         telemetry_handler: Optional[TelemetryHandler] = None,
+        invocation_manager: Optional[_InvocationManager] = None,
     ) -> None:
         super().__init__(
             event_starts_to_ignore=[],
@@ -128,7 +130,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         self._handler = telemetry_handler
         self._auto_workflow_ids: List[str] = []  # Track auto-created workflows (stack)
-        self._invocation_manager = _InvocationManager()
+        self._invocation_manager = invocation_manager or _InvocationManager()
 
     def start_trace(self, trace_id: Optional[str] = None) -> None:
         """Start a trace - required by BaseCallbackHandler."""
@@ -308,6 +310,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not self._handler or not payload:
             return
 
+        # Set current event_id for TTFT correlation with EventHandler
+        set_current_llm_event_id(event_id)
+
         # Extract model information and parameters from payload
         serialized = payload.get("serialized", {})
         model_name = (
@@ -468,6 +473,19 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         llm_inv.input_tokens = _get_attr(usage, "input_tokens")
                     if llm_inv.output_tokens is None:
                         llm_inv.output_tokens = _get_attr(usage, "output_tokens")
+
+        # Get TTFT from EventHandler via InvocationManager
+        ttft = self._invocation_manager.get_ttft_for_event(event_id)
+        if ttft is not None:
+            llm_inv.attributes["gen_ai.response.time_to_first_chunk"] = ttft
+            llm_inv.request_stream = True
+        else:
+            # Explicitly mark as non-streaming when no TTFT was recorded
+            if llm_inv.request_stream is None:
+                llm_inv.request_stream = False
+
+        # Clear current event_id
+        set_current_llm_event_id(None)
 
         # Stop the LLM invocation
         llm_inv = self._handler.stop_llm(llm_inv)

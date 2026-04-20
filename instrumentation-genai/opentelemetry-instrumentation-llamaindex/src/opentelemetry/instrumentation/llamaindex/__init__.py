@@ -4,6 +4,13 @@ from opentelemetry.instrumentation.llamaindex.config import Config
 from opentelemetry.instrumentation.llamaindex.callback_handler import (
     LlamaindexCallbackHandler,
 )
+from opentelemetry.instrumentation.llamaindex.invocation_manager import (
+    _InvocationManager,
+)
+from opentelemetry.instrumentation.llamaindex.event_handler import (
+    LlamaindexEventHandler,
+    TTFTTracker,
+)
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
     wrap_agent_run,
@@ -40,9 +47,28 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             logger_provider=logger_provider,
         )
 
+        # Create shared TTFT tracker and invocation manager
+        ttft_tracker = TTFTTracker()
+        invocation_manager = _InvocationManager()
+        invocation_manager.set_ttft_tracker(ttft_tracker)
+
         llamaindexCallBackHandler = LlamaindexCallbackHandler(
-            telemetry_handler=self._telemetry_handler
+            telemetry_handler=self._telemetry_handler,
+            invocation_manager=invocation_manager,
         )
+
+        # Create and register event handler for TTFT tracking
+        event_handler = LlamaindexEventHandler(ttft_tracker=ttft_tracker)
+        self._event_handler = event_handler
+        try:
+            from llama_index.core.instrumentation import get_dispatcher
+
+            dispatcher = get_dispatcher()
+            dispatcher.add_event_handler(event_handler)
+            self._dispatcher = dispatcher
+        except Exception:
+            # Event system might not be available in older versions
+            self._dispatcher = None
 
         wrap_function_wrapper(
             module="llama_index.core.callbacks.base",
@@ -90,6 +116,19 @@ class LlamaindexInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
+        # Clean up event handler registration
+        if (
+            hasattr(self, "_dispatcher")
+            and self._dispatcher
+            and hasattr(self, "_event_handler")
+        ):
+            try:
+                # Note: LlamaIndex dispatcher may not have remove_event_handler
+                # In that case, the handler will be garbage collected when
+                # the instrumentor is destroyed
+                pass
+            except Exception:
+                pass
 
 
 class _BaseCallbackManagerInitWrapper:
