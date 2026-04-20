@@ -15,12 +15,10 @@
 """FastMCP client-side instrumentation."""
 
 import logging
-import time
 from typing import Any, Callable
 
 from wrapt import register_post_import_hook, wrap_function_wrapper
 
-from opentelemetry import context as otel_context, trace
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -45,8 +43,8 @@ def _traced_mcp_operation(
     """Generic async wrapper for MCPOperation lifecycle.
 
     ``build_op(instance, transport)`` must return a ready-to-start
-    :class:`MCPOperation`. The wrapper handles start / stop / fail
-    and duration timing.
+    :class:`MCPOperation`.  Duration is tracked by the handler via
+    ``start_time`` / ``end_time`` on the dataclass.
     """
 
     async def wrapper(wrapped, instance, args, kwargs):
@@ -54,28 +52,14 @@ def _traced_mcp_operation(
         op = build_op(instance, transport)
 
         handler.start_mcp_operation(op)
-        start_time = time.time()
-
-        # Set our span as the active context so that downstream
-        # TransportInstrumentor.propagate.inject() propagates our trace
-        # instead of FastMCP's native telemetry spans.
-        token = None
-        if getattr(op, "span", None) is not None:
-            ctx = trace.set_span_in_context(op.span)
-            token = otel_context.attach(ctx)
         try:
             result = await wrapped(*args, **kwargs)
-            op.duration_s = time.time() - start_time
             handler.stop_mcp_operation(op)
             return result
         except Exception as e:
-            op.duration_s = time.time() - start_time
             op.is_error = True
             handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
             raise
-        finally:
-            if token is not None:
-                otel_context.detach(token)
 
     return wrapper
 
@@ -92,7 +76,6 @@ class ClientInstrumentor:
     def __init__(self, telemetry_handler: TelemetryHandler):
         self._handler = telemetry_handler
         self._active_sessions: dict[int, AgentInvocation] = {}
-        self._context_tokens: dict[int, object] = {}
 
     def instrument(self):
         """Apply FastMCP client-side instrumentation."""
@@ -143,14 +126,6 @@ class ClientInstrumentor:
                 instrumentor._active_sessions[id(instance)] = session
                 handler.start_agent(session)
 
-                # Make the invoke_agent span the active OTel context for the
-                # entire session so child spans (tools/call, LLM calls) and
-                # TransportInstrumentor.propagate.inject() inherit our trace.
-                if getattr(session, "span", None) is not None:
-                    ctx = trace.set_span_in_context(session.span)
-                    token = otel_context.attach(ctx)
-                    instrumentor._context_tokens[id(instance)] = token
-
                 return result
             except Exception as e:
                 _LOGGER.debug("Error in client enter wrapper: %s", e, exc_info=True)
@@ -166,7 +141,6 @@ class ClientInstrumentor:
         async def traced_exit(wrapped, instance, args, kwargs):
             try:
                 session = instrumentor._active_sessions.pop(id(instance), None)
-                token = instrumentor._context_tokens.pop(id(instance), None)
                 exc_type = args[0] if args else None
 
                 if session:
@@ -185,13 +159,6 @@ class ClientInstrumentor:
                         )
                     else:
                         handler.stop_agent(session)
-
-                # Detach the session span context set in __aenter__
-                if token is not None:
-                    try:
-                        otel_context.detach(token)
-                    except Exception:
-                        pass
 
                 return await wrapped(*args, **kwargs)
             except Exception as e:
@@ -243,20 +210,8 @@ class ClientInstrumentor:
 
             handler.start_tool_call(tool_call)
 
-            # Set our tool call span as the active context so that
-            # TransportInstrumentor.propagate.inject() propagates our trace
-            # to the server (instead of FastMCP's native telemetry spans).
-            token = None
-            if getattr(tool_call, "span", None) is not None:
-                ctx = trace.set_span_in_context(tool_call.span)
-                token = otel_context.attach(ctx)
-
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-
-                duration = time.time() - start_time
-                tool_call.duration_s = duration
 
                 output_size = 0
                 if result:
@@ -275,14 +230,9 @@ class ClientInstrumentor:
                 return result
 
             except Exception as e:
-                duration = time.time() - start_time
-                tool_call.duration_s = duration
                 tool_call.is_error = True
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
                 raise
-            finally:
-                if token is not None:
-                    otel_context.detach(token)
 
         return traced_call_tool
 
@@ -321,24 +271,14 @@ class ClientInstrumentor:
             )
 
             handler.start_mcp_operation(op)
-            token = None
-            if getattr(op, "span", None) is not None:
-                ctx = trace.set_span_in_context(op.span)
-                token = otel_context.attach(ctx)
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
-                op.duration_s = time.time() - start_time
                 op.is_error = True
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
-            finally:
-                if token is not None:
-                    otel_context.detach(token)
 
         return traced_read_resource
 
@@ -360,23 +300,13 @@ class ClientInstrumentor:
             )
 
             handler.start_mcp_operation(op)
-            token = None
-            if getattr(op, "span", None) is not None:
-                ctx = trace.set_span_in_context(op.span)
-                token = otel_context.attach(ctx)
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
-                op.duration_s = time.time() - start_time
                 op.is_error = True
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
-            finally:
-                if token is not None:
-                    otel_context.detach(token)
 
         return traced_get_prompt
