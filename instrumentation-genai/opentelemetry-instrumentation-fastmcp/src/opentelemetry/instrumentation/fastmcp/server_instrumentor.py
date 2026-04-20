@@ -30,7 +30,6 @@ from opentelemetry.util.genai.types import (
 from opentelemetry.instrumentation.fastmcp.utils import (
     extract_tool_info,
     extract_result_content,
-    should_capture_content,
     truncate_if_needed,
 )
 
@@ -155,11 +154,10 @@ class ServerInstrumentor:
                             tool_call.output_size_bytes = len(
                                 output_content.encode("utf-8")
                             )
-                            if should_capture_content():
-                                # Use tool_result field - span emitter applies via semconv_content
-                                tool_call.tool_result = truncate_if_needed(
-                                    output_content
-                                )
+                            # Always populate tool_result on the Python
+                            # object so evaluators have access.  The emitter
+                            # layer controls telemetry emission.
+                            tool_call.tool_result = truncate_if_needed(output_content)
                     except Exception as e:
                         _LOGGER.debug(f"Error capturing tool output: {e}")
 

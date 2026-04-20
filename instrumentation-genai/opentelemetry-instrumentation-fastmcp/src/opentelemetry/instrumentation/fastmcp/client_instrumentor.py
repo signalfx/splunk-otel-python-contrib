@@ -28,7 +28,6 @@ from opentelemetry.util.genai.types import (
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
     safe_serialize,
-    should_capture_content,
     truncate_if_needed,
 )
 
@@ -201,9 +200,10 @@ class ClientInstrumentor:
                 tool_call.agent_name = parent_session.name
                 tool_call.agent_id = parent_session.agent_id
 
-            # arguments is already set in constructor above
-            # If content capture is enabled and args are complex, serialize them
-            if should_capture_content() and tool_args:
+            # Always populate arguments on the Python object so that
+            # downstream consumers (e.g. evaluators) have access.  The
+            # emitter layer controls what gets written to spans/events.
+            if tool_args:
                 try:
                     serialized = safe_serialize(tool_args)
                     if serialized:
@@ -226,8 +226,7 @@ class ClientInstrumentor:
                         serialized = safe_serialize(result)
                         if serialized:
                             output_size = len(serialized.encode("utf-8"))
-                            if should_capture_content():
-                                tool_call.tool_result = truncate_if_needed(serialized)
+                            tool_call.tool_result = truncate_if_needed(serialized)
                     except Exception:
                         pass
 

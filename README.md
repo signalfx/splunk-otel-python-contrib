@@ -31,7 +31,7 @@ Implemented dataclasses (in `types.py`):
 - `EvaluationResult`
 - `ErrorClassification` — enum (`REAL_ERROR`, `INTERRUPT`, `CANCELLATION`) governing span status behavior
 
-Base dataclass:  – fields include timing (`start_time`, `end_time`), identity (`run_id`, `parent_run_id`), context (`provider`, `framework`, `agent_*`, `system`, `conversation_id`, `data_source_id`), plus `attributes: dict[str, Any]` for free-form metadata.
+Base dataclass:  – fields include timing (`start_time`, `end_time`), identity (`run_id`, `parent_run_id`), context (`provider`, `framework`, `agent_`*, `system`, `conversation_id`, `data_source_id`), plus `attributes: dict[str, Any]` for free-form metadata.
 
 Semantic attributes: fields tagged with `metadata={"semconv": <attr name>}` feed `semantic_convention_attributes()` which returns only populated values; emitters rely on this reflective approach (no hard‑coded attribute lists).
 
@@ -115,11 +115,13 @@ CompositeEmitter wraps all emitter calls; failures are debug‑logged. Error met
 
 The `Error` dataclass includes a `classification` field (`ErrorClassification` enum) that controls how the span emitter sets span status:
 
-| Classification | Span Status | Use Case |
-|----------------|-------------|----------|
-| `REAL_ERROR` (default) | `ERROR` with description | Genuine failures |
-| `INTERRUPT` | `UNSET` (default) + `gen_ai.interrupt=true` | Framework-level interrupts (e.g., LangGraph `GraphInterrupt`) requiring human input |
-| `CANCELLATION` | `UNSET` (default) | Task cancellations (`asyncio.CancelledError`) |
+
+| Classification         | Span Status                                 | Use Case                                                                            |
+| ---------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `REAL_ERROR` (default) | `ERROR` with description                    | Genuine failures                                                                    |
+| `INTERRUPT`            | `UNSET` (default) + `gen_ai.interrupt=true` | Framework-level interrupts (e.g., LangGraph `GraphInterrupt`) requiring human input |
+| `CANCELLATION`         | `UNSET` (default)                           | Task cancellations (`asyncio.CancelledError`)                                       |
+
 
 For `INTERRUPT` and `CANCELLATION`, `set_status()` is intentionally **not called** — the span retains its default `UNSET` status. Per the [OTel Trace Spec](https://opentelemetry.io/docs/specs/otel/trace/api/#set-status), `UNSET` means "no error" without the stronger assertion of `OK` ("validated as successfully completed"). Most backends treat both `UNSET` and `OK` as non-error for alerting purposes.
 
@@ -153,7 +155,7 @@ Always present:
     - `gen_ai.evaluation.sentiment`
     - `gen_ai.evaluation.toxicity`
     - `gen_ai.evaluation.bias`
-  (Legacy dynamic `gen_ai.evaluation.score.<metric>` instruments removed.)
+    (Legacy dynamic `gen_ai.evaluation.score.<metric>` instruments removed.)
 - `EvaluationEventsEmitter` – event per `EvaluationResult`; optional legacy variant via `OTEL_GENAI_EVALUATION_EVENT_LEGACY`.
 
 Aggregation flag affects batching only (emitters remain active either way).
@@ -178,24 +180,26 @@ An example of the third-party emitter:
 
 ## 6. Configuration & Environment Variables
 
-| Variable | Purpose                                                                                 | Notes                                                                         |
-|----------|-----------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
-| `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Baseline + extras selection                                                             | Values: `span`, `span_metric`, `span_metric_event`, plus extras               
-| `OTEL_INSTRUMENTATION_GENAI_EMITTERS_<CATEGORY>` | Category overrides                                                                      | Directives: append / prepend / replace / replace-category / replace-same-name |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Enable/disable message capture                                                          | Truthy enables capture; default disabled                                      |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN_ONLY` or `EVENT_ONLY` or `SPAN_AND_EVENT` or `NONE`                               | Defaults to `SPAN_AND_EVENT` when capture enabled                             |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS` | Evaluator config grammar                                                                | `Evaluator(Type(metric(opt=val)))` syntax supported                           |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION` | Aggregate vs per-evaluator emission                                                     | Boolean                                                                       |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL` | Eval worker poll interval                                                               | Default 5.0 seconds                                                           |
-| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE` | Trace-id ratio sampling                                                                 | Float (0–1], default 1.0                                                      |
-| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE` | Enable evaluation rate limiting                                                        | Boolean (default: true). Set to 'false' to disable rate limiting             |
-| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS` | Evaluation request rate limit (requests per second)                                      | int (default: 0, disabled). Example: 1 = 1 request per second                 |
-| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST` | Maximum burst size for rate limiting                                                  | int (default: 4). Allows short bursts beyond the base rate                   |
-| `OTEL_GENAI_EVALUATION_EVENT_LEGACY` | Emit legacy evaluation event shape                                                      | Adds second event per result                                                  |
-| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC` | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: true)                                                       |
-| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE` | Evaluation queue size                                                              | int (default: 100)                                                            |
-| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS` | Context attributes as metric dimensions                                              | Empty (none included). Set to `all` or comma-separated keys                   |
-| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION` | Enable/disable context propagation to child spans                                    | `true` (enabled by default)                                                   |
+
+| Variable                                                  | Purpose                                                                                   | Notes                                                                         |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `OTEL_INSTRUMENTATION_GENAI_EMITTERS`                     | Baseline + extras selection                                                               | Values: `span`, `span_metric`, `span_metric_event`, plus extras               |
+| `OTEL_INSTRUMENTATION_GENAI_EMITTERS_<CATEGORY>`          | Category overrides                                                                        | Directives: append / prepend / replace / replace-category / replace-same-name |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`      | Content capture mode                                                                      | `NO_CONTENT` (default), `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT`. Legacy `true`/`false` still accepted |
+| `OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT`                   | Override event emission                                                                   | `true`/`false`. Defaults from capture mode (`true` for `EVENT_ONLY`/`SPAN_AND_EVENT`) |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS`             | Evaluator config grammar                                                                  | `Evaluator(Type(metric(opt=val)))` syntax supported                           |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION`    | Aggregate vs per-evaluator emission                                                       | Boolean                                                                       |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_INTERVAL`               | Eval worker poll interval                                                                 | Default 5.0 seconds                                                           |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_SAMPLE_RATE`       | Trace-id ratio sampling                                                                   | Float (0–1], default 1.0                                                      |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_ENABLE` | Enable evaluation rate limiting                                                           | Boolean (default: true). Set to 'false' to disable rate limiting              |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS`    | Evaluation request rate limit (requests per second)                                       | int (default: 0, disabled). Example: 1 = 1 request per second                 |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST`  | Maximum burst size for rate limiting                                                      | int (default: 4). Allows short bursts beyond the base rate                    |
+| `OTEL_GENAI_EVALUATION_EVENT_LEGACY`                      | Emit legacy evaluation event shape                                                        | Adds second event per result                                                  |
+| `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC`      | Use single `gen_ai.evaluation.score` histogram vs separate histograms per evaluation type | Boolean (default: true)                                                       |
+| `OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE`        | Evaluation queue size                                                                     | int (default: 100)                                                            |
+| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS`   | Context attributes as metric dimensions                                                   | Empty (none included). Set to `all` or comma-separated keys                   |
+| `OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION`          | Enable/disable context propagation to child spans                                         | `true` (enabled by default)                                                   |
+
 
 ### 6.1 Conversation Context & Association Properties
 
@@ -268,10 +272,12 @@ When disabled, only values explicitly set on each invocation object are emitted.
 
 #### Span Attributes
 
-| Attribute | Source | Example |
-|-----------|--------|---------|
-| `gen_ai.conversation.id` | `conversation_id` param | `"conv-123"` |
-| `gen_ai.association.properties.<key>` | `properties` dict | `"alice"` |
+
+| Attribute                             | Source                  | Example      |
+| ------------------------------------- | ----------------------- | ------------ |
+| `gen_ai.conversation.id`              | `conversation_id` param | `"conv-123"` |
+| `gen_ai.association.properties.<key>` | `properties` dict       | `"alice"`    |
+
 
 #### Including Context Attributes in Metrics
 
@@ -311,7 +317,6 @@ See [API reference](util/opentelemetry-util-genai/docs/genai-context.md) for ful
 4. Apply category overrides.
 5. Instantiate `CompositeEmitter` with resolved category lists.
 
-
 ### 7.2 Invocation Type Filtering
 
 `EmitterSpec.invocation_types` drives dynamic `handles` wrapper (fast pre-dispatch predicate). Evaluation emitters see results independently of invocation type filtering.
@@ -350,14 +355,16 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 
 ## 10. Replacement & Augmentation Scenarios
 
-| Scenario | Configuration | Outcome |
-|----------|---------------|---------|
-| Add Traceloop compat span | `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span,traceloop_compat` | Semconv + compat span |
-| Only Traceloop compat span | `OTEL_INSTRUMENTATION_GENAI_EMITTERS=traceloop_compat` | Compat span only |
-| Replace evaluation emitters | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION=replace:SplunkEvaluationAggregator` | Only Splunk evaluation emission |
-| Prepend custom metrics | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS=prepend:MyMetrics` | Custom metrics run first |
-| Replace content events | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS=replace:VendorContent` | Vendor events only |
-| Agent-only cost metrics | (future) programmatic add with invocation_types filter | Metrics limited to agent invocations |
+
+| Scenario                    | Configuration                                                                       | Outcome                              |
+| --------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------ |
+| Add Traceloop compat span   | `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span,traceloop_compat`                         | Semconv + compat span                |
+| Only Traceloop compat span  | `OTEL_INSTRUMENTATION_GENAI_EMITTERS=traceloop_compat`                              | Compat span only                     |
+| Replace evaluation emitters | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION=replace:SplunkEvaluationAggregator` | Only Splunk evaluation emission      |
+| Prepend custom metrics      | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_METRICS=prepend:MyMetrics`                     | Custom metrics run first             |
+| Replace content events      | `OTEL_INSTRUMENTATION_GENAI_EMITTERS_CONTENT_EVENTS=replace:VendorContent`          | Vendor events only                   |
+| Agent-only cost metrics     | (future) programmatic add with invocation_types filter                              | Metrics limited to agent invocations |
+
 
 ## 11. Error & Performance Considerations
 
@@ -383,6 +390,7 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 - Backpressure strategies for high-volume content events.
 
 ## 14. Development setup
+
 Get the packages installed:
 
 Setup a virtual env (Note: will erase your .venv in the current folder)
@@ -403,8 +411,7 @@ pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/exa
 
 export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT
 export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="Deepeval(LLMInvocation(bias,toxicity))"
 export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
 ```
@@ -450,6 +457,7 @@ pre-commit install
 ```
 
 Once installed, the hooks will automatically run on every `git commit` and will:
+
 - Fix linting issues with ruff
 - Format code with ruff
 - Check RST documentation files
@@ -464,6 +472,7 @@ pre-commit run --all-files
 ```
 
 This is useful for:
+
 - Fixing existing lint failures in CI
 - Checking the entire codebase before pushing
 - Running checks without committing
@@ -484,12 +493,14 @@ make lint
 ```
 
 This will:
+
 - Install the correct version of ruff
 - Fix all linting issues with `ruff check --fix`
 - Format all code with `ruff format`
 - Verify that all fixes pass CI checks
 
 Then commit and push the changes:
+
 ```bash
 git add .
 git commit -m "fix: auto-fix linting issues"
@@ -499,22 +510,21 @@ git push
 #### Option 2: Using Pre-Commit
 
 1. **Run pre-commit on all files:**
-   ```bash
+  ```bash
    pre-commit run --all-files
-   ```
-
+  ```
 2. **Review and stage the fixes:**
-   ```bash
+  ```bash
    git add .
-   ```
-
+  ```
 3. **Commit and push:**
-   ```bash
+  ```bash
    git commit -m "fix: auto-fix linting issues"
    git push
-   ```
+  ```
 
 The CI lint job checks:
+
 - **Linting**: `ruff check .` - code quality issues (unused imports, undefined names, etc.)
 - **Formatting**: `ruff format --check .` - code formatting consistency
 
@@ -530,6 +540,7 @@ The `splunk-otel-genai-emitters-test` package provides tools for testing and val
 For detailed usage instructions, see [util/opentelemetry-util-genai-emitters-test/README.md](util/opentelemetry-util-genai-emitters-test/README.md).
 
 Quick example:
+
 ```bash
 # Install the test emitter (development only, not published to PyPI)
 pip install -e ./util/opentelemetry-util-genai-emitters-test
@@ -545,3 +556,4 @@ python -m opentelemetry.util.genai.emitters.eval_perf_test \
 - Unit tests: env parsing, category overrides, evaluator grammar, sampling, content capture gating.
 - Future: ordering hints tests once implemented.
 - Smoke: vendor emitters (Traceloop + Splunk) side-by-side replacement/append semantics.
+

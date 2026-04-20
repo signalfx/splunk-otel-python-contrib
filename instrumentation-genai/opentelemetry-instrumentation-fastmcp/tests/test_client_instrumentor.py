@@ -119,7 +119,7 @@ class TestClientInstrumentor:
         tool_call = mock_telemetry_handler.start_tool_call.call_args[0][0]
         assert isinstance(tool_call, MCPToolCall)
         assert tool_call.name == "my_tool"
-        assert tool_call.arguments == {"arg": "value"}
+        assert tool_call.arguments == '{"arg": "value"}'
         assert tool_call.mcp_method_name == "tools/call"
         assert tool_call.network_transport == "pipe"
         assert tool_call.is_client is True

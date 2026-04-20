@@ -68,7 +68,14 @@ def _normalize_stop_sequences(stop_values: Any) -> list[str]:
     return []
 
 
-def _to_text_parts(content: Any, capture_content: bool) -> list[Text]:
+def _to_text_parts(content: Any) -> list[Text]:
+    """Convert content to Text parts.
+
+    Always populates full content on the Python objects so that downstream
+    consumers (e.g. evaluators) have access to message data regardless of
+    the telemetry capture mode.  The emitter layer controls what actually
+    gets written to spans/events.
+    """
     if content is None:
         return []
 
@@ -83,26 +90,22 @@ def _to_text_parts(content: Any, capture_content: bool) -> list[Text]:
             return None
 
     if isinstance(content, str):
-        return [Text(content=content if capture_content else "")]
+        return [Text(content=content)]
     if isinstance(content, Iterable) and not isinstance(content, dict):
         parts: list[MessagePart] = []
         for item in content:
             text_value = _text_value(item)
             if text_value is None:
                 continue
-            parts.append(Text(content=text_value if capture_content else ""))
+            parts.append(Text(content=text_value))
         return parts
 
     text_value = _text_value(content)
-    return (
-        [Text(content=text_value if capture_content else "")]
-        if text_value is not None
-        else []
-    )
+    return [Text(content=text_value)] if text_value is not None else []
 
 
 def _build_input_messages(
-    messages: Iterable[Any], capture_content: bool
+    messages: Iterable[Any],
 ) -> list[InputMessage]:
     input_messages: list[InputMessage] = []
     for message in messages or []:
@@ -114,7 +117,6 @@ def _build_input_messages(
             getattr(message, "content", None)
             if not isinstance(message, dict)
             else message.get("content"),
-            capture_content,
         )
         if not parts:
             parts = [Text(content="")]
@@ -124,7 +126,6 @@ def _build_input_messages(
 
 def _build_chat_invocation(
     kwargs: dict[str, Any],
-    capture_content: bool,
     attributes: Optional[dict[str, Any]] = None,
 ) -> LLMInvocation:
     def _clean(value: Any) -> Any:
@@ -146,7 +147,7 @@ def _build_chat_invocation(
     invocation = LLMInvocation(
         request_model=_clean(kwargs.get("model", "")) or "",
         input_messages=_build_input_messages(
-            kwargs.get("messages", []), capture_content
+            kwargs.get("messages", []),
         ),
         provider="openai",
         framework="openai-sdk",
@@ -194,7 +195,7 @@ def _build_chat_invocation(
 
 
 def _build_output_messages_from_response(
-    result: Any, capture_content: bool
+    result: Any,
 ) -> list[OutputMessage]:
     output_messages: list[OutputMessage] = []
     for choice in getattr(result, "choices", []) or []:
@@ -203,12 +204,12 @@ def _build_output_messages_from_response(
         parts: list[MessagePart] = []
         content = getattr(message, "content", None) if message else None
         if content is not None:
-            parts = _to_text_parts(content, capture_content)
+            parts = _to_text_parts(content)
         tool_calls = getattr(message, "tool_calls", None) if message else None
         if tool_calls:
             for tool_call in tool_calls:
                 genai_tool_call, _ = _build_tool_call_invocation(
-                    tool_call, capture_content
+                    tool_call,
                 )
                 genai_tool_call.provider = (
                     GenAIAttributes.GenAiProviderNameValues.OPENAI.value
@@ -226,7 +227,8 @@ def _build_output_messages_from_response(
 
 
 def _apply_chat_response_to_invocation(
-    invocation: LLMInvocation, result: Any, capture_content: bool
+    invocation: LLMInvocation,
+    result: Any,
 ) -> None:
     if getattr(result, "id", None):
         invocation.response_id = result.id
@@ -247,7 +249,7 @@ def _apply_chat_response_to_invocation(
         finish_reasons.append(choice.finish_reason or "error")
     invocation.response_finish_reasons = finish_reasons
     invocation.output_messages = _build_output_messages_from_response(
-        result, capture_content
+        result,
     )
 
 
@@ -259,9 +261,14 @@ def _parse_response(result: Any) -> Any:
 
 
 def _build_tool_call_invocation(
-    tool_call: Any, capture_content: bool
+    tool_call: Any,
 ) -> tuple[GenAIToolCall, str]:
-    """Normalize to genai-util ToolCall and capture tool type."""
+    """Normalize to genai-util ToolCall and capture tool type.
+
+    Always populates full content on the Python objects so that downstream
+    consumers (e.g. evaluators) have access.  The emitter layer controls
+    what actually gets written to spans/events.
+    """
     tool_type = getattr(tool_call, "type", None)
     function = getattr(tool_call, "function", None)
     if isinstance(tool_call, dict):
@@ -279,9 +286,6 @@ def _build_tool_call_invocation(
         function_name = getattr(function, "name", None)
         arguments = getattr(function, "arguments", None)
         description = getattr(function, "description", None)
-
-    if not capture_content:
-        arguments = None
 
     tool_call_id = getattr(tool_call, "id", None)
     if isinstance(tool_call, dict):
@@ -384,9 +388,7 @@ def chat_completions_create(capture_content: bool, handler):
             return wrapped(*args, **kwargs)
 
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
-        invocation = _build_chat_invocation(
-            kwargs, capture_content, span_attributes
-        )
+        invocation = _build_chat_invocation(kwargs, span_attributes)
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
@@ -407,7 +409,6 @@ def chat_completions_create(capture_content: bool, handler):
                 return StreamWrapper(
                     parsed_result,
                     invocation,
-                    capture_content,
                     handler,
                 )
 
@@ -417,7 +418,8 @@ def chat_completions_create(capture_content: bool, handler):
                 )
 
             _apply_chat_response_to_invocation(
-                invocation, parsed_result, capture_content
+                invocation,
+                parsed_result,
             )
             handler.stop_llm(invocation)
         except Exception:  # pragma: no cover - defensive
@@ -437,9 +439,7 @@ def async_chat_completions_create(capture_content: bool, handler):
             return await wrapped(*args, **kwargs)
 
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
-        invocation = _build_chat_invocation(
-            kwargs, capture_content, span_attributes
-        )
+        invocation = _build_chat_invocation(kwargs, span_attributes)
         handler.start_llm(invocation)
         span = getattr(invocation, "span", None)
 
@@ -460,7 +460,6 @@ def async_chat_completions_create(capture_content: bool, handler):
                 return StreamWrapper(
                     parsed_result,
                     invocation,
-                    capture_content,
                     handler,
                 )
 
@@ -470,7 +469,8 @@ def async_chat_completions_create(capture_content: bool, handler):
                 )
 
             _apply_chat_response_to_invocation(
-                invocation, parsed_result, capture_content
+                invocation,
+                parsed_result,
             )
             handler.stop_llm(invocation)
         except Exception:  # pragma: no cover - defensive
@@ -645,7 +645,7 @@ def _emit_tool_calls_from_response(
 
         for tool_call in tool_calls:
             genai_tool_call, _ = _build_tool_call_invocation(
-                tool_call, capture_content
+                tool_call,
             )
             genai_tool_call.parent_span = parent_span
             handler.start_tool_call(genai_tool_call)
@@ -690,12 +690,10 @@ class ToolCallBuffer:
         tool_type: str,
         handler,
         parent_span: Span,
-        capture_content: bool,
     ):
         self.index = index
         self.tool_call = tool_call
         self.tool_type = tool_type
-        self._capture_content = capture_content
         self._argument_chunks: list[str] = []
         self.handler = handler
         self.tool_call.parent_span = parent_span
@@ -703,7 +701,7 @@ class ToolCallBuffer:
         self._ended = False
 
     def append_arguments(self, arguments):
-        if not self._capture_content or arguments is None:
+        if arguments is None:
             return
         self._argument_chunks.append(arguments)
 
@@ -711,11 +709,8 @@ class ToolCallBuffer:
         if self._ended:
             return self.tool_call, self.tool_type
 
-        if self._capture_content and self._argument_chunks:
+        if self._argument_chunks:
             self.tool_call.arguments = "".join(self._argument_chunks)
-        else:
-            if not self._capture_content:
-                self.tool_call.arguments = None
 
         self.handler.stop_tool_call(self.tool_call)
         self._ended = True
@@ -729,7 +724,6 @@ class ChoiceBuffer:
         index: int,
         handler,
         parent_span: Span,
-        capture_content: bool,
     ):
         self.index = index
         self.finish_reason = None
@@ -737,7 +731,6 @@ class ChoiceBuffer:
         self.tool_calls_buffers = []
         self._handler = handler
         self._parent_span = parent_span
-        self._capture_content = capture_content
 
     def append_text_content(self, content):
         self.text_content.append(content)
@@ -750,7 +743,7 @@ class ChoiceBuffer:
 
         if not self.tool_calls_buffers[idx]:
             genai_tool_call, tool_type = _build_tool_call_invocation(
-                tool_call, self._capture_content
+                tool_call,
             )
             self.tool_calls_buffers[idx] = ToolCallBuffer(
                 idx,
@@ -758,7 +751,6 @@ class ChoiceBuffer:
                 tool_type,
                 self._handler,
                 self._parent_span,
-                self._capture_content,
             )
         else:
             self.tool_calls_buffers[idx].append_arguments(
@@ -778,7 +770,6 @@ class StreamWrapper:
         self,
         stream: Stream,
         invocation: LLMInvocation,
-        capture_content: bool,
         handler,
     ):
         self.stream = stream
@@ -788,7 +779,6 @@ class StreamWrapper:
         self.choice_buffers = []
         self.finish_reasons = []  # Instance-level to avoid cross-request contamination
         self._span_started = False
-        self.capture_content = capture_content
         self._telemetry_stopped = False
         self._error: Optional[Exception] = None
         self.setup()
@@ -803,9 +793,7 @@ class StreamWrapper:
             parts: list[Any] = []
             if choice.text_content:
                 joined = "".join(choice.text_content)
-                parts.append(
-                    Text(content=joined if self.capture_content else "")
-                )
+                parts.append(Text(content=joined))
             if choice.tool_calls_buffers:
                 for tool_call_state in choice.tool_calls_buffers:
                     if tool_call_state is None:
@@ -993,7 +981,9 @@ class StreamWrapper:
             for idx in range(len(self.choice_buffers), choice.index + 1):
                 self.choice_buffers.append(
                     ChoiceBuffer(
-                        idx, self.handler, self.span, self.capture_content
+                        idx,
+                        self.handler,
+                        self.span,
                     )
                 )
 
