@@ -126,14 +126,3 @@ class _InvocationManager:
         if not key:
             return None
         return self._agent_invocation_by_key.get(key)
-
-    def find_agent_with_tools(self) -> Optional[Any]:
-        """Find any registered agent that has _agent_tools attribute.
-
-        This is a fallback when ContextVar lookup fails but we know an agent
-        with tools was registered. Used for capturing tool_definitions.
-        """
-        for agent in self._agent_invocation_by_key.values():
-            if hasattr(agent, "_agent_tools") and getattr(agent, "_agent_tools", None):
-                return agent
-        return None
