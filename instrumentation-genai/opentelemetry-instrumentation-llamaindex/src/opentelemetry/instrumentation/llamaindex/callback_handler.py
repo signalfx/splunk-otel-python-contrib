@@ -475,14 +475,16 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         llm_inv.output_tokens = _get_attr(usage, "output_tokens")
 
         # Get TTFT from EventHandler via InvocationManager
-        ttft = self._invocation_manager.get_ttft_for_event(event_id)
-        if ttft is not None:
-            llm_inv.attributes["gen_ai.response.time_to_first_chunk"] = ttft
+        is_streaming = self._invocation_manager.is_streaming_event(event_id)
+        if is_streaming:
             llm_inv.request_stream = True
+            ttft = self._invocation_manager.get_ttft_for_event(event_id)
+            llm_inv.attributes["gen_ai.response.time_to_first_chunk"] = ttft
         else:
-            # Explicitly mark as non-streaming when no TTFT was recorded
+            # Explicitly mark as non-streaming when no streaming was detected
             if llm_inv.request_stream is None:
                 llm_inv.request_stream = False
+        self._invocation_manager.cleanup_event_tracking(event_id)
 
         # Clear current event_id
         set_current_llm_event_id(None)

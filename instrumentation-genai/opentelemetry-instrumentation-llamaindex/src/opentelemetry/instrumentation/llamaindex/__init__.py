@@ -116,17 +116,18 @@ class LlamaindexInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
-        # Clean up event handler registration
+        # Remove event handler from dispatcher to avoid duplicate TTFT measurements on re-instrumentation
         if (
             hasattr(self, "_dispatcher")
             and self._dispatcher
             and hasattr(self, "_event_handler")
         ):
             try:
-                # Note: LlamaIndex dispatcher may not have remove_event_handler
-                # In that case, the handler will be garbage collected when
-                # the instrumentor is destroyed
-                pass
+                self._dispatcher.event_handlers = [
+                    h
+                    for h in self._dispatcher.event_handlers
+                    if h is not self._event_handler
+                ]
             except Exception:
                 pass
 
