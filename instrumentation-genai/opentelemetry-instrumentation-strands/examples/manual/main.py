@@ -51,10 +51,14 @@ import os
 import sys
 import urllib.request
 
-from opentelemetry import metrics, trace
+from opentelemetry import _events, _logs, metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.strands import StrandsInstrumentor
+from opentelemetry.sdk._events import EventLoggerProvider
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import (
     ConsoleMetricExporter,
@@ -99,6 +103,14 @@ meter_provider = MeterProvider(
     ],
 )
 metrics.set_meter_provider(meter_provider)
+
+logger_provider = LoggerProvider(resource=resource)
+logger_provider.add_log_record_processor(
+    BatchLogRecordProcessor(OTLPLogExporter(endpoint=otlp_endpoint, headers=()))
+)
+logger_provider.add_log_record_processor(BatchLogRecordProcessor(ConsoleLogExporter()))
+_logs.set_logger_provider(logger_provider)
+_events.set_event_logger_provider(EventLoggerProvider(logger_provider))
 
 # Instrument before any imports from Strands or AgentCore
 StrandsInstrumentor().instrument(
@@ -228,6 +240,7 @@ def main():
 
     tracer_provider.force_flush(timeout_millis=5000)
     meter_provider.force_flush(timeout_millis=5000)
+    logger_provider.force_flush(timeout_millis=5000)
 
 
 if __name__ == "__main__":

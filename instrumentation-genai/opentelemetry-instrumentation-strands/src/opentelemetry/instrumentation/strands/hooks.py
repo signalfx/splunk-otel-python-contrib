@@ -173,13 +173,22 @@ class StrandsHookProvider:
                                 if text:
                                     text_parts.append(text)
                         combined = " ".join(text_parts)
-                        if combined:
-                            output_msg = OutputMessage(
-                                role="assistant", parts=[Text(content=combined)]
-                            )
-                            if stop_reason:
-                                output_msg.finish_reason = safe_str(stop_reason)
-                            invocation.output_messages = [output_msg]
+                        output_msg = OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=combined)] if combined else [],
+                        )
+                        stop_reason_str = safe_str(stop_reason) if stop_reason else None
+                        if stop_reason_str:
+                            output_msg.finish_reason = stop_reason_str
+                            # Expose stop reason as a standard attribute so
+                            # is_tool_only_llm can detect tool-use rounds.
+                            # Strands uses "tool_use"; map to "tool_calls" which
+                            # is the finish reason is_tool_only_llm recognises.
+                            if stop_reason_str == "tool_use":
+                                invocation.attributes["gen_ai.response.finish_reasons"] = ["tool_calls"]
+                            else:
+                                invocation.attributes["gen_ai.response.finish_reasons"] = [stop_reason_str]
+                        invocation.output_messages = [output_msg]
 
                 # Stop the invocation successfully
                 self.handler.stop_llm(invocation)
