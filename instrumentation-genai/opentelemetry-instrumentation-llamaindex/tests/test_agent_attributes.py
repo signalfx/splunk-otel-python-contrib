@@ -12,7 +12,6 @@ Tool definitions are tested via agent context propagation with direct chat.
 
 import os
 from typing import Any, List
-from unittest.mock import patch
 
 from llama_index.core import Settings
 from llama_index.core.base.llms.types import (
