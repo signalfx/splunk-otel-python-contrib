@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, List, Optional
 
 from llama_index.core.callbacks.base_handler import BaseCallbackHandler
@@ -15,6 +16,9 @@ from opentelemetry.util.genai.types import (
     Text,
     Workflow,
     ToolCall,
+)
+from opentelemetry.util.genai.utils import (
+    should_capture_tool_definitions as _should_capture_tool_definitions,
 )
 
 from .invocation_manager import _InvocationManager
@@ -121,6 +125,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
     def __init__(
         self,
         telemetry_handler: Optional[TelemetryHandler] = None,
+        invocation_manager: Optional[_InvocationManager] = None,
     ) -> None:
         super().__init__(
             event_starts_to_ignore=[],
@@ -128,7 +133,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         )
         self._handler = telemetry_handler
         self._auto_workflow_ids: List[str] = []  # Track auto-created workflows (stack)
-        self._invocation_manager = _InvocationManager()
+        self._invocation_manager = invocation_manager or _InvocationManager()
 
     def start_trace(self, trace_id: Optional[str] = None) -> None:
         """Start a trace - required by BaseCallbackHandler."""
@@ -314,9 +319,82 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             serialized.get("model") or serialized.get("model_name") or "unknown"
         )
 
+        # Detect provider from class name
+        class_name = serialized.get("class_name", "")
+        provider = detect_vendor_from_class(class_name)
+
+        # Extract tool definitions if available (requires capture enabled)
+        tool_definitions = []
+        if _should_capture_tool_definitions():
+            # Check multiple locations where LlamaIndex might store tools
+            tools = (
+                serialized.get("tools")
+                or serialized.get("functions")
+                or payload.get("tools", [])
+                or payload.get("functions", [])
+                or serialized.get("additional_kwargs", {}).get("tools", [])
+                or serialized.get("additional_kwargs", {}).get("functions", [])
+            )
+
+            # Fallback: inherit tools from parent agent context (LlamaIndex stores
+            # tools on Agent, not in LLM callback payload like LangChain)
+            if not tools:
+                context_agent = self._invocation_manager.get_current_agent_invocation()
+                if context_agent and hasattr(context_agent, "_agent_tools"):
+                    tools = getattr(context_agent, "_agent_tools", [])
+
+            # Second fallback: search for any agent with tools (ContextVar may not propagate)
+            if not tools:
+                agent_with_tools = self._invocation_manager.find_agent_with_tools()
+                if agent_with_tools:
+                    tools = getattr(agent_with_tools, "_agent_tools", [])
+
+            if tools:
+                for tool in tools:
+                    # LlamaIndex FunctionTool stores metadata in tool.metadata
+                    metadata = getattr(tool, "metadata", None)
+                    if metadata:
+                        tool_name = getattr(metadata, "name", None)
+                        tool_desc = getattr(metadata, "description", None)
+                    else:
+                        # Fallback for dict-like or other tool formats
+                        tool_name = _get_attr(tool, "name") or _get_attr(
+                            tool, "function_name"
+                        )
+                        tool_desc = _get_attr(tool, "description")
+
+                    if tool_name:
+                        tool_def = {"name": _safe_str(tool_name)}
+                        if tool_desc:
+                            tool_def["description"] = _safe_str(tool_desc)
+                        tool_definitions.append(tool_def)
+
         # Extract additional parameters if available
         temperature = serialized.get("temperature")
-        max_tokens = serialized.get("max_tokens")
+        # Try multiple locations for max_tokens (CustomLLM may not serialize this)
+        max_tokens = (
+            serialized.get("max_tokens")
+            or serialized.get("num_output")  # LlamaIndex metadata field
+            or payload.get("additional_kwargs", {}).get("max_tokens")
+        )
+        # Also check metadata.num_output from serialized (LlamaIndex stores it there)
+        if not max_tokens:
+            metadata = serialized.get("metadata", {})
+            if isinstance(metadata, dict):
+                max_tokens = metadata.get("num_output")
+        # Fallback: try to get from Settings.llm directly
+        if not max_tokens:
+            try:
+                from llama_index.core import Settings
+
+                llm = Settings.llm
+                if llm:
+                    # Check LLM object's max_tokens or metadata.num_output
+                    max_tokens = getattr(llm, "max_tokens", None)
+                    if not max_tokens and hasattr(llm, "metadata"):
+                        max_tokens = getattr(llm.metadata, "num_output", None)
+            except Exception:
+                pass
         top_p = serialized.get("top_p")
         frequency_penalty = serialized.get("frequency_penalty")
         presence_penalty = serialized.get("presence_penalty")
@@ -340,6 +418,14 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             request_seed=seed,
         )
         llm_inv.framework = "llamaindex"
+
+        # Set provider if detected
+        if provider:
+            llm_inv.provider = provider
+
+        # Set tool definitions if present (must be JSON string)
+        if tool_definitions:
+            llm_inv.tool_definitions = json.dumps(tool_definitions)
 
         # Prefer explicit parent_id mapping; if it points to workflow, use active
         # agent span only when that agent is a child of the resolved parent span.
@@ -468,6 +554,47 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                         llm_inv.input_tokens = _get_attr(usage, "input_tokens")
                     if llm_inv.output_tokens is None:
                         llm_inv.output_tokens = _get_attr(usage, "output_tokens")
+
+                # Extract response model from raw response (check multiple locations)
+                response_model = None
+                if raw_response:
+                    # Handle both dict and object raw_response
+                    if isinstance(raw_response, dict):
+                        response_model = raw_response.get("model") or raw_response.get(
+                            "model_name"
+                        )
+                    else:
+                        response_model = _get_attr(raw_response, "model") or _get_attr(
+                            raw_response, "model_name"
+                        )
+
+                # Fallback: check response message's additional_kwargs (LlamaIndex specific)
+                if not response_model:
+                    message = _get_attr(response, "message")
+                    if message:
+                        additional_kwargs = _get_attr(message, "additional_kwargs")
+                        if additional_kwargs:
+                            response_model = _get_attr(additional_kwargs, "model")
+
+                if response_model:
+                    llm_inv.response_model_name = _safe_str(response_model)
+
+                # Extract finish reasons from choices (separate from response_model)
+                if raw_response:
+                    choices = _get_attr(raw_response, "choices", [])
+                    if choices:
+                        finish_reasons = []
+                        for choice in choices:
+                            finish_reason = _get_attr(choice, "finish_reason")
+                            if finish_reason:
+                                finish_reasons.append(_safe_str(finish_reason))
+                        if finish_reasons:
+                            llm_inv.response_finish_reasons = finish_reasons
+
+        # Fallback: use request model if response model not found
+        # This works even when response is None (e.g., LLM call errored)
+        if not llm_inv.response_model_name and llm_inv.request_model:
+            llm_inv.response_model_name = _safe_str(llm_inv.request_model)
 
         # Stop the LLM invocation
         llm_inv = self._handler.stop_llm(llm_inv)
@@ -603,6 +730,7 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         agent_type = None
         agent_description = None
         model_name = None
+        agent_tools: list[Any] = []  # Capture tools for propagation to child LLM calls
 
         if step and hasattr(step, "step_state"):
             # Try to get agent from step state
@@ -618,6 +746,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                     model_name = getattr(llm, "model", None) or getattr(
                         llm, "model_name", None
                     )
+                # Capture tools from agent for propagation to child LLM calls
+                if hasattr(agent, "tools"):
+                    agent_tools = getattr(agent, "tools", [])
 
         # Create AgentInvocation for the agent execution
         agent_invocation = AgentInvocation(
@@ -643,6 +774,10 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         workflow_name = self._find_workflow_name(parent_id)
         if workflow_name:
             agent_invocation.attributes["gen_ai.workflow.name"] = workflow_name
+
+        # Store tools for propagation to child LLM calls (internal attribute)
+        if agent_tools:
+            agent_invocation._agent_tools = agent_tools  # type: ignore[attr-defined]
 
         # Get parent span before starting the invocation
         parent_span = self._get_parent_span(parent_id)
