@@ -15,6 +15,7 @@
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
+import time
 
 from opentelemetry.util.genai.types import (
     AgentInvocation,
@@ -39,6 +40,7 @@ class _InvocationState:
         ToolCall,
     ]
     children: List[str] = field(default_factory=lambda: list())
+    created_at: float = field(default_factory=time.monotonic)
 
 
 class _InvocationManager:
@@ -49,15 +51,20 @@ class _InvocationManager:
     handler is dropping support for entity tracking.
     """
 
+    # Entries older than this are considered stale and eligible for eviction.
+    _TTL_SECONDS: float = 300.0  # 5 minutes
+    # Run eviction at most once per this interval to avoid overhead.
+    _EVICTION_INTERVAL: float = 60.0  # 1 minute
+
     def __init__(self) -> None:
         # Map from event_id -> _InvocationState, to keep track of invocations and parent/child relationships
-        # TODO: TTL cache to avoid memory leaks in long-running processes.
         self._invocations: Dict[str, _InvocationState] = {}
         self._parents: Dict[str, Optional[str]] = {}
         self._current_agent_key: ContextVar[Optional[str]] = ContextVar(
             f"llamaindex_current_agent_key_{id(self)}", default=None
         )
         self._agent_invocation_by_key: Dict[str, Any] = {}
+        self._last_eviction: float = time.monotonic()
 
     def add_invocation_state(
         self,
@@ -73,6 +80,8 @@ class _InvocationManager:
         ],
     ) -> None:
         """Add an invocation to the manager."""
+        self._evict_stale_entries()
+
         invocation_state = _InvocationState(invocation=invocation)
         self._invocations[event_id] = invocation_state
         self._parents[event_id] = parent_id
@@ -93,6 +102,25 @@ class _InvocationManager:
     def get_parent_id(self, event_id: str) -> Optional[str]:
         """Get the parent event_id for a given invocation."""
         return self._parents.get(event_id)
+
+    def _evict_stale_entries(self) -> None:
+        """Remove invocation entries older than _TTL_SECONDS.
+
+        Runs at most once per _EVICTION_INTERVAL to keep overhead low.
+        """
+        now = time.monotonic()
+        if now - self._last_eviction < self._EVICTION_INTERVAL:
+            return
+        self._last_eviction = now
+        cutoff = now - self._TTL_SECONDS
+        stale_ids = [
+            eid
+            for eid, state in self._invocations.items()
+            if state.created_at < cutoff
+        ]
+        for eid in stale_ids:
+            self._invocations.pop(eid, None)
+            self._parents.pop(eid, None)
 
     def delete_invocation_state(self, event_id: str) -> None:
         """Delete an invocation and all its children from the manager."""
