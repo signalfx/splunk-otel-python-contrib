@@ -23,16 +23,16 @@ dependencies = [
   "opentelemetry-api ~= 1.38.0.dev0",
   "opentelemetry-instrumentation ~= 0.59b0.dev0",
   "opentelemetry-semantic-conventions ~= 0.59b0.dev0",
-  "splunk-otel-util-genai>=0.1.4",
+  "splunk-otel-util-genai>=0.1.4,<=0.1.8",
   "wrapt>=1.0.0",
 ]
 
 [project.optional-dependencies]
 instruments = [
-  "fastmcp >= 2.0.0",
+  "fastmcp >= 2.0.0, <= 2.14.7",
 ]
 test = [
-  "fastmcp >= 2.0.0",
+  "fastmcp >= 2.0.0, <= 2.14.7",
   "pytest >= 7.0.0",
   "pytest-asyncio >= 0.21.0",
 ]
