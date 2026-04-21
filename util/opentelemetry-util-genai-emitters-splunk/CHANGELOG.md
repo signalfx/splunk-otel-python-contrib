@@ -1,11 +1,6 @@
 # Changelog
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.12
-
-### Fixed
-- **Version file synced with `util-genai`** — `version.py` was out of sync at `0.1.8` due to namespace package collision with `opentelemetry-util-genai`. Updated to `0.1.12` to match the actual package version.
-
 ## Version 0.1.8 - 2026-04-07
 
 ### Changed
