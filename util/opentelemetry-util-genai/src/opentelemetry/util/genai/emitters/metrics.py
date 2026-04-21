@@ -147,14 +147,15 @@ class MetricsEmitter(EmitterMeta):
             return
         if isinstance(obj, MCPOperation):
             self._record_mcp_operation_metrics(obj)
-            if isinstance(obj, MCPToolCall):
+            if isinstance(obj, MCPToolCall) and obj.is_client:
                 metric_attrs = _get_metric_attributes(
-                    obj.name,
+                    None,
                     None,
                     GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                     obj.provider,
                     obj.framework,
                 )
+                metric_attrs[GenAI.GEN_AI_TOOL_NAME] = obj.name
                 if obj.agent_name:
                     metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
                 if obj.agent_id:
@@ -179,12 +180,13 @@ class MetricsEmitter(EmitterMeta):
         if isinstance(obj, ToolCall):
             tool_invocation = obj
             metric_attrs = _get_metric_attributes(
-                tool_invocation.name,
+                None,
                 None,
                 GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                 tool_invocation.provider,
                 tool_invocation.framework,
             )
+            metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool_invocation.name
             if tool_invocation.agent_name:
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     tool_invocation.agent_name
@@ -274,14 +276,15 @@ class MetricsEmitter(EmitterMeta):
             if getattr(error, "type", None) is not None:
                 obj.mcp_error_type = error.type.__qualname__
             self._record_mcp_operation_metrics(obj)
-            if isinstance(obj, MCPToolCall):
+            if isinstance(obj, MCPToolCall) and obj.is_client:
                 metric_attrs = _get_metric_attributes(
-                    obj.name,
+                    None,
                     None,
                     GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                     obj.provider,
                     obj.framework,
                 )
+                metric_attrs[GenAI.GEN_AI_TOOL_NAME] = obj.name
                 if obj.agent_name:
                     metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
                 if obj.agent_id:
@@ -310,12 +313,13 @@ class MetricsEmitter(EmitterMeta):
         if isinstance(obj, ToolCall):
             tool_invocation = obj
             metric_attrs = _get_metric_attributes(
-                tool_invocation.name,
+                None,
                 None,
                 GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                 tool_invocation.provider,
                 tool_invocation.framework,
             )
+            metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool_invocation.name
             if tool_invocation.agent_name:
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     tool_invocation.agent_name
