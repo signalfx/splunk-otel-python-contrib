@@ -9,6 +9,26 @@ OpenTelemetry FastMCP Instrumentation
 This library provides automatic instrumentation for `FastMCP <https://github.com/jlowin/fastmcp>`_,
 a Python library for building Model Context Protocol (MCP) servers.
 
+Compatibility Matrix
+--------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 20 20 20
+
+   * - Instrumentation
+     - fastmcp
+     - util-genai
+     - Notes
+   * - 0.1.1
+     - 2.x (jlowin/fastmcp)
+     - <= 0.1.10
+     - PR #147. Wraps ``ToolManager.call_tool``.
+   * - 0.2.0
+     - >= 3.0.0, < 4
+     - >= 0.1.12
+     - Wraps ``FastMCP.call_tool``, ``read_resource``, ``render_prompt``. Breaking change from 0.1.x.
+
 Installation
 ------------
 
@@ -58,8 +78,16 @@ The following environment variables control the instrumentation behavior:
 What is Instrumented
 --------------------
 
-Server-side:
-~~~~~~~~~~~~
+Server-side (v0.2.0 — FastMCP 3.x):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- FastMCP server initialization
+- Tool execution via ``FastMCP.call_tool``
+- Resource reads via ``FastMCP.read_resource``
+- Prompt rendering via ``FastMCP.render_prompt``
+
+Server-side (v0.1.x — FastMCP 2.x):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - FastMCP server initialization
 - Tool execution via ``ToolManager.call_tool``
@@ -171,6 +199,8 @@ When content capture is enabled:
 References
 ----------
 
-- `FastMCP <https://github.com/jlowin/fastmcp>`_
+- `FastMCP 3.x <https://github.com/gofastmcp/fastmcp>`_ (>= 3.0.0)
+- `FastMCP 2.x <https://github.com/jlowin/fastmcp>`_ (<= 2.14.7)
 - `Model Context Protocol <https://modelcontextprotocol.io/>`_
+- `OpenTelemetry GenAI MCP Semantic Conventions <https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/>`_
 - `OpenTelemetry Project <https://opentelemetry.io/>`_
