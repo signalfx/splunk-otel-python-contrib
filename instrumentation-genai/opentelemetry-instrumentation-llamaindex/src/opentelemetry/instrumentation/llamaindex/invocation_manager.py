@@ -114,9 +114,7 @@ class _InvocationManager:
         self._last_eviction = now
         cutoff = now - self._TTL_SECONDS
         stale_ids = [
-            eid
-            for eid, state in self._invocations.items()
-            if state.created_at < cutoff
+            eid for eid, state in self._invocations.items() if state.created_at < cutoff
         ]
         for eid in stale_ids:
             self._invocations.pop(eid, None)
