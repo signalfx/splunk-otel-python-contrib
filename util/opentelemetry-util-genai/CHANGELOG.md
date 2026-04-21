@@ -10,6 +10,9 @@ All notable changes to this repository are documented in this file.
 
 ## Version 0.1.13
 
+### Fixed
+- **OTel context now attached in async contexts** — Removed the `_is_async_context()` guard from `_push_current_span`. Context is now always attached via `context_api.attach()` regardless of sync/async, enabling downstream instrumentations (HTTP, DB, MCP transport) to see the correct parent span. `_pop_current_span` handles detach failures gracefully for cross-task / `copy_context` scenarios.
+
 ### Added
 - **`MCPOperation` type** — New dataclass for non-tool-call MCP operations (`tools/list`, `resources/read`, `prompts/get`, etc.). Produces spans with `{mcp.method.name} {target}` naming and CLIENT/SERVER SpanKind.
 - **New MCP semconv attributes** — `jsonrpc.request.id`, `rpc.response.status_code`, `mcp.resource.uri`, `gen_ai.prompt.name`, `network.protocol.name`, `network.protocol.version`, `server.address`, `server.port`, `client.address`, `client.port` on both `MCPOperation` and `MCPToolCall`.
