@@ -52,7 +52,7 @@ class TestBuildChatInvocation:
             "tools": tools,
         }
 
-        invocation = _build_chat_invocation(kwargs, capture_content=True)
+        invocation = _build_chat_invocation(kwargs)
 
         assert invocation.tool_definitions is not None
         parsed = json.loads(invocation.tool_definitions)
@@ -83,14 +83,14 @@ class TestBuildChatInvocation:
             "tools": tools,
         }
 
-        invocation = _build_chat_invocation(kwargs, capture_content=True)
+        invocation = _build_chat_invocation(kwargs)
 
         assert invocation.tool_definitions is None
 
-    def test_tool_definitions_not_captured_without_content_flag(
-        self, monkeypatch
-    ):
-        """Test that tool_definitions requires capture_content=True."""
+    def test_tool_definitions_always_populated_on_object(self, monkeypatch):
+        """Tool definitions are always populated on the Python object when
+        CAPTURE_TOOL_DEFINITIONS is enabled, regardless of content capture mode.
+        The emitter layer controls what gets written to telemetry."""
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "false"
         )
@@ -113,9 +113,12 @@ class TestBuildChatInvocation:
             "tools": tools,
         }
 
-        invocation = _build_chat_invocation(kwargs, capture_content=False)
+        invocation = _build_chat_invocation(kwargs)
 
-        assert invocation.tool_definitions is None
+        assert invocation.tool_definitions is not None
+        parsed = json.loads(invocation.tool_definitions)
+        assert len(parsed) == 1
+        assert parsed[0]["function"]["name"] == "get_weather"
 
 
 class TestStreamWrapper:
@@ -135,7 +138,6 @@ class TestStreamWrapper:
         wrapper = StreamWrapper(
             stream=mock_stream,
             invocation=invocation,
-            capture_content=True,
             handler=mock_handler,
         )
 
@@ -171,7 +173,6 @@ class TestStreamWrapper:
         wrapper = StreamWrapper(
             stream=mock_stream,
             invocation=invocation,
-            capture_content=True,
             handler=mock_handler,
         )
 
@@ -212,7 +213,6 @@ class TestStreamWrapper:
         wrapper = StreamWrapper(
             stream=mock_stream,
             invocation=invocation,
-            capture_content=True,
             handler=mock_handler,
         )
 
@@ -251,7 +251,7 @@ class TestRequestStreamFlag:
         }
 
         # Non-streaming - _build_chat_invocation doesn't set request_stream
-        invocation = _build_chat_invocation(kwargs, capture_content=True)
+        invocation = _build_chat_invocation(kwargs)
         assert invocation.request_stream is None
 
         # The request_stream flag is set in chat_completions_create wrapper

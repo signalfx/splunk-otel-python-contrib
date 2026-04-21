@@ -113,6 +113,7 @@ from opentelemetry.util.genai.version import __version__
 from .callbacks import CompletionCallback
 from .config import parse_env
 from .environment_variables import (
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
@@ -569,6 +570,12 @@ class TelemetryHandler:
             span_capture_allowed = True
             if control is not None:
                 span_capture_allowed = control.span_allowed
+            if is_truthy_env(
+                os.environ.get(
+                    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                )
+            ):
+                span_capture_allowed = True
             # Respect the content capture mode for all generator kinds
             new_value_events = emit_events and mode in (
                 ContentCapturingMode.EVENT_ONLY,
