@@ -2,10 +2,50 @@
 
 All notable changes to this repository are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
+- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
+
+## Version 0.1.13
+
+### Added
+- Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
+
+### Changed
+- Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
+
+### Fixed
+- **MCP session duration metrics now recorded** — `mcp.client.session.duration` and `mcp.server.session.duration` histogram instruments were declared in `instruments.py` but never `.record()`ed. Added `_record_mcp_session_metrics()` to `MetricsEmitter` that detects MCP sessions (`system="mcp"`, `agent_type` in `{"mcp_client", "mcp_server"}`) within `_record_agent_metrics()` and records the appropriate histogram with semconv attributes (`network.transport`, `mcp.protocol.version`, `server.address`, `server.port`, `error.type`).
+
+## Version 0.1.12
+
+### Added
+- **Client-side streaming attributes** — New attributes for observing streaming LLM requests:
+  - `gen_ai.request.stream` (boolean) — Whether the request uses streaming mode
+  - `gen_ai.response.time_to_first_chunk` (float) — Client-side time in seconds from request sent to first chunk received
+  - Added `request_stream` field to `LLMInvocation` dataclass with semconv metadata
+  - Added `GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK` to span emitter's allowed supplemental keys
+- **Time to first chunk metric** — New histogram metric `gen_ai.client.operation.time_to_first_chunk` for streaming operations:
+  - Recorded only when `gen_ai.request.stream` is `true`
+  - Value matches `gen_ai.response.time_to_first_chunk` span attribute
+  - Uses same bucket boundaries as operation duration
+  - Follows OpenTelemetry semantic conventions spec
+- **Tool definitions attribute** — New `gen_ai.tool.definitions` attribute for capturing tool/function schemas:
+  - `GEN_AI_TOOL_DEFINITIONS` constant in attributes module
+  - `tool_definitions` field on `LLMInvocation` dataclass with opt-in semconv_content metadata
+  - `should_capture_tool_definitions()` helper in utils module for early gating (requires both message content and tool definitions capture enabled)
+  - Environment variable `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS` (default: `true`)
+
 ## Version 0.1.11 - 2026-04-07
 
 ### Added
 - **Conversation root span identification** — New `gen_ai.conversation_root` attribute marks the root GenAI span in a conversation tree. Root spans are promoted to `AgentInvocation` type for consistent observability.
+
+### Fixed
+- **MCP span naming aligned with OTel MCP semantic conventions** — `MCPToolCall` spans now use `{mcp.method.name} {tool_name}` format (e.g. `tools/call add`) instead of `execute_tool {tool_name}`. SpanKind is `CLIENT` or `SERVER` based on `is_client` flag, matching the MCP semconv spec.
+- **MCP metric histogram bucket boundaries** — All MCP duration histograms (`mcp.client.operation.duration`, `mcp.server.operation.duration`, `mcp.client.session.duration`, `mcp.server.session.duration`) now use the semconv-specified bucket boundaries `[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]`.
 
 ### Changed
 - **TelemetryHandler is now a process-wide singleton** — `TelemetryHandler` uses class-level `__new__` with double-checked locking to guarantee a single instance per process. Both `TelemetryHandler(...)` and `get_telemetry_handler(...)` return the same singleton, ensuring handler-internal context stacks (workflow, agent) are shared across instrumentation boundaries (e.g. aidefense + openai-v2 + crewai).

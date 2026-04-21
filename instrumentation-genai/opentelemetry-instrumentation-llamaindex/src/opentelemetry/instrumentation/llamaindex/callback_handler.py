@@ -921,7 +921,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
 
         # Create a retrieval invocation for the retrieval task
         retrieval = RetrievalInvocation(
-            operation_name="retrieve",
             retriever_type="llamaindex_retriever",
             query=_safe_str(query_str),
             attributes={},

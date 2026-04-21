@@ -106,7 +106,7 @@ The application generates:
 - **Metrics**: LLM token usage, latency, error rates
 - **Logs**: Application logs with trace correlation
 
-View traces in your observability platform (Splunk O11y, Jaeger, etc.)
+View traces in your observability platform (Splunk Observability Cloud, Jaeger, etc.)
 
 ## Load Generation Schedule
 

@@ -7,38 +7,20 @@ verifying that interrupt/resume produces correct telemetry.
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 from typing import TypedDict
 
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph
+from langgraph.types import Command, interrupt
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 
-_PACKAGE_SRC = Path(__file__).resolve().parents[1] / "src"
-if _PACKAGE_SRC.exists():
-    sys.path.insert(0, str(_PACKAGE_SRC))
-
-try:
-    from langgraph.graph import StateGraph
-    from langgraph.types import Command, interrupt
-    from langgraph.checkpoint.memory import MemorySaver
-except ModuleNotFoundError:
-    StateGraph = None  # type: ignore[assignment]
-
-try:
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import (
-        SimpleSpanProcessor,
-        SpanExporter,
-        SpanExportResult,
-    )
-except ModuleNotFoundError:
-    TracerProvider = None  # type: ignore[assignment]
-
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor  # noqa: E402
-
-LANGGRAPH_AVAILABLE = StateGraph is not None
-OTEL_SDK_AVAILABLE = TracerProvider is not None
-DEPS_AVAILABLE = LANGGRAPH_AVAILABLE and OTEL_SDK_AVAILABLE
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
 
 class _CollectingExporter(SpanExporter):
@@ -125,7 +107,6 @@ def instrumented_graph():
     _handler_mod.TelemetryHandler._reset_for_testing()
 
 
-@pytest.mark.skipif(not DEPS_AVAILABLE, reason="langgraph or otel sdk not available")
 class TestLangGraphInterruptResume:
     """End-to-end tests for interrupt/resume with real LangGraph execution."""
 

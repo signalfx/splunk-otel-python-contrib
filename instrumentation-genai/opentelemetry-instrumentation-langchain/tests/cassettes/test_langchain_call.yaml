@@ -12,9 +12,10 @@ interactions:
             "role": "user"
           }
         ],
+        "max_tokens": 100,
         "model": "gpt-4o-mini",
         "stream": false,
-        "temperature": 0.1,
+        "temperature": 0.0,
         "user": "{\"appkey\": \"test-app-key\"}"
       }
     headers:
@@ -29,7 +30,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '227'
+      - '248'
       content-type:
       - application/json
       host:

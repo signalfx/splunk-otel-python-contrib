@@ -1,0 +1,69 @@
+interactions:
+  - request:
+      body: |-
+        {
+          "messages": [
+            {
+              "content": "You are a helpful assistant!",
+              "role": "system"
+            },
+            {
+              "content": "Say hello in one word.",
+              "role": "user"
+            }
+          ],
+          "max_tokens": 50,
+          "model": "gpt-4o-mini",
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "temperature": 0.0,
+          "user": "{\"appkey\": \"test-app-key\"}"
+        }
+      headers:
+        accept:
+          - application/json
+        accept-encoding:
+          - gzip, deflate, zstd
+        api-key:
+          - test-api-key
+        authorization:
+          - Bearer test_openai_api_key
+        connection:
+          - keep-alive
+        content-type:
+          - application/json
+        host:
+          - chat-ai.cisco.com
+        user-agent:
+          - OpenAI/Python 1.108.1
+      method: POST
+      uri: https://chat-ai.cisco.com/openai/deployments/gpt-4o-mini/chat/completions
+    response:
+      body:
+        string: |
+          data: {"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1690000001,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+          data: {"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1690000001,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+          data: {"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1690000001,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
+
+          data: {"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1690000001,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}
+
+          data: [DONE]
+      headers:
+        content-type:
+          - text/event-stream
+        date:
+          - Sun, 21 Sep 2025 04:09:41 GMT
+        openai-organization:
+          - test_openai_org_id
+        x-request-id:
+          - 60308e7e-2aac-4167-a8fb-03f9f5ed8170
+        transfer-encoding:
+          - chunked
+      status:
+        code: 200
+        message: OK
+version: 1

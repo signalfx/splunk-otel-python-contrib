@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Suppress noisy `ERROR`/`WARNING` tracebacks from error-resilience tests in CI logs and assert expected log messages via `caplog`.
+
 ## Version 0.1.8 - 2026-02-09
 
 ### Added

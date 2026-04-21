@@ -524,6 +524,48 @@ class TestOperationSpanAttributes:
             assert event.name == "weaviate.document"
 
 
+class TestGenAIContextPropagation:
+    """Test that gen_ai agent/workflow attributes are propagated from parent spans."""
+
+    def test_propagates_agent_and_workflow_attrs_from_parent(
+        self, tracer_provider, span_exporter
+    ):
+        """Test that gen_ai.agent.name, gen_ai.agent.id, and gen_ai.workflow.name
+        are copied from an active parent span into the Weaviate span."""
+        trace.set_tracer_provider(tracer_provider)
+        tracer = tracer_provider.get_tracer(__name__)
+        mock_histogram = MagicMock()
+
+        wrapper = _WeaviateOperationWrapper(
+            tracer=tracer,
+            duration_histogram=mock_histogram,
+            wrap_properties={
+                "module": "weaviate.collections.queries.fetch_objects",
+                "function": "fetch_objects",
+                "span_name": "collections.query.fetch_objects",
+            },
+        )
+
+        def mock_op(*args, **kwargs):
+            return MagicMock(objects=[])
+
+        with tracer.start_as_current_span("invoke_agent my_agent") as parent_span:
+            parent_span.set_attribute("gen_ai.agent.name", "my_agent")
+            parent_span.set_attribute("gen_ai.agent.id", "agent-123")
+            parent_span.set_attribute("gen_ai.workflow.name", "my_workflow")
+
+            wrapper(mock_op, None, (), {})
+
+        spans = span_exporter.get_finished_spans()
+        weaviate_span = next((s for s in spans if "fetch_objects" in s.name), None)
+        assert weaviate_span is not None
+
+        attrs = dict(weaviate_span.attributes or {})
+        assert attrs.get("gen_ai.agent.name") == "my_agent"
+        assert attrs.get("gen_ai.agent.id") == "agent-123"
+        assert attrs.get("gen_ai.workflow.name") == "my_workflow"
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(
     not WEAVIATE_AVAILABLE or WEAVIATE_VERSION < 4,

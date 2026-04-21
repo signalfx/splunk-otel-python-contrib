@@ -30,6 +30,19 @@ strings disable capture.
 See also :envvar:`OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT`.
 """
 
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS = (
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS
+
+Enable capture of ``gen_ai.tool.definitions`` on LLM invocation spans.
+Requires :envvar:`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` to also
+be enabled.  When both flags are truthy the JSON-serialised tool/function
+schemas passed to the model are recorded as a span attribute.  Defaults to
+``false`` because the payload can be large.
+"""
+
 OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT = "OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT"
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT
@@ -244,6 +257,17 @@ When set to a falsey value (``false``, ``0``, ``no``, ``off``), evaluation metri
 are emitted to separate histograms per evaluation type:
 ``gen_ai.evaluation.bias``, ``gen_ai.evaluation.toxicity``, etc.
 """
+OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING = (
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING
+
+Enable OTel metrics for monitoring the evaluation pipeline health (e.g. evaluator
+call duration, queue depth, enqueue errors). Set to a truthy value (``true``,
+``1``, ``yes``, ``on``) to enable. Default: disabled.
+"""
+
 OTEL_GENAI_EVALUATION_EVENT_LEGACY = "OTEL_GENAI_EVALUATION_EVENT_LEGACY"
 
 OTEL_INSTRUMENTATION_GENAI_EVALUATION_QUEUE_SIZE = (
@@ -353,6 +377,7 @@ Examples::
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS",
     "OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT",
     "OTEL_INSTRUMENTATION_GENAI_UPLOAD_HOOK",
     "OTEL_INSTRUMENTATION_GENAI_UPLOAD_BASE_PATH",
@@ -376,6 +401,7 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_RPS",
     "OTEL_INSTRUMENTATION_GENAI_EVALUATION_RATE_LIMIT_BURST",
     "OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC",
+    "OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING",
     "OTEL_GENAI_EVALUATION_EVENT_LEGACY",
     "OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS",
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",

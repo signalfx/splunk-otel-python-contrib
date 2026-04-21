@@ -2,10 +2,32 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.9 - 2026-04-07
+## Version 0.1.12
+
+### Fixed
+- **Pin langgraph <= 1.1.6** — `langgraph` 1.1.7 introduced a breaking change requiring all callback handlers to inherit from `GraphCallbackHandler`. Pinned upper bound until proper support is added.
+
+## Version 0.1.11
+
+### Added
+- **GenAI semantic convention attributes** — Added support for standard and streaming attributes:
+  - `gen_ai.request.temperature` (float) — Always emitted when present in LangChain invocation params
+  - `gen_ai.request.max_tokens` (int) — Always emitted; resolved from invocation_params, serialized.kwargs, or model_kwargs fallback
+  - `gen_ai.response.finish_reasons` (list[str]) — Always emitted; extracted from LangChain generation_info on LLM end
+  - `gen_ai.tool.definitions` (str, JSON) — Opt-in via `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true`; captures full tool definition structure including `type: "function"` wrapper
+  - `gen_ai.request.stream` (boolean) — Whether the request uses streaming mode; set to `true` for streaming calls, `false` for non-streaming
+  - `gen_ai.response.time_to_first_chunk` (float) — Client-side time in seconds from request sent to first chunk received; only present for streaming calls
+- **Time to first chunk metric** — Histogram metric `gen_ai.client.operation.time_to_first_chunk` automatically emitted for streaming calls with the same value as `gen_ai.response.time_to_first_chunk`
+- **Streaming detection** — `on_llm_new_token` callback detects streaming mode and captures time to first chunk
+- **Early gating for tool definitions** — Added `should_capture_tool_definitions()` helper to avoid serialization overhead when disabled
+- **Test coverage** — Added `test_langchain_call_with_tools` for tool definitions and `test_langchain_streaming_call` for streaming attributes with VCR cassettes
+
+## Version 0.1.10 - 2026-04-07
 
 ### Added
 - **Deployment name for embeddings** — Added `gen_ai.request.deployment_name` attribute for embedding operations.
+
+## Version 0.1.9
 
 ### Fixed
 - **Context suppression leak in `_OpenAITracingWrapper`** — `context_api.attach()` was called without `detach()`, leaking the suppression context. Now properly scoped with `try/finally` for all four callable types: sync, sync generator (`_stream`), async coroutine (`_agenerate`), and async generator (`_astream`).

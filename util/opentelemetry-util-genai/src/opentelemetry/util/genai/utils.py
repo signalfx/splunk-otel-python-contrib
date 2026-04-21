@@ -21,6 +21,7 @@ from opentelemetry.util._importlib_metadata import (
 )
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT,
 )
 from opentelemetry.util.genai.types import ContentCapturingMode
@@ -262,6 +263,20 @@ def is_truthy_env(value: Optional[str]) -> bool:
     if value is None:
         return False
     return value.strip().lower() in _TRUTHY_VALUES
+
+
+def should_capture_tool_definitions() -> bool:
+    """Check whether tool definition capture is opted-in.
+
+    Returns ``True`` only when
+    :envvar:`OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS` is set to a
+    truthy value.  Instrumentations should call this **before** serializing
+    tool schemas to avoid the cost of JSON-encoding potentially large payloads
+    when the feature is disabled.
+    """
+    return is_truthy_env(
+        os.environ.get(OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS)
+    )
 
 
 def parse_callback_filter(value: Optional[str]) -> set[str] | None:

@@ -8,6 +8,7 @@ import re as _re
 from typing import Any, Dict, Optional, Sequence
 
 from opentelemetry._logs import Logger, get_logger
+from opentelemetry.metrics import Histogram
 from opentelemetry.semconv._incubating.attributes import (
     error_attributes as ErrorAttributes,
 )
@@ -561,7 +562,92 @@ class EvaluationEventsEmitter(_EvaluationEmitterBase):
                     )
 
 
+class EvaluationMonitoringEmitter(_EvaluationEmitterBase):
+    """Records evaluation pipeline monitoring metrics.
+
+    Metrics:
+      - gen_ai.evaluation.client.operation.duration (Histogram, seconds)
+      - gen_ai.evaluation.client.usage.cost (Histogram, USD)
+
+    Gated by OTEL_INSTRUMENTATION_GENAI_EVALS_MONITORING=true.
+    Reads duration_s, evaluation_cost, and evaluator_name from EvaluationResult
+    fields populated by the evaluation Manager.
+    """
+
+    role = "evaluation_monitoring"
+    name = "EvaluationMonitoring"
+
+    def __init__(
+        self,
+        duration_histogram: Histogram,
+        cost_histogram: Histogram,
+    ) -> None:
+        self._duration_histogram = duration_histogram
+        self._cost_histogram = cost_histogram
+
+    def on_evaluation_results(  # type: ignore[override]
+        self,
+        results: Sequence[EvaluationResult],
+        obj: Any | None = None,
+    ) -> None:
+        invocation = obj if isinstance(obj, GenAI) else None
+        for res in results:
+            attrs = self._build_attrs(res, invocation)
+            self._record_duration(res, attrs)
+            self._record_cost(res, attrs)
+
+    @staticmethod
+    def _build_attrs(
+        res: EvaluationResult, invocation: GenAI | None
+    ) -> Dict[str, Any]:
+        attrs: Dict[str, Any] = {}
+        evaluator_name = getattr(res, "evaluator_name", None)
+        if evaluator_name:
+            attrs["gen_ai.evaluation.evaluator"] = evaluator_name
+        canonical = _canonicalize_metric_name(
+            getattr(res, "metric_name", "") or ""
+        )
+        if canonical:
+            attrs[GEN_AI_EVALUATION_NAME] = canonical
+
+        if invocation is not None:
+            agent_name = getattr(invocation, "agent_name", None)
+            try:
+                from opentelemetry.util.genai.types import (  # noqa: PLC0415
+                    AgentInvocation as _AI,
+                )
+
+                if agent_name is None and isinstance(invocation, _AI):
+                    agent_name = getattr(invocation, "name", None)
+            except Exception:  # pragma: no cover - defensive
+                pass
+            if agent_name:
+                attrs["gen_ai.agent.name"] = agent_name
+            req_model = _get_request_model(invocation)
+            if req_model:
+                attrs[GEN_AI_REQUEST_MODEL] = req_model
+            provider = getattr(invocation, "provider", None)
+            if provider:
+                attrs[GEN_AI_PROVIDER_NAME] = provider
+        return attrs
+
+    def _record_duration(
+        self, res: EvaluationResult, attrs: Dict[str, Any]
+    ) -> None:
+        duration = getattr(res, "duration_s", None)
+        if duration is not None:
+            self._duration_histogram.record(duration, attributes=attrs)
+
+    def _record_cost(
+        self, res: EvaluationResult, attrs: Dict[str, Any]
+    ) -> None:
+        cost = getattr(res, "evaluation_cost", None)
+        if isinstance(cost, (int, float)) and cost >= 0:
+            self._cost_histogram.record(cost, attributes=attrs)
+
+
 __all__ = [
     "EvaluationMetricsEmitter",
     "EvaluationEventsEmitter",
+    "EvaluationMonitoringEmitter",
 ]

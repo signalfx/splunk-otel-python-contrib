@@ -52,7 +52,7 @@ import asyncio
 import logging
 import os
 import threading
-import time
+import timeit
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -113,6 +113,7 @@ from opentelemetry.util.genai.version import __version__
 from .callbacks import CompletionCallback
 from .config import parse_env
 from .environment_variables import (
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
@@ -592,6 +593,18 @@ class TelemetryHandler:
                         em.set_capture_content(desired)  # type: ignore[attr-defined]
                     except Exception:
                         pass
+                # Propagate tool-definitions flag to span emitters
+                if hasattr(em, "set_capture_tool_definitions"):
+                    try:
+                        em.set_capture_tool_definitions(  # type: ignore[attr-defined]
+                            is_truthy_env(
+                                os.environ.get(
+                                    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS
+                                )
+                            )
+                        )
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -687,7 +700,7 @@ class TelemetryHandler:
 
     def stop_llm(self, invocation: LLMInvocation) -> LLMInvocation:
         """Finalize an LLM invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         # Determine if this invocation should be sampled for evaluation
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
@@ -731,7 +744,7 @@ class TelemetryHandler:
         self, invocation: LLMInvocation, error: Error
     ) -> LLMInvocation:
         """Fail an LLM invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -776,7 +789,7 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
-        invocation.start_time = time.time()
+        invocation.start_time = timeit.default_timer()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -786,7 +799,7 @@ class TelemetryHandler:
         self, invocation: EmbeddingInvocation
     ) -> EmbeddingInvocation:
         """Finalize an embedding invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
@@ -810,7 +823,7 @@ class TelemetryHandler:
         self, invocation: EmbeddingInvocation, error: Error
     ) -> EmbeddingInvocation:
         """Fail an embedding invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -839,7 +852,7 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
-        invocation.start_time = time.time()
+        invocation.start_time = timeit.default_timer()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -849,7 +862,7 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation
     ) -> RetrievalInvocation:
         """Finalize a retrieval invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
@@ -873,7 +886,7 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation, error: Error
     ) -> RetrievalInvocation:
         """Fail a retrieval invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -906,7 +919,7 @@ class TelemetryHandler:
 
     def stop_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Finalize a tool call invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
@@ -919,7 +932,7 @@ class TelemetryHandler:
 
     def fail_tool_call(self, invocation: ToolCall, error: Error) -> ToolCall:
         """Fail a tool call invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -1180,7 +1193,7 @@ class TelemetryHandler:
 
     def stop_workflow(self, workflow: Workflow) -> Workflow:
         """Finalize a workflow successfully and end its span."""
-        workflow.end_time = time.time()
+        workflow.end_time = timeit.default_timer()
 
         workflow.sample_for_evaluation = self._should_sample_for_evaluation(
             workflow.trace_id
@@ -1201,7 +1214,7 @@ class TelemetryHandler:
 
     def fail_workflow(self, workflow: Workflow, error: Error) -> Workflow:
         """Fail a workflow and end its span with error status."""
-        workflow.end_time = time.time()
+        workflow.end_time = timeit.default_timer()
         self._emitter.on_error(error, workflow)
         self._notify_completion(workflow)
         self._pop_current_span(workflow)
@@ -1241,7 +1254,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation
     ) -> AgentCreation | AgentInvocation:
         """Finalize an agent operation successfully and end its span."""
-        agent.end_time = time.time()
+        agent.end_time = timeit.default_timer()
 
         agent.sample_for_evaluation = self._should_sample_for_evaluation(
             agent.trace_id
@@ -1273,7 +1286,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation, error: Error
     ) -> AgentCreation | AgentInvocation:
         """Fail an agent operation and end its span with error status."""
-        agent.end_time = time.time()
+        agent.end_time = timeit.default_timer()
         self._emitter.on_error(error, agent)
         self._notify_completion(agent)
         self._pop_current_span(agent)
@@ -1308,7 +1321,7 @@ class TelemetryHandler:
 
     def stop_step(self, step: Step) -> Step:
         """Finalize a step successfully and end its span."""
-        step.end_time = time.time()
+        step.end_time = timeit.default_timer()
 
         step.sample_for_evaluation = self._should_sample_for_evaluation(
             step.trace_id
@@ -1329,7 +1342,7 @@ class TelemetryHandler:
 
     def fail_step(self, step: Step, error: Error) -> Step:
         """Fail a step and end its span with error status."""
-        step.end_time = time.time()
+        step.end_time = timeit.default_timer()
         self._emitter.on_error(error, step)
         self._notify_completion(step)
         self._pop_current_span(step)
