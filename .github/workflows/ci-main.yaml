@@ -59,7 +59,7 @@ jobs:
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-openai-v2[instruments]"
           pip install -e instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2 --no-deps
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-llamaindex[instruments,test]"
-          pip install -e "instrumentation-genai/opentelemetry-instrumentation-fastmcp[instruments,test]"
+          pip install -e instrumentation-genai/opentelemetry-instrumentation-fastmcp --no-deps
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-crewai[instruments,test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-aidefense[test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-weaviate[instruments,test]"
@@ -131,6 +131,7 @@ jobs:
         run: |
           pip uninstall -y splunk-otel-util-genai
           pip install splunk-otel-util-genai==0.1.8
+          pip install "fastmcp>=2.0.0,<2.14.7"
 
       - name: Run tests - opentelemetry-instrumentation-fastmcp
         if: always()
