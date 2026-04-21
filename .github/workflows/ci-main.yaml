@@ -111,11 +111,6 @@ jobs:
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-llamaindex/tests/ -v
 
-      - name: Run tests - opentelemetry-instrumentation-fastmcp
-        if: always()
-        run: |
-          python -m pytest instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v
-
       - name: Run tests - opentelemetry-instrumentation-crewai
         if: always()
         run: |
@@ -130,3 +125,14 @@ jobs:
         if: always()
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-weaviate/tests/ -v
+
+      - name: Pin util-genai for fastmcp tests
+        if: always()
+        run: |
+          pip uninstall -y splunk-otel-util-genai
+          pip install splunk-otel-util-genai==0.1.8
+
+      - name: Run tests - opentelemetry-instrumentation-fastmcp
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v
