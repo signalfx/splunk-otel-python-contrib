@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add `gen_ai.tool.definitions` attribute on LLM spans when
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true`
+- Add `gen_ai.request.stream` attribute for streaming requests
+- Add `gen_ai.response.time_to_first_chunk` attribute and metric for streaming requests
+
 ## Version 0.1.0 (2026-02-05)
 
 Initial release of `splunk-otel-instrumentation-openai` package.

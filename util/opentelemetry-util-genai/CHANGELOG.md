@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
+- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
+
 ## Version 0.1.13
 
 ### Added

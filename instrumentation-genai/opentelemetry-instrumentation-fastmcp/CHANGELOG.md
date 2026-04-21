@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Server session lifecycle tracking** — `server_instrumentor` now wraps `mcp.server.lowlevel.Server.run` with an `AgentInvocation(agent_type="mcp_server")` to track server session duration, enabling `mcp.server.session.duration` metric emission via `MetricsEmitter`.
-
-### Added
 - **`resources/read` and `prompts/get` instrumentation** — Server and client-side hooks for `FastMCP.read_resource` / `Client.read_resource` and `FastMCP.get_prompt` / `Client.get_prompt`. Produces `MCPOperation` spans with `{mcp.method.name} {target}` naming.
 - **Transport context bridge** — `MCPRequestContext` ContextVar populated by the transport instrumentor on the server side, allowing the server instrumentor to read `jsonrpc.request.id`, `network.transport`, etc.
 - **Transport detection** — Client automatically detects `pipe` vs `tcp` transport from `Client.transport` type.

@@ -12,6 +12,13 @@ with OpenTelemetry instrumentation enabled.
 
 ## Prerequisites
 
+### Compatibility Matrix
+
+| Component | Supported version range |
+|-----------|-------------------------|
+| `fastmcp` | `>=2.0.0, <=2.14.7` |
+| `splunk-otel-util-genai` | `<=0.1.8` |
+
 1. Install the required packages:
 
 ```bash
