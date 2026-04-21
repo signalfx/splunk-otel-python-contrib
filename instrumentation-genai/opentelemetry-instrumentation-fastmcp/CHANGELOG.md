@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server session lifecycle tracking** — `server_instrumentor` now wraps `mcp.server.lowlevel.Server.run` with an `AgentInvocation(agent_type="mcp_server")` to track server session duration, enabling `mcp.server.session.duration` metric emission via `MetricsEmitter`.
 
 ### Changed
-- Pinned compatibility to `fastmcp >= 2.0.0, < 2.14.7` and `splunk-otel-util-genai <= 0.1.8` to avoid runtime incompatibilities introduced by newer upstream releases.
+- Pinned compatibility to `fastmcp >= 2.0.0, <= 2.14.7` and `splunk-otel-util-genai <= 0.1.8` to avoid runtime incompatibilities introduced by newer upstream releases.
 
 ### Fixed
 - **MCP session attributes for duration metrics** — `client_instrumentor` now sets `network.transport` and `error.type` on the `AgentInvocation` attributes dict so that `MetricsEmitter` can record `mcp.client.session.duration` with proper semconv attributes.

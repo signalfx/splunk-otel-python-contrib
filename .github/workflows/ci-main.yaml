@@ -131,7 +131,7 @@ jobs:
         run: |
           pip uninstall -y splunk-otel-util-genai
           pip install splunk-otel-util-genai==0.1.8
-          pip install "fastmcp>=2.0.0,<2.14.7"
+          pip install "fastmcp>=2.0.0,<=2.14.7"
 
       - name: Run tests - opentelemetry-instrumentation-fastmcp
         if: always()
