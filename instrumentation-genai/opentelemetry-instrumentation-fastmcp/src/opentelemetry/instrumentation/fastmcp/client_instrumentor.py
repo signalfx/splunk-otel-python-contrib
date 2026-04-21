@@ -12,17 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FastMCP client-side instrumentation."""
+"""FastMCP client-side instrumentation.
+
+Attaches span context explicitly so that ``propagate.inject()`` in the
+transport instrumentor picks up the correct parent.  This is necessary
+because ``util-genai``'s span emitter uses ``tracer.start_span()``
+(not ``start_as_current_span``), so the span is **not** automatically
+set as current.
+"""
 
 import logging
+from contextlib import contextmanager
 from typing import Any, Callable
 
 from wrapt import register_post_import_hook, wrap_function_wrapper
 
+from opentelemetry import context as otel_context, trace
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     Error,
+    GenAI,
     MCPOperation,
     MCPToolCall,
 )
@@ -34,6 +44,43 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@contextmanager
+def _activate_span(obj: GenAI):
+    """Briefly set *obj.span* as the current OTel context so that
+    ``propagate.inject()`` in the transport instrumentor produces a
+    valid ``traceparent`` for cross-process context propagation.
+
+    **Why this is needed (relationship to PR #235):**
+
+    The handler's ``_push_current_span`` (PR #235) deliberately skips
+    ``context_api.attach()`` in async contexts to avoid cross-task
+    ``ValueError`` when attach and detach happen in different
+    ``asyncio.Task``s.  MCP instrumentation is async, so the handler
+    does **not** set the span as current.
+
+    However, ``propagate.inject()`` reads from the ambient OTel context
+    and needs the span to be current.  In MCP's case the attach and
+    detach are guaranteed to occur in the **same task** (our wrapper
+    calls the wrapped function synchronously within the same coroutine),
+    so a scoped attach/detach is safe.
+
+    No-op when *obj* has no span or the span is not recording.
+    """
+    span = getattr(obj, "span", None)
+    if span is None or not getattr(span, "is_recording", lambda: False)():
+        yield
+        return
+
+    token = otel_context.attach(trace.set_span_in_context(span))
+    try:
+        yield
+    finally:
+        try:
+            otel_context._RUNTIME_CONTEXT.detach(token)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _traced_mcp_operation(
@@ -53,7 +100,8 @@ def _traced_mcp_operation(
 
         handler.start_mcp_operation(op)
         try:
-            result = await wrapped(*args, **kwargs)
+            with _activate_span(op):
+                result = await wrapped(*args, **kwargs)
             handler.stop_mcp_operation(op)
             return result
         except Exception as e:
@@ -211,7 +259,8 @@ class ClientInstrumentor:
             handler.start_tool_call(tool_call)
 
             try:
-                result = await wrapped(*args, **kwargs)
+                with _activate_span(tool_call):
+                    result = await wrapped(*args, **kwargs)
 
                 output_size = 0
                 if result:
@@ -272,7 +321,8 @@ class ClientInstrumentor:
 
             handler.start_mcp_operation(op)
             try:
-                result = await wrapped(*args, **kwargs)
+                with _activate_span(op):
+                    result = await wrapped(*args, **kwargs)
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
@@ -301,7 +351,8 @@ class ClientInstrumentor:
 
             handler.start_mcp_operation(op)
             try:
-                result = await wrapped(*args, **kwargs)
+                with _activate_span(op):
+                    result = await wrapped(*args, **kwargs)
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:

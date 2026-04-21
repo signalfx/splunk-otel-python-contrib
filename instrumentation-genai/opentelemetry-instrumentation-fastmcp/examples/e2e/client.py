@@ -137,7 +137,7 @@ async def run_calculator_demo(server_url: str | None = None):
         server_env = {
             k: v
             for k, v in os.environ.items()
-            if k.startswith(("OTEL_", "VIRTUAL_ENV"))
+            if k.startswith(("OTEL_", "VIRTUAL_ENV", "FASTMCP_"))
             or k in ("HOME", "PATH", "SHELL", "TERM", "USER", "LOGNAME")
         }
         server_env["OTEL_SERVICE_NAME"] = "mcp-calculator-server"
