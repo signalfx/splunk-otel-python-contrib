@@ -22,7 +22,7 @@ Compatibility Matrix
      - Notes
    * - 0.1.1
      - 2.x (jlowin/fastmcp)
-     - <= 0.1.10
+     - <= 0.1.9
      - PR #147. Wraps ``ToolManager.call_tool``.
    * - 0.2.0
      - >= 3.0.0, < 4

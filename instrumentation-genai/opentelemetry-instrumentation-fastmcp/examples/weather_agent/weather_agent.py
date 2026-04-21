@@ -151,7 +151,7 @@ async def run_agent(user_query: str, manual: bool = True):
     server_env = {
         k: v
         for k, v in os.environ.items()
-        if k.startswith(("OTEL_", "NVIDIA_", "VIRTUAL_ENV"))
+        if k.startswith(("OTEL_", "NVIDIA_", "VIRTUAL_ENV", "FASTMCP_"))
         or k in ("HOME", "PATH", "SHELL", "TERM", "USER", "LOGNAME")
     }
     server_env["OTEL_SERVICE_NAME"] = "weather-mcp-server"

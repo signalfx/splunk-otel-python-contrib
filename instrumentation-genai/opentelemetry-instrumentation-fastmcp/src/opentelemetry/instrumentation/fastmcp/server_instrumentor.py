@@ -15,6 +15,7 @@
 """FastMCP server-side instrumentation."""
 
 import logging
+from contextvars import ContextVar
 from typing import Optional
 from uuid import uuid4
 
@@ -41,6 +42,11 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# FastMCP 3.x call_tool recurses through middleware (run_middleware=True →
+# middleware → self.call_tool(..., run_middleware=False)).  This guard
+# ensures only the outermost call creates a span.
+_IN_TOOL_CALL: ContextVar[bool] = ContextVar("_in_tool_call", default=False)
+
 
 def _enrich_from_request_context(op: MCPOperation) -> None:
     """Copy transport-layer metadata from the ContextVar into an operation."""
@@ -54,15 +60,14 @@ def _enrich_from_request_context(op: MCPOperation) -> None:
 
 
 class ServerInstrumentor:
-    """Handles FastMCP server-side instrumentation.
+    """Handles FastMCP 3.x server-side instrumentation.
 
     Instruments:
     - FastMCP.__init__: Capture server name for context
     - Server.run: Track server session lifecycle (mcp.server.session.duration)
-    - FastMCP.call_tool / ToolManager.call_tool: Trace tool executions
+    - FastMCP.call_tool: Trace tool executions
     - FastMCP.read_resource: Trace resource reads
-    - FastMCP.render_prompt: Trace prompt rendering (the MCP ``prompts/get``
-      handler; ``get_prompt`` is only the internal lookup)
+    - FastMCP.render_prompt: Trace prompt rendering
     """
 
     def __init__(self, telemetry_handler: TelemetryHandler):
@@ -91,59 +96,33 @@ class ServerInstrumentor:
             "mcp.server.lowlevel.server",
         )
 
-        # FastMCP 3.x exposes call_tool/read_resource as public methods;
-        # FastMCP 2.x uses ToolManager.call_tool and _call_tool/_read_resource.
-        # Use _try_wrap so the instrumentor works across major versions.
-        tool_wrapper = self._tool_call_wrapper()
+        # Wrap FastMCP server methods (3.x API surface).
         register_post_import_hook(
-            lambda _: self._try_wrap(
-                "fastmcp.server.server", "FastMCP.call_tool", tool_wrapper
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.call_tool",
+                self._tool_call_wrapper(),
             ),
             "fastmcp.server.server",
         )
-        register_post_import_hook(
-            lambda _: self._try_wrap(
-                "fastmcp.tools.tool_manager",
-                "ToolManager.call_tool",
-                tool_wrapper,
-            ),
-            "fastmcp.tools.tool_manager",
-        )
 
-        resource_wrapper = self._read_resource_wrapper()
         register_post_import_hook(
-            lambda _: self._try_wrap(
+            lambda _: wrap_function_wrapper(
                 "fastmcp.server.server",
                 "FastMCP.read_resource",
-                resource_wrapper,
+                self._read_resource_wrapper(),
             ),
             "fastmcp.server.server",
         )
 
-        # FastMCP 3.x uses render_prompt as the MCP prompts/get handler;
-        # FastMCP 2.x used get_prompt directly.  Hook both with graceful
-        # failure so the instrumentor works across major versions.
-        prompt_wrapper = self._render_prompt_wrapper()
         register_post_import_hook(
-            lambda _: self._try_wrap(
-                "fastmcp.server.server", "FastMCP.render_prompt", prompt_wrapper
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.render_prompt",
+                self._render_prompt_wrapper(),
             ),
             "fastmcp.server.server",
         )
-        register_post_import_hook(
-            lambda _: self._try_wrap(
-                "fastmcp.server.server", "FastMCP.get_prompt", prompt_wrapper
-            ),
-            "fastmcp.server.server",
-        )
-
-    @staticmethod
-    def _try_wrap(module: str, name: str, wrapper) -> None:
-        """Attempt to wrap a target; silently skip if it doesn't exist."""
-        try:
-            wrap_function_wrapper(module, name, wrapper)
-        except (ImportError, AttributeError):
-            _LOGGER.debug("Skipping wrap %s.%s (not available)", module, name)
 
     def uninstrument(self):
         """Remove FastMCP server-side instrumentation.
@@ -223,6 +202,9 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_tool_call(wrapped, instance, args, kwargs):
+            if _IN_TOOL_CALL.get():
+                return await wrapped(*args, **kwargs)
+
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
             transport = detect_transport(instance)
 
@@ -241,6 +223,7 @@ class ServerInstrumentor:
             _enrich_from_request_context(tool_call)
 
             handler.start_tool_call(tool_call)
+            token = _IN_TOOL_CALL.set(True)
 
             try:
                 result = await wrapped(*args, **kwargs)
@@ -271,6 +254,8 @@ class ServerInstrumentor:
                 tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
                 raise
+            finally:
+                _IN_TOOL_CALL.reset(token)
 
         return traced_tool_call
 
