@@ -59,7 +59,7 @@ jobs:
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-openai-v2[instruments]"
           pip install -e instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2 --no-deps
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-llamaindex[instruments,test]"
-          pip install -e "instrumentation-genai/opentelemetry-instrumentation-fastmcp[instruments,test]"
+          pip install -e instrumentation-genai/opentelemetry-instrumentation-fastmcp --no-deps
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-crewai[instruments,test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-aidefense[test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-weaviate[instruments,test]"
@@ -111,11 +111,6 @@ jobs:
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-llamaindex/tests/ -v
 
-      - name: Run tests - opentelemetry-instrumentation-fastmcp
-        if: always()
-        run: |
-          python -m pytest instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v
-
       - name: Run tests - opentelemetry-instrumentation-crewai
         if: always()
         run: |
@@ -130,3 +125,13 @@ jobs:
         if: always()
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-weaviate/tests/ -v
+
+      - name: Install fastmcp for instrumentation tests
+        if: always()
+        run: |
+          pip install "fastmcp>=3.0.0,<4"
+
+      - name: Run tests - opentelemetry-instrumentation-fastmcp
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-fastmcp/tests/ -v
