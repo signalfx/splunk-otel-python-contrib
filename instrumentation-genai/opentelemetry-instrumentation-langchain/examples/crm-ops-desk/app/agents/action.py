@@ -166,6 +166,8 @@ Customer ID: {state["user_id"]}
             resolution = "ticket_created"
         elif "explain_refund_state" in successful:
             resolution = "refund_state_explained"
+        elif "explain_order_state" in successful:
+            resolution = "order_state_explained"
         else:
             resolution = "action_failed"
 
