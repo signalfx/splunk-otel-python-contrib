@@ -116,10 +116,12 @@ def get_genai_request_attributes(  # pylint: disable=too-many-branches
             generation_config.temperature
         )
     if "top_p" in generation_config:
-        # There is also a top_k parameter ( The maximum number of tokens to consider when sampling.),
-        # but no semconv yet exists for it.
         attributes[GenAIAttributes.GEN_AI_REQUEST_TOP_P] = (
             generation_config.top_p
+        )
+    if "top_k" in generation_config:
+        attributes[GenAIAttributes.GEN_AI_REQUEST_TOP_K] = (
+            generation_config.top_k
         )
     if "max_output_tokens" in generation_config:
         attributes[GenAIAttributes.GEN_AI_REQUEST_MAX_TOKENS] = (

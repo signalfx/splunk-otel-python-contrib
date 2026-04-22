@@ -35,6 +35,7 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.util.genai import handler as genai_handler
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
 
@@ -187,6 +188,35 @@ def instrument_with_content(tracer_provider, logger_provider, meter_provider):
 
     yield instrumentor
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
+    if instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
+
+@pytest.fixture(scope="function")
+def instrument_with_content_and_tool_defs(
+    tracer_provider, logger_provider, meter_provider
+):
+    os.environ.update(
+        {
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS: "True",
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event",
+        }
+    )
+
+    genai_handler.TelemetryHandler._reset_for_testing()
+
+    instrumentor = VertexAIInstrumentor()
+    instrumentor.instrument(
+        tracer_provider=tracer_provider,
+        logger_provider=logger_provider,
+        meter_provider=meter_provider,
+    )
+
+    yield instrumentor
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS, None)
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
     if instrumentor.is_instrumented_by_opentelemetry:
         instrumentor.uninstrument()

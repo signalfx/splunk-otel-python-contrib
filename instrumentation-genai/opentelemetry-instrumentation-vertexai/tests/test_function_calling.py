@@ -262,3 +262,48 @@ def test_tool_events_no_content(
     # No events emitted when content is disabled
     logs = log_exporter.get_finished_logs()
     assert len(logs) == 0
+
+
+@pytest.mark.vcr()
+def test_tool_definitions_emitted_when_opted_in(
+    span_exporter: InMemorySpanExporter,
+    log_exporter: InMemoryLogRecordExporter,
+    instrument_with_content_and_tool_defs: VertexAIInstrumentor,
+    generate_content: callable,
+):
+    ask_about_weather(generate_content)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes)
+
+    # request_functions always emitted
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+
+    # tool_definitions emitted only when CAPTURE_TOOL_DEFINITIONS is set
+    assert "gen_ai.tool.definitions" in attrs
+    tool_defs = json.loads(attrs["gen_ai.tool.definitions"])
+    assert isinstance(tool_defs, list)
+    assert len(tool_defs) == 1
+    func_decls = tool_defs[0]["functionDeclarations"]
+    assert func_decls[0]["name"] == "get_current_weather"
+
+
+@pytest.mark.vcr()
+def test_tool_definitions_not_emitted_without_opt_in(
+    span_exporter: InMemorySpanExporter,
+    log_exporter: InMemoryLogRecordExporter,
+    instrument_with_content: VertexAIInstrumentor,
+    generate_content: callable,
+):
+    ask_about_weather(generate_content)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes)
+
+    # request_functions always emitted
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+
+    # tool_definitions NOT emitted when CAPTURE_TOOL_DEFINITIONS is not set
+    assert "gen_ai.tool.definitions" not in attrs

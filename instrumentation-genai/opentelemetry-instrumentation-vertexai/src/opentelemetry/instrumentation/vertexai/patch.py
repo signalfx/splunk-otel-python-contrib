@@ -46,6 +46,7 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
 )
+from opentelemetry.util.genai.utils import should_capture_tool_definitions
 
 if TYPE_CHECKING:
     from google.cloud.aiplatform_v1.types import (
@@ -165,22 +166,21 @@ def _build_invocation(
         request_seed=request_attributes.get(
             GenAIAttributes.GEN_AI_REQUEST_SEED
         ),
+        request_top_k=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_TOP_K
+        ),
+        request_choice_count=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_CHOICE_COUNT
+        ),
+        output_type=request_attributes.get(GenAIAttributes.GEN_AI_OUTPUT_TYPE),
         request_functions=request_functions,
     )
 
-    # Propagate extra attributes that don't map to LLMInvocation fields
-    if GenAIAttributes.GEN_AI_OUTPUT_TYPE in request_attributes:
-        invocation.attributes[GenAIAttributes.GEN_AI_OUTPUT_TYPE] = (
-            request_attributes[GenAIAttributes.GEN_AI_OUTPUT_TYPE]
-        )
-
-    if capture_content and params.tools:
+    if capture_content and params.tools and should_capture_tool_definitions():
         from google.protobuf import json_format as _jf
 
         tool_defs = [_jf.MessageToDict(t._pb) for t in params.tools]  # type: ignore[union-attr]
-        invocation.attributes[GenAIAttributes.GEN_AI_TOOL_DEFINITIONS] = (
-            json.dumps(tool_defs)
-        )
+        invocation.tool_definitions = json.dumps(tool_defs)
 
     return invocation
 
