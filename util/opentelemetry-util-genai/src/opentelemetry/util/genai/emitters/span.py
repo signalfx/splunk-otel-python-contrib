@@ -913,38 +913,6 @@ class SpanEmitter(EmitterMeta):
         _apply_tool_semconv_attributes(span, tool, self._capture_content)
         _apply_custom_attributes(span, getattr(tool, "attributes", None))
 
-    def _start_mcp_tool_call(self, tool: MCPToolCall) -> None:
-        """Start an MCP tool call span per MCP semantic conventions.
-
-        Span name: {mcp.method.name} {gen_ai.tool.name}  (e.g. "tools/call add")
-        Span kind: CLIENT (client-side) or SERVER (server-side)
-        See: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/
-        """
-        method = tool.mcp_method_name or "tools/call"
-        span_name = f"{method} {tool.name}"
-        kind = SpanKind.CLIENT if tool.is_client else SpanKind.SERVER
-
-        parent_span = getattr(tool, "parent_span", None)
-        parent_ctx = (
-            trace.set_span_in_context(parent_span)
-            if parent_span is not None
-            else None
-        )
-
-        span = self._tracer.start_span(
-            span_name,
-            kind=kind,
-            context=parent_ctx,
-        )
-        self._add_span_to_invocation(tool, span)
-
-        span.set_attribute(
-            GenAI.GEN_AI_OPERATION_NAME,
-            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
-        )
-        _apply_tool_semconv_attributes(span, tool, self._capture_content)
-        _apply_custom_attributes(span, getattr(tool, "attributes", None))
-
     def _finish_tool_call(self, tool: ToolCall) -> None:
         """Finish a tool call span."""
         span = tool.span

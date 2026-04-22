@@ -148,58 +148,11 @@ class MetricsEmitter(EmitterMeta):
         if isinstance(obj, MCPOperation):
             self._record_mcp_operation_metrics(obj)
             if isinstance(obj, MCPToolCall) and obj.is_client:
-                metric_attrs = _get_metric_attributes(
-                    None,
-                    None,
-                    GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
-                    obj.provider,
-                    obj.framework,
-                )
-                metric_attrs[GenAI.GEN_AI_TOOL_NAME] = obj.name
-                if obj.agent_name:
-                    metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
-                if obj.agent_id:
-                    metric_attrs[GenAI.GEN_AI_AGENT_ID] = obj.agent_id
-                metric_attrs.update(get_context_metric_attributes(obj))
-                duration = obj.duration_s
-                if duration is None and obj.end_time is not None:
-                    duration = obj.end_time - obj.start_time
-                if duration is not None:
-                    context = None
-                    span = getattr(obj, "span", None)
-                    if span is not None:
-                        try:
-                            context = trace.set_span_in_context(span)
-                        except (TypeError, ValueError, AttributeError):
-                            context = None
-                    self._duration_histogram.record(
-                        duration, attributes=metric_attrs, context=context
-                    )
+                self._record_execute_tool_metrics(obj)
             return
 
         if isinstance(obj, ToolCall):
-            tool_invocation = obj
-            metric_attrs = _get_metric_attributes(
-                None,
-                None,
-                GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
-                tool_invocation.provider,
-                tool_invocation.framework,
-            )
-            metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool_invocation.name
-            if tool_invocation.agent_name:
-                metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
-                    tool_invocation.agent_name
-                )
-            if tool_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
-            metric_attrs.update(get_context_metric_attributes(tool_invocation))
-            _record_duration(
-                self._duration_histogram,
-                tool_invocation,
-                metric_attrs,
-                span=getattr(tool_invocation, "span", None),
-            )
+            self._record_execute_tool_metrics(obj)
 
         if isinstance(obj, EmbeddingInvocation):
             embedding_invocation = obj
@@ -547,6 +500,28 @@ class MetricsEmitter(EmitterMeta):
 
         self._retrieval_duration_histogram.record(
             duration, attributes=metric_attrs, context=context
+        )
+
+    def _record_execute_tool_metrics(self, tool: ToolCall) -> None:
+        """Record ``gen_ai.client.operation.duration`` for an execute_tool."""
+        metric_attrs = _get_metric_attributes(
+            None,
+            None,
+            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+            tool.provider,
+            tool.framework,
+        )
+        metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool.name
+        if tool.agent_name:
+            metric_attrs[GenAI.GEN_AI_AGENT_NAME] = tool.agent_name
+        if tool.agent_id:
+            metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool.agent_id
+        metric_attrs.update(get_context_metric_attributes(tool))
+        _record_duration(
+            self._duration_histogram,
+            tool,
+            metric_attrs,
+            span=getattr(tool, "span", None),
         )
 
     def _record_mcp_operation_metrics(self, op: MCPOperation) -> None:
