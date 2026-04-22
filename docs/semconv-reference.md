@@ -4,6 +4,30 @@ This document describes the semantic conventions used in the Splunk Distribution
 
 > **Status**: The upstream OTel Gen AI semantic conventions are in **Development** status. SDOT implements and extends them with additional attributes for agentic AI workflows, evaluations, and context propagation.
 
+### Source Code References
+
+| Reference | Description |
+|---|---|
+| [attributes.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/attributes.py) | Canonical SDOT attribute constants |
+| [types.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/types.py) | GenAI data model with `semconv` metadata tags |
+| [handler.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/handler.py) | TelemetryHandler lifecycle and agent context stack |
+| [emitters/span.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/span.py) | Span emitter (semconv attribute mapping) |
+| [emitters/metrics.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/metrics.py) | Metrics emitter (histogram definitions) |
+| [emitters/content_events.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/content_events.py) | Content events emitter |
+| [instruments.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/instruments.py) | Metric instrument definitions |
+| [semconv_ai.py](../instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/instrumentation/langchain/semconv_ai.py) | Legacy LangChain attribute constants (OpenLLMetry-derived) |
+
+### Upstream OTel Semantic Conventions
+
+| Specification | Status | Description |
+|---|---|---|
+| [gen-ai-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) | Development | Inference, embeddings, retrieval, execute_tool spans |
+| [gen-ai-agent-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) | Development | create_agent, invoke_agent, invoke_workflow spans |
+| [gen-ai-events.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md) | Development | Inference operation details, evaluation result events |
+| [gen-ai-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md) | Development | Client and server metrics (duration, tokens, TTFC) |
+| [mcp.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md) | Development | Model Context Protocol spans and metrics |
+| [openai.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md) | Development | OpenAI-specific attributes |
+
 ---
 
 ## Table of Contents
@@ -30,21 +54,29 @@ SDOT generates four types of telemetry for Gen AI operations:
 
 ### Spans (Distributed Traces)
 
+> Upstream spec: [gen-ai-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md), [gen-ai-agent-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md)
+
 Hierarchical parent-child spans representing the full execution tree of an AI workflow. Each span captures operation type, duration, attributes, and status.
 
-**Span naming**: `{operation_name} {qualifier}` (e.g., `chat gpt-4`, `invoke_agent researcher`, `workflow customer_support`)
+**Span naming**: `{operation_name} {qualifier}` (e.g., `chat gpt-4`, `invoke_agent researcher`, `invoke_workflow customer_support`)
 
 **Span kind**: `CLIENT` for remote calls (LLM API, remote agents), `INTERNAL` for in-process operations (local agents, workflows, tools)
 
 ### Metrics
 
+> Upstream spec: [gen-ai-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md)
+
 Histogram metrics capturing operation duration, token usage, and evaluation scores. Metrics are dimensioned by operation type, model, provider, and agent context.
 
 ### Log Records / Content Events
 
+> Upstream spec: [gen-ai-events.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md)
+
 Structured log records capturing the full input/output content of Gen AI operations. Content capture is **disabled by default** and must be opted in.
 
 ### Evaluation Events
+
+> Upstream spec: [gen-ai-events.md `gen_ai.evaluation.result`](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md#event-gen_aievaluationresult)
 
 Structured events capturing quality/accuracy scores for Gen AI outputs, emitted through the OTel Events API.
 
@@ -73,22 +105,24 @@ invoke_workflow "customer_support_crew"           # Workflow root
         +-- chat gpt-4                            # LLM call (inherits "summarizer")
 ```
 
-### GenAI Operation Types
+### Operation Types
 
-| `gen_ai.operation.name` | Span Name Format | Description | OTel Status |
+| `gen_ai.operation.name` | Span Name Format | Description | Upstream Spec |
 |---|---|---|---|
-| `chat` | `chat {model}` | LLM chat completion | Standard |
-| `text_completion` | `text_completion {model}` | Legacy text completion | Standard |
-| `embeddings` | `embeddings {model}` | Embedding generation | Standard |
-| `invoke_agent` | `invoke_agent {agent_name}` | Agent invocation (local or remote) | Standard |
-| `invoke_workflow` | `invoke_workflow {workflow_name}` | static sequence of GenAI operations | Standard |
-| `create_agent` | `create_agent {agent_name}` | Remote agent creation | Standard |
-| `execute_tool` | `execute_tool {tool_name}` | Tool/function execution | Standard |
-| `retrieval` | `retrieval {data_source}` | RAG retrieval operation | Standard |
+| `chat` | `chat {model}` | LLM chat completion | [gen-ai-spans.md#inference](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#inference) |
+| `text_completion` | `text_completion {model}` | Legacy text completion | [gen-ai-spans.md#inference](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#inference) |
+| `embeddings` | `embeddings {model}` | Embedding generation | [gen-ai-spans.md#embeddings](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#embeddings) |
+| `invoke_agent` | `invoke_agent {agent_name}` | Agent invocation (local or remote) | [gen-ai-agent-spans.md#invoke-agent](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-agent-client-span) |
+| `invoke_workflow` | `invoke_workflow {workflow_name}` | Multi-agent workflow orchestration | [gen-ai-agent-spans.md#invoke-workflow](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-workflow-span) |
+| `create_agent` | `create_agent {agent_name}` | Remote agent creation | [gen-ai-agent-spans.md#create-agent](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md#create-agent-span) |
+| `execute_tool` | `execute_tool {tool_name}` | Tool/function execution | [gen-ai-spans.md#execute-tool](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `retrieval` | `retrieval {data_source}` | RAG retrieval operation | [gen-ai-spans.md#retrievals](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#retrievals) |
 
 ---
 
 ## 3. Agent Name and Workflow Name Propagation
+
+> Implementation: [handler.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/handler.py) -- `_agent_context_stack` and `_apply_agent_context` methods
 
 ### How `gen_ai.agent.name` Propagates to Child Spans
 
@@ -151,7 +185,11 @@ invoke_workflow "support_crew"
 
 ## 5. Conversation ID and Association Properties
 
+> Implementation: [handler.py `GenAIContext` and `_apply_genai_context`](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/handler.py)
+
 ### `gen_ai.conversation.id`
+
+> Upstream spec: defined in [gen-ai-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) and [gen-ai-agent-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md)
 
 The conversation ID ties together all operations that belong to the same user conversation or session. It propagates to **all** child spans and operations automatically.
 
@@ -224,37 +262,47 @@ export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS="user.tier,session.
 
 ## 6. Complete Attribute Reference
 
+> Source: [attributes.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/attributes.py), [types.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/types.py)
+
 ### Core Operation Attributes
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.operation.name` | string | Operation type (see table above) | Standard |
-| `gen_ai.provider.name` | string | LLM provider (`openai`, `anthropic`, etc.) | Standard |
+| `gen_ai.operation.name` | string | Operation type (see table above) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.provider.name` | string | LLM provider (`openai`, `anthropic`, etc.) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
 | `gen_ai.framework` | string | Framework (`langchain`, `crewai`, `fastmcp`, etc.) | **SDOT extension** |
-| `gen_ai.request.model` | string | Requested model name | Standard |
-| `gen_ai.response.model` | string | Actual model that responded | Standard |
-| `gen_ai.response.id` | string | Response identifier | Standard |
+| `gen_ai.request.model` | string | Requested model name | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.response.model` | string | Actual model that responded | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.response.id` | string | Response identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.output.type` | string | Requested output content type (`text`, `json`, `image`, `speech`) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
 
 ### Agent Attributes
 
+> Upstream spec: [gen-ai-agent-spans.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md)
+
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.agent.name` | string | Human-readable agent name | Standard |
-| `gen_ai.agent.id` | string | Unique agent identifier | Standard |
-| `gen_ai.agent.description` | string | Agent description | Standard |
+| `gen_ai.agent.name` | string | Human-readable agent name | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
+| `gen_ai.agent.id` | string | Unique agent identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
+| `gen_ai.agent.description` | string | Agent description | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
+| `gen_ai.agent.version` | string | Agent version | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
 | `gen_ai.agent.tools` | string[] | Available tool names | **SDOT extension** |
 | `gen_ai.agent.type` | string | Agent type (`researcher`, `planner`, `executor`, `critic`) | **SDOT extension** |
 | `gen_ai.agent.system_instructions` | string | Agent system prompt/instructions | **SDOT extension** |
 
 ### Workflow Attributes
 
+> Upstream spec: [gen-ai-agent-spans.md#invoke-workflow](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-workflow-span)
+
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.workflow.name` | string | Workflow identifier | Standard |
+| `gen_ai.workflow.name` | string | Workflow identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-workflow-span) |
 | `gen_ai.workflow.type` | string | Orchestration type (`sequential`, `parallel`, `graph`, `dynamic`) | **SDOT extension** |
 | `gen_ai.workflow.description` | string | Workflow description | **SDOT extension** |
 
 ### Step Attributes (Agentic AI Extension)
+
+> Source: [attributes.py `GEN_AI_STEP_*`](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/attributes.py)
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
@@ -263,86 +311,110 @@ export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS="user.tier,session.
 | `gen_ai.step.objective` | string | What the step aims to achieve | **SDOT extension** |
 | `gen_ai.step.source` | string | Origin: `workflow` or `agent` | **SDOT extension** |
 | `gen_ai.step.assigned_agent` | string | Agent assigned to this step | **SDOT extension** |
-| `gen_ai.step.status` | string | Status (`pending`, `in_progress`, `completed`, `failed`) | **SDOT extension** |
+| `gen_ai.step.status` | string | Status (`pending`, `in_progress`, `completed`, `failed`, `interrupted`, `cancelled`) | **SDOT extension** |
 
 ### Conversation and Context Attributes
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.conversation.id` | string | Conversation/session/thread identifier | Standard |
+| `gen_ai.conversation.id` | string | Conversation/session/thread identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.data_source.id` | string | Data source identifier (for RAG/retrieval) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#retrievals) |
 | `gen_ai.association.properties.<key>` | any | Custom propagated key-value properties | **SDOT extension** |
 
 ### Token Usage Attributes
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.usage.input_tokens` | int | Input token count | Standard |
-| `gen_ai.usage.output_tokens` | int | Output token count | Standard |
-| `gen_ai.usage.cache_creation.input_tokens` | int | Tokens written to provider cache | Standard |
-| `gen_ai.usage.cache_read.input_tokens` | int | Tokens served from provider cache | Standard |
+| `gen_ai.usage.input_tokens` | int | Input token count | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.usage.output_tokens` | int | Output token count | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.usage.cache_creation.input_tokens` | int | Tokens written to provider cache | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.usage.cache_read.input_tokens` | int | Tokens served from provider cache | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.usage.reasoning_tokens` | int | Reasoning/thinking tokens (e.g., OpenAI o1) | **SDOT extension** |
 
 ### Request Parameters
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.request.temperature` | double | Temperature | Standard |
-| `gen_ai.request.top_p` | double | Top-p sampling | Standard |
-| `gen_ai.request.top_k` | double | Top-k sampling | Standard |
-| `gen_ai.request.max_tokens` | int | Max tokens to generate | Standard |
-| `gen_ai.request.frequency_penalty` | double | Frequency penalty | Standard |
-| `gen_ai.request.presence_penalty` | double | Presence penalty | Standard |
-| `gen_ai.request.stop_sequences` | string[] | Stop sequences | Standard |
-| `gen_ai.request.seed` | int | Random seed | Standard |
-| `gen_ai.request.stream` | boolean | Streaming mode | Standard |
-| `gen_ai.request.choice_count` | int | Number of completions | Standard |
-| `gen_ai.request.encoding_formats` | string[] | Embedding encoding formats | Standard |
+| `gen_ai.request.temperature` | double | Temperature | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.top_p` | double | Top-p sampling | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.top_k` | double | Top-k sampling | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.max_tokens` | int | Max tokens to generate | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.frequency_penalty` | double | Frequency penalty | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.presence_penalty` | double | Presence penalty | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.stop_sequences` | string[] | Stop sequences | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.seed` | int | Random seed | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.stream` | boolean | Streaming mode | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.choice.count` | int | Number of completions to return | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.request.encoding_formats` | string[] | Embedding encoding formats | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#embeddings) |
+| `gen_ai.request.structured_output_schema` | string | JSON schema for structured output | **SDOT extension** |
+| `gen_ai.request.reasoning_effort` | string | Reasoning effort level (e.g., OpenAI o1 `low`/`medium`/`high`) | **SDOT extension** |
+| `gen_ai.request.reasoning_summary` | string | Reasoning summary mode | **SDOT extension** |
 
 ### Response Attributes
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.response.finish_reasons` | string[] | Why the model stopped generating | Standard |
-| `gen_ai.response.time_to_first_chunk` | double | Time to first streamed token (seconds) | Standard |
+| `gen_ai.response.finish_reasons` | string[] | Why the model stopped generating | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.response.time_to_first_chunk` | double | Time to first streamed token (seconds) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.response.reasoning_effort` | string | Actual reasoning effort used in response | **SDOT extension** |
 
 ### Tool Execution Attributes
 
+> Upstream spec: [gen-ai-spans.md#execute-tool](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span)
+
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.tool.name` | string | Tool/function name | Standard |
-| `gen_ai.tool.call.id` | string | Tool call identifier | Standard |
-| `gen_ai.tool.type` | string | Type: `function`, `extension`, `datastore` | Standard |
-| `gen_ai.tool.description` | string | Tool description | Standard |
-| `gen_ai.tool.call.arguments` | any | Function arguments (opt-in) | Standard |
-| `gen_ai.tool.call.result` | any | Function result (opt-in) | Standard |
-| `gen_ai.tool.definitions` | any | JSON-serialized tool schemas (opt-in) | Standard |
+| `gen_ai.tool.name` | string | Tool/function name | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `gen_ai.tool.call.id` | string | Tool call identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `gen_ai.tool.type` | string | Type: `function`, `extension`, `datastore` | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `gen_ai.tool.description` | string | Tool description | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `gen_ai.tool.call.arguments` | any | Function arguments (opt-in) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `gen_ai.tool.call.result` | any | Function result (opt-in) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span) |
+| `gen_ai.tool.definitions` | any | JSON-serialized tool schemas (opt-in) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
 
 ### Content Capture Attributes (Opt-In)
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.input.messages` | any | JSON-serialized input messages | Standard |
-| `gen_ai.output.messages` | any | JSON-serialized output messages | Standard |
-| `gen_ai.system_instructions` | any | System prompt/instructions | Standard |
+| `gen_ai.input.messages` | any | JSON-serialized input messages | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.output.messages` | any | JSON-serialized output messages | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `gen_ai.system_instructions` | any | System prompt/instructions | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
 
 ### Retrieval Attributes
 
+> Upstream spec: [gen-ai-spans.md#retrievals](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#retrievals)
+
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.retrieval.query.text` | string | Query text (opt-in) | Standard |
-| `gen_ai.retrieval.documents` | any | Retrieved documents (opt-in) | Standard |
+| `gen_ai.retrieval.query.text` | string | Query text (opt-in) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#retrievals) |
+| `gen_ai.retrieval.documents` | any | Retrieved documents (opt-in) | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#retrievals) |
 | `gen_ai.retrieval.top_k` | int | Top K results requested | **SDOT extension** |
 | `gen_ai.retrieval.documents_retrieved` | int | Number of documents retrieved | **SDOT extension** |
 | `gen_ai.retrieval.type` | string | Retrieval type | **SDOT extension** |
-| `gen_ai.data_source.id` | string | Data source identifier | Standard |
+| `gen_ai.data_source.id` | string | Data source identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#retrievals) |
 
 ### Embedding Attributes
 
+> Upstream spec: [gen-ai-spans.md#embeddings](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#embeddings)
+
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `gen_ai.embeddings.dimension.count` | int | Embedding dimension count | Standard |
+| `gen_ai.embeddings.dimension.count` | int | Embedding dimension count | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#embeddings) |
 | `gen_ai.embeddings.input.texts` | string[] | Input texts to embed | **SDOT extension** |
 
+### OpenAI-Specific Attributes
+
+> Upstream spec: [openai.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md)
+
+| Attribute | Type | Description | OTel Semconv |
+|---|---|---|---|
+| `gen_ai.openai.request.service_tier` | string | Requested OpenAI service tier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md) |
+| `gen_ai.openai.response.service_tier` | string | Actual OpenAI service tier used | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md) |
+| `gen_ai.openai.response.system_fingerprint` | string | OpenAI system fingerprint | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md) |
+
 ### Finish Reason (Agentic AI)
+
+> Source: [attributes.py `GEN_AI_FINISH_REASON*`](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/attributes.py)
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
@@ -353,20 +425,32 @@ export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS="user.tier,session.
 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
-| `server.address` | string | Server address | Standard |
-| `server.port` | int | Server port | Standard |
+| `server.address` | string | Server address | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+| `server.port` | int | Server port | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md) |
+
+### Internal / Security Attributes
+
+| Attribute | Type | Description | OTel Semconv |
+|---|---|---|---|
+| `gen_ai.conversation_root` | boolean | Marks the invocation-level root GenAI span | **SDOT internal** |
+| `gen_ai.command` | string | Root-level resume detection command | **SDOT internal** |
+| `gen_ai.security.event_id` | string | Cisco AI Defense security event identifier | **SDOT extension** |
 
 ---
 
 ## 7. Metrics Reference
 
+> Upstream spec: [gen-ai-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md)
+>
+> Source: [instruments.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/instruments.py), [emitters/metrics.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/metrics.py)
+
 ### Standard Gen AI Client Metrics
 
-| Metric | Type | Unit | Description | OTel Semconv |
+| Metric | Type | Unit | Description | Upstream Spec |
 |---|---|---|---|---|
-| `gen_ai.client.operation.duration` | Histogram | `s` | LLM/embedding/retrieval operation duration | Standard |
-| `gen_ai.client.token.usage` | Histogram | `{token}` | Input and output token counts | Standard |
-| `gen_ai.client.operation.time_to_first_chunk` | Histogram | `s` | Time to first streamed token | Standard |
+| `gen_ai.client.operation.duration` | Histogram | `s` | LLM/embedding/retrieval operation duration | [gen-ai-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiclientoperationduration) |
+| `gen_ai.client.token.usage` | Histogram | `{token}` | Input and output token counts | [gen-ai-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiclienttokenusage) |
+| `gen_ai.client.operation.time_to_first_chunk` | Histogram | `s` | Time to first streamed token | [gen-ai-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiclientoperationtime_to_first_chunk) |
 
 **Metric dimensions**: `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `server.address`, `error.type` (if error), plus agent context when applicable.
 
@@ -383,17 +467,23 @@ export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS="user.tier,session.
 
 ### MCP Metrics
 
+> Upstream spec: [mcp.md#metrics](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md#metrics)
+
 | Metric | Type | Unit | Description | OTel Semconv |
 |---|---|---|---|---|
-| `mcp.client.operation.duration` | Histogram | `s` | MCP client request/notification duration | Standard |
-| `mcp.server.operation.duration` | Histogram | `s` | MCP server request processing duration | Standard |
-| `mcp.client.session.duration` | Histogram | `s` | MCP client session duration | Standard |
-| `mcp.server.session.duration` | Histogram | `s` | MCP server session duration | Standard |
+| `mcp.client.operation.duration` | Histogram | `s` | MCP client request/notification duration | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md#metric-mcpclientoperationduration) |
+| `mcp.server.operation.duration` | Histogram | `s` | MCP server request processing duration | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md#metric-mcpserveroperationduration) |
+| `mcp.client.session.duration` | Histogram | `s` | MCP client session duration | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md#metric-mcpclientsessionduration) |
+| `mcp.server.session.duration` | Histogram | `s` | MCP server session duration | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md#metric-mcpserversessionduration) |
 | `mcp.tool.output.size` | Histogram | (bytes) | MCP tool output payload size | **SDOT extension** |
 
 ---
 
 ## 8. Events Reference
+
+> Upstream spec: [gen-ai-events.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md)
+>
+> Source: [emitters/content_events.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/content_events.py)
 
 ### `gen_ai.client.inference.operation.details`
 
@@ -402,6 +492,8 @@ A structured log record capturing the full details of an LLM call, including inp
 Contains all attributes from the parent span plus `gen_ai.input.messages` and `gen_ai.output.messages` in structured form.
 
 ### `gen_ai.evaluation.result`
+
+> Upstream spec: [gen-ai-events.md#event-gen_aievaluationresult](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md#event-gen_aievaluationresult)
 
 Captures evaluation scores for Gen AI outputs.
 
@@ -416,6 +508,8 @@ Captures evaluation scores for Gen AI outputs.
 ---
 
 ## 9. MCP (Model Context Protocol) Telemetry
+
+> Upstream spec: [mcp.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md)
 
 SDOT instruments MCP tool calls following the OTel MCP semantic conventions. MCP spans integrate into the Gen AI span hierarchy:
 
@@ -449,7 +543,7 @@ In single-metric mode (default, `OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_MET
 - `gen_ai.evaluation.score` -- histogram with `gen_ai.evaluation.name` as a dimension
 
 In legacy mode:
-- `gen_ai.evaluation.{metric_type}` -- separate histogram per evaluation type
+- `gen_ai.evaluation.{metric_type}` -- separate histogram per evaluation type (relevance, hallucination, sentiment, toxicity, bias)
 
 ---
 
@@ -457,14 +551,14 @@ In legacy mode:
 
 ### Attributes Aligned with Upstream OTel
 
-These attributes follow the current OTel Gen AI semantic conventions exactly:
+These attributes follow the current [OTel Gen AI semantic conventions](https://github.com/open-telemetry/semantic-conventions/tree/main/docs/gen-ai) exactly:
 
 | Category | Attributes |
 |---|---|
-| **Core** | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id` |
+| **Core** | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.output.type` |
 | **Agent** | `gen_ai.agent.name`, `gen_ai.agent.id`, `gen_ai.agent.description`, `gen_ai.agent.version` |
 | **Workflow** | `gen_ai.workflow.name` |
-| **Conversation** | `gen_ai.conversation.id` |
+| **Conversation** | `gen_ai.conversation.id`, `gen_ai.data_source.id` |
 | **Tokens** | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.usage.cache_read.input_tokens` |
 | **Request params** | `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.request.top_k`, `gen_ai.request.max_tokens`, `gen_ai.request.frequency_penalty`, `gen_ai.request.presence_penalty`, `gen_ai.request.stop_sequences`, `gen_ai.request.seed`, `gen_ai.request.stream`, `gen_ai.request.choice.count`, `gen_ai.request.encoding_formats` |
 | **Response** | `gen_ai.response.finish_reasons`, `gen_ai.response.time_to_first_chunk` |
@@ -473,6 +567,7 @@ These attributes follow the current OTel Gen AI semantic conventions exactly:
 | **Retrieval** | `gen_ai.retrieval.query.text`, `gen_ai.retrieval.documents`, `gen_ai.data_source.id` |
 | **Embedding** | `gen_ai.embeddings.dimension.count` |
 | **Evaluation** | `gen_ai.evaluation.name`, `gen_ai.evaluation.score.value`, `gen_ai.evaluation.score.label`, `gen_ai.evaluation.explanation` |
+| **OpenAI** | `gen_ai.openai.request.service_tier`, `gen_ai.openai.response.service_tier`, `gen_ai.openai.response.system_fingerprint` |
 | **Server** | `server.address`, `server.port` |
 
 ### SDOT Extensions (Ahead of Upstream)
@@ -488,6 +583,8 @@ These attributes are defined by SDOT and are not yet part of the upstream OTel s
 | **Context propagation** | `gen_ai.association.properties.<key>` | Custom business context propagation |
 | **Retrieval extended** | `gen_ai.retrieval.type`, `gen_ai.retrieval.top_k`, `gen_ai.retrieval.documents_retrieved` | Richer RAG telemetry |
 | **Embedding extended** | `gen_ai.embeddings.input.texts` | Input text capture for embeddings |
+| **Reasoning** | `gen_ai.usage.reasoning_tokens`, `gen_ai.request.reasoning_effort`, `gen_ai.request.reasoning_summary`, `gen_ai.response.reasoning_effort` | Reasoning model support (o1, etc.) |
+| **Structured output** | `gen_ai.request.structured_output_schema` | JSON schema for structured output |
 | **Finish reason** | `gen_ai.finish_reason`, `gen_ai.finish_reason_description` | Agentic completion reasons (interrupted, cancelled) |
 | **Evaluation extended** | `gen_ai.evaluation.sampled`, `gen_ai.evaluation.attributes.<key>` | Evaluation sampling and custom evaluator attributes |
 | **Security** | `gen_ai.security.event_id` | Cisco AI Defense integration |
@@ -537,3 +634,19 @@ SDOT provides auto-instrumentation for the following AI frameworks:
 | **Weaviate** | `opentelemetry-instrumentation-weaviate` | Vector database operations |
 | **FastMCP** | `opentelemetry-instrumentation-fastmcp` | MCP tool execution |
 | **AI Defense** | `opentelemetry-instrumentation-aidefense` | Cisco AI Defense security scanning |
+
+---
+
+## Legacy Attribute Mapping
+
+The file [semconv_ai.py](../instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/instrumentation/langchain/semconv_ai.py) contains legacy attribute constants from the OpenLLMetry project. These are being migrated to the canonical [attributes.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/attributes.py). Key legacy mappings:
+
+| Legacy (`semconv_ai.py`) | Current SDOT | Notes |
+|---|---|---|
+| `gen_ai.system` | `gen_ai.provider.name` | Provider identification |
+| `gen_ai.prompt` / `gen_ai.completion` | `gen_ai.input.messages` / `gen_ai.output.messages` | Structured message format |
+| `gen_ai.usage.prompt_tokens` | `gen_ai.usage.input_tokens` | Renamed |
+| `gen_ai.usage.completion_tokens` | `gen_ai.usage.output_tokens` | Renamed |
+| `llm.request.type` | `gen_ai.operation.name` | Operation classification |
+| `llm.is_streaming` | `gen_ai.request.stream` | Streaming flag |
+| `traceloop.association.properties` | `gen_ai.association.properties.<key>` | Context propagation |
