@@ -37,7 +37,7 @@ def setup_telemetry():
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.resources import Resource
 
-    service_name = os.environ.get("OTEL_SERVICE_NAME", "mcp-calculator-server")
+    service_name = os.environ.get("MCP_SERVER_SERVICE_NAME", "mcp-calculator-server")
 
     # Create resource with service info
     resource = Resource.create(

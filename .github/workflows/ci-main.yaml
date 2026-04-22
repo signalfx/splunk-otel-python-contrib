@@ -126,12 +126,10 @@ jobs:
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-weaviate/tests/ -v
 
-      - name: Pin util-genai for fastmcp tests
+      - name: Install fastmcp for instrumentation tests
         if: always()
         run: |
-          pip uninstall -y splunk-otel-util-genai
-          pip install splunk-otel-util-genai==0.1.8
-          pip install "fastmcp>=2.0.0,<=2.14.7"
+          pip install "fastmcp>=3.0.0,<4"
 
       - name: Run tests - opentelemetry-instrumentation-fastmcp
         if: always()

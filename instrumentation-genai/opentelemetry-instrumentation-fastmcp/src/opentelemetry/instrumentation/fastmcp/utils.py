@@ -18,6 +18,7 @@ import functools
 import json
 import logging
 import os
+from importlib import import_module
 from typing import Any, Optional
 
 _LOGGER = logging.getLogger(__name__)
@@ -140,6 +141,40 @@ def is_instrumentation_enabled() -> bool:
     """Check if GenAI instrumentation is enabled."""
     env_value = os.getenv("OTEL_INSTRUMENTATION_GENAI_ENABLE", "true").lower()
     return env_value in ("true", "1", "yes", "on")
+
+
+def detect_transport(instance: object) -> str:
+    """Best-effort transport detection from a FastMCP Client or MCP Server.
+
+    Detection strategy (checked in order):
+    1. Client-side: inspect ``instance.transport`` class name for SSE/streamable.
+    2. Server-side: read ``fastmcp.settings.transport`` which reflects the
+       value passed to ``FastMCP.run()`` (or its env-var default).
+    3. Fallback: ``"pipe"`` (stdio).
+
+    Returns:
+        ``"tcp"`` for SSE / streamable-HTTP transports, ``"pipe"`` otherwise.
+    """
+    _TCP_KEYWORDS = ("sse", "streamable", "http")
+
+    try:
+        transport_obj = getattr(instance, "transport", None)
+        if transport_obj is not None:
+            cls_name = type(transport_obj).__name__.lower()
+            if any(kw in cls_name for kw in _TCP_KEYWORDS):
+                return "tcp"
+    except Exception:
+        pass
+
+    try:
+        _settings = import_module("fastmcp.settings")
+        val = getattr(_settings, "transport", None)
+        if isinstance(val, str) and any(kw in val.lower() for kw in _TCP_KEYWORDS):
+            return "tcp"
+    except Exception:
+        pass
+
+    return "pipe"
 
 
 def extract_tool_info(args: tuple, kwargs: dict) -> tuple[str, Any]:
