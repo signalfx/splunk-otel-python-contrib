@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1]
+
+### Fixed
+- **Relaxed `splunk-otel-util-genai` dependency** — bumped from `>=0.1.4,<=0.1.8` to `>=0.1.13,<0.2`. The previous pin was inconsistent with the 0.2.0 implementation, which already depends on APIs added in util-genai 0.1.13 (`MCPOperation`, `MCPRequestContext`, `sdot_mcp_server_name`, `start_mcp_operation` / `stop_mcp_operation` lifecycle, and the async-context fix in `TelemetryHandler._push_current_span`). The outdated upper bound forced `pip install --no-deps` workarounds for users installing from source.
+
 ## [0.2.0]
 
 ### Added

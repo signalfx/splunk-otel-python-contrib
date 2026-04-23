@@ -4,14 +4,12 @@ All notable changes to this repository are documented in this file.
 
 ## [Unreleased]
 
-### Fixed
-- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
-- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
-
 ## Version 0.1.13
 
 ### Fixed
 - **OTel context now attached in async contexts** — Removed the `_is_async_context()` guard from `_push_current_span`. Context is now always attached via `context_api.attach()` regardless of sync/async, enabling downstream instrumentations (HTTP, DB, MCP transport) to see the correct parent span. `_pop_current_span` handles detach failures gracefully for cross-task / `copy_context` scenarios.
+- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
+- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
 
 ### Added
 - **`MCPOperation` type** — New dataclass for non-tool-call MCP operations (`tools/list`, `resources/read`, `prompts/get`, etc.). Produces spans with `{mcp.method.name} {target}` naming and CLIENT/SERVER SpanKind.
