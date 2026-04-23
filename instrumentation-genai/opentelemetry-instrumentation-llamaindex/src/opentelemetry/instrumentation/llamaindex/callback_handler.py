@@ -343,13 +343,6 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 if context_agent and hasattr(context_agent, "_agent_tools"):
                     tools = getattr(context_agent, "_agent_tools", [])
 
-            # Second fallback: walk parent chain to find the nearest agent with tools
-            # (ContextVar may not propagate in all execution contexts)
-            if not tools:
-                nearest_agent = self._find_nearest_agent(parent_id)
-                if nearest_agent and hasattr(nearest_agent, "_agent_tools"):
-                    tools = getattr(nearest_agent, "_agent_tools", [])
-
             if tools:
                 for tool in tools:
                     # LlamaIndex FunctionTool stores metadata in tool.metadata
