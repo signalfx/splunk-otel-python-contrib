@@ -23,16 +23,20 @@ dependencies = [
   "opentelemetry-api ~= 1.38.0.dev0",
   "opentelemetry-instrumentation ~= 0.59b0.dev0",
   "opentelemetry-semantic-conventions ~= 0.59b0.dev0",
-  "splunk-otel-util-genai>=0.1.4",
+  "splunk-otel-util-genai>=0.1.4,<=0.1.8",
   "wrapt>=1.0.0",
 ]
 
 [project.optional-dependencies]
+# Note: fastmcp transitively depends on the `mcp` SDK (currently v1.x).
+# When mcp >= 2.x ships (with native OTel support via PRs #2298/#2381),
+# the transport_instrumentor bridge can be removed via runtime feature
+# detection — no version pin change needed here.  See README.rst for details.
 instruments = [
-  "fastmcp >= 2.0.0",
+  "fastmcp >= 3.0.0, < 4",
 ]
 test = [
-  "fastmcp >= 2.0.0",
+  "fastmcp >= 3.0.0, < 4",
   "pytest >= 7.0.0",
   "pytest-asyncio >= 0.21.0",
 ]
