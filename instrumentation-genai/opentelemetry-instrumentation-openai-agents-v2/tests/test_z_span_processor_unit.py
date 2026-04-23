@@ -871,3 +871,169 @@ def test_on_span_error_nonexistent_span(processor_setup):
 
     # Verify no state was created
     assert str(unknown_span.span_id) not in processor._invocations
+
+
+def test_llm_invocation_fields_populated(processor_setup):
+    """Test that LLMInvocation fields are populated from span_data.
+
+    Verifies that _handle_llm_span_end correctly extracts:
+    - request_temperature from model_config
+    - request_max_tokens from model_config
+    - response_finish_reasons from output
+
+    Note: tool_definitions requires OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true
+    environment variable to be set BEFORE handler initialization.
+    """
+    processor, exporter = processor_setup
+
+    # Create trace and agent span as parent
+    trace = FakeTrace(
+        name="test-workflow",
+        trace_id="trace-llm-fields",
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:05Z",
+    )
+    processor.on_trace_start(trace)
+
+    agent_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="agent-span",
+        span_data=AgentSpanData(operation="invoke_agent", name="TestAgent"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:04Z",
+    )
+    processor.on_span_start(agent_span)
+
+    # Create generation span with model_config and output
+    model_config = {
+        "temperature": 0.7,
+        "max_tokens": 256,
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather info",
+                },
+            }
+        ],
+    }
+    generation_data = GenerationSpanData(
+        input=[{"role": "user", "content": "Hello"}],
+        output=[
+            {"finish_reason": "stop"},
+            {"finish_reason": "length"},
+        ],
+        model="gpt-4o",
+        model_config=model_config,
+        usage={"prompt_tokens": 10, "completion_tokens": 20},
+    )
+    generation_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="llm-span",
+        parent_id=agent_span.span_id,
+        span_data=generation_data,
+        started_at="2025-01-01T00:00:01Z",
+        ended_at="2025-01-01T00:00:02Z",
+    )
+
+    processor.on_span_start(generation_span)
+    processor.on_span_end(generation_span)
+    processor.on_span_end(agent_span)
+    processor.on_trace_end(trace)
+
+    # Find the LLM span in exported spans
+    exported_spans = exporter.get_finished_spans()
+    llm_spans = [s for s in exported_spans if "gpt-4o" in s.name]
+    assert len(llm_spans) >= 1, "Expected at least one LLM span"
+
+    llm_span = llm_spans[0]
+    attrs = dict(llm_span.attributes)
+
+    # Verify the attributes are present on the exported span
+    assert attrs.get("gen_ai.request.temperature") == 0.7
+    assert attrs.get("gen_ai.request.max_tokens") == 256
+    assert attrs.get("gen_ai.response.finish_reasons") == ("stop", "length")
+
+
+def test_llm_invocation_tool_definitions_populated(processor_setup):
+    """Test that tool_definitions is set on LLMInvocation from span_data.
+
+    Verifies that _handle_llm_span_end correctly extracts tool_definitions
+    from model_config. We capture the invocation passed to handler.stop_llm
+    to verify the field is populated.
+    """
+    processor, exporter = processor_setup
+
+    # Track invocations passed to stop_llm
+    captured_invocations = []
+    original_stop_llm = processor._handler.stop_llm
+
+    def capturing_stop_llm(invocation):
+        captured_invocations.append(invocation)
+        return original_stop_llm(invocation)
+
+    processor._handler.stop_llm = capturing_stop_llm
+
+    # Create trace and agent span as parent
+    trace = FakeTrace(
+        name="test-workflow",
+        trace_id="trace-tool-defs",
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:05Z",
+    )
+    processor.on_trace_start(trace)
+
+    agent_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="agent-span",
+        span_data=AgentSpanData(operation="invoke_agent", name="TestAgent"),
+        started_at="2025-01-01T00:00:00Z",
+        ended_at="2025-01-01T00:00:04Z",
+    )
+    processor.on_span_start(agent_span)
+
+    # Create generation span with tools in model_config
+    model_config = {
+        "temperature": 0.7,
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather info",
+                },
+            }
+        ],
+    }
+    generation_data = GenerationSpanData(
+        input=[{"role": "user", "content": "Hello"}],
+        output=[{"finish_reason": "stop"}],
+        model="gpt-4o",
+        model_config=model_config,
+    )
+    generation_span = FakeSpan(
+        trace_id=trace.trace_id,
+        span_id="llm-span",
+        parent_id=agent_span.span_id,
+        span_data=generation_data,
+        started_at="2025-01-01T00:00:01Z",
+        ended_at="2025-01-01T00:00:02Z",
+    )
+
+    processor.on_span_start(generation_span)
+    processor.on_span_end(generation_span)
+    processor.on_span_end(agent_span)
+    processor.on_trace_end(trace)
+
+    # Verify stop_llm was called with an invocation that has tool_definitions
+    assert len(captured_invocations) == 1, "Expected one LLM invocation"
+    invocation = captured_invocations[0]
+
+    # Verify tool_definitions was extracted and set
+    assert invocation.tool_definitions is not None, (
+        "tool_definitions should be set"
+    )
+    parsed_tools = json.loads(invocation.tool_definitions)
+    assert len(parsed_tools) == 1
+    assert parsed_tools[0]["function"]["name"] == "get_weather"

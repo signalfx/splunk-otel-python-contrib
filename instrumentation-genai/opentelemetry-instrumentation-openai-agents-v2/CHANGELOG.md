@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Populate LLMInvocation semantic convention fields from span_data:
+  - `gen_ai.request.temperature` from model_config
+  - `gen_ai.request.max_tokens` from model_config
+  - `gen_ai.response.finish_reasons` from output
+  - `gen_ai.tool.definitions` from model_config (when capture enabled)
+
 ## [0.1.3] - 2026-04-07
 
 ### Fixed

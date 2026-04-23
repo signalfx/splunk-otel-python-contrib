@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.12
+
+### Fixed
+- **Pin langgraph <= 1.1.6** — `langgraph` 1.1.7 introduced a breaking change requiring all callback handlers to inherit from `GraphCallbackHandler`. Pinned upper bound until proper support is added.
+
 ## Version 0.1.11
 
 ### Added

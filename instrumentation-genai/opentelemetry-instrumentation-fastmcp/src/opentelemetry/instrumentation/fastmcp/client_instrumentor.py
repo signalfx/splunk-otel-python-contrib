@@ -150,6 +150,7 @@ class ClientInstrumentor:
                     system="mcp",
                 )
                 session.attributes["gen_ai.operation.name"] = "mcp.client_session"
+                session.attributes["network.transport"] = "pipe"  # stdio = pipe
 
                 instrumentor._active_sessions[id(instance)] = session
                 handler.start_agent(session)
@@ -172,6 +173,11 @@ class ClientInstrumentor:
 
                 if session:
                     if exc_type:
+                        session.attributes["error.type"] = (
+                            exc_type.__qualname__
+                            if isinstance(exc_type, type)
+                            else str(exc_type)
+                        )
                         handler.fail_agent(
                             session,
                             Error(
@@ -233,12 +239,8 @@ class ClientInstrumentor:
 
             handler.start_tool_call(tool_call)
 
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-
-                duration = time.time() - start_time
-                tool_call.duration_s = duration
 
                 output_size = 0
                 if result:
@@ -257,8 +259,6 @@ class ClientInstrumentor:
                 return result
 
             except Exception as e:
-                duration = time.time() - start_time
-                tool_call.duration_s = duration
                 tool_call.is_error = True
                 tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))

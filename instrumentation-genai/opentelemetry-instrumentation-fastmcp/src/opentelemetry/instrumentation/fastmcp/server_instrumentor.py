@@ -15,7 +15,7 @@
 """FastMCP server-side instrumentation."""
 
 import logging
-import time
+from contextvars import ContextVar
 from typing import Optional
 from uuid import uuid4
 
@@ -40,6 +40,22 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# FastMCP 3.x call_tool recurses through middleware (run_middleware=True →
+# middleware → self.call_tool(..., run_middleware=False)).  This guard
+# ensures only the outermost call creates a span.
+_IN_TOOL_CALL: ContextVar[bool] = ContextVar("_in_tool_call", default=False)
+
+
+def _enrich_from_request_context(op: MCPOperation) -> None:
+    """Copy transport-layer metadata from the ContextVar into an operation."""
+    ctx = get_mcp_request_context()
+    if ctx is None:
+        return
+    if ctx.jsonrpc_request_id and op.jsonrpc_request_id is None:
+        op.jsonrpc_request_id = ctx.jsonrpc_request_id
+    if ctx.network_transport and op.network_transport is None:
+        op.network_transport = ctx.network_transport
 
 
 def _has_native_telemetry() -> bool:
@@ -80,7 +96,7 @@ def _enrich_from_request_context(op: MCPOperation) -> None:
 
 
 class ServerInstrumentor:
-    """Handles FastMCP server-side instrumentation.
+    """Handles FastMCP 3.x server-side instrumentation.
 
     Instruments:
     - FastMCP.__init__: Capture server name for context
@@ -119,11 +135,39 @@ class ServerInstrumentor:
         )
         register_post_import_hook(
             lambda _: wrap_function_wrapper(
-                "fastmcp.tools.tool_manager",
-                "ToolManager.call_tool",
+                "mcp.server.lowlevel.server",
+                "Server.run",
+                self._server_run_wrapper(),
+            ),
+            "mcp.server.lowlevel.server",
+        )
+
+        # Wrap FastMCP server methods (3.x API surface).
+        register_post_import_hook(
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.call_tool",
                 self._tool_call_wrapper(),
             ),
-            "fastmcp.tools.tool_manager",
+            "fastmcp.server.server",
+        )
+
+        register_post_import_hook(
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.read_resource",
+                self._read_resource_wrapper(),
+            ),
+            "fastmcp.server.server",
+        )
+
+        register_post_import_hook(
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.render_prompt",
+                self._render_prompt_wrapper(),
+            ),
+            "fastmcp.server.server",
         )
 
         register_post_import_hook(
@@ -223,8 +267,8 @@ class ServerInstrumentor:
             _enrich_from_request_context(tool_call)
 
             handler.start_tool_call(tool_call)
+            token = _IN_TOOL_CALL.set(True)
 
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
 
@@ -257,6 +301,8 @@ class ServerInstrumentor:
                 tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
                 raise
+            finally:
+                _IN_TOOL_CALL.reset(token)
 
         return traced_tool_call
 

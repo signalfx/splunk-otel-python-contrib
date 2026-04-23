@@ -236,7 +236,7 @@ class MetricsEmitter(EmitterMeta):
             self._record_workflow_metrics(obj)
             return
         if isinstance(obj, AgentInvocation):
-            self._record_agent_metrics(obj)
+            self._record_agent_metrics(obj, error=error)
             return
         # Step metrics removed
 
@@ -310,7 +310,7 @@ class MetricsEmitter(EmitterMeta):
         if isinstance(obj, ToolCall):
             tool_invocation = obj
             metric_attrs = _get_metric_attributes(
-                tool_invocation.name,
+                None,
                 None,
                 GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                 tool_invocation.provider,
@@ -409,7 +409,9 @@ class MetricsEmitter(EmitterMeta):
             duration, attributes=metric_attrs, context=context
         )
 
-    def _record_agent_metrics(self, agent: AgentInvocation) -> None:
+    def _record_agent_metrics(
+        self, agent: AgentInvocation, error: Optional[Error] = None
+    ) -> None:
         """Record metrics for an agent operation."""
         if agent.end_time is None:
             return
@@ -439,6 +441,72 @@ class MetricsEmitter(EmitterMeta):
         self._agent_duration_histogram.record(
             duration, attributes=metric_attrs, context=context
         )
+
+        # Additionally record MCP session duration if this is an MCP session
+        if agent.system == "mcp" and agent.agent_type in (
+            "mcp_client",
+            "mcp_server",
+        ):
+            self._record_mcp_session_metrics(agent, error=error)
+
+    def _record_mcp_session_metrics(
+        self, agent: AgentInvocation, error: Optional[Error] = None
+    ) -> None:
+        """Record mcp.client.session.duration or mcp.server.session.duration.
+
+        Per OTel semconv: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+
+        Attributes (from agent.attributes):
+        - error.type (conditionally required, if error)
+        - network.transport (recommended)
+        - mcp.protocol.version (recommended)
+        - server.address (recommended)
+        - server.port (recommended)
+        """
+        if agent.end_time is None:
+            return
+        duration = agent.end_time - agent.start_time
+
+        # Build attributes per semconv
+        mcp_attrs: dict[str, Any] = {}
+
+        # Conditionally required: error.type
+        error_type = agent.attributes.get("error.type")
+        if error_type:
+            mcp_attrs["error.type"] = error_type
+        elif error is not None and getattr(error, "type", None) is not None:
+            mcp_attrs["error.type"] = error.type.__qualname__
+
+        # Recommended attributes
+        for attr_key in (
+            "network.transport",
+            "mcp.protocol.version",
+            "network.protocol.name",
+            "network.protocol.version",
+            "server.address",
+            "server.port",
+        ):
+            val = agent.attributes.get(attr_key)
+            if val is not None:
+                mcp_attrs[attr_key] = val
+
+        # Get span context for metric correlation
+        context = None
+        span = getattr(agent, "span", None)
+        if span is not None:
+            try:
+                context = trace.set_span_in_context(span)
+            except (ValueError, RuntimeError):  # pragma: no cover - defensive
+                context = None
+
+        # Choose client or server histogram
+        is_client = agent.agent_type == "mcp_client"
+        histogram = (
+            self._mcp_client_session_duration
+            if is_client
+            else self._mcp_server_session_duration
+        )
+        histogram.record(duration, attributes=mcp_attrs, context=context)
 
     def _record_retrieval_metrics(
         self, retrieval: RetrievalInvocation, error: Optional[Error] = None

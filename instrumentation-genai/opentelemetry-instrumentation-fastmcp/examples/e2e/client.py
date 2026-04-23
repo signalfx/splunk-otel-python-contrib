@@ -113,9 +113,10 @@ async def run_calculator_demo(server_url: str | None = None):
 
     Args:
         server_url: Optional URL of external MCP server (e.g., http://localhost:8000/sse).
-                   If not provided, spawns server.py as a subprocess.
+                   If not provided, spawns server_instrumented.py as a subprocess.
     """
     from fastmcp import Client
+    from fastmcp.client.transports.stdio import PythonStdioTransport
 
     print("\n" + "=" * 60)
     print("MCP Calculator Client - OpenTelemetry Instrumentation Demo")
@@ -126,12 +127,21 @@ async def run_calculator_demo(server_url: str | None = None):
         print(f"\n🌐 Connecting to external server: {server_url}")
         server_target = server_url
     else:
-        # Spawn server as subprocess
-        server_script = Path(__file__).parent / "server.py"
+        # Spawn instrumented server as subprocess.
+        # MCP SDK's default env only inherits a small allowlist (HOME, PATH,
+        # etc.), so OTEL_* vars must be passed explicitly.
+        server_script = Path(__file__).parent / "server_instrumented.py"
         if not server_script.exists():
             raise FileNotFoundError(f"Server script not found: {server_script}")
         print(f"\n📡 Spawning server subprocess: {server_script.name}")
-        server_target = server_script
+        server_env = {
+            k: v
+            for k, v in os.environ.items()
+            if k.startswith(("OTEL_", "VIRTUAL_ENV", "FASTMCP_"))
+            or k in ("HOME", "PATH", "SHELL", "TERM", "USER", "LOGNAME")
+        }
+        server_env["OTEL_SERVICE_NAME"] = "mcp-calculator-server"
+        server_target = PythonStdioTransport(script_path=server_script, env=server_env)
 
     # Connect to the server using FastMCP Client
     async with Client(server_target) as client:
