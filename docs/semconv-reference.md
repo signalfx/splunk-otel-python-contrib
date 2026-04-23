@@ -50,7 +50,7 @@ This document describes the semantic conventions used in the Splunk Distribution
 
 ## 1. Telemetry Types Overview
 
-SDOT generates four types of telemetry for Gen AI operations:
+SDOT generates three types of telemetry for Gen AI operations:
 
 ### Spans (Distributed Traces)
 
@@ -68,17 +68,14 @@ Hierarchical parent-child spans representing the full execution tree of an AI wo
 
 Histogram metrics capturing operation duration, token usage, and evaluation scores. Metrics are dimensioned by operation type, model, provider, and agent context.
 
-### Log Records / Content Events
+### Log Records (Events)
 
 > Upstream spec: [gen-ai-events.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md)
 
-Structured log records capturing the full input/output content of Gen AI operations. Content capture is **disabled by default** and must be opted in.
+Structured log records emitted via the OTel Events API. SDOT produces two categories of events:
 
-### Evaluation Events
-
-> Upstream spec: [gen-ai-events.md `gen_ai.evaluation.result`](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-events.md#event-gen_aievaluationresult)
-
-Structured events capturing quality/accuracy scores for Gen AI outputs, emitted through the OTel Events API.
+- **Content events** (`gen_ai.client.inference.operation.details`) — capture the full input/output content of LLM calls. Content capture is **disabled by default** and must be opted in.
+- **Evaluation events** (`gen_ai.evaluation.result`) — capture quality/accuracy scores for Gen AI outputs from the evaluation pipeline.
 
 ---
 
