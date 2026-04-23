@@ -18,7 +18,10 @@ from contextvars import Token
 from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
+
+if TYPE_CHECKING:
+    from opentelemetry.util.genai.handler import TelemetryHandler
 
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAIAttributes,
@@ -113,6 +116,35 @@ class GenAI:
     association_properties: Dict[str, Any] = field(default_factory=dict)
     sample_for_evaluation: Optional[bool] = field(default=True)
     evaluation_error: Optional[str] = None
+
+    # Back-reference to the handler that started this invocation.
+    # Set automatically by TelemetryHandler.start_*() methods.
+    _handler: Optional["TelemetryHandler"] = field(
+        default=None, repr=False, compare=False
+    )
+
+    def stop(self) -> None:
+        """Finalize the invocation successfully and end its span.
+
+        Delegates to the handler's type-specific stop logic via
+        ``_stop_invocation``.  This is the upstream-compatible API —
+        callers use ``invocation.stop()`` instead of
+        ``handler.stop_llm(invocation)``.
+        """
+        if self._handler is not None:
+            self._handler._stop_invocation(self)
+
+    def fail(self, error: "Error | BaseException") -> None:
+        """Fail the invocation and end its span with error status.
+
+        If *error* is a raw exception, it is wrapped in an ``Error``
+        dataclass automatically.  Delegates to the handler's
+        type-specific fail logic via ``_fail_invocation``.
+        """
+        if isinstance(error, BaseException):
+            error = Error(message=str(error), type=type(error))
+        if self._handler is not None:
+            self._handler._fail_invocation(self, error)
 
     def semantic_convention_attributes(self) -> dict[str, Any]:
         """Return semantic convention attributes defined on this dataclass.

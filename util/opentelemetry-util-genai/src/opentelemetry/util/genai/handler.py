@@ -667,6 +667,7 @@ class TelemetryHandler:
         invocation: LLMInvocation,
     ) -> LLMInvocation:
         """Start an LLM invocation and create a pending span entry."""
+        invocation._handler = self
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
@@ -783,6 +784,7 @@ class TelemetryHandler:
         self, invocation: EmbeddingInvocation
     ) -> EmbeddingInvocation:
         """Start an embedding invocation and create a pending span entry."""
+        invocation._handler = self
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
@@ -846,6 +848,7 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
+        invocation._handler = self
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
@@ -908,6 +911,7 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
+        invocation._handler = self
         _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
@@ -1071,6 +1075,7 @@ class TelemetryHandler:
     # Workflow lifecycle --------------------------------------------------
     def start_workflow(self, workflow: Workflow) -> Workflow:
         """Start a workflow and create a pending span entry."""
+        workflow._handler = self
         self._refresh_capture_content()
         _apply_genai_context(workflow)
         self._inherit_parent_span(workflow)
@@ -1238,6 +1243,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
+        agent._handler = self
         self._refresh_capture_content()
         _apply_genai_context(agent)
         self._inherit_parent_span(agent)
@@ -1317,6 +1323,7 @@ class TelemetryHandler:
     # Step lifecycle ------------------------------------------------------
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
+        step._handler = self
         self._refresh_capture_content()
         _apply_genai_context(step)
         self._inherit_parent_span(step)
@@ -1415,6 +1422,47 @@ class TelemetryHandler:
         if manager is None or not manager.has_evaluators:
             return
         manager.wait_for_all(timeout)  # type: ignore[attr-defined]
+
+    # Internal dispatch for invocation.stop() / invocation.fail() ---------
+    def _stop_invocation(self, obj: Any) -> None:
+        """Internal: dispatch stop to the appropriate type-specific method.
+
+        Called by ``GenAI.stop()`` on the invocation object.
+        """
+        if isinstance(obj, Workflow):
+            self.stop_workflow(obj)
+        elif isinstance(obj, (AgentCreation, AgentInvocation)):
+            self.stop_agent(obj)
+        elif isinstance(obj, Step):
+            self.stop_step(obj)
+        elif isinstance(obj, LLMInvocation):
+            self.stop_llm(obj)
+        elif isinstance(obj, EmbeddingInvocation):
+            self.stop_embedding(obj)
+        elif isinstance(obj, RetrievalInvocation):
+            self.stop_retrieval(obj)
+        elif isinstance(obj, ToolCall):
+            self.stop_tool_call(obj)
+
+    def _fail_invocation(self, obj: Any, error: Error) -> None:
+        """Internal: dispatch fail to the appropriate type-specific method.
+
+        Called by ``GenAI.fail()`` on the invocation object.
+        """
+        if isinstance(obj, Workflow):
+            self.fail_workflow(obj, error)
+        elif isinstance(obj, (AgentCreation, AgentInvocation)):
+            self.fail_agent(obj, error)
+        elif isinstance(obj, Step):
+            self.fail_step(obj, error)
+        elif isinstance(obj, LLMInvocation):
+            self.fail_llm(obj, error)
+        elif isinstance(obj, EmbeddingInvocation):
+            self.fail_embedding(obj, error)
+        elif isinstance(obj, RetrievalInvocation):
+            self.fail_retrieval(obj, error)
+        elif isinstance(obj, ToolCall):
+            self.fail_tool_call(obj, error)
 
     # Generic lifecycle API ------------------------------------------------
     def start(self, obj: Any) -> Any:
