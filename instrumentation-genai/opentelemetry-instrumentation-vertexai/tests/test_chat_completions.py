@@ -4,6 +4,7 @@ import json
 
 import pytest
 from google.api_core.exceptions import BadRequest, NotFound
+from tests.shared_test_utils import assert_handler_event
 from vertexai.generative_models import (
     Content,
     GenerationConfig,
@@ -31,21 +32,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 from opentelemetry.trace import StatusCode
-
-
-def assert_handler_event(log, parent_span):
-    """Assert log record is the unified GenAI handler event and return its body."""
-    assert (
-        log.log_record.event_name
-        == "gen_ai.client.inference.operation.details"
-    )
-    assert log.log_record.body is not None
-    if parent_span:
-        span_context = parent_span.get_span_context()
-        assert log.log_record.trace_id == span_context.trace_id
-        assert log.log_record.span_id == span_context.span_id
-        assert log.log_record.trace_flags == span_context.trace_flags
-    return dict(log.log_record.body)
 
 
 @pytest.mark.vcr()

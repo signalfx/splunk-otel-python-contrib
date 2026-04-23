@@ -4,6 +4,7 @@ import pytest
 from tests.shared_test_utils import (
     ask_about_weather,
     ask_about_weather_function_response,
+    assert_handler_event,
 )
 
 from opentelemetry.instrumentation.vertexai import VertexAIInstrumentor
@@ -21,21 +22,6 @@ except ImportError:
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
-
-
-def assert_handler_event(log, parent_span):
-    """Assert log record is the unified GenAI handler event and return its body."""
-    assert (
-        log.log_record.event_name
-        == "gen_ai.client.inference.operation.details"
-    )
-    assert log.log_record.body is not None
-    if parent_span:
-        span_context = parent_span.get_span_context()
-        assert log.log_record.trace_id == span_context.trace_id
-        assert log.log_record.span_id == span_context.span_id
-        assert log.log_record.trace_flags == span_context.trace_flags
-    return dict(log.log_record.body)
 
 
 @pytest.mark.vcr()

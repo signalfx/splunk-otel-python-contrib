@@ -46,6 +46,9 @@ def test_get_server_attributes() -> None:
 
 
 def test_map_finish_reason():
+    # None maps to "error" (null safety, dc5e3dc)
+    assert _map_finish_reason(None) == "error"
+
     for Enum in (
         content.Candidate.FinishReason,
         content_v1beta1.Candidate.FinishReason,
