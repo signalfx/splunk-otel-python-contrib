@@ -1,6 +1,10 @@
 langchain>=1.0.0
 langchain-openai>=1.0.0
-langgraph>=1.0.0
+# Pin upper bound in lockstep with splunk-otel-instrumentation-langchain's
+# `instruments` constraint (>=0.4.0, <=1.1.6).  langgraph 1.1.7 introduced a
+# breaking change in callback dispatch that prevents the LangchainCallbackHandler
+# from firing, so util-genai emits no workflow/agent/tool spans (see PR #280).
+langgraph>=1.0.0,<=1.1.6
 langgraph-checkpoint-sqlite>=3.0.0
 python-dotenv>=1.0.0
 fastmcp>=0.9.0
