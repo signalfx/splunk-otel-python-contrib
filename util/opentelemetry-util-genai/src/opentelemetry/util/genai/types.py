@@ -28,10 +28,6 @@ from opentelemetry.semconv.attributes import (
 )
 from opentelemetry.trace import Span, SpanContext
 
-# Backward compatibility: older semconv builds may miss new GEN_AI attributes
-if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
-    GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
-
 # Import security attribute from centralized attributes module
 from opentelemetry.util.genai.attributes import (
     GEN_AI_REQUEST_STREAM,
@@ -307,8 +303,94 @@ class MCPToolCall(MCPOperation, ToolCall):
 @dataclass()
 class ToolCallResponse:
     response: Any
-    id: Optional[str]
+    id: str | None
     type: Literal["tool_call_response"] = "tool_call_response"
+
+
+@dataclass()
+class ToolCallRequest:
+    """Represents a tool call requested by the model (message part only).
+
+    Use this for tool calls in message history. For execution tracking with spans
+    and metrics, use ToolCall instead.
+    """
+
+    arguments: Any
+    name: str
+    id: Optional[str]
+    type: Literal["tool_call"] = "tool_call"
+
+
+@dataclass()
+class ServerToolCall:
+    """Represents a server-side tool call executed by the model provider."""
+
+    name: str
+    server_tool_call: Any
+    id: Optional[str] = None
+    type: Literal["server_tool_call"] = "server_tool_call"
+
+
+@dataclass()
+class ServerToolCallResponse:
+    """Represents a server-side tool call response."""
+
+    server_tool_call_response: Any
+    id: Optional[str] = None
+    type: Literal["server_tool_call_response"] = "server_tool_call_response"
+
+
+@dataclass()
+class Reasoning:
+    """Represents reasoning/thinking content received from the model."""
+
+    content: str
+    type: Literal["reasoning"] = "reasoning"
+
+
+Modality = Literal["image", "video", "audio"]
+
+
+@dataclass()
+class Blob:
+    """Represents blob binary data sent inline to the model."""
+
+    mime_type: Optional[str]
+    modality: Union[Modality, str]
+    content: bytes
+    type: Literal["blob"] = "blob"
+
+
+@dataclass()
+class File:
+    """Represents an external referenced file sent to the model by file id."""
+
+    mime_type: Optional[str]
+    modality: Union[Modality, str]
+    file_id: str
+    type: Literal["file"] = "file"
+
+
+@dataclass()
+class Uri:
+    """Represents an external referenced file sent to the model by URI."""
+
+    mime_type: Optional[str]
+    modality: Union[Modality, str]
+    uri: str
+    type: Literal["uri"] = "uri"
+
+
+@dataclass()
+class GenericPart:
+    """Used for provider-specific message part types that don't match standard types.
+
+    Wrap custom types with GenericPart(value=...) to explicitly opt-in to
+    non-standard types. Prefer standard types above when available.
+    """
+
+    value: Any
+    type: Literal["generic"] = "generic"
 
 
 FinishReason = Literal[
@@ -322,7 +404,18 @@ class Text:
     type: Literal["text"] = "text"
 
 
-MessagePart = Union[Text, "ToolCall", ToolCallResponse, Any]
+MessagePart = Union[
+    Text,
+    ToolCallRequest,
+    ToolCallResponse,
+    ServerToolCall,
+    ServerToolCallResponse,
+    Blob,
+    File,
+    Uri,
+    Reasoning,
+    GenericPart,  # For provider-specific types; prefer standard types above
+]
 
 
 @dataclass()
@@ -691,8 +784,18 @@ __all__ = [
     # existing exports intentionally implicit before; making explicit for new additions
     "ContentCapturingMode",
     "ToolCall",
+    "ToolCallRequest",
     "ToolCallResponse",
+    "ServerToolCall",
+    "ServerToolCallResponse",
     "Text",
+    "Reasoning",
+    "Modality",
+    "Blob",
+    "File",
+    "Uri",
+    "GenericPart",
+    "MessagePart",
     "InputMessage",
     "OutputMessage",
     "GenAI",
