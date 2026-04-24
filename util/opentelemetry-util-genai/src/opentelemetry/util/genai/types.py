@@ -232,6 +232,47 @@ class ToolCall(GenAI):
         metadata={"semconv": "error.type"},
     )
 
+    # Internal: new-style invocation delegate
+    _tool_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+
+    def _start_with_handler(self, components: dict) -> None:
+        """Create and start a ToolInvocation from this data container."""
+        from opentelemetry.util.genai._tool_invocation import ToolInvocation
+
+        self._tool_invocation = ToolInvocation(
+            **components,
+            provider=self.provider,
+            framework=self.framework,
+            system=self.system,
+            name=self.name,
+            arguments=self.arguments,
+            id=self.id,
+            tool_type=self.tool_type,
+            tool_description=self.tool_description,
+            tool_result=self.tool_result,
+            error_type=self.error_type,
+            attributes=dict(self.attributes),
+        )
+        self.span = self._tool_invocation.span
+        self.span_context = self._tool_invocation.span_context
+        self.trace_id = self._tool_invocation.trace_id
+        self.span_id = self._tool_invocation.span_id
+        self.start_time = self._tool_invocation.start_time
+
+    def _sync_to_invocation(self) -> None:
+        """Sync mutable fields from wrapper to underlying ToolInvocation."""
+        inv = self._tool_invocation
+        if inv is None:
+            return
+        inv.name = self.name
+        inv.arguments = self.arguments
+        inv.id = self.id
+        inv.tool_type = self.tool_type
+        inv.tool_description = self.tool_description
+        inv.tool_result = self.tool_result
+        inv.error_type = self.error_type
+        inv.attributes = dict(self.attributes) if self.attributes else {}
+
 
 @dataclass()
 class MCPToolCall(ToolCall):
@@ -457,6 +498,88 @@ class LLMInvocation(GenAI):
     # directly in the instrumentation (e.g., callback_handler.py) rather than
     # as a dedicated field, since it's computed dynamically during streaming.
 
+    # Internal: new-style InferenceInvocation delegate (set by _start_with_handler)
+    _inference_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+
+    def _start_with_handler(self, components: dict) -> None:
+        """Create and start an InferenceInvocation from this data container.
+
+        Called by ``handler.start_llm()`` to delegate to the new invocation.
+        """
+        from opentelemetry.util.genai._inference_invocation import (
+            InferenceInvocation,
+        )
+
+        self._inference_invocation = InferenceInvocation(
+            **components,
+            provider=self.provider,
+            framework=self.framework,
+            system=self.system,
+            request_model=self.request_model,
+            server_address=self.server_address,
+            server_port=self.server_port,
+            input_messages=self.input_messages,
+            output_messages=self.output_messages,
+            operation=self.operation,
+            response_model_name=self.response_model_name,
+            response_id=self.response_id,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            request_functions=self.request_functions,
+            tool_definitions=self.tool_definitions,
+            request_temperature=self.request_temperature,
+            request_top_p=self.request_top_p,
+            request_top_k=self.request_top_k,
+            request_frequency_penalty=self.request_frequency_penalty,
+            request_presence_penalty=self.request_presence_penalty,
+            request_stop_sequences=list(self.request_stop_sequences),
+            request_max_tokens=self.request_max_tokens,
+            request_choice_count=self.request_choice_count,
+            request_seed=self.request_seed,
+            request_encoding_formats=list(self.request_encoding_formats),
+            output_type=self.output_type,
+            response_finish_reasons=list(self.response_finish_reasons),
+            request_service_tier=self.request_service_tier,
+            response_service_tier=self.response_service_tier,
+            response_system_fingerprint=self.response_system_fingerprint,
+            security_event_id=self.security_event_id,
+            request_stream=self.request_stream,
+            attributes=dict(self.attributes),
+        )
+        # Sync back span/context info
+        self.span = self._inference_invocation.span
+        self.span_context = self._inference_invocation.span_context
+        self.trace_id = self._inference_invocation.trace_id
+        self.span_id = self._inference_invocation.span_id
+        self.start_time = self._inference_invocation.start_time
+
+    def _sync_to_invocation(self) -> None:
+        """Sync mutable fields from wrapper to underlying InferenceInvocation."""
+        inv = self._inference_invocation
+        if inv is None:
+            return
+        inv.provider = self.provider
+        inv.request_model = self.request_model
+        inv.input_messages = self.input_messages
+        inv.output_messages = self.output_messages
+        inv.response_model_name = self.response_model_name
+        inv.response_id = self.response_id
+        inv.input_tokens = self.input_tokens
+        inv.output_tokens = self.output_tokens
+        inv.response_finish_reasons = list(self.response_finish_reasons) if self.response_finish_reasons else []
+        inv.request_temperature = self.request_temperature
+        inv.request_top_p = self.request_top_p
+        inv.request_frequency_penalty = self.request_frequency_penalty
+        inv.request_presence_penalty = self.request_presence_penalty
+        inv.request_max_tokens = self.request_max_tokens
+        inv.request_stop_sequences = list(self.request_stop_sequences) if self.request_stop_sequences else []
+        inv.request_seed = self.request_seed
+        inv.server_address = self.server_address
+        inv.server_port = self.server_port
+        inv.attributes = dict(self.attributes) if self.attributes else {}
+        inv.security_event_id = self.security_event_id
+        inv.request_stream = self.request_stream
+
 
 class ErrorClassification(Enum):
     """Classification of an error for status reporting."""
@@ -517,6 +640,51 @@ class EmbeddingInvocation(GenAI):
         metadata={"semconv": GenAIAttributes.GEN_AI_REQUEST_ENCODING_FORMATS},
     )
     error_type: Optional[str] = None
+
+    # Internal: new-style invocation delegate
+    _real_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+
+    def _start_with_handler(self, components: dict) -> None:
+        """Create and start a new EmbeddingInvocation from this data container."""
+        from opentelemetry.util.genai._embedding_invocation import (
+            EmbeddingInvocation as NewEmbedding,
+        )
+
+        self._real_invocation = NewEmbedding(
+            **components,
+            provider=self.provider,
+            framework=self.framework,
+            system=self.system,
+            operation_name=self.operation_name,
+            request_model=self.request_model,
+            server_address=self.server_address,
+            server_port=self.server_port,
+            input_texts=list(self.input_texts),
+            dimension_count=self.dimension_count,
+            input_tokens=self.input_tokens,
+            encoding_formats=list(self.encoding_formats),
+            error_type=self.error_type,
+            attributes=dict(self.attributes),
+        )
+        self.span = self._real_invocation.span
+        self.span_context = self._real_invocation.span_context
+        self.trace_id = self._real_invocation.trace_id
+        self.span_id = self._real_invocation.span_id
+        self.start_time = self._real_invocation.start_time
+
+    def _sync_to_invocation(self) -> None:
+        """Sync mutable fields from wrapper to underlying invocation."""
+        inv = self._real_invocation
+        if inv is None:
+            return
+        inv.provider = self.provider
+        inv.request_model = self.request_model
+        inv.input_texts = list(self.input_texts) if self.input_texts else []
+        inv.dimension_count = self.dimension_count
+        inv.input_tokens = self.input_tokens
+        inv.encoding_formats = list(self.encoding_formats) if self.encoding_formats else []
+        inv.error_type = self.error_type
+        inv.attributes = dict(self.attributes) if self.attributes else {}
 
 
 @dataclass
@@ -595,6 +763,45 @@ class Workflow(GenAI):
     output_messages: List[OutputMessage] = field(
         default_factory=_new_output_messages
     )
+
+    # Internal: new-style invocation delegate
+    _workflow_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+
+    def _start_with_handler(self, components: dict) -> None:
+        """Create and start a WorkflowInvocation from this data container."""
+        from opentelemetry.util.genai._workflow_invocation import (
+            WorkflowInvocation,
+        )
+
+        self._workflow_invocation = WorkflowInvocation(
+            **components,
+            provider=self.provider,
+            framework=self.framework,
+            system=self.system,
+            name=self.name,
+            workflow_type=self.workflow_type,
+            description=self.description,
+            input_messages=list(self.input_messages),
+            output_messages=list(self.output_messages),
+            attributes=dict(self.attributes),
+        )
+        self.span = self._workflow_invocation.span
+        self.span_context = self._workflow_invocation.span_context
+        self.trace_id = self._workflow_invocation.trace_id
+        self.span_id = self._workflow_invocation.span_id
+        self.start_time = self._workflow_invocation.start_time
+
+    def _sync_to_invocation(self) -> None:
+        """Sync mutable fields from wrapper to underlying WorkflowInvocation."""
+        inv = self._workflow_invocation
+        if inv is None:
+            return
+        inv.name = self.name
+        inv.workflow_type = self.workflow_type
+        inv.description = self.description
+        inv.input_messages = list(self.input_messages) if self.input_messages else []
+        inv.output_messages = list(self.output_messages) if self.output_messages else []
+        inv.attributes = dict(self.attributes) if self.attributes else {}
 
 
 @dataclass

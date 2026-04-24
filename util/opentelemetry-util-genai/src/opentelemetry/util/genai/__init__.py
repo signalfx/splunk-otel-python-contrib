@@ -26,6 +26,17 @@ from opentelemetry.util.genai.handler import (
     set_genai_context,
 )
 
+# New-style invocation classes
+from opentelemetry.util.genai.invocation import (
+    GenAIInvocation,
+    InferenceInvocation,
+    ToolInvocation,
+    WorkflowInvocation,
+)
+from opentelemetry.util.genai._embedding_invocation import (
+    EmbeddingInvocation as NewEmbeddingInvocation,
+)
+
 __all__ = [
     # GenAI context management
     "GenAIContext",
@@ -35,4 +46,10 @@ __all__ = [
     "clear_genai_context",
     # Handler
     "get_telemetry_handler",
+    # New-style invocation classes
+    "GenAIInvocation",
+    "InferenceInvocation",
+    "NewEmbeddingInvocation",
+    "ToolInvocation",
+    "WorkflowInvocation",
 ]
