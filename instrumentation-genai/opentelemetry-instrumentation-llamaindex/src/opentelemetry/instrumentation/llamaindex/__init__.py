@@ -9,7 +9,7 @@ from opentelemetry.instrumentation.llamaindex.invocation_manager import (
 )
 from opentelemetry.instrumentation.llamaindex.event_handler import (
     LlamaindexEventHandler,
-    TTFTTracker,
+    TTFCTracker,
 )
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
@@ -47,18 +47,18 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             logger_provider=logger_provider,
         )
 
-        # Create shared TTFT tracker and invocation manager
-        ttft_tracker = TTFTTracker()
+        # Create shared TTFC tracker and invocation manager
+        ttfc_tracker = TTFCTracker()
         invocation_manager = _InvocationManager()
-        invocation_manager.set_ttft_tracker(ttft_tracker)
+        invocation_manager.set_ttfc_tracker(ttfc_tracker)
 
         llamaindexCallBackHandler = LlamaindexCallbackHandler(
             telemetry_handler=self._telemetry_handler,
             invocation_manager=invocation_manager,
         )
 
-        # Create and register event handler for TTFT tracking
-        event_handler = LlamaindexEventHandler(ttft_tracker=ttft_tracker)
+        # Create and register event handler for TTFC tracking
+        event_handler = LlamaindexEventHandler(ttfc_tracker=ttfc_tracker)
         self._event_handler = event_handler
         try:
             from llama_index.core.instrumentation import get_dispatcher
@@ -116,7 +116,7 @@ class LlamaindexInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
-        # Remove event handler from dispatcher to avoid duplicate TTFT measurements on re-instrumentation
+        # Remove event handler from dispatcher to avoid duplicate TTFC measurements on re-instrumentation
         if (
             hasattr(self, "_dispatcher")
             and self._dispatcher

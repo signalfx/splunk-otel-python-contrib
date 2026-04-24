@@ -26,7 +26,7 @@ from opentelemetry.util.genai.types import (
 )
 
 if TYPE_CHECKING:
-    from .event_handler import TTFTTracker
+    from .event_handler import TTFCTracker
 
 __all__ = ["_InvocationManager"]
 
@@ -130,28 +130,28 @@ class _InvocationManager:
             return None
         return self._agent_invocation_by_key.get(key)
 
-    # ==================== TTFT Tracking Methods ====================
+    # ==================== TTFC Tracking Methods ====================
 
-    def set_ttft_tracker(self, tracker: "TTFTTracker") -> None:
-        """Set the TTFTTracker instance for TTFT correlation."""
-        self._ttft_tracker = tracker
+    def set_ttfc_tracker(self, tracker: "TTFCTracker") -> None:
+        """Set the TTFCTracker instance for TTFC correlation."""
+        self._ttfc_tracker = tracker
 
-    def get_ttft_for_event(self, event_id: str) -> Optional[float]:
-        """Get TTFT for a callback event_id, if available."""
-        tracker = getattr(self, "_ttft_tracker", None)
+    def get_ttfc_for_event(self, event_id: str) -> Optional[float]:
+        """Get TTFC for a callback event_id, if available."""
+        tracker = getattr(self, "_ttfc_tracker", None)
         if tracker:
-            return tracker.get_ttft_by_event(event_id)
+            return tracker.get_ttfc_by_event(event_id)
         return None
 
     def is_streaming_event(self, event_id: str) -> bool:
         """Check if streaming has started for a callback event_id."""
-        tracker = getattr(self, "_ttft_tracker", None)
+        tracker = getattr(self, "_ttfc_tracker", None)
         if tracker:
             return tracker.is_streaming_by_event(event_id)
         return False
 
     def cleanup_event_tracking(self, event_id: str) -> None:
-        """Clean up TTFT tracking data for an event_id."""
-        tracker = getattr(self, "_ttft_tracker", None)
+        """Clean up TTFC tracking data for an event_id."""
+        tracker = getattr(self, "_ttfc_tracker", None)
         if tracker:
             tracker.cleanup_by_event(event_id)

@@ -1,13 +1,13 @@
-"""Test TTFT (Time To First Token) tracking for LlamaIndex instrumentation.
+"""Test TTFC (Time To First Chunk) tracking for LlamaIndex instrumentation.
 
-Tests the TTFTTracker, LlamaindexEventHandler, and the correlation between
+Tests the TTFCTracker, LlamaindexEventHandler, and the correlation between
 callback event_id and instrumentation span_id via ContextVar.
 """
 
 import time
 
 from opentelemetry.instrumentation.llamaindex.event_handler import (
-    TTFTTracker,
+    TTFCTracker,
     LlamaindexEventHandler,
     set_current_llm_event_id,
     get_current_llm_event_id,
@@ -17,105 +17,105 @@ from opentelemetry.instrumentation.llamaindex.invocation_manager import (
 )
 
 
-# ==================== TTFTTracker Unit Tests ====================
+# ==================== TTFCTracker Unit Tests ====================
 
 
-class TestTTFTTracker:
-    """Test TTFTTracker in isolation."""
+class TestTTFCTracker:
+    """Test TTFCTracker in isolation."""
 
-    def test_record_start_and_first_token(self):
-        tracker = TTFTTracker()
+    def test_record_start_and_first_chunk(self):
+        tracker = TTFCTracker()
         tracker.record_start("span-1")
-        time.sleep(0.01)  # small delay to get measurable TTFT
-        ttft = tracker.record_first_token("span-1")
+        time.sleep(0.01)  # small delay to get measurable TTFC
+        ttfc = tracker.record_first_chunk("span-1")
 
-        assert ttft is not None
-        assert ttft > 0
-        assert ttft < 1.0  # should be much less than 1 second
+        assert ttfc is not None
+        assert ttfc > 0
+        assert ttfc < 1.0  # should be much less than 1 second
 
-    def test_second_token_returns_none(self):
-        tracker = TTFTTracker()
+    def test_second_chunk_returns_none(self):
+        tracker = TTFCTracker()
         tracker.record_start("span-1")
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
         # Second call should return None
-        result = tracker.record_first_token("span-1")
+        result = tracker.record_first_chunk("span-1")
         assert result is None
 
-    def test_get_ttft(self):
-        tracker = TTFTTracker()
+    def test_get_ttfc(self):
+        tracker = TTFCTracker()
         tracker.record_start("span-1")
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
 
-        ttft = tracker.get_ttft("span-1")
-        assert ttft is not None
-        assert ttft > 0
+        ttfc = tracker.get_ttfc("span-1")
+        assert ttfc is not None
+        assert ttfc > 0
 
-    def test_get_ttft_no_token(self):
-        tracker = TTFTTracker()
+    def test_get_ttfc_no_chunk(self):
+        tracker = TTFCTracker()
         tracker.record_start("span-1")
-        assert tracker.get_ttft("span-1") is None
+        assert tracker.get_ttfc("span-1") is None
 
-    def test_get_ttft_unknown_span(self):
-        tracker = TTFTTracker()
-        assert tracker.get_ttft("nonexistent") is None
+    def test_get_ttfc_unknown_span(self):
+        tracker = TTFCTracker()
+        assert tracker.get_ttfc("nonexistent") is None
 
     def test_is_streaming(self):
-        tracker = TTFTTracker()
+        tracker = TTFCTracker()
         tracker.record_start("span-1")
         assert not tracker.is_streaming("span-1")
 
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
         assert tracker.is_streaming("span-1")
 
     def test_associate_event_span(self):
-        tracker = TTFTTracker()
+        tracker = TTFCTracker()
         tracker.associate_event_span("event-1", "span-1")
         tracker.record_start("span-1")
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
 
-        ttft = tracker.get_ttft_by_event("event-1")
-        assert ttft is not None
-        assert ttft > 0
+        ttfc = tracker.get_ttfc_by_event("event-1")
+        assert ttfc is not None
+        assert ttfc > 0
 
     def test_is_streaming_by_event(self):
-        tracker = TTFTTracker()
+        tracker = TTFCTracker()
         tracker.associate_event_span("event-1", "span-1")
         tracker.record_start("span-1")
 
         assert not tracker.is_streaming_by_event("event-1")
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
         assert tracker.is_streaming_by_event("event-1")
 
     def test_cleanup(self):
-        tracker = TTFTTracker()
+        tracker = TTFCTracker()
         tracker.associate_event_span("event-1", "span-1")
         tracker.record_start("span-1")
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
 
         # Verify data exists
-        assert tracker.get_ttft("span-1") is not None
-        assert tracker.get_ttft_by_event("event-1") is not None
+        assert tracker.get_ttfc("span-1") is not None
+        assert tracker.get_ttfc_by_event("event-1") is not None
 
         # Cleanup
         tracker.cleanup("span-1")
 
-        assert tracker.get_ttft("span-1") is None
-        assert tracker.get_ttft_by_event("event-1") is None
+        assert tracker.get_ttfc("span-1") is None
+        assert tracker.get_ttfc_by_event("event-1") is None
         assert not tracker.is_streaming("span-1")
 
     def test_cleanup_by_event(self):
-        tracker = TTFTTracker()
+        tracker = TTFCTracker()
         tracker.associate_event_span("event-1", "span-1")
         tracker.record_start("span-1")
-        tracker.record_first_token("span-1")
+        tracker.record_first_chunk("span-1")
 
         tracker.cleanup_by_event("event-1")
 
-        assert tracker.get_ttft("span-1") is None
-        assert tracker.get_ttft_by_event("event-1") is None
+        assert tracker.get_ttfc("span-1") is None
+        assert tracker.get_ttfc_by_event("event-1") is None
 
     def test_multiple_concurrent_spans(self):
-        tracker = TTFTTracker()
+        tracker = TTFCTracker()
         tracker.associate_event_span("event-1", "span-1")
         tracker.associate_event_span("event-2", "span-2")
 
@@ -124,17 +124,17 @@ class TestTTFTTracker:
         tracker.record_start("span-2")
         time.sleep(0.01)
 
-        tracker.record_first_token("span-2")  # span-2 gets token first
+        tracker.record_first_chunk("span-2")  # span-2 gets chunk first
         time.sleep(0.01)
-        tracker.record_first_token("span-1")  # span-1 gets token later
+        tracker.record_first_chunk("span-1")  # span-1 gets chunk later
 
-        ttft1 = tracker.get_ttft_by_event("event-1")
-        ttft2 = tracker.get_ttft_by_event("event-2")
+        ttfc1 = tracker.get_ttfc_by_event("event-1")
+        ttfc2 = tracker.get_ttfc_by_event("event-2")
 
-        assert ttft1 is not None
-        assert ttft2 is not None
-        # span-1 started earlier but got token later, so its TTFT should be larger
-        assert ttft1 > ttft2
+        assert ttfc1 is not None
+        assert ttfc2 is not None
+        # span-1 started earlier but got chunk later, so its TTFC should be larger
+        assert ttfc1 > ttfc2
 
 
 # ==================== ContextVar Correlation Tests ====================
@@ -153,8 +153,8 @@ class TestContextVarCorrelation:
     def test_event_handler_associates_on_start(self):
         """When LLMChatStartEvent fires, EventHandler should associate
         the current event_id with the event's span_id."""
-        tracker = TTFTTracker()
-        handler = LlamaindexEventHandler(ttft_tracker=tracker)
+        tracker = TTFCTracker()
+        handler = LlamaindexEventHandler(ttfc_tracker=tracker)
 
         # Simulate: CallbackHandler sets event_id before LLM call
         set_current_llm_event_id("callback-event-42")
@@ -179,13 +179,13 @@ class TestContextVarCorrelation:
         # Clean up
         set_current_llm_event_id(None)
 
-    def test_end_to_end_ttft_flow(self):
-        """Full flow: CallbackHandler sets event_id -> EventHandler records TTFT
-        -> InvocationManager retrieves TTFT by event_id."""
-        tracker = TTFTTracker()
-        handler = LlamaindexEventHandler(ttft_tracker=tracker)
+    def test_end_to_end_ttfc_flow(self):
+        """Full flow: CallbackHandler sets event_id -> EventHandler records TTFC
+        -> InvocationManager retrieves TTFC by event_id."""
+        tracker = TTFCTracker()
+        handler = LlamaindexEventHandler(ttfc_tracker=tracker)
         inv_mgr = _InvocationManager()
-        inv_mgr.set_ttft_tracker(tracker)
+        inv_mgr.set_ttfc_tracker(tracker)
 
         # Step 1: CallbackHandler._handle_llm_start sets event_id
         set_current_llm_event_id("cb-event-1")
@@ -216,15 +216,15 @@ class TestContextVarCorrelation:
         )
         handler.handle(progress_event)
 
-        # Step 5: Second chunk - should NOT update TTFT
+        # Step 5: Second chunk - should NOT update TTFC
         time.sleep(0.01)
         handler.handle(progress_event)
 
-        # Step 6: CallbackHandler._handle_llm_end retrieves TTFT
-        ttft = inv_mgr.get_ttft_for_event("cb-event-1")
-        assert ttft is not None
-        assert ttft >= 0.02  # at least the sleep time
-        assert ttft < 1.0
+        # Step 6: CallbackHandler._handle_llm_end retrieves TTFC
+        ttfc = inv_mgr.get_ttfc_for_event("cb-event-1")
+        assert ttfc is not None
+        assert ttfc >= 0.02  # at least the sleep time
+        assert ttfc < 1.0
 
         # Also check streaming flag
         assert inv_mgr.is_streaming_event("cb-event-1")
@@ -233,14 +233,14 @@ class TestContextVarCorrelation:
         inv_mgr.cleanup_event_tracking("cb-event-1")
         set_current_llm_event_id(None)
 
-        assert inv_mgr.get_ttft_for_event("cb-event-1") is None
+        assert inv_mgr.get_ttfc_for_event("cb-event-1") is None
 
-    def test_non_streaming_no_ttft(self):
-        """Non-streaming calls should not have TTFT."""
-        tracker = TTFTTracker()
-        handler = LlamaindexEventHandler(ttft_tracker=tracker)
+    def test_non_streaming_no_ttfc(self):
+        """Non-streaming calls should not have TTFC."""
+        tracker = TTFCTracker()
+        handler = LlamaindexEventHandler(ttfc_tracker=tracker)
         inv_mgr = _InvocationManager()
-        inv_mgr.set_ttft_tracker(tracker)
+        inv_mgr.set_ttfc_tracker(tracker)
 
         set_current_llm_event_id("cb-event-2")
 
@@ -255,8 +255,8 @@ class TestContextVarCorrelation:
         )
         handler.handle(start_event)
 
-        # No TTFT for non-streaming
-        assert inv_mgr.get_ttft_for_event("cb-event-2") is None
+        # No TTFC for non-streaming
+        assert inv_mgr.get_ttfc_for_event("cb-event-2") is None
         assert not inv_mgr.is_streaming_event("cb-event-2")
 
         set_current_llm_event_id(None)
@@ -265,6 +265,6 @@ class TestContextVarCorrelation:
         """InvocationManager without tracker should not crash."""
         inv_mgr = _InvocationManager()
         # No tracker set
-        assert inv_mgr.get_ttft_for_event("any") is None
+        assert inv_mgr.get_ttfc_for_event("any") is None
         assert not inv_mgr.is_streaming_event("any")
         inv_mgr.cleanup_event_tracking("any")  # should not crash
