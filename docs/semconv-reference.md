@@ -255,6 +255,8 @@ Association properties from the context are applied first, then invocation-level
 export OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS="user.tier,session.source"
 ```
 
+Note: Including high-cardinality values into metrics association-properties may highly increase number of metric timeseries on the backend and requires careful consideration.
+
 ---
 
 ## 6. Complete Attribute Reference
