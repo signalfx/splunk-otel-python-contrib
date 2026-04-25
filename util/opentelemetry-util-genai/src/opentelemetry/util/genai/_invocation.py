@@ -109,7 +109,9 @@ class GenAIInvocation:
         self.association_properties: dict[str, Any] = {}
         self.sample_for_evaluation: Optional[bool] = True
         self.evaluation_error: Optional[str] = None
-        self.attributes: dict[str, Any] = attributes if attributes is not None else {}
+        self.attributes: dict[str, Any] = (
+            attributes if attributes is not None else {}
+        )
         self.context_token: Any = None
         self.error_type: Optional[str] = None
 

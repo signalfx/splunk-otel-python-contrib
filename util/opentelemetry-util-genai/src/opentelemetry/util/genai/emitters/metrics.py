@@ -612,9 +612,7 @@ class MetricsEmitter(EmitterMeta):
 
         # Add error type if present
         if error is not None and getattr(error, "type", None) is not None:
-            metric_attrs[ErrorAttributes.ERROR_TYPE] = (
-                error.type.__qualname__
-            )
+            metric_attrs[ErrorAttributes.ERROR_TYPE] = error.type.__qualname__
 
         # Get span context for metric correlation
         span = getattr(obj, "span", None)

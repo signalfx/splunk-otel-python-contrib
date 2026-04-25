@@ -263,7 +263,9 @@ class ToolCall(GenAI):
     )
 
     # Internal: new-style invocation delegate
-    _tool_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+    _tool_invocation: Any = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def _start_with_handler(self, components: dict) -> None:
         """Create and start a ToolInvocation from this data container."""
@@ -578,7 +580,9 @@ class LLMInvocation(GenAI):
     # as a dedicated field, since it's computed dynamically during streaming.
 
     # Internal: new-style InferenceInvocation delegate (set by _start_with_handler)
-    _inference_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+    _inference_invocation: Any = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def _start_with_handler(self, components: dict) -> None:
         """Create and start an InferenceInvocation from this data container.
@@ -645,13 +649,21 @@ class LLMInvocation(GenAI):
         inv.response_id = self.response_id
         inv.input_tokens = self.input_tokens
         inv.output_tokens = self.output_tokens
-        inv.response_finish_reasons = list(self.response_finish_reasons) if self.response_finish_reasons else []
+        inv.response_finish_reasons = (
+            list(self.response_finish_reasons)
+            if self.response_finish_reasons
+            else []
+        )
         inv.request_temperature = self.request_temperature
         inv.request_top_p = self.request_top_p
         inv.request_frequency_penalty = self.request_frequency_penalty
         inv.request_presence_penalty = self.request_presence_penalty
         inv.request_max_tokens = self.request_max_tokens
-        inv.request_stop_sequences = list(self.request_stop_sequences) if self.request_stop_sequences else []
+        inv.request_stop_sequences = (
+            list(self.request_stop_sequences)
+            if self.request_stop_sequences
+            else []
+        )
         inv.request_seed = self.request_seed
         inv.server_address = self.server_address
         inv.server_port = self.server_port
@@ -691,7 +703,9 @@ class EmbeddingInvocation(GenAI):
     error_type: Optional[str] = None
 
     # Internal: new-style invocation delegate
-    _real_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+    _real_invocation: Any = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def _start_with_handler(self, components: dict) -> None:
         """Create and start a new EmbeddingInvocation from this data container."""
@@ -731,7 +745,9 @@ class EmbeddingInvocation(GenAI):
         inv.input_texts = list(self.input_texts) if self.input_texts else []
         inv.dimension_count = self.dimension_count
         inv.input_tokens = self.input_tokens
-        inv.encoding_formats = list(self.encoding_formats) if self.encoding_formats else []
+        inv.encoding_formats = (
+            list(self.encoding_formats) if self.encoding_formats else []
+        )
         inv.error_type = self.error_type
         inv.attributes = dict(self.attributes) if self.attributes else {}
 
@@ -814,7 +830,9 @@ class Workflow(GenAI):
     )
 
     # Internal: new-style invocation delegate
-    _workflow_invocation: Any = field(default=None, init=False, repr=False, compare=False)
+    _workflow_invocation: Any = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def _start_with_handler(self, components: dict) -> None:
         """Create and start a WorkflowInvocation from this data container."""
@@ -848,8 +866,12 @@ class Workflow(GenAI):
         inv.name = self.name
         inv.workflow_type = self.workflow_type
         inv.description = self.description
-        inv.input_messages = list(self.input_messages) if self.input_messages else []
-        inv.output_messages = list(self.output_messages) if self.output_messages else []
+        inv.input_messages = (
+            list(self.input_messages) if self.input_messages else []
+        )
+        inv.output_messages = (
+            list(self.output_messages) if self.output_messages else []
+        )
         inv.attributes = dict(self.attributes) if self.attributes else {}
 
 

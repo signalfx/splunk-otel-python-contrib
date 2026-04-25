@@ -1107,7 +1107,9 @@ class SpanEmitter(EmitterMeta):
         if tool.tool_type:
             span.set_attribute("gen_ai.tool.type", tool.tool_type)
         if tool.tool_description:
-            span.set_attribute("gen_ai.tool.description", tool.tool_description)
+            span.set_attribute(
+                "gen_ai.tool.description", tool.tool_description
+            )
         if self._capture_content and tool.arguments is not None:
             try:
                 import json as _json
@@ -1191,9 +1193,7 @@ class SpanEmitter(EmitterMeta):
             span, embedding.semantic_convention_attributes()
         )
 
-    def _finish_new_embedding(
-        self, embedding: NewEmbeddingInvocation
-    ) -> None:
+    def _finish_new_embedding(self, embedding: NewEmbeddingInvocation) -> None:
         """Finish a new-style EmbeddingInvocation span."""
         span = embedding.span
         if span is None:

@@ -119,7 +119,9 @@ class InferenceInvocation(GenAIInvocation):
         self.request_choice_count = request_choice_count
         self.request_seed = request_seed
         self.request_encoding_formats: List[str] = (
-            [] if request_encoding_formats is None else request_encoding_formats
+            []
+            if request_encoding_formats is None
+            else request_encoding_formats
         )
         self.output_type = output_type
         self.response_finish_reasons: List[str] = (
@@ -154,7 +156,9 @@ class InferenceInvocation(GenAIInvocation):
         if self.request_model:
             attrs[GenAIAttributes.GEN_AI_REQUEST_MODEL] = self.request_model
         if self.response_model_name:
-            attrs[GenAIAttributes.GEN_AI_RESPONSE_MODEL] = self.response_model_name
+            attrs[GenAIAttributes.GEN_AI_RESPONSE_MODEL] = (
+                self.response_model_name
+            )
         if self.server_address:
             attrs[ServerAttributes.SERVER_ADDRESS] = self.server_address
         if self.server_port:
@@ -172,7 +176,11 @@ class InferenceInvocation(GenAIInvocation):
 
         counts: dict[str, int] = {}
         if self.input_tokens is not None:
-            counts[GenAIAttributes.GenAiTokenTypeValues.INPUT.value] = self.input_tokens
+            counts[GenAIAttributes.GenAiTokenTypeValues.INPUT.value] = (
+                self.input_tokens
+            )
         if self.output_tokens is not None:
-            counts[GenAIAttributes.GenAiTokenTypeValues.OUTPUT.value] = self.output_tokens
+            counts[GenAIAttributes.GenAiTokenTypeValues.OUTPUT.value] = (
+                self.output_tokens
+            )
         return counts

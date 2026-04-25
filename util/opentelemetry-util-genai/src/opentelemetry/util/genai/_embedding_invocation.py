@@ -72,7 +72,9 @@ class EmbeddingInvocation(GenAIInvocation):
         self.request_model = request_model or ""
         self.server_address = server_address
         self.server_port = server_port
-        self.input_texts: list[str] = [] if input_texts is None else input_texts
+        self.input_texts: list[str] = (
+            [] if input_texts is None else input_texts
+        )
         self.dimension_count = dimension_count
         self.input_tokens = input_tokens
         self.encoding_formats: list[str] = (
@@ -119,5 +121,7 @@ class EmbeddingInvocation(GenAIInvocation):
 
         counts: dict[str, int] = {}
         if self.input_tokens is not None:
-            counts[GenAIAttributes.GenAiTokenTypeValues.INPUT.value] = self.input_tokens
+            counts[GenAIAttributes.GenAiTokenTypeValues.INPUT.value] = (
+                self.input_tokens
+            )
         return counts

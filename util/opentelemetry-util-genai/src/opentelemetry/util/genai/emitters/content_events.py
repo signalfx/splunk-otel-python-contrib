@@ -187,9 +187,7 @@ class ContentEventsEmitter(EmitterMeta):
                 exc_info=True,
             )
 
-    def _emit_workflow_invocation_event(
-        self, obj: WorkflowInvocation
-    ) -> None:
+    def _emit_workflow_invocation_event(self, obj: WorkflowInvocation) -> None:
         """Emit a content event for a WorkflowInvocation.
 
         Reuses the workflow log record builder since WorkflowInvocation has
