@@ -80,6 +80,8 @@ class WorkflowEventInstrumentor:
             workflow_name = current_agent_attrs.get("gen_ai.workflow.name")
             if workflow_name:
                 self._workflow_name = str(workflow_name)
+
+        # Agent is already registered in wrap_agent_run(), just track key for nested agents
         context_key_token = None
         if self._invocation_manager:
             context_key_token = self._invocation_manager.set_current_agent_key(None)
@@ -342,6 +344,11 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         if workflow_name:
             current_agent.attributes["gen_ai.workflow.name"] = str(workflow_name)
 
+        # Capture tools from agent instance for propagation to child LLM spans
+        # This enables gen_ai.tool.definitions on LLM spans under this agent
+        if hasattr(instance, "tools"):
+            current_agent._agent_tools = getattr(instance, "tools", [])  # type: ignore[attr-defined]
+
         is_orchestrator_workflow = bool(
             hasattr(instance, "agents")
             and hasattr(instance, "root_agent")
@@ -353,6 +360,18 @@ def wrap_agent_run(wrapped, instance, args, kwargs):
         # Start the agent span for non-orchestrator workflow instances.
         if not is_orchestrator_workflow:
             telemetry_handler.start_agent(current_agent)
+
+        # Register agent with invocation_manager AFTER start_agent (which sets span_id)
+        # and BEFORE wrapped() is called, so LLM callbacks can access _agent_tools
+        agent_key = None
+        if (
+            invocation_manager
+            and hasattr(current_agent, "span_id")
+            and current_agent.span_id
+        ):
+            agent_key = f"{current_agent.span_id:016x}::{current_agent.agent_name}"
+            invocation_manager.register_agent_invocation(agent_key, current_agent)
+            invocation_manager.set_current_agent_key(agent_key)
 
     # Call the original run() method to get the workflow handler
     handler = wrapped(*args, **kwargs)

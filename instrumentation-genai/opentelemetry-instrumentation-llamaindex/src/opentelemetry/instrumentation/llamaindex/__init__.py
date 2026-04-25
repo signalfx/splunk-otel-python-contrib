@@ -4,6 +4,9 @@ from opentelemetry.instrumentation.llamaindex.config import Config
 from opentelemetry.instrumentation.llamaindex.callback_handler import (
     LlamaindexCallbackHandler,
 )
+from opentelemetry.instrumentation.llamaindex.invocation_manager import (
+    _InvocationManager,
+)
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
     wrap_agent_run,
@@ -40,8 +43,12 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             logger_provider=logger_provider,
         )
 
+        # Create shared invocation manager for callback handler and workflow instrumentation
+        invocation_manager = _InvocationManager()
+
         llamaindexCallBackHandler = LlamaindexCallbackHandler(
-            telemetry_handler=self._telemetry_handler
+            telemetry_handler=self._telemetry_handler,
+            invocation_manager=invocation_manager,
         )
 
         wrap_function_wrapper(

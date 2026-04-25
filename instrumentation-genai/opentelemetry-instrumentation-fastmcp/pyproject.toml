@@ -28,11 +28,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Note: fastmcp transitively depends on the `mcp` SDK (currently v1.x).
+# When mcp >= 2.x ships (with native OTel support via PRs #2298/#2381),
+# the transport_instrumentor bridge can be removed via runtime feature
+# detection — no version pin change needed here.  See README.rst for details.
 instruments = [
-  "fastmcp >= 2.0.0, <= 2.14.7",
+  "fastmcp >= 3.0.0, < 4",
 ]
 test = [
-  "fastmcp >= 2.0.0, <= 2.14.7",
+  "fastmcp >= 3.0.0, < 4",
   "pytest >= 7.0.0",
   "pytest-asyncio >= 0.21.0",
 ]

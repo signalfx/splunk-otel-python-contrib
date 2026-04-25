@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 from typing import Any, Dict, Optional
 
@@ -28,6 +29,55 @@ from runbook_search import RunbookSearch  # noqa: E402
 # Initialize shared resources
 _data_loader = DataLoader(data_dir=os.getenv("DATA_DIR", "data"))
 _runbook_search = RunbookSearch(data_dir=os.getenv("DATA_DIR", "data"))
+
+
+def _build_mcp_server_env(server_service_name: str) -> Dict[str, str]:
+    """Build subprocess env for MCP servers with explicit OTEL propagation."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k.startswith(
+            (
+                "OTEL_",
+                "OPENAI_",
+                "AZURE_",
+                "CIRCUIT_",
+                "NVIDIA_",
+                "SPLUNK_",
+                "VIRTUAL_ENV",
+                "FASTMCP_",
+            )
+        )
+        or k in ("HOME", "PATH", "SHELL", "TERM", "USER", "LOGNAME", "PYTHONPATH")
+    }
+    env.setdefault("FASTMCP_QUIET", "1")
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    env["OTEL_SERVICE_NAME"] = server_service_name
+    return env
+
+
+def _build_mcp_server_params(
+    mcp_script_path: str, server_service_name: str
+) -> StdioServerParameters:
+    """Create MCP server params using OTEL wrapper when available."""
+    if not os.path.isabs(mcp_script_path):
+        mcp_script_path = os.path.abspath(mcp_script_path)
+
+    env = _build_mcp_server_env(server_service_name)
+    use_otel_wrapper = (
+        os.environ.get("SRE_COPILOT_MCP_USE_OTEL_WRAPPER", "true").lower() == "true"
+    )
+    otel_instrument = shutil.which("opentelemetry-instrument")
+
+    if use_otel_wrapper and otel_instrument:
+        # Weather-agent style: wrap the spawned MCP server process.
+        command = otel_instrument
+        args = [sys.executable, mcp_script_path]
+    else:
+        command = sys.executable
+        args = [mcp_script_path]
+
+    return StdioServerParameters(command=command, args=args, env=env)
 
 
 @tool
@@ -77,20 +127,8 @@ async def _call_mcp_tool(
     mcp_script_path = os.path.join(
         os.path.dirname(__file__), "mcp_tools", "observability_tools.py"
     )
-
-    # Ensure absolute path
-    if not os.path.isabs(mcp_script_path):
-        mcp_script_path = os.path.abspath(mcp_script_path)
-
-    # Pass environment variables to suppress MCP server logs
-    env = os.environ.copy()
-    env.setdefault("FASTMCP_QUIET", "1")
-    env.setdefault("PYTHONUNBUFFERED", "1")
-
-    server_params = StdioServerParameters(
-        command="python",
-        args=[mcp_script_path],
-        env=env,
+    server_params = _build_mcp_server_params(
+        mcp_script_path, server_service_name="sre-copilot-observability-mcp-server"
     )
 
     try:
@@ -387,16 +425,8 @@ def investigation_agent_mcp(
     mcp_script_path = os.path.join(
         os.path.dirname(__file__), "mcp_tools", "investigation_agent_mcp.py"
     )
-
-    # Pass environment variables to suppress MCP server logs
-    env = os.environ.copy()
-    env.setdefault("FASTMCP_QUIET", "1")
-    env.setdefault("PYTHONUNBUFFERED", "1")
-
-    server_params = StdioServerParameters(
-        command="python",
-        args=[mcp_script_path],
-        env=env,
+    server_params = _build_mcp_server_params(
+        mcp_script_path, server_service_name="sre-copilot-investigation-mcp-server"
     )
 
     params = {

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- LLM span attributes for async agent flows:
+  - `gen_ai.response.model` extracted from raw LLM response with fallback to request model
+  - `gen_ai.response.finish_reasons` from response choices
+  - `gen_ai.request.max_tokens` with fallback chain (serialized -> metadata -> Settings.llm)
+  - `gen_ai.tool.definitions` via agent context propagation (gated by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS`)
+  - Provider detection from LLM class name
+- Agent tool registration in `wrap_agent_run()` for tool definitions propagation across async boundaries
+- `find_agent_with_tools()` fallback in invocation manager when ContextVar does not propagate across asyncio tasks
+
 ### Fixed
 - Corrected retrieval span `gen_ai.operation.name` from `"retrieve"` to `"retrieval"` per OpenTelemetry semantic conventions. Removed explicit override in callback handler; now uses the `RetrievalInvocation` dataclass default from `util-genai`.
 

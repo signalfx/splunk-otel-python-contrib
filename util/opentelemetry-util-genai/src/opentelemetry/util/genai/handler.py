@@ -48,7 +48,6 @@ Usage:
     # handler.fail_llm(invocation, Error(type="...", message="..."))
 """
 
-import asyncio
 import logging
 import os
 import threading
@@ -96,6 +95,7 @@ from opentelemetry.util.genai.types import (
     GenAI,
     InputMessage,
     LLMInvocation,
+    MCPOperation,
     RetrievalInvocation,
     Step,
     ToolCall,
@@ -180,15 +180,6 @@ _genai_context: ContextVar[GenAIContext] = ContextVar(
 _current_genai_span: ContextVar[Optional[Span]] = ContextVar(
     "_current_genai_span", default=None
 )
-
-
-def _is_async_context() -> bool:
-    """Return True when called inside a running asyncio event loop."""
-    try:
-        asyncio.get_running_loop()
-        return True
-    except RuntimeError:
-        return False
 
 
 def set_genai_context(
@@ -649,16 +640,15 @@ class TelemetryHandler:
     def _push_current_span(invocation: GenAI) -> None:
         """After span creation, track this span as current for child resolution.
 
-        In sync contexts, also attach to OTel context so downstream
-        non-GenAI instrumentations (HTTP, DB) see the correct parent.
-        Skipped in async contexts to avoid cross-task detach errors.
+        Also attach to OTel context so downstream instrumentations (HTTP, DB,
+        MCP transport) see the correct parent.  ``_pop_current_span`` handles
+        detach failures gracefully for cross-task / ``copy_context`` scenarios.
         """
         span = getattr(invocation, "span", None)
         if span is not None:
             _current_genai_span.set(span)
-            if not _is_async_context():
-                ctx = trace.set_span_in_context(span)
-                invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
+            ctx = trace.set_span_in_context(span)
+            invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
 
     @staticmethod
     def _pop_current_span(invocation: GenAI) -> None:
@@ -1126,6 +1116,39 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
         return invocation
+
+    # MCPOperation lifecycle (non-tool-call MCP operations) ----------------
+    def start_mcp_operation(self, op: MCPOperation) -> MCPOperation:
+        """Start a non-tool-call MCP operation (list, read, get, etc.)."""
+        _apply_genai_context(op)
+        if (
+            not op.agent_name or not op.agent_id
+        ) and self._agent_context_stack:
+            top_name, top_id = self._agent_context_stack[-1]
+            if not op.agent_name:
+                op.agent_name = top_name
+            if not op.agent_id:
+                op.agent_id = top_id
+        self._inherit_parent_span(op)
+        self._emitter.on_start(op)
+        self._push_current_span(op)
+        return op
+
+    def stop_mcp_operation(self, op: MCPOperation) -> MCPOperation:
+        """Finalize a non-tool-call MCP operation successfully."""
+        op.end_time = timeit.default_timer()
+        self._emitter.on_end(op)
+        self._pop_current_span(op)
+        return op
+
+    def fail_mcp_operation(
+        self, op: MCPOperation, error: Error
+    ) -> MCPOperation:
+        """Fail a non-tool-call MCP operation."""
+        op.end_time = timeit.default_timer()
+        self._emitter.on_error(error, op)
+        self._pop_current_span(op)
+        return op
 
     @staticmethod
     def _maybe_mark_conversation_root(entity: GenAI) -> None:
