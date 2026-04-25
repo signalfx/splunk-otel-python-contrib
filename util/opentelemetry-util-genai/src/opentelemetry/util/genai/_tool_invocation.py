@@ -76,3 +76,28 @@ class ToolInvocation(GenAIInvocation):
         self.error_type = error_type
 
         self._start()
+
+    # -- Upstream hooks ------------------------------------------------------
+
+    def _get_metric_attributes(self) -> dict[str, Any]:
+        from opentelemetry.semconv._incubating.attributes import (
+            gen_ai_attributes as GenAIAttributes,
+        )
+
+        from opentelemetry.util.genai.attributes import GEN_AI_FRAMEWORK
+
+        attrs: dict[str, Any] = {}
+        if self.framework is not None:
+            attrs[GEN_AI_FRAMEWORK] = self.framework
+        if self.provider:
+            attrs[GenAIAttributes.GEN_AI_PROVIDER_NAME] = self.provider
+        attrs[GenAIAttributes.GEN_AI_OPERATION_NAME] = (
+            GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
+        )
+        if self.name:
+            attrs[GenAIAttributes.GEN_AI_REQUEST_MODEL] = self.name
+        if self.agent_name:
+            attrs[GenAIAttributes.GEN_AI_AGENT_NAME] = self.agent_name
+        if self.agent_id:
+            attrs[GenAIAttributes.GEN_AI_AGENT_ID] = self.agent_id
+        return attrs

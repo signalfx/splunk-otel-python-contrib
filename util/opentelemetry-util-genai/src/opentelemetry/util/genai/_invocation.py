@@ -39,7 +39,7 @@ from opentelemetry import trace
 from opentelemetry.metrics import MeterProvider
 from opentelemetry.trace import Span, SpanContext
 
-from opentelemetry.util.genai.types import Error, ErrorClassification
+from opentelemetry.util.genai._error import Error, ErrorClassification
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +113,7 @@ class GenAIInvocation:
         self.evaluation_error: Optional[str] = None
         self.attributes: dict[str, Any] = attributes if attributes is not None else {}
         self.context_token: Any = None
+        self.error_type: Optional[str] = None
 
     # -- Start helpers -------------------------------------------------------
 
@@ -199,10 +200,20 @@ class GenAIInvocation:
     def _finish(self, error: Optional[Error] = None) -> None:
         """Finalize the invocation and end its span.
 
-        Sets end_time, evaluation sampling, emits telemetry, fires callbacks,
+        Sets end_time, calls hooks, emits telemetry, fires callbacks,
         restores span context, and flushes metrics.
         """
         self.end_time = timeit.default_timer()
+
+        try:
+            self._apply_finish(error)
+        except Exception:  # pragma: no cover
+            pass
+        if error is not None:
+            try:
+                self._apply_error_attributes(error)
+            except Exception:  # pragma: no cover
+                pass
 
         self.sample_for_evaluation = self._sampler_fn(self.trace_id)
 
@@ -299,3 +310,33 @@ class GenAIInvocation:
             result[f"{GEN_AI_ASSOCIATION_PROPERTIES_PREFIX}.{key}"] = value
 
         return result
+
+    # -- Upstream-compatible hooks -------------------------------------------
+
+    def _apply_finish(self, error: Optional[Error] = None) -> None:
+        """Prepare finish-time state before emitter hooks.
+
+        No-op by default; subclasses may override to compute attributes.
+        Called from ``_finish()`` before ``emitter.on_end/on_error``.
+        """
+
+    def _apply_error_attributes(self, error: Error) -> None:
+        """Set error_type from error. Called from ``_finish()`` on failure."""
+        if error is not None and getattr(error, "type", None) is not None:
+            self.error_type = error.type.__qualname__
+
+    def _get_metric_attributes(self) -> dict[str, Any]:
+        """Return low-cardinality metric attributes for this invocation.
+
+        Used by MetricsEmitter to record metrics for new-style types.
+        Subclasses should override to return operation-specific attributes.
+        """
+        return {}
+
+    def _get_metric_token_counts(self) -> dict[str, int]:
+        """Return token counts for this invocation.
+
+        Expected keys: ``"input"`` and/or ``"output"``.
+        Used by MetricsEmitter to record token usage.
+        """
+        return {}

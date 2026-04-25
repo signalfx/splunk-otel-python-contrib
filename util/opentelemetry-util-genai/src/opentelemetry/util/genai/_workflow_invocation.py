@@ -97,3 +97,24 @@ class WorkflowInvocation(GenAIInvocation):
 
         self._emitter.on_start(self)
         self._push_current_span()
+
+    # -- Upstream hooks ------------------------------------------------------
+
+    def _get_metric_attributes(self) -> dict[str, Any]:
+        from opentelemetry.util.genai.attributes import GEN_AI_FRAMEWORK
+
+        attrs: dict[str, Any] = {}
+        if self.framework is not None:
+            attrs[GEN_AI_FRAMEWORK] = self.framework
+        if self.name:
+            attrs["gen_ai.workflow.name"] = self.name
+        if self.workflow_type:
+            attrs["gen_ai.workflow.type"] = self.workflow_type
+        attrs["gen_ai.operation.name"] = "invoke_workflow"
+        if self.provider:
+            from opentelemetry.semconv._incubating.attributes import (
+                gen_ai_attributes as GenAIAttributes,
+            )
+
+            attrs[GenAIAttributes.GEN_AI_PROVIDER_NAME] = self.provider
+        return attrs

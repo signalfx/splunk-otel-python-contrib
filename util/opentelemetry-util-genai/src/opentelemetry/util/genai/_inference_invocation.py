@@ -133,3 +133,48 @@ class InferenceInvocation(GenAIInvocation):
         self.request_stream = request_stream
 
         self._start()
+
+    # -- Upstream hooks ------------------------------------------------------
+
+    def _get_metric_attributes(self) -> dict[str, Any]:
+        from opentelemetry.semconv._incubating.attributes import (
+            gen_ai_attributes as GenAIAttributes,
+        )
+        from opentelemetry.semconv.attributes import (
+            server_attributes as ServerAttributes,
+        )
+
+        from opentelemetry.util.genai.attributes import GEN_AI_FRAMEWORK
+
+        attrs: dict[str, Any] = {}
+        if self.framework is not None:
+            attrs[GEN_AI_FRAMEWORK] = self.framework
+        if self.provider:
+            attrs[GenAIAttributes.GEN_AI_PROVIDER_NAME] = self.provider
+        if self.operation:
+            attrs[GenAIAttributes.GEN_AI_OPERATION_NAME] = self.operation
+        if self.request_model:
+            attrs[GenAIAttributes.GEN_AI_REQUEST_MODEL] = self.request_model
+        if self.response_model_name:
+            attrs[GenAIAttributes.GEN_AI_RESPONSE_MODEL] = self.response_model_name
+        if self.server_address:
+            attrs[ServerAttributes.SERVER_ADDRESS] = self.server_address
+        if self.server_port:
+            attrs[ServerAttributes.SERVER_PORT] = self.server_port
+        if self.agent_name:
+            attrs[GenAIAttributes.GEN_AI_AGENT_NAME] = self.agent_name
+        if self.agent_id:
+            attrs[GenAIAttributes.GEN_AI_AGENT_ID] = self.agent_id
+        return attrs
+
+    def _get_metric_token_counts(self) -> dict[str, int]:
+        from opentelemetry.semconv._incubating.attributes import (
+            gen_ai_attributes as GenAIAttributes,
+        )
+
+        counts: dict[str, int] = {}
+        if self.input_tokens is not None:
+            counts[GenAIAttributes.GenAiTokenTypeValues.INPUT.value] = self.input_tokens
+        if self.output_tokens is not None:
+            counts[GenAIAttributes.GenAiTokenTypeValues.OUTPUT.value] = self.output_tokens
+        return counts

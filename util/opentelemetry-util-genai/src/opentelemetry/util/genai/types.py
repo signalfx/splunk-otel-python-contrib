@@ -20,6 +20,12 @@ from dataclasses import fields as dataclass_fields
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
 
+from opentelemetry.util.genai._error import (  # noqa: F401 - re-export
+    Error,
+    ErrorClassification,
+    EvaluationResult,
+)
+
 if TYPE_CHECKING:
     from opentelemetry.util.genai.handler import TelemetryHandler
 
@@ -41,6 +47,7 @@ from opentelemetry.util.genai.attributes import (
     GEN_AI_SECURITY_EVENT_ID,
     GEN_AI_TOOL_DEFINITIONS,
 )
+from opentelemetry.util.genai._invocation import GenAIInvocation
 from opentelemetry.util.types import AttributeValue
 
 ContextToken = Token  # simple alias; avoid TypeAlias warning tools
@@ -70,7 +77,7 @@ def _new_str_any_dict() -> dict[str, Any]:
 
 
 @dataclass(kw_only=True)
-class GenAI:
+class GenAI(GenAIInvocation):
     """Base type for all GenAI telemetry entities."""
 
     context_token: Optional[ContextToken] = None
@@ -122,6 +129,21 @@ class GenAI:
     _handler: Optional["TelemetryHandler"] = field(
         default=None, repr=False, compare=False
     )
+
+    def __post_init__(self):
+        # Set safe defaults for GenAIInvocation internal fields.
+        # The dataclass __init__ does not call super().__init__(), so
+        # these fields would be missing on old-style instances.
+        # Old-style types use _handler for lifecycle, not these.
+        self._emitter = None
+        self._agent_context_stack = []
+        self._completion_callbacks = []
+        self._sampler_fn = lambda trace_id: True
+        self._meter_provider = None
+        self._capture_refresh_fn = None
+        self._otel_context_token = None
+        self.parent_span = None
+        self.error_type = None
 
     def stop(self) -> None:
         """Finalize the invocation successfully and end its span.
@@ -581,38 +603,8 @@ class LLMInvocation(GenAI):
         inv.request_stream = self.request_stream
 
 
-class ErrorClassification(Enum):
-    """Classification of an error for status reporting."""
-
-    REAL_ERROR = "error"
-    INTERRUPT = "interrupted"
-    CANCELLATION = "cancelled"
-
-
-@dataclass
-class Error:
-    message: str
-    type: Type[BaseException]
-    classification: ErrorClassification = ErrorClassification.REAL_ERROR
-
-
-@dataclass
-class EvaluationResult:
-    """Represents the outcome of a single evaluation metric.
-
-    Additional fields (e.g., judge model, threshold) can be added without
-    breaking callers that rely only on the current contract.
-    """
-
-    metric_name: str
-    score: Optional[float] = None
-    label: Optional[str] = None
-    explanation: Optional[str] = None
-    error: Optional[Error] = None
-    attributes: Dict[str, Any] = field(default_factory=dict)
-    duration_s: Optional[float] = None
-    evaluator_name: Optional[str] = None
-    evaluation_cost: Optional[float] = None
+# ErrorClassification, Error, and EvaluationResult are imported from ._error
+# and re-exported for backward compatibility (see imports at top of file).
 
 
 @dataclass

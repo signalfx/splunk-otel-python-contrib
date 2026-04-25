@@ -68,6 +68,12 @@ from ..types import (
 from ..types import (
     GenAI as GenAIType,
 )
+from .._embedding_invocation import (
+    EmbeddingInvocation as NewEmbeddingInvocation,
+)
+from .._inference_invocation import InferenceInvocation
+from .._tool_invocation import ToolInvocation
+from .._workflow_invocation import WorkflowInvocation
 from .utils import (
     _apply_function_definitions,
     _apply_llm_finish_semconv,
@@ -413,14 +419,21 @@ class SpanEmitter(EmitterMeta):
     def on_start(
         self, invocation: LLMInvocation | EmbeddingInvocation
     ) -> None:  # type: ignore[override]
-        # Handle new agentic types
-        if isinstance(invocation, Workflow):
+        # Handle new-style invocations (check before old-style to avoid overlap)
+        if isinstance(invocation, WorkflowInvocation):
+            self._start_workflow(invocation)
+        elif isinstance(invocation, ToolInvocation):
+            self._start_new_tool(invocation)
+        elif isinstance(invocation, NewEmbeddingInvocation):
+            self._start_new_embedding(invocation)
+        # Handle old-style agentic types
+        elif isinstance(invocation, Workflow):
             self._start_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
             self._start_agent(invocation)
         elif isinstance(invocation, Step):
             self._start_step(invocation)
-        # Handle existing types
+        # Handle old-style types
         elif isinstance(invocation, ToolCall):
             self._start_tool_call(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
@@ -448,7 +461,15 @@ class SpanEmitter(EmitterMeta):
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
         _apply_evaluation_attributes(invocation.span, invocation)  # type: ignore[override]
-        if isinstance(invocation, Workflow):
+        # New-style invocations (check before old-style)
+        if isinstance(invocation, WorkflowInvocation):
+            self._finish_workflow(invocation)
+        elif isinstance(invocation, ToolInvocation):
+            self._finish_new_tool(invocation)
+        elif isinstance(invocation, NewEmbeddingInvocation):
+            self._finish_new_embedding(invocation)
+        # Old-style types
+        elif isinstance(invocation, Workflow):
             self._finish_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
             self._finish_agent(invocation)
@@ -518,7 +539,15 @@ class SpanEmitter(EmitterMeta):
     def on_error(
         self, error: Error, invocation: LLMInvocation | EmbeddingInvocation
     ) -> None:  # type: ignore[override]
-        if isinstance(invocation, Workflow):
+        # New-style invocations (check before old-style)
+        if isinstance(invocation, WorkflowInvocation):
+            self._error_workflow(error, invocation)
+        elif isinstance(invocation, ToolInvocation):
+            self._error_new_tool(error, invocation)
+        elif isinstance(invocation, NewEmbeddingInvocation):
+            self._error_new_embedding(error, invocation)
+        # Old-style types
+        elif isinstance(invocation, Workflow):
             self._error_workflow(error, invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
             self._error_agent(error, invocation)
@@ -998,5 +1027,145 @@ class SpanEmitter(EmitterMeta):
         if retrieval.error_type:
             span.set_attribute(
                 ErrorAttributes.ERROR_TYPE, retrieval.error_type
+            )
+        span.end()
+
+    # ---- New-style ToolInvocation lifecycle -------------------------------
+    def _start_new_tool(self, tool: ToolInvocation) -> None:
+        """Start a span for a new-style ToolInvocation."""
+        span_name = f"execute_tool {tool.name}"
+        parent_span = getattr(tool, "parent_span", None)
+        parent_ctx = (
+            trace.set_span_in_context(parent_span)
+            if parent_span is not None
+            else None
+        )
+        span = self._tracer.start_span(
+            span_name,
+            kind=SpanKind.INTERNAL,
+            context=parent_ctx,
+        )
+        self._add_span_to_invocation(tool, span)
+        span.set_attribute(
+            GenAI.GEN_AI_OPERATION_NAME,
+            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+        )
+        if tool.name:
+            span.set_attribute(GenAI.GEN_AI_TOOL_NAME, tool.name)
+        if tool.tool_type:
+            span.set_attribute("gen_ai.tool.type", tool.tool_type)
+        if tool.tool_description:
+            span.set_attribute("gen_ai.tool.description", tool.tool_description)
+        if self._capture_content and tool.arguments is not None:
+            try:
+                import json as _json
+
+                args_str = (
+                    _json.dumps(tool.arguments, default=str)
+                    if not isinstance(tool.arguments, str)
+                    else tool.arguments
+                )
+                span.set_attribute("gen_ai.tool.call.arguments", args_str)
+            except Exception:  # pragma: no cover
+                pass
+        _apply_gen_ai_semconv_attributes(
+            span, tool.semantic_convention_attributes()
+        )
+
+    def _finish_new_tool(self, tool: ToolInvocation) -> None:
+        """Finish a new-style ToolInvocation span."""
+        span = tool.span
+        if span is None:
+            return
+        if hasattr(span, "is_recording") and span.is_recording():
+            if self._capture_content and tool.tool_result is not None:
+                try:
+                    import json as _json
+
+                    result_str = (
+                        _json.dumps(tool.tool_result, default=str)
+                        if not isinstance(tool.tool_result, str)
+                        else tool.tool_result
+                    )
+                    span.set_attribute("gen_ai.tool.call.result", result_str)
+                except Exception:  # pragma: no cover
+                    pass
+            span.end()
+
+    def _error_new_tool(self, error: Error, tool: ToolInvocation) -> None:
+        """Fail a new-style ToolInvocation span."""
+        span = tool.span
+        if span is None:
+            return
+        self._apply_error_status(span, error)
+        span.end()
+
+    # ---- New-style EmbeddingInvocation lifecycle -------------------------
+    def _start_new_embedding(self, embedding: NewEmbeddingInvocation) -> None:
+        """Start a span for a new-style EmbeddingInvocation."""
+        span_name = f"{embedding.operation_name} {embedding.request_model}"
+        parent_span = getattr(embedding, "parent_span", None)
+        parent_ctx = (
+            trace.set_span_in_context(parent_span)
+            if parent_span is not None
+            else None
+        )
+        span = self._tracer.start_span(
+            span_name,
+            kind=SpanKind.CLIENT,
+            context=parent_ctx,
+        )
+        self._add_span_to_invocation(embedding, span)
+        span.set_attribute(
+            GenAI.GEN_AI_OPERATION_NAME, embedding.operation_name
+        )
+        if embedding.request_model:
+            span.set_attribute(
+                GenAI.GEN_AI_REQUEST_MODEL, embedding.request_model
+            )
+        if embedding.server_address:
+            span.set_attribute(SERVER_ADDRESS, embedding.server_address)
+        if embedding.server_port:
+            span.set_attribute(SERVER_PORT, embedding.server_port)
+        if embedding.encoding_formats:
+            span.set_attribute(
+                GEN_AI_REQUEST_ENCODING_FORMATS, embedding.encoding_formats
+            )
+        if self._capture_content and embedding.input_texts:
+            span.set_attribute(
+                GEN_AI_EMBEDDINGS_INPUT_TEXTS, embedding.input_texts
+            )
+        _apply_gen_ai_semconv_attributes(
+            span, embedding.semantic_convention_attributes()
+        )
+
+    def _finish_new_embedding(
+        self, embedding: NewEmbeddingInvocation
+    ) -> None:
+        """Finish a new-style EmbeddingInvocation span."""
+        span = embedding.span
+        if span is None:
+            return
+        if embedding.dimension_count:
+            span.set_attribute(
+                GEN_AI_EMBEDDINGS_DIMENSION_COUNT, embedding.dimension_count
+            )
+        if embedding.input_tokens is not None:
+            span.set_attribute(
+                GenAI.GEN_AI_USAGE_INPUT_TOKENS, embedding.input_tokens
+            )
+        span.end()
+
+    def _error_new_embedding(
+        self, error: Error, embedding: NewEmbeddingInvocation
+    ) -> None:
+        """Fail a new-style EmbeddingInvocation span."""
+        span = embedding.span
+        if span is None:
+            return
+        self._apply_error_status(span, error)
+        if embedding.error_type:
+            span.set_attribute(
+                ErrorAttributes.ERROR_TYPE, embedding.error_type
             )
         span.end()
