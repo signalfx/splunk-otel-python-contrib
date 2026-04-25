@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any, Callable, List, Optional, Tuple
 
 from opentelemetry.metrics import MeterProvider
-
 from opentelemetry.util.genai._invocation import GenAIInvocation
 
 
@@ -46,7 +45,7 @@ class ToolInvocation(GenAIInvocation):
         system: Optional[str] = None,
         name: str = "",
         arguments: Any = None,
-        id: Optional[str] = None,
+        tool_id: Optional[str] = None,
         tool_type: Optional[str] = None,
         tool_description: Optional[str] = None,
         tool_result: Optional[Any] = None,
@@ -68,7 +67,7 @@ class ToolInvocation(GenAIInvocation):
         # Tool-specific fields
         self.name = name
         self.arguments = arguments
-        self.id = id
+        self.id = tool_id
         self.type = "tool_call"
         self.tool_type = tool_type
         self.tool_description = tool_description
@@ -83,7 +82,6 @@ class ToolInvocation(GenAIInvocation):
         from opentelemetry.semconv._incubating.attributes import (
             gen_ai_attributes as GenAIAttributes,
         )
-
         from opentelemetry.util.genai.attributes import GEN_AI_FRAMEWORK
 
         attrs: dict[str, Any] = {}

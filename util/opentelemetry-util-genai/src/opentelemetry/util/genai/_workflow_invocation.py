@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any, Callable, List, Optional, Tuple
 
 from opentelemetry.metrics import MeterProvider
-
 from opentelemetry.util.genai._invocation import GenAIInvocation
 from opentelemetry.util.genai.types import InputMessage, OutputMessage
 

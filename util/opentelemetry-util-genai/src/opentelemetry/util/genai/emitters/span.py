@@ -15,6 +15,11 @@ from opentelemetry.semconv.attributes import (
 from opentelemetry.trace import Span, SpanKind, Tracer
 from opentelemetry.trace.status import Status, StatusCode
 
+from .._embedding_invocation import (
+    EmbeddingInvocation as NewEmbeddingInvocation,
+)
+from .._tool_invocation import ToolInvocation
+from .._workflow_invocation import WorkflowInvocation
 from ..attributes import (
     FINISH_REASON_CANCELLED,
     FINISH_REASON_FAILED,
@@ -69,12 +74,6 @@ from ..types import (
 from ..types import (
     GenAI as GenAIType,
 )
-from .._embedding_invocation import (
-    EmbeddingInvocation as NewEmbeddingInvocation,
-)
-from .._inference_invocation import InferenceInvocation
-from .._tool_invocation import ToolInvocation
-from .._workflow_invocation import WorkflowInvocation
 from .utils import (
     _apply_function_definitions,
     _apply_llm_finish_semconv,

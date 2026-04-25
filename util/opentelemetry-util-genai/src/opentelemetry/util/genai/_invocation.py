@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import timeit
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator, List, Optional, Tuple
@@ -38,7 +37,6 @@ from opentelemetry import context as context_api
 from opentelemetry import trace
 from opentelemetry.metrics import MeterProvider
 from opentelemetry.trace import Span, SpanContext
-
 from opentelemetry.util.genai._error import Error, ErrorClassification
 
 _LOGGER = logging.getLogger(__name__)
@@ -282,11 +280,11 @@ class GenAIInvocation:
 
         Subclasses should override to include type-specific attributes.
         """
-        from opentelemetry.util.genai.attributes import (
-            GEN_AI_ASSOCIATION_PROPERTIES_PREFIX,
-        )
         from opentelemetry.semconv._incubating.attributes import (
             gen_ai_attributes as GenAIAttributes,
+        )
+        from opentelemetry.util.genai.attributes import (
+            GEN_AI_ASSOCIATION_PROPERTIES_PREFIX,
         )
 
         result: dict[str, Any] = {}

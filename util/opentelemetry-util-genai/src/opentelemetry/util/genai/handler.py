@@ -77,6 +77,23 @@ from opentelemetry.trace import (
     TracerProvider,
     get_tracer,
 )
+from opentelemetry.util.genai._embedding_invocation import (
+    EmbeddingInvocation as NewEmbeddingInvocation,
+)
+from opentelemetry.util.genai._inference_invocation import (
+    InferenceInvocation,
+)
+
+# New-style invocation classes
+from opentelemetry.util.genai._invocation import (
+    GenAIInvocation,
+)
+from opentelemetry.util.genai._tool_invocation import (
+    ToolInvocation,
+)
+from opentelemetry.util.genai._workflow_invocation import (
+    WorkflowInvocation,
+)
 from opentelemetry.util.genai.emitters.configuration import (
     build_emitter_pipeline,
 )
@@ -110,23 +127,6 @@ from opentelemetry.util.genai.utils import (
 from opentelemetry.util.genai.version import __version__
 
 from .callbacks import CompletionCallback
-
-# New-style invocation classes
-from opentelemetry.util.genai._invocation import (
-    GenAIInvocation,
-)
-from opentelemetry.util.genai._inference_invocation import (
-    InferenceInvocation,
-)
-from opentelemetry.util.genai._embedding_invocation import (
-    EmbeddingInvocation as NewEmbeddingInvocation,
-)
-from opentelemetry.util.genai._tool_invocation import (
-    ToolInvocation,
-)
-from opentelemetry.util.genai._workflow_invocation import (
-    WorkflowInvocation,
-)
 from .config import parse_env
 from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
@@ -758,7 +758,7 @@ class TelemetryHandler:
             **self._invocation_components(),
             name=name,
             arguments=arguments,
-            id=tool_call_id,
+            tool_id=tool_call_id,
             tool_type=tool_type,
             tool_description=tool_description,
         )

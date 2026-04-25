@@ -18,7 +18,15 @@ from contextvars import Token
 from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Union,
+)
 
 from opentelemetry.util.genai._error import (  # noqa: F401 - re-export
     Error,
@@ -42,12 +50,12 @@ if not hasattr(GenAIAttributes, "GEN_AI_PROVIDER_NAME"):
     GenAIAttributes.GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 
 # Import security attribute from centralized attributes module
+from opentelemetry.util.genai._invocation import GenAIInvocation
 from opentelemetry.util.genai.attributes import (
     GEN_AI_REQUEST_STREAM,
     GEN_AI_SECURITY_EVENT_ID,
     GEN_AI_TOOL_DEFINITIONS,
 )
-from opentelemetry.util.genai._invocation import GenAIInvocation
 from opentelemetry.util.types import AttributeValue
 
 ContextToken = Token  # simple alias; avoid TypeAlias warning tools

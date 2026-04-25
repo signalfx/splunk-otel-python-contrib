@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any, Callable, List, Optional, Tuple
 
 from opentelemetry.metrics import MeterProvider
-
 from opentelemetry.util.genai._invocation import GenAIInvocation
 
 
@@ -92,7 +91,6 @@ class EmbeddingInvocation(GenAIInvocation):
         from opentelemetry.semconv.attributes import (
             server_attributes as ServerAttributes,
         )
-
         from opentelemetry.util.genai.attributes import GEN_AI_FRAMEWORK
 
         attrs: dict[str, Any] = {}
