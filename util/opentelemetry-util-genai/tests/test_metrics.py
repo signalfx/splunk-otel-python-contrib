@@ -32,6 +32,7 @@ from opentelemetry.util.genai.types import (
     Error,
     InputMessage,
     LLMInvocation,
+    MCPOperation,
     OutputMessage,
     Text,
 )
@@ -645,17 +646,18 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         """mcp.client.session.duration is recorded when a client MCP session closes normally."""
         handler = self._get_handler()
 
-        session = AgentInvocation(
-            name="mcp.client",
-            agent_type="mcp_client",
+        session = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            network_transport="pipe",
+            is_client=True,
+            framework="fastmcp",
             system="mcp",
         )
-        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
-        session.attributes["network.transport"] = "pipe"
 
-        handler.start_agent(session)
+        handler.start_mcp_operation(session)
         time.sleep(0.01)
-        handler.stop_agent(session)
+        handler.stop_mcp_operation(session)
 
         try:
             self.meter_provider.force_flush()
@@ -687,18 +689,18 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         """mcp.client.session.duration includes error.type when session fails."""
         handler = self._get_handler()
 
-        session = AgentInvocation(
-            name="mcp.client",
-            agent_type="mcp_client",
+        session = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            network_transport="pipe",
+            is_client=True,
+            framework="fastmcp",
             system="mcp",
         )
-        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
-        session.attributes["network.transport"] = "pipe"
-        session.attributes["error.type"] = "ConnectionError"
 
-        handler.start_agent(session)
+        handler.start_mcp_operation(session)
         time.sleep(0.01)
-        handler.fail_agent(
+        handler.fail_mcp_operation(
             session, Error(type=ConnectionError, message="connection lost")
         )
 
@@ -731,17 +733,18 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         """mcp.server.session.duration is recorded for server-side MCP sessions."""
         handler = self._get_handler()
 
-        session = AgentInvocation(
-            name="mcp.server",
-            agent_type="mcp_server",
+        session = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            network_transport="tcp",
+            is_client=False,
+            framework="fastmcp",
             system="mcp",
         )
-        session.attributes["gen_ai.operation.name"] = "mcp.server_session"
-        session.attributes["network.transport"] = "tcp"
 
-        handler.start_agent(session)
+        handler.start_mcp_operation(session)
         time.sleep(0.01)
-        handler.stop_agent(session)
+        handler.stop_mcp_operation(session)
 
         try:
             self.meter_provider.force_flush()
