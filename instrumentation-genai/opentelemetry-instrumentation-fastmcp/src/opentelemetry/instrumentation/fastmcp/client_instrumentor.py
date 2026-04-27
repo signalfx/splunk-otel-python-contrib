@@ -112,27 +112,21 @@ class ClientInstrumentor:
         within the session are recorded as children.  This approach makes
         ``initialize`` the root span for standalone FastMCP apps while still
         nesting correctly under outer GenAI spans (e.g. LangChain, OpenAI).
-
-        ``mcp.session.id`` is set to a generated UUID and also stored as
-        ``conversation_id`` for SDOT's cross-signal session correlation.
         """
         instrumentor = self
         handler = self._handler
 
         async def traced_enter(wrapped, instance, args, kwargs):
-            session_id = str(uuid.uuid4())
             transport = detect_transport(instance)
 
             init_op = MCPOperation(
                 target="",
                 mcp_method_name="initialize",
                 network_transport=transport,
-                mcp_session_id=session_id,
                 is_client=True,
                 framework="fastmcp",
                 system="mcp",
             )
-            init_op.conversation_id = session_id
 
             handler.start_mcp_operation(init_op)
 
@@ -229,10 +223,7 @@ class ClientInstrumentor:
             )
 
             if parent_session:
-                if parent_session.mcp_session_id:
-                    tool_call.mcp_session_id = parent_session.mcp_session_id
-                if parent_session.conversation_id:
-                    tool_call.conversation_id = parent_session.conversation_id
+                pass  # parent context inherited automatically via OTel span hierarchy
 
             if should_capture_content() and tool_args:
                 try:

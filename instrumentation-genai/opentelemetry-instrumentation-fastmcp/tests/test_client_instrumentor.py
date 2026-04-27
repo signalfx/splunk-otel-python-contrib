@@ -56,8 +56,8 @@ class TestClientInstrumentor:
         assert init_op.mcp_method_name == "initialize"
         assert init_op.is_client is True
         assert init_op.framework == "fastmcp"
-        assert init_op.mcp_session_id is not None
-        assert init_op.conversation_id == init_op.mcp_session_id
+        assert init_op.mcp_session_id is None
+        assert init_op.conversation_id is None
 
     @pytest.mark.asyncio
     async def test_client_enter_wrapper_enriches_protocol_version(

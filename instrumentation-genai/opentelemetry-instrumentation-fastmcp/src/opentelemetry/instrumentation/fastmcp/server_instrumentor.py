@@ -162,27 +162,22 @@ class ServerInstrumentor:
         This mirrors the client's session-spanning ``initialize`` span and
         ensures ``mcp.server.session.duration`` is recorded.
 
-        ``mcp.session.id`` is set to a generated UUID and also stored as
-        ``conversation_id`` for SDOT's cross-signal session correlation.
         """
         instrumentor = self
         handler = self._handler
 
         async def traced_server_run(wrapped, instance, args, kwargs):
             server_name = instrumentor._server_name or "mcp_server"
-            session_id = str(uuid4())
 
             init_op = MCPOperation(
                 target="",
                 mcp_method_name="initialize",
                 network_transport="pipe",
-                mcp_session_id=session_id,
                 sdot_mcp_server_name=server_name,
                 is_client=False,
                 framework="fastmcp",
                 system="mcp",
             )
-            init_op.conversation_id = session_id
 
             handler.start_mcp_operation(init_op)
             try:
