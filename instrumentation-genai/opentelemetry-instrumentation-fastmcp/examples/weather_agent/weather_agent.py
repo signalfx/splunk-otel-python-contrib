@@ -142,7 +142,9 @@ async def run_agent(user_query: str, manual: bool = True):
         raise RuntimeError(
             "Set OPENAI_API_KEY (Azure / OpenAI) or NVIDIA_API_KEY before running."
         )
-    base_url = os.environ.get("OPENAI_BASE_URL") or "https://integrate.api.nvidia.com/v1"
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL") or "https://integrate.api.nvidia.com/v1"
+    )
     model = os.environ.get("OPENAI_MODEL") or "nvidia/llama-3.3-nemotron-super-49b-v1"
 
     openai = OpenAI(base_url=base_url, api_key=api_key)
