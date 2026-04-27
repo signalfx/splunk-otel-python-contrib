@@ -41,8 +41,8 @@ class TestServerInstrumentor:
         assert init_op.framework == "fastmcp"
         assert init_op.sdot_mcp_server_name == "weather-server"
         assert init_op.network_transport == "pipe"
-        assert init_op.mcp_session_id is not None
-        assert init_op.conversation_id == init_op.mcp_session_id
+        assert init_op.mcp_session_id is None
+        assert init_op.conversation_id is None
 
     @pytest.mark.asyncio
     async def test_server_run_wrapper_failure(self, mock_telemetry_handler):
