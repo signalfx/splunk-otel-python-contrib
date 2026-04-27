@@ -15,13 +15,13 @@
 """FastMCP client-side instrumentation."""
 
 import logging
+import uuid
 from typing import Any, Callable
 
 from wrapt import register_post_import_hook, wrap_function_wrapper
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
-    AgentInvocation,
     Error,
     MCPOperation,
     MCPToolCall,
@@ -75,7 +75,7 @@ class ClientInstrumentor:
 
     def __init__(self, telemetry_handler: TelemetryHandler):
         self._handler = telemetry_handler
-        self._active_sessions: dict[int, AgentInvocation] = {}
+        self._active_sessions: dict[int, MCPOperation] = {}
 
     def instrument(self):
         """Apply FastMCP client-side instrumentation."""
@@ -106,59 +106,93 @@ class ClientInstrumentor:
     # Session lifecycle
     # ------------------------------------------------------------------
     def _client_enter_wrapper(self):
-        """Wrapper for FastMCP Client.__aenter__ to start a session trace."""
+        """Wrapper for FastMCP Client.__aenter__ — creates an ``initialize`` root span.
+
+        The span remains open until ``__aexit__`` so that all MCP operations
+        within the session are recorded as children.  This approach makes
+        ``initialize`` the root span for standalone FastMCP apps while still
+        nesting correctly under outer GenAI spans (e.g. LangChain, OpenAI).
+
+        ``mcp.session.id`` is set to a generated UUID and also stored as
+        ``conversation_id`` for SDOT's cross-signal session correlation.
+        """
         instrumentor = self
         handler = self._handler
 
         async def traced_enter(wrapped, instance, args, kwargs):
+            session_id = str(uuid.uuid4())
+            transport = detect_transport(instance)
+
+            init_op = MCPOperation(
+                target="",
+                mcp_method_name="initialize",
+                network_transport=transport,
+                mcp_session_id=session_id,
+                is_client=True,
+                framework="fastmcp",
+                system="mcp",
+            )
+            init_op.conversation_id = session_id
+
+            handler.start_mcp_operation(init_op)
+
             try:
                 result = await wrapped(*args, **kwargs)
 
-                session = AgentInvocation(
-                    name="mcp.client",
-                    agent_type="mcp_client",
-                    framework="fastmcp",
-                    system="mcp",
-                )
-                session.attributes["gen_ai.operation.name"] = "mcp.client_session"
-                session.attributes["network.transport"] = "pipe"  # stdio = pipe
+                # Enrich with protocol version from FastMCP after successful connect
+                try:
+                    init_result = getattr(instance, "initialize_result", None)
+                    if init_result is not None:
+                        if hasattr(init_result, "protocolVersion"):
+                            init_op.mcp_protocol_version = str(
+                                init_result.protocolVersion
+                            )
+                        if (
+                            hasattr(init_result, "serverInfo")
+                            and init_result.serverInfo
+                        ):
+                            init_op.sdot_mcp_server_name = str(
+                                init_result.serverInfo.name
+                            )
+                except Exception:
+                    pass
 
-                instrumentor._active_sessions[id(instance)] = session
-                handler.start_agent(session)
-
+                instrumentor._active_sessions[id(instance)] = init_op
                 return result
+
             except Exception as e:
-                _LOGGER.debug("Error in client enter wrapper: %s", e, exc_info=True)
-                return await wrapped(*args, **kwargs)
+                handler.fail_mcp_operation(init_op, Error(type=type(e), message=str(e)))
+                raise
 
         return traced_enter
 
     def _client_exit_wrapper(self):
-        """Wrapper for FastMCP Client.__aexit__ to end the session trace."""
+        """Wrapper for FastMCP Client.__aexit__ — closes the ``initialize`` session span."""
         instrumentor = self
         handler = self._handler
 
         async def traced_exit(wrapped, instance, args, kwargs):
             try:
-                session = instrumentor._active_sessions.pop(id(instance), None)
+                init_op = instrumentor._active_sessions.pop(id(instance), None)
                 exc_type = args[0] if args else None
 
-                if session:
+                if init_op:
                     if exc_type:
-                        session.attributes["error.type"] = (
+                        init_op.is_error = True
+                        init_op.mcp_error_type = (
                             exc_type.__qualname__
                             if isinstance(exc_type, type)
                             else str(exc_type)
                         )
-                        handler.fail_agent(
-                            session,
+                        handler.fail_mcp_operation(
+                            init_op,
                             Error(
                                 type=exc_type,
                                 message=str(args[1]) if len(args) > 1 else "",
                             ),
                         )
                     else:
-                        handler.stop_agent(session)
+                        handler.stop_mcp_operation(init_op)
 
                 return await wrapped(*args, **kwargs)
             except Exception as e:
@@ -176,8 +210,6 @@ class ClientInstrumentor:
         instrumentor = self
 
         async def traced_call_tool(wrapped, instance, args, kwargs):
-            import uuid
-
             tool_name = args[0] if args else kwargs.get("name", "unknown")
             tool_args = args[1] if len(args) > 1 else kwargs.get("arguments", {})
 
@@ -197,8 +229,10 @@ class ClientInstrumentor:
             )
 
             if parent_session:
-                tool_call.agent_name = parent_session.name
-                tool_call.agent_id = parent_session.agent_id
+                if parent_session.mcp_session_id:
+                    tool_call.mcp_session_id = parent_session.mcp_session_id
+                if parent_session.conversation_id:
+                    tool_call.conversation_id = parent_session.conversation_id
 
             if should_capture_content() and tool_args:
                 try:
