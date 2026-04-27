@@ -99,12 +99,22 @@ class StrandsHookProvider:
             if messages:
                 input_messages = convert_strands_messages(messages)
 
+            # Extract conversation_id from invocation_state if provided by user
+            conversation_id = None
+            if isinstance(invocation_state, dict):
+                conversation_id = invocation_state.get(
+                    "conversation_id"
+                ) or invocation_state.get("session_id")
+
             # Create LLM invocation
             invocation = LLMInvocation(
                 request_model=model_id or "unknown",
                 input_messages=input_messages,
                 system="aws.bedrock",
                 provider=self._extract_provider(model_id),
+                conversation_id=safe_str(conversation_id)
+                if conversation_id
+                else None,
             )
 
             # Start the invocation

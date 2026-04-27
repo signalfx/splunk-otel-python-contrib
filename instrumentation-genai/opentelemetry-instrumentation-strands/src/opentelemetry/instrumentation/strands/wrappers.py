@@ -17,7 +17,7 @@
 import asyncio
 import functools
 import logging
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
@@ -236,6 +236,14 @@ def _create_agent_invocation(
         instance, "instructions", None
     )
 
+    # Extract conversation_id from invocation_state kwarg if provided
+    conversation_id = None
+    invocation_state = kwargs.get("invocation_state")
+    if isinstance(invocation_state, dict):
+        conversation_id = invocation_state.get(
+            "conversation_id"
+        ) or invocation_state.get("session_id")
+
     # Create invocation
     invocation = AgentInvocation(
         name=agent_name,
@@ -247,6 +255,7 @@ def _create_agent_invocation(
         system_instructions=safe_str(system_instructions)
         if system_instructions
         else None,
+        conversation_id=safe_str(conversation_id) if conversation_id else None,
     )
 
     return invocation
@@ -292,6 +301,55 @@ def _populate_agent_result(invocation: AgentInvocation, result: Any) -> None:
                     ) or getattr(usage, "output_tokens", None)
     except Exception as e:
         _LOGGER.debug("Error populating agent result: %s", e)
+
+
+async def wrap_stream_messages(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    hook_provider: Any,
+) -> AsyncGenerator:
+    """Wrap stream_messages to capture token usage and set it on the active LLMInvocation.
+
+    stream_messages is an async generator that yields StreamEvents, with the final
+    event being a ModelStopReason containing usage (inputTokens, outputTokens).
+    We pass all events through unchanged and intercept the ModelStopReason to
+    populate the active LLMInvocation before hooks call stop_llm().
+
+    Args:
+        wrapped: Original stream_messages function
+        instance: None (module-level function)
+        args: Positional arguments
+        kwargs: Keyword arguments
+        hook_provider: StrandsHookProvider with _active_llm_invocations tracking
+    """
+    try:
+        from strands.event_loop.streaming import ModelStopReason
+    except ImportError:
+        async for event in wrapped(*args, **kwargs):
+            yield event
+        return
+
+    invocation_state = kwargs.get("invocation_state")
+
+    async for event in wrapped(*args, **kwargs):
+        yield event
+        if isinstance(event, ModelStopReason) and invocation_state is not None:
+            try:
+                stop_data = event.get("stop")
+                if stop_data and len(stop_data) >= 3:
+                    usage = stop_data[2]
+                    if usage and invocation_state is not None:
+                        state_id = id(invocation_state)
+                        invocation = hook_provider._active_llm_invocations.get(
+                            state_id
+                        )
+                        if invocation is not None:
+                            invocation.input_tokens = usage.get("inputTokens")
+                            invocation.output_tokens = usage.get("outputTokens")
+            except Exception as e:
+                _LOGGER.debug("Error extracting token usage from stream: %s", e)
 
 
 def suppress_builtin_tracer() -> None:

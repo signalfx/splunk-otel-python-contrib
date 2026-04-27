@@ -56,6 +56,7 @@ from .wrappers import (
     wrap_agent_init,
     wrap_agent_invoke_async,
     wrap_bedrock_agentcore_app_entrypoint,
+    wrap_stream_messages,
 )
 
 __all__ = ["StrandsInstrumentor", "__version__"]
@@ -144,6 +145,17 @@ class StrandsInstrumentor(BaseInstrumentor):
                     name,
                     exc_info=True,
                 )
+
+        # Wrap stream_messages to capture per-call token usage (inputTokens/outputTokens)
+        # from the ModelStopReason event and set it on the active LLMInvocation before
+        # AfterModelCallEvent fires and handler.stop_llm() is called.
+        _safe_wrap(
+            "strands.event_loop.streaming",
+            "stream_messages",
+            lambda wrapped, instance, args, kwargs: wrap_stream_messages(
+                wrapped, instance, args, kwargs, _hook_provider
+            ),
+        )
 
         # Wrap Agent.__init__ to inject hook provider
         _safe_wrap(
@@ -309,6 +321,7 @@ class StrandsInstrumentor(BaseInstrumentor):
                 )
 
         # Unwrap all wrapped methods
+        _safe_unwrap("strands.event_loop.streaming", "stream_messages")
         _safe_unwrap("strands.agent.agent", "Agent.__init__")
         _safe_unwrap("strands.agent.agent", "Agent.invoke_async")
         _safe_unwrap("bedrock_agentcore", "BedrockAgentCoreApp.entrypoint")

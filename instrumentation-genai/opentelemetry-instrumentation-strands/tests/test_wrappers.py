@@ -20,7 +20,9 @@ from opentelemetry.instrumentation.strands.wrappers import (
     wrap_agent_init,
     wrap_agent_invoke_async,
     wrap_bedrock_agentcore_app_entrypoint,
+    wrap_stream_messages,
 )
+from opentelemetry.util.genai.types import LLMInvocation
 
 
 class MockModel:
@@ -88,6 +90,29 @@ def test_agent_init_missing_hooks_attr(stub_handler):
 
     # Should not raise
     wrap_agent_init(lambda: None, agent, (), {}, hook_provider)
+
+
+@pytest.mark.asyncio
+async def test_async_agent_invocation_with_conversation_id(stub_handler):
+    """wrap_agent_invoke_async should extract conversation_id from invocation_state."""
+    agent = MockAgent(name="async_agent", model_id="anthropic.claude-v2")
+
+    # Mock invoke_async that accepts invocation_state
+    async def invoke_with_state(prompt, invocation_state=None):
+        return f"Response to: {prompt}"
+
+    result = await wrap_agent_invoke_async(
+        invoke_with_state,
+        agent,
+        ("What is AI?",),
+        {"invocation_state": {"conversation_id": "test-conversation-123"}},
+        stub_handler,
+    )
+
+    assert len(stub_handler.started_agents) == 1
+    invocation = stub_handler.started_agents[0]
+    assert invocation.conversation_id == "test-conversation-123"
+    assert result == "Response to: What is AI?"
 
 
 @pytest.mark.asyncio
@@ -181,6 +206,62 @@ def test_bedrock_agentcore_app_wrapper_sync_exception(stub_handler):
     assert len(stub_handler.failed_entities) == 1
     _workflow, error = stub_handler.failed_entities[0]
     assert error.type == "ConnectionError"
+
+
+@pytest.mark.asyncio
+async def test_wrap_stream_messages_sets_token_counts():
+    """wrap_stream_messages should populate input/output tokens on the active LLMInvocation."""
+    from strands.event_loop.streaming import ModelStopReason
+    from strands.types.event_loop import Metrics, Usage
+
+    invocation_state = {}
+    invocation = LLMInvocation(request_model="anthropic.claude-v2")
+
+    class MockHookProvider:
+        _active_llm_invocations = {id(invocation_state): invocation}
+
+    usage = Usage(inputTokens=42, outputTokens=17, totalTokens=59)
+    metrics = Metrics(latencyMs=100)
+    stop_event = ModelStopReason(
+        stop_reason="end_turn",
+        message={"role": "assistant", "content": []},
+        usage=usage,
+        metrics=metrics,
+    )
+
+    async def fake_stream_messages(*args, **kwargs):
+        yield {"contentBlockDelta": {}}
+        yield stop_event
+
+    events = []
+    async for event in wrap_stream_messages(
+        fake_stream_messages,
+        None,
+        (),
+        {"invocation_state": invocation_state},
+        MockHookProvider(),
+    ):
+        events.append(event)
+
+    assert len(events) == 2
+    assert invocation.input_tokens == 42
+    assert invocation.output_tokens == 17
+
+
+@pytest.mark.asyncio
+async def test_wrap_stream_messages_no_invocation_state():
+    """wrap_stream_messages should pass through events when invocation_state is absent."""
+
+    async def fake_stream(*args, **kwargs):
+        yield {"contentBlockDelta": {}}
+
+    events = []
+    async for event in wrap_stream_messages(
+        fake_stream, None, (), {}, object()
+    ):
+        events.append(event)
+
+    assert len(events) == 1
 
 
 @pytest.mark.asyncio
