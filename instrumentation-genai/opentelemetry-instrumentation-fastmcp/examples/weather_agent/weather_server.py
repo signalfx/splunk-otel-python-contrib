@@ -200,3 +200,12 @@ if __name__ == "__main__":
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         mcp.run(transport=args.transport)
+
+    # Explicitly flush metrics after the session ends so that session-level
+    # metrics (mcp.server.session.duration) are exported before the MCP SDK's
+    # 2-second process-termination window expires.
+    from opentelemetry.sdk.metrics import MeterProvider
+
+    mp = __import__("opentelemetry").metrics.get_meter_provider()
+    if isinstance(mp, MeterProvider):
+        mp.force_flush(timeout_millis=1500)
