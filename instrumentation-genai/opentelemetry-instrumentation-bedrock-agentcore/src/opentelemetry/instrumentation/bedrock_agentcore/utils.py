@@ -15,7 +15,25 @@
 """Utility functions for Bedrock AgentCore instrumentation."""
 
 import json
+from os import environ
 from typing import Any
+
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = (
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
+)
+
+
+def is_content_enabled() -> bool:
+    """Check if content capture is enabled via environment variable.
+
+    Returns:
+        True if OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT is set to 'true',
+        False otherwise.
+    """
+    return (
+        environ.get(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, "false").lower()
+        == "true"
+    )
 
 
 def safe_json_dumps(obj: Any) -> str:

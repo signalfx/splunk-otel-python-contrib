@@ -31,6 +31,7 @@ def wrap_memory_retrieve(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap MemoryClient.retrieve_memories to create a RetrievalInvocation span.
 
@@ -40,19 +41,20 @@ def wrap_memory_retrieve(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture query/result content in spans
 
     Returns:
         Result of original retrieve_memories
     """
     try:
         # Signature: retrieve_memories(memory_id, namespace, query, actor_id=None, top_k=3)
-        query = args[2] if len(args) > 2 else kwargs.get("query", "")
-        top_k = args[4] if len(args) > 4 else kwargs.get("top_k")
+        query = kwargs.get("query") or (args[2] if len(args) > 2 else "")
+        top_k = kwargs.get("top_k") or (args[4] if len(args) > 4 else None)
 
         invocation = RetrievalInvocation(
             retriever_type="bedrock-agentcore-memory",
-            query=safe_str(query),
-            top_k=top_k,
+            query=safe_str(query) if capture_content else "",
+            top_k=top_k if capture_content else None,
         )
 
         handler.start_retrieval(invocation)
@@ -61,7 +63,7 @@ def wrap_memory_retrieve(
             result = wrapped(*args, **kwargs)
 
             # Count retrieved records
-            if result and isinstance(result, (list, dict)):
+            if capture_content and result and isinstance(result, (list, dict)):
                 records = (
                     result
                     if isinstance(result, list)
@@ -87,6 +89,7 @@ def wrap_memory_create_event(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap MemoryClient.create_event to create a ToolCall span.
 
@@ -96,6 +99,7 @@ def wrap_memory_create_event(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture arguments/result content in spans
 
     Returns:
         Result of original create_event
@@ -113,7 +117,7 @@ def wrap_memory_create_event(
                     "actor_id": safe_str(actor_id),
                     "session_id": safe_str(session_id),
                 }
-            ),
+            ) if capture_content else None,
             system="bedrock-agentcore",
         )
 
@@ -122,7 +126,7 @@ def wrap_memory_create_event(
         try:
             result = wrapped(*args, **kwargs)
 
-            if result is not None:
+            if capture_content and result is not None:
                 invocation.tool_result = (
                     safe_json_dumps(result) if not isinstance(result, str) else result
                 )
@@ -145,6 +149,7 @@ def wrap_memory_create_blob_event(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap MemoryClient.create_blob_event to create a ToolCall span.
 
@@ -154,14 +159,15 @@ def wrap_memory_create_blob_event(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture arguments/result content in spans
 
     Returns:
         Result of original create_blob_event
     """
     try:
-        memory_id = args[0] if len(args) > 0 else kwargs.get("memory_id")
-        actor_id = args[1] if len(args) > 1 else kwargs.get("actor_id")
-        session_id = args[2] if len(args) > 2 else kwargs.get("session_id")
+        memory_id = kwargs.get("memory_id") or (args[0] if args else None)
+        actor_id = kwargs.get("actor_id") or (args[1] if len(args) > 1 else None)
+        session_id = kwargs.get("session_id") or (args[2] if len(args) > 2 else None)
 
         invocation = ToolCall(
             name="memory.create_blob_event",
@@ -171,7 +177,7 @@ def wrap_memory_create_blob_event(
                     "actor_id": safe_str(actor_id),
                     "session_id": safe_str(session_id),
                 }
-            ),
+            ) if capture_content else None,
             system="bedrock-agentcore",
         )
 
@@ -180,7 +186,7 @@ def wrap_memory_create_blob_event(
         try:
             result = wrapped(*args, **kwargs)
 
-            if result is not None:
+            if capture_content and result is not None:
                 invocation.tool_result = (
                     safe_json_dumps(result) if not isinstance(result, str) else result
                 )
@@ -203,6 +209,7 @@ def wrap_memory_list_events(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap MemoryClient.list_events to create a ToolCall span.
 
@@ -212,6 +219,7 @@ def wrap_memory_list_events(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture arguments/result content in spans
 
     Returns:
         Result of original list_events
@@ -221,7 +229,7 @@ def wrap_memory_list_events(
 
         invocation = ToolCall(
             name="memory.list_events",
-            arguments=safe_json_dumps({"memory_id": safe_str(memory_id)}),
+            arguments=safe_json_dumps({"memory_id": safe_str(memory_id)}) if capture_content else None,
             system="bedrock-agentcore",
         )
 
@@ -230,7 +238,7 @@ def wrap_memory_list_events(
         try:
             result = wrapped(*args, **kwargs)
 
-            if result is not None:
+            if capture_content and result is not None:
                 invocation.tool_result = (
                     safe_json_dumps(result) if not isinstance(result, str) else result
                 )
@@ -265,11 +273,12 @@ def wrap_memory_operation(
         args: tuple,
         kwargs: dict,
         handler: TelemetryHandler,
+        capture_content: bool = False,
     ) -> Any:
         try:
             invocation = ToolCall(
                 name=f"memory.{operation_name}",
-                arguments=safe_json_dumps(kwargs) if kwargs else safe_json_dumps({}),
+                arguments=safe_json_dumps(kwargs) if capture_content and kwargs else None,
                 system="bedrock-agentcore",
             )
 
@@ -278,7 +287,7 @@ def wrap_memory_operation(
             try:
                 result = wrapped(*args, **kwargs)
 
-                if result is not None:
+                if capture_content and result is not None:
                     invocation.tool_result = (
                         safe_json_dumps(result)
                         if not isinstance(result, str)

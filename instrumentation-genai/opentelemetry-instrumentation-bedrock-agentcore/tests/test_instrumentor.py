@@ -14,7 +14,10 @@
 
 """Tests for BedrockAgentCoreInstrumentor."""
 
+import os
+
 from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
+from opentelemetry.instrumentation.bedrock_agentcore.utils import is_content_enabled
 
 
 def test_instrumentor_initialization():
@@ -47,3 +50,42 @@ def test_instrumentation_dependencies():
     instrumentor = BedrockAgentCoreInstrumentor()
     deps = instrumentor.instrumentation_dependencies()
     assert "bedrock-agentcore" in str(deps)
+
+
+# ---------------------------------------------------------------------------
+# is_content_enabled
+# ---------------------------------------------------------------------------
+
+def test_is_content_enabled_false_by_default():
+    """is_content_enabled returns False when env var is unset."""
+    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
+    assert is_content_enabled() is False
+
+
+def test_is_content_enabled_true_when_set():
+    """is_content_enabled returns True when env var is 'true'."""
+    os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
+    try:
+        assert is_content_enabled() is True
+    finally:
+        os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
+
+
+def test_is_content_enabled_case_insensitive():
+    """is_content_enabled treats 'TRUE' and 'True' as enabled."""
+    for value in ("TRUE", "True", "TrUe"):
+        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = value
+        try:
+            assert is_content_enabled() is True, f"Expected True for value={value!r}"
+        finally:
+            os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
+
+
+def test_is_content_enabled_false_for_non_true_values():
+    """is_content_enabled returns False for '1', 'yes', 'on', 'false', empty string."""
+    for value in ("1", "yes", "on", "false", "0", ""):
+        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = value
+        try:
+            assert is_content_enabled() is False, f"Expected False for value={value!r}"
+        finally:
+            os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
