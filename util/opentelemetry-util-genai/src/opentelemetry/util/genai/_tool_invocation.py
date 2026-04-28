@@ -93,7 +93,7 @@ class ToolInvocation(GenAIInvocation):
             GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
         )
         if self.name:
-            attrs[GenAIAttributes.GEN_AI_REQUEST_MODEL] = self.name
+            attrs[GenAIAttributes.GEN_AI_TOOL_NAME] = self.name
         if self.agent_name:
             attrs[GenAIAttributes.GEN_AI_AGENT_NAME] = self.agent_name
         if self.agent_id:

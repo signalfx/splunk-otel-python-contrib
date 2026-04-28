@@ -719,7 +719,7 @@ class TelemetryHandler:
             server_port=server_port,
         )
 
-    def start_new_embedding(
+    def _start_embedding_factory(
         self,
         provider: str,
         *,
@@ -727,7 +727,7 @@ class TelemetryHandler:
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
     ) -> NewEmbeddingInvocation:
-        """Create and start an embedding invocation.
+        """Create and start an embedding invocation (new-style factory).
 
         Set remaining attributes (encoding_formats, etc.) on the returned
         invocation, then call ``invocation.stop()`` or ``invocation.fail()``.
@@ -763,7 +763,7 @@ class TelemetryHandler:
             tool_description=tool_description,
         )
 
-    def start_new_workflow(
+    def _start_workflow_factory(
         self,
         *,
         name: Optional[str] = None,
@@ -771,7 +771,7 @@ class TelemetryHandler:
         framework: Optional[str] = None,
         system: Optional[str] = None,
     ) -> WorkflowInvocation:
-        """Create and start a workflow invocation.
+        """Create and start a workflow invocation (new-style factory).
 
         Set remaining attributes on the returned invocation, then call
         ``invocation.stop()`` or ``invocation.fail()``.
@@ -816,7 +816,7 @@ class TelemetryHandler:
         server_port: Optional[int] = None,
     ):
         """Context manager for embedding invocations."""
-        return self.start_new_embedding(
+        return self._start_embedding_factory(
             provider=provider,
             request_model=request_model,
             server_address=server_address,
@@ -841,7 +841,7 @@ class TelemetryHandler:
             tool_description=tool_description,
         )._managed()
 
-    def new_workflow(
+    def workflow(
         self,
         name: Optional[str] = None,
         *,
@@ -850,7 +850,7 @@ class TelemetryHandler:
         system: Optional[str] = None,
     ):
         """Context manager for workflow invocations."""
-        return self.start_new_workflow(
+        return self._start_workflow_factory(
             name=name,
             workflow_type=workflow_type,
             framework=framework,
@@ -966,9 +966,44 @@ class TelemetryHandler:
         return invocation
 
     def start_embedding(
+        self,
+        provider_or_invocation: "str | EmbeddingInvocation" = None,
+        *,
+        request_model: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
+    ) -> "NewEmbeddingInvocation | EmbeddingInvocation":
+        """Create and start an embedding invocation.
+
+        New-style (preferred)::
+
+            inv = handler.start_embedding("openai", request_model="text-embedding-3-small")
+            inv.stop()
+
+        Legacy (deprecated — pass an ``EmbeddingInvocation`` dataclass)::
+
+            inv = EmbeddingInvocation(...)
+            handler.start_embedding(inv)
+            handler.stop_embedding(inv)
+        """
+        if isinstance(provider_or_invocation, str):
+            return self._start_embedding_factory(
+                provider_or_invocation,
+                request_model=request_model,
+                server_address=server_address,
+                server_port=server_port,
+            )
+        # Legacy path: treat as old-style dataclass invocation
+        return self._start_embedding_legacy(provider_or_invocation)
+
+    def _start_embedding_legacy(
         self, invocation: EmbeddingInvocation
     ) -> EmbeddingInvocation:
-        """Start an embedding invocation and create a pending span entry."""
+        """Start an embedding invocation (legacy dataclass path).
+
+        .. deprecated::
+            Use ``handler.start_embedding(provider)`` (new factory) instead.
+        """
         invocation._handler = self
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
@@ -1276,8 +1311,45 @@ class TelemetryHandler:
         return entity
 
     # Workflow lifecycle --------------------------------------------------
-    def start_workflow(self, workflow: Workflow) -> Workflow:
-        """Start a workflow and create a pending span entry."""
+    def start_workflow(
+        self,
+        workflow_or_name: "Workflow | str | None" = None,
+        *,
+        name: Optional[str] = None,
+        workflow_type: Optional[str] = None,
+        framework: Optional[str] = None,
+        system: Optional[str] = None,
+    ) -> "WorkflowInvocation | Workflow":
+        """Create and start a workflow invocation.
+
+        New-style (preferred)::
+
+            inv = handler.start_workflow(name="my-workflow")
+            inv.stop()
+
+        Legacy (deprecated — pass a ``Workflow`` dataclass)::
+
+            wf = Workflow(name="my-workflow", ...)
+            handler.start_workflow(wf)
+            handler.stop_workflow(wf)
+        """
+        if isinstance(workflow_or_name, Workflow):
+            return self._start_workflow_legacy(workflow_or_name)
+        # New-style factory path
+        resolved_name = workflow_or_name if isinstance(workflow_or_name, str) else name
+        return self._start_workflow_factory(
+            name=resolved_name,
+            workflow_type=workflow_type,
+            framework=framework,
+            system=system,
+        )
+
+    def _start_workflow_legacy(self, workflow: Workflow) -> Workflow:
+        """Start a workflow (legacy dataclass path).
+
+        .. deprecated::
+            Use ``handler.start_workflow(name=...)`` (new factory) instead.
+        """
         workflow._handler = self
         self._refresh_capture_content()
         _apply_genai_context(workflow)

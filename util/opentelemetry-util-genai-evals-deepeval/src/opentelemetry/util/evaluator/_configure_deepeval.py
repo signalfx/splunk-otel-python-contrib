@@ -28,6 +28,17 @@ import os
 # from creating its own spans/events in the context of the instrumented application.
 os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
 
+# Allow LiteLLM to silently drop unsupported parameters (e.g. temperature=0 for
+# gpt-5 models) instead of raising UnsupportedParamsError.  Setting this early
+# ensures the flag is in effect before any deepeval / litellm imports.
+try:
+    import litellm
+
+    if os.environ.get("LITELLM_DROP_PARAMS", "").lower() in ("true", "1", "yes"):
+        litellm.drop_params = True
+except ImportError:
+    pass
+
 # Prevent DeepEval from creating .deepeval folder (for cloud/read-only environments).
 # This triggers a warning message that we suppress during import.
 os.environ.setdefault("DEEPEVAL_FILE_SYSTEM", "READ_ONLY")

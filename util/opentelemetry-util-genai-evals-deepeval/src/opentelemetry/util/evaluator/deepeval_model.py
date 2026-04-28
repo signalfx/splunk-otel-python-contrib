@@ -1,7 +1,7 @@
 # Copyright The OpenTelemetry Authors
 # Licensed under the Apache License, Version 2.0
 
-"""OAuth2-authenticated LLM model for DeepEval via LiteLLM."""
+"""OAuth2-authenticated LLM model for DeepEval via OpenAI SDK (GPTModel)."""
 
 from __future__ import annotations
 
@@ -195,13 +195,12 @@ def create_eval_model() -> Any | None:
         return None  # Use default OpenAI
 
     try:
-        from deepeval.models import LiteLLMModel
+        from deepeval.models import GPTModel
     except ImportError:
-        # LiteLLM not installed, fall back to default
+        # deepeval not installed, fall back to default
         return None
 
     model = os.environ.get("DEEPEVAL_LLM_MODEL", "gpt-4o-mini")
-    provider = os.environ.get("DEEPEVAL_LLM_PROVIDER", "openai")
     app_name = os.environ.get("DEEPEVAL_LLM_CLIENT_APP_NAME")
     auth_header = os.environ.get("DEEPEVAL_LLM_AUTH_HEADER", "api-key")
 
@@ -220,10 +219,8 @@ def create_eval_model() -> Any | None:
     extra_headers: dict[str, str] = {}
 
     # Parse custom headers from JSON environment variable.
-    # Note: LiteLLM does not natively support extra_headers via environment variables
-    # (see https://docs.litellm.ai/docs/completion/input#optional-fields).
-    # We provide DEEPEVAL_LLM_EXTRA_HEADERS to enable custom headers for API gateways
-    # that require additional headers (e.g., system-code for Azure OpenAI proxies).
+    # These are passed as extra_headers in generation_kwargs to the OpenAI SDK.
+    # Useful for API gateways requiring additional headers (e.g., system-code).
     # Example: DEEPEVAL_LLM_EXTRA_HEADERS='{"system-code": "APP-123"}'
     extra_headers_json = os.environ.get("DEEPEVAL_LLM_EXTRA_HEADERS")
     if extra_headers_json:
@@ -257,10 +254,10 @@ def create_eval_model() -> Any | None:
     if extra_headers:
         generation_kwargs["extra_headers"] = extra_headers
 
-    return LiteLLMModel(
-        model=f"{provider}/{model}",
+    return GPTModel(
+        model=model,
         base_url=base_url,
-        api_key=api_key or "placeholder",
+        _openai_api_key=api_key or "placeholder",
         generation_kwargs=generation_kwargs if generation_kwargs else None,
     )
 
