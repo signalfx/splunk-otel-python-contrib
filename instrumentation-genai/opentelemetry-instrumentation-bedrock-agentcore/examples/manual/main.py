@@ -42,6 +42,7 @@ from opentelemetry.semconv.resource import ResourceAttributes
 
 try:
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
     _OTLP_AVAILABLE = True
 except ImportError:
     _OTLP_AVAILABLE = False
@@ -56,6 +57,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Telemetry setup
 # ---------------------------------------------------------------------------
+
 
 def setup_telemetry() -> TracerProvider:
     """Configure OpenTelemetry with OTLP (preferred) or console exporter."""
@@ -93,6 +95,7 @@ def setup_telemetry() -> TracerProvider:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _try(label: str, fn):
     """Run fn(), print result or the exception — never raises."""
     print(f"    → {label}")
@@ -125,6 +128,7 @@ def _get_or_create_memory(memory_client, name: str):
 # Per-component demos
 # ---------------------------------------------------------------------------
 
+
 def demo_memory(memory_client, actor_id: str, session_id: str) -> None:
     """
     MemoryClient — one operation per span type:
@@ -136,7 +140,10 @@ def demo_memory(memory_client, actor_id: str, session_id: str) -> None:
 
     _try("list_memories", lambda: memory_client.list_memories())
 
-    memory = _try("get_or_create_memory", lambda: _get_or_create_memory(memory_client, "demoMemory"))
+    memory = _try(
+        "get_or_create_memory",
+        lambda: _get_or_create_memory(memory_client, "demoMemory"),
+    )
     memory_id = (memory or {}).get("id") or (memory or {}).get("memoryId")
     if not memory_id:
         print("  ⚠ Could not resolve memory_id — skipping remaining memory calls")
@@ -144,19 +151,25 @@ def demo_memory(memory_client, actor_id: str, session_id: str) -> None:
 
     print(f"  ℹ using memory_id={memory_id}")
 
-    _try("create_event", lambda: memory_client.create_event(
-        memory_id=memory_id,
-        actor_id=actor_id,
-        session_id=session_id,
-        messages=[("Hello from the demo", "USER")],
-    ))
+    _try(
+        "create_event",
+        lambda: memory_client.create_event(
+            memory_id=memory_id,
+            actor_id=actor_id,
+            session_id=session_id,
+            messages=[("Hello from the demo", "USER")],
+        ),
+    )
 
     # RetrievalInvocation span
-    _try("retrieve_memories", lambda: memory_client.retrieve_memories(
-        memory_id=memory_id,
-        namespace="demo",
-        query="demo",
-    ))
+    _try(
+        "retrieve_memories",
+        lambda: memory_client.retrieve_memories(
+            memory_id=memory_id,
+            namespace="demo",
+            query="demo",
+        ),
+    )
 
 
 def demo_code_interpreter(code_interpreter) -> None:
@@ -172,9 +185,12 @@ def demo_code_interpreter(code_interpreter) -> None:
     session_id = _try("start", lambda: code_interpreter.start())
 
     if session_id:
-        _try("execute_code", lambda: code_interpreter.execute_code(
-            code="print('Hello from instrumented CodeInterpreter')",
-        ))
+        _try(
+            "execute_code",
+            lambda: code_interpreter.execute_code(
+                code="print('Hello from instrumented CodeInterpreter')",
+            ),
+        )
         _try("stop", lambda: code_interpreter.stop())
 
 
@@ -198,6 +214,7 @@ def demo_browser(browser_client) -> None:
 # ---------------------------------------------------------------------------
 # Main workflow
 # ---------------------------------------------------------------------------
+
 
 def run_demo() -> None:
     from bedrock_agentcore import BedrockAgentCoreApp

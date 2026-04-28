@@ -361,6 +361,7 @@ def wrap_browser_operation(
     Returns:
         Wrapper function
     """
+
     def wrapper(
         wrapped: Any,
         instance: Any,
@@ -382,7 +383,9 @@ def wrap_browser_operation(
 
                 if result is not None:
                     invocation.tool_result = (
-                        safe_json_dumps(result) if not isinstance(result, str) else result
+                        safe_json_dumps(result)
+                        if not isinstance(result, str)
+                        else result
                     )
 
                 handler.stop_tool_call(invocation)
