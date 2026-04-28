@@ -18,6 +18,7 @@ from opentelemetry.trace.status import Status, StatusCode
 from .._embedding_invocation import (
     EmbeddingInvocation as NewEmbeddingInvocation,
 )
+from .._inference_invocation import InferenceInvocation
 from .._tool_invocation import ToolInvocation
 from .._workflow_invocation import WorkflowInvocation
 from ..attributes import (
@@ -434,7 +435,9 @@ class SpanEmitter(EmitterMeta):
     # ---- lifecycle -------------------------------------------------------
     def on_start(self, invocation: Any) -> None:
         # Handle new-style invocations (check before old-style to avoid overlap)
-        if isinstance(invocation, WorkflowInvocation):
+        if isinstance(invocation, InferenceInvocation):
+            self._start_inference(invocation)
+        elif isinstance(invocation, WorkflowInvocation):
             self._start_workflow(invocation)
         elif isinstance(invocation, ToolInvocation):
             self._start_new_tool(invocation)
@@ -479,7 +482,9 @@ class SpanEmitter(EmitterMeta):
     def on_end(self, invocation: Any) -> None:
         _apply_evaluation_attributes(invocation.span, invocation)
         # New-style invocations (check before old-style)
-        if isinstance(invocation, WorkflowInvocation):
+        if isinstance(invocation, InferenceInvocation):
+            self._finish_inference(invocation)
+        elif isinstance(invocation, WorkflowInvocation):
             self._finish_workflow(invocation)
         elif isinstance(invocation, ToolInvocation):
             self._finish_new_tool(invocation)
@@ -557,7 +562,9 @@ class SpanEmitter(EmitterMeta):
 
     def on_error(self, error: Error, invocation: Any) -> None:
         # New-style invocations (check before old-style)
-        if isinstance(invocation, WorkflowInvocation):
+        if isinstance(invocation, InferenceInvocation):
+            self._error_inference(error, invocation)
+        elif isinstance(invocation, WorkflowInvocation):
             self._error_workflow(error, invocation)
         elif isinstance(invocation, ToolInvocation):
             self._error_new_tool(error, invocation)
@@ -1216,4 +1223,143 @@ class SpanEmitter(EmitterMeta):
             span.set_attribute(
                 ErrorAttributes.ERROR_TYPE, embedding.error_type
             )
+        span.end()
+
+    # ---- New-style InferenceInvocation lifecycle ---------------------------
+
+    def _start_inference(self, invocation: InferenceInvocation) -> None:
+        """Start a span for a new-style InferenceInvocation."""
+        operation = invocation.operation or "chat"
+        model_name = invocation.request_model or ""
+        span_name = f"{operation} {model_name}".strip()
+        parent_span = getattr(invocation, "parent_span", None)
+        parent_ctx = (
+            trace.set_span_in_context(parent_span)
+            if parent_span is not None
+            else None
+        )
+        span = self._tracer.start_span(
+            span_name,
+            kind=SpanKind.CLIENT,
+            context=parent_ctx,
+        )
+        self._add_span_to_invocation(invocation, span)
+
+        # Start-time attributes
+        span.set_attribute(GenAI.GEN_AI_OPERATION_NAME, operation)
+        if invocation.request_model:
+            span.set_attribute(
+                GenAI.GEN_AI_REQUEST_MODEL, invocation.request_model
+            )
+        if invocation.provider:
+            span.set_attribute(GEN_AI_PROVIDER_NAME, invocation.provider)
+        if invocation.framework:
+            span.set_attribute("gen_ai.framework", invocation.framework)
+        if invocation.server_address:
+            span.set_attribute(SERVER_ADDRESS, invocation.server_address)
+        if invocation.server_port:
+            span.set_attribute(SERVER_PORT, invocation.server_port)
+        # Function/tool definitions at start time
+        if invocation.request_functions:
+            _apply_function_definitions(span, invocation.request_functions)
+        if (
+            self._capture_content
+            and self._capture_tool_definitions
+            and invocation.tool_definitions
+            and invocation.tool_definitions not in ("[]", "null", "{}")
+        ):
+            span.set_attribute(
+                GEN_AI_TOOL_DEFINITIONS, invocation.tool_definitions
+            )
+        _apply_gen_ai_semconv_attributes(
+            span, invocation.semantic_convention_attributes()
+        )
+
+    def _finish_inference(self, invocation: InferenceInvocation) -> None:
+        """Finish a new-style InferenceInvocation span."""
+        span = invocation.span
+        if span is None:
+            return
+        if not (hasattr(span, "is_recording") and span.is_recording()):
+            return
+
+        # Finish-time attributes: tokens, response model, response id
+        if invocation.input_tokens is not None:
+            span.set_attribute(
+                GenAI.GEN_AI_USAGE_INPUT_TOKENS, invocation.input_tokens
+            )
+        if invocation.output_tokens is not None:
+            span.set_attribute(
+                GenAI.GEN_AI_USAGE_OUTPUT_TOKENS, invocation.output_tokens
+            )
+        if invocation.response_model_name:
+            span.set_attribute(
+                GenAI.GEN_AI_RESPONSE_MODEL, invocation.response_model_name
+            )
+        if invocation.response_id:
+            span.set_attribute(
+                GenAI.GEN_AI_RESPONSE_ID, invocation.response_id
+            )
+        if invocation.response_finish_reasons:
+            span.set_attribute(
+                GenAI.GEN_AI_RESPONSE_FINISH_REASONS,
+                invocation.response_finish_reasons,
+            )
+
+        # Re-apply function definitions (some instrumentors populate at end)
+        if invocation.request_functions:
+            _apply_function_definitions(span, invocation.request_functions)
+        if (
+            self._capture_content
+            and self._capture_tool_definitions
+            and invocation.tool_definitions
+            and invocation.tool_definitions not in ("[]", "null", "{}")
+            and GEN_AI_TOOL_DEFINITIONS not in (span.attributes or {})
+        ):
+            span.set_attribute(
+                GEN_AI_TOOL_DEFINITIONS, invocation.tool_definitions
+            )
+
+        # Capture input messages if content capture enabled
+        if self._capture_content and invocation.input_messages:
+            system_instructions = _extract_system_instructions(
+                invocation.input_messages
+            )
+            if system_instructions is not None:
+                span.set_attribute(
+                    GenAI.GEN_AI_SYSTEM_INSTRUCTIONS, system_instructions
+                )
+            serialized_in = _serialize_messages(
+                invocation.input_messages, exclude_system=True
+            )
+            if serialized_in is not None:
+                span.set_attribute(GEN_AI_INPUT_MESSAGES, serialized_in)
+
+        # Capture output messages if content capture enabled
+        if self._capture_content and invocation.output_messages:
+            serialized_out = _serialize_messages(invocation.output_messages)
+            if serialized_out is not None:
+                span.set_attribute(GEN_AI_OUTPUT_MESSAGES, serialized_out)
+
+        span.end()
+
+    def _error_inference(
+        self, error: Error, invocation: InferenceInvocation
+    ) -> None:
+        """Fail a new-style InferenceInvocation span."""
+        span = invocation.span
+        if span is None:
+            return
+        self._apply_error_status(span, error)
+        # Still apply finish attrs so token counts etc. are captured
+        if hasattr(span, "is_recording") and span.is_recording():
+            if invocation.input_tokens is not None:
+                span.set_attribute(
+                    GenAI.GEN_AI_USAGE_INPUT_TOKENS, invocation.input_tokens
+                )
+            if invocation.output_tokens is not None:
+                span.set_attribute(
+                    GenAI.GEN_AI_USAGE_OUTPUT_TOKENS,
+                    invocation.output_tokens,
+                )
         span.end()
