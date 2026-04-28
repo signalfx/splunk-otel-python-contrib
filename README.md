@@ -389,8 +389,17 @@ Evaluation worker -> evaluate -> handler.evaluation_results(list) -> CompositeEm
 - Async emitters & dynamic hot-reload (deferred).
 - Backpressure strategies for high-volume content events.
 
-## 14. Development setup
+## 14. Semantic Conventions Reference
 
+See [docs/semconv-reference.md](docs/semconv-reference.md) for a complete reference of all GenAI semantic conventions implemented in SDOT, including:
+
+- All span types, metrics, events, and evaluation telemetry
+- Agent name and conversation ID propagation behavior
+- Complete attribute reference with SDOT extensions beyond upstream OTel
+- Links to upstream OTel semantic convention specs
+- Legacy attribute mapping from OpenLLMetry/semconv_ai.py
+
+## 15. Development setup
 Get the packages installed:
 
 Setup a virtual env (Note: will erase your .venv in the current folder)
@@ -443,7 +452,7 @@ export AI_DEFENSE_API_KEY="your-ai-defense-key"
 python instrumentation-genai/opentelemetry-instrumentation-aidefense/examples/multi_agent_travel_planner/main.py
 ```
 
-## 15. Linting and Formatting
+## 16. Linting and Formatting
 
 This project uses [pre-commit](https://pre-commit.com/) hooks to automatically check and fix linting and formatting issues before committing.
 
@@ -530,7 +539,7 @@ The CI lint job checks:
 
 Pre-commit hooks use the same ruff version and configuration as CI, ensuring local checks match CI requirements.
 
-## 16. Test Emitter & Evaluation Performance Testing
+## 17. Test Emitter & Evaluation Performance Testing
 
 The `splunk-otel-genai-emitters-test` package provides tools for testing and validating the evaluation framework:
 
@@ -551,7 +560,7 @@ python -m opentelemetry.util.genai.emitters.eval_perf_test \
     --samples 120 --concurrent --workers 4 --output results.json
 ```
 
-## 17. Validation Strategy
+## 18. Validation Strategy
 
 - Unit tests: env parsing, category overrides, evaluator grammar, sampling, content capture gating.
 - Future: ordering hints tests once implemented.

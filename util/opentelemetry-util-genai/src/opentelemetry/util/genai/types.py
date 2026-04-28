@@ -202,57 +202,106 @@ class ToolCall(GenAI):
 
 
 @dataclass()
-class MCPToolCall(ToolCall):
-    """Represents an MCP (Model Context Protocol) tool call invocation.
+class MCPOperation(GenAI):
+    """Represents any MCP protocol operation (non-tool-call).
 
-    Extends ToolCall with MCP-specific semantic conventions:
-    https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+    Covers tools/list, resources/read, resources/list, prompts/get,
+    prompts/list, initialize, ping, etc.
+    See: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
 
-    MCP Semantic Convention Attributes:
-    - mcp.method.name: The name of the request or notification method
-    - mcp.session.id: Session identifier for the MCP connection
-    - mcp.protocol.version: MCP protocol version
-    - mcp.server.name: Name of the MCP server
-    - network.transport: Transport type ("pipe" for stdio, "tcp" for HTTP)
-
-    Metrics-only fields (not span attributes):
-    - output_size_bytes: Output size for metrics tracking
-    - output_size_tokens: Token count for metrics tracking
-    - duration_s: Duration for standalone metrics emission
+    Span name: ``{mcp.method.name} {target}`` (target omitted when empty).
+    SpanKind: CLIENT if ``is_client`` else SERVER.
     """
 
-    # mcp.method.name: The name of the request or notification method
+    target: str = ""
+
+    # --- Required ---
     mcp_method_name: Optional[str] = field(
         default=None,
         metadata={"semconv": "mcp.method.name"},
     )
-    # network.transport: "pipe" for stdio, "tcp" for HTTP
-    network_transport: Optional[str] = field(
+
+    # --- Conditionally required ---
+    jsonrpc_request_id: Optional[str] = field(
         default=None,
-        metadata={"semconv": "network.transport"},
+        metadata={"semconv": "jsonrpc.request.id"},
     )
-    # mcp.session.id: Session identifier
-    mcp_session_id: Optional[str] = field(
+    mcp_resource_uri: Optional[str] = field(
         default=None,
-        metadata={"semconv": "mcp.session.id"},
+        metadata={"semconv": "mcp.resource.uri"},
     )
-    # mcp.protocol.version: MCP protocol version
+    gen_ai_prompt_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "gen_ai.prompt.name"},
+    )
+    rpc_response_status_code: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "rpc.response.status_code"},
+    )
+
+    # --- Recommended ---
     mcp_protocol_version: Optional[str] = field(
         default=None,
         metadata={"semconv": "mcp.protocol.version"},
     )
-    # mcp.server.name: Name of the MCP server
-    mcp_server_name: Optional[str] = field(
+    mcp_session_id: Optional[str] = field(
         default=None,
-        metadata={"semconv": "mcp.server.name"},
+        metadata={"semconv": "mcp.session.id"},
     )
-    # Metrics-only fields (no semconv metadata - not span attributes)
+    network_transport: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.transport"},
+    )
+    network_protocol_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.protocol.name"},
+    )
+    network_protocol_version: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "network.protocol.version"},
+    )
+    server_address: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "server.address"},
+    )
+    server_port: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "server.port"},
+    )
+    client_address: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "client.address"},
+    )
+    client_port: Optional[int] = field(
+        default=None,
+        metadata={"semconv": "client.port"},
+    )
+
+    # --- SDOT custom (not in OTel semconv) ---
+    sdot_mcp_server_name: Optional[str] = field(
+        default=None,
+        metadata={"semconv": "sdot.mcp.server_name"},
+    )
+
+    # --- Internal (no semconv) ---
+    is_client: bool = True
+    duration_s: Optional[float] = None
+    is_error: bool = False
+    mcp_error_type: Optional[str] = None
+
+
+@dataclass()
+class MCPToolCall(MCPOperation, ToolCall):
+    """MCP tool call operation (``tools/call``).
+
+    Inherits MCP transport/protocol attributes from :class:`MCPOperation`
+    and tool content fields (arguments, result, etc.) from :class:`ToolCall`.
+
+    MRO: MCPToolCall -> MCPOperation -> ToolCall -> GenAI
+    """
+
     output_size_bytes: Optional[int] = None
     output_size_tokens: Optional[int] = None
-    duration_s: Optional[float] = None
-    # Internal state tracking (no semconv)
-    is_client: bool = True
-    is_error: bool = False
 
 
 @dataclass()
@@ -657,6 +706,9 @@ __all__ = [
     "AgentCreation",
     "AgentInvocation",
     "Step",
+    # MCP types
+    "MCPOperation",
+    "MCPToolCall",
     # Security semconv constant (Cisco AI Defense) - re-exported from attributes
     "GEN_AI_SECURITY_EVENT_ID",
 ]

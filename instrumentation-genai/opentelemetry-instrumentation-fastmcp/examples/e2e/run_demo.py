@@ -131,9 +131,12 @@ def setup_telemetry(console_output: bool = False):
 async def run_demo():
     """Run the end-to-end demo."""
     from fastmcp import Client
+    from fastmcp.client.transports.stdio import PythonStdioTransport
 
-    # Get the server script path
-    server_script = Path(__file__).parent / "server.py"
+    # Spawn the instrumented server.
+    # MCP SDK's default env only inherits a small allowlist (HOME, PATH,
+    # etc.), so OTEL_* vars must be passed explicitly.
+    server_script = Path(__file__).parent / "server_instrumented.py"
 
     if not server_script.exists():
         raise FileNotFoundError(f"Server script not found: {server_script}")
@@ -141,8 +144,17 @@ async def run_demo():
     print(f"📡 Connecting to Calculator Server ({server_script.name})...")
     print()
 
+    server_env = {
+        k: v
+        for k, v in os.environ.items()
+        if k.startswith(("OTEL_", "VIRTUAL_ENV"))
+        or k in ("HOME", "PATH", "SHELL", "TERM", "USER", "LOGNAME")
+    }
+    server_env["OTEL_SERVICE_NAME"] = "mcp-calculator-server"
+    server_target = PythonStdioTransport(script_path=server_script, env=server_env)
+
     # Connect to the server
-    async with Client(server_script) as client:
+    async with Client(server_target) as client:
         print("✅ Connected!\n")
 
         # Step 1: List available tools

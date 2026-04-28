@@ -15,12 +15,16 @@
 """
 MCP Transport layer instrumentation for trace context propagation.
 
-This module instruments the low-level MCP SDK transport to ensure trace context
-(traceparent, tracestate) is propagated between client and server processes.
+Temporary bridge for ``mcp`` v1.x which does not natively propagate
+OpenTelemetry context.  Can be removed once ``mcp >= 2.x`` is adopted
+(native support landed on the upstream ``main`` branch via PRs #2298 and
+#2381).  See the package README for upstream tracking details.
 
-Approach:
-- Client side: Wrap BaseSession.send_request to inject trace context into _meta
-- Server side: Wrap ServerSession._received_request to extract from request_meta
+- Client side: wraps ``BaseSession.send_request`` to inject trace context
+  into ``params.meta`` (serialized as ``_meta``).
+- Server side: wraps ``Server._handle_request`` to extract trace context
+  from ``request_meta`` and populate ``MCPRequestContext`` for downstream
+  instrumentors.
 """
 
 import logging
@@ -30,13 +34,46 @@ from wrapt import register_post_import_hook, wrap_function_wrapper
 
 from opentelemetry import context, propagate
 
+from opentelemetry.instrumentation.fastmcp._mcp_context import (
+    MCPRequestContext,
+    clear_mcp_request_context,
+    set_mcp_request_context,
+)
+from opentelemetry.instrumentation.fastmcp.utils import detect_transport
+
 _LOGGER = logging.getLogger(__name__)
+
+
+def _extract_carrier_from_meta(request_meta: Any) -> dict[str, str]:
+    """Build a W3C carrier dict from a Pydantic Meta object.
+
+    Checks both first-class attributes and ``model_extra`` so that
+    traceparent, tracestate, and baggage are all captured.
+
+    TODO: Remove when mcp >= 2.x is adopted (see README).
+    """
+    carrier: dict[str, str] = {}
+    if request_meta is None:
+        return carrier
+
+    for key in ("traceparent", "tracestate", "baggage"):
+        val = getattr(request_meta, key, None)
+        if val:
+            carrier[key] = val
+
+    if hasattr(request_meta, "model_extra"):
+        extra = request_meta.model_extra or {}
+        for key in ("traceparent", "tracestate", "baggage"):
+            if key not in carrier and key in extra:
+                carrier[key] = extra[key]
+
+    return carrier
 
 
 class TransportInstrumentor:
     """Instruments MCP transport layer for trace context propagation.
 
-    This handles the low-level MCP SDK to ensure traces are properly correlated
+    Handles low-level MCP SDK to ensure traces are properly correlated
     across client/server process boundaries.
     """
 
@@ -48,7 +85,6 @@ class TransportInstrumentor:
         if self._instrumented:
             return
 
-        # Wrap client-side request sending to inject trace context
         register_post_import_hook(
             lambda _: wrap_function_wrapper(
                 "mcp.shared.session",
@@ -58,9 +94,6 @@ class TransportInstrumentor:
             "mcp.shared.session",
         )
 
-        # Wrap server-side request handling to extract trace context
-        # Use Server._handle_request which is invoked for each request
-        # and has access to message.request_meta with the traceparent
         register_post_import_hook(
             lambda _: wrap_function_wrapper(
                 "mcp.server.lowlevel",
@@ -77,29 +110,22 @@ class TransportInstrumentor:
         """Remove MCP transport instrumentation.
 
         Note: wrapt doesn't provide a clean way to unwrap post-import hooks.
-        This is a known limitation.
         """
         self._instrumented = False
 
     def _send_request_wrapper(self):
         """Wrapper for BaseSession.send_request to inject trace context.
 
-        This runs on the client side before sending any MCP request.
-        Injects traceparent/tracestate into the request's params.meta field.
+        Runs on the client side before sending any MCP request.  Injects
+        traceparent, tracestate, and baggage into params.meta.
 
-        The MCP SDK request structure:
-        - ClientRequest is a discriminated union with a 'root' attribute
-        - request.root contains the actual request (CallToolRequest, etc.)
-        - request.root.params.meta (aliased as _meta in JSON) is a Meta object
-        - Meta has extra='allow', so we can add traceparent/tracestate
+        TODO: Remove when mcp >= 2.x is adopted (see README).
         """
 
         async def traced_send_request(wrapped, instance, args, kwargs) -> Any:
             try:
-                # args[0] is the request wrapper (ClientRequest)
                 request = args[0] if args else kwargs.get("request")
 
-                # Handle discriminated union pattern: ClientRequest has 'root'
                 actual_request = request
                 if hasattr(request, "root"):
                     actual_request = request.root
@@ -111,12 +137,8 @@ class TransportInstrumentor:
                 ):
                     params = actual_request.params
 
-                    # Create or get the meta object
-                    # In pydantic models, 'meta' is the Python attribute,
-                    # '_meta' is the JSON alias
                     if hasattr(params, "meta"):
                         if params.meta is None:
-                            # Create a new Meta object
                             try:
                                 from mcp.types import RequestParams
 
@@ -125,10 +147,7 @@ class TransportInstrumentor:
                                 pass
 
                         if params.meta is not None:
-                            # Inject trace context into meta
-                            # Meta allows extra fields, so we can set
-                            # traceparent and tracestate directly
-                            carrier = {}
+                            carrier: dict[str, str] = {}
                             propagate.inject(carrier)
 
                             if carrier:
@@ -137,13 +156,14 @@ class TransportInstrumentor:
 
                                 method = getattr(actual_request, "method", "unknown")
                                 _LOGGER.debug(
-                                    f"Injected trace context into MCP request: "
-                                    f"{method}, carrier={carrier}"
+                                    "Injected trace context into MCP request: "
+                                    "%s, carrier=%s",
+                                    method,
+                                    carrier,
                                 )
             except Exception as e:
-                _LOGGER.debug(f"Error injecting trace context: {e}", exc_info=True)
+                _LOGGER.debug("Error injecting trace context: %s", e, exc_info=True)
 
-            # Call original method
             return await wrapped(*args, **kwargs)
 
         return traced_send_request
@@ -151,62 +171,61 @@ class TransportInstrumentor:
     def _server_handle_request_wrapper(self):
         """Wrapper for Server._handle_request to extract trace context.
 
-        This runs on the server side when handling an MCP request.
-        The method signature is:
-            _handle_request(self, message, req, session, lifespan_context, raise_exceptions)
+        Runs on the server side.  Extracts W3C context from ``request_meta``
+        and populates :class:`MCPRequestContext` for the server instrumentor.
 
-        message: RequestResponder with request_meta containing traceparent
-        req: The actual request (CallToolRequest, etc.)
+        TODO: Trace-context extract/attach removable when mcp >= 2.x is
+        adopted; MCPRequestContext population must remain (see README).
+
+        Method signature:
+            _handle_request(self, message, req, session, lifespan_context,
+                            raise_exceptions)
         """
 
         async def traced_handle_request(wrapped, instance, args, kwargs) -> Any:
             token = None
             try:
-                # args[0] is the message (RequestResponder)
                 message = args[0] if args else kwargs.get("message")
+                req = args[1] if len(args) > 1 else kwargs.get("req")
+
+                carrier: dict[str, str] = {}
+                jsonrpc_id: str | None = None
+                method_name: str | None = None
+                transport = detect_transport(instance)
 
                 if message and hasattr(message, "request_meta"):
-                    request_meta = message.request_meta
+                    carrier = _extract_carrier_from_meta(message.request_meta)
 
-                    if request_meta is not None:
-                        # Extract trace context from request_meta
-                        # The meta object may have traceparent/tracestate as attributes
-                        carrier = {}
+                if message and hasattr(message, "request_id"):
+                    raw_id = message.request_id
+                    if raw_id is not None:
+                        jsonrpc_id = str(raw_id)
 
-                        # Try to get traceparent and tracestate from meta
-                        # First check as attribute (getattr handles pydantic properly)
-                        traceparent = getattr(request_meta, "traceparent", None)
-                        if traceparent:
-                            carrier["traceparent"] = traceparent
+                if req is not None:
+                    method_name = getattr(req, "method", None)
 
-                        tracestate = getattr(request_meta, "tracestate", None)
-                        if tracestate:
-                            carrier["tracestate"] = tracestate
+                if carrier:
+                    ctx = propagate.extract(carrier)
+                    token = context.attach(ctx)
+                    _LOGGER.debug(
+                        "Attached trace context in _handle_request: carrier=%s",
+                        carrier,
+                    )
 
-                        # Also try model_extra for pydantic v2 extra fields
-                        if not carrier and hasattr(request_meta, "model_extra"):
-                            extra = request_meta.model_extra
-                            if extra:
-                                for key in ["traceparent", "tracestate"]:
-                                    if key in extra:
-                                        carrier[key] = extra[key]
-
-                        if carrier:
-                            ctx = propagate.extract(carrier)
-                            token = context.attach(ctx)
-                            _LOGGER.debug(
-                                f"Attached trace context in _handle_request: "
-                                f"carrier={carrier}"
-                            )
+                mcp_ctx = MCPRequestContext(
+                    jsonrpc_request_id=jsonrpc_id,
+                    mcp_method_name=method_name,
+                    network_transport=transport,
+                )
+                set_mcp_request_context(mcp_ctx)
 
             except Exception as e:
-                _LOGGER.debug(f"Error extracting trace context: {e}", exc_info=True)
+                _LOGGER.debug("Error extracting trace context: %s", e, exc_info=True)
 
             try:
-                # Call original method with attached context
                 return await wrapped(*args, **kwargs)
             finally:
-                # Detach context after request handling
+                clear_mcp_request_context()
                 if token is not None:
                     try:
                         context.detach(token)
@@ -215,7 +234,7 @@ class TransportInstrumentor:
 
         return traced_handle_request
 
-    # Keep old wrapper for backwards compatibility / tests
+    # kept for backward compatibility with existing tests
     def _server_received_request_wrapper(self):
         """Legacy wrapper - replaced by _server_handle_request_wrapper."""
         return self._server_handle_request_wrapper()

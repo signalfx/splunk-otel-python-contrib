@@ -141,28 +141,24 @@ class TestClientInstrumentor:
 
     @pytest.mark.asyncio
     async def test_client_list_tools_wrapper(self, mock_telemetry_handler):
-        """Test client list_tools wrapper."""
+        """Test client list_tools wrapper uses MCPOperation."""
         instrumentor = ClientInstrumentor(mock_telemetry_handler)
         wrapper = instrumentor._client_list_tools_wrapper()
 
-        # Create mock result with tools
-        class MockTool:
-            def __init__(self, name):
-                self.name = name
-
         mock_result = MagicMock()
-        mock_result.tools = [MockTool("tool1"), MockTool("tool2")]
+        mock_result.tools = [MagicMock(name="tool1"), MagicMock(name="tool2")]
         mock_wrapped = AsyncMock(return_value=mock_result)
 
         result = await wrapper(mock_wrapped, MagicMock(), (), {})
 
         assert result == mock_result
-        assert mock_telemetry_handler.start_step.called
-        assert mock_telemetry_handler.stop_step.called
+        assert mock_telemetry_handler.start_mcp_operation.called
+        assert mock_telemetry_handler.stop_mcp_operation.called
 
-        # Verify Step attributes - MCP semantic conventions
-        step = mock_telemetry_handler.start_step.call_args[0][0]
-        assert step.name == "list_tools"
-        assert step.step_type == "admin"
-        assert step.attributes["mcp.method.name"] == "tools/list"
-        assert step.attributes["network.transport"] == "pipe"
+        from opentelemetry.util.genai.types import MCPOperation
+
+        op = mock_telemetry_handler.start_mcp_operation.call_args[0][0]
+        assert isinstance(op, MCPOperation)
+        assert op.mcp_method_name == "tools/list"
+        assert op.is_client is True
+        assert op.network_transport == "pipe"

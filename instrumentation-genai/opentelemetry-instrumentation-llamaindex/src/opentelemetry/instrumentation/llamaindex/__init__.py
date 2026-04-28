@@ -4,6 +4,13 @@ from opentelemetry.instrumentation.llamaindex.config import Config
 from opentelemetry.instrumentation.llamaindex.callback_handler import (
     LlamaindexCallbackHandler,
 )
+from opentelemetry.instrumentation.llamaindex.invocation_manager import (
+    _InvocationManager,
+)
+from opentelemetry.instrumentation.llamaindex.event_handler import (
+    LlamaindexEventHandler,
+    TTFCTracker,
+)
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.llamaindex.workflow_instrumentation import (
     wrap_agent_run,
@@ -40,9 +47,28 @@ class LlamaindexInstrumentor(BaseInstrumentor):
             logger_provider=logger_provider,
         )
 
+        # Create shared TTFC tracker and invocation manager
+        ttfc_tracker = TTFCTracker()
+        invocation_manager = _InvocationManager()
+        invocation_manager.set_ttfc_tracker(ttfc_tracker)
+
         llamaindexCallBackHandler = LlamaindexCallbackHandler(
-            telemetry_handler=self._telemetry_handler
+            telemetry_handler=self._telemetry_handler,
+            invocation_manager=invocation_manager,
         )
+
+        # Create and register event handler for TTFC tracking
+        event_handler = LlamaindexEventHandler(ttfc_tracker=ttfc_tracker)
+        self._event_handler = event_handler
+        try:
+            from llama_index.core.instrumentation import get_dispatcher
+
+            dispatcher = get_dispatcher()
+            dispatcher.add_event_handler(event_handler)
+            self._dispatcher = dispatcher
+        except Exception:
+            # Event system might not be available in older versions
+            self._dispatcher = None
 
         wrap_function_wrapper(
             module="llama_index.core.callbacks.base",
@@ -90,6 +116,20 @@ class LlamaindexInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs):
         unwrap("llama_index.core.callbacks.base", "CallbackManager.__init__")
+        # Remove event handler from dispatcher to avoid duplicate TTFC measurements on re-instrumentation
+        if (
+            hasattr(self, "_dispatcher")
+            and self._dispatcher
+            and hasattr(self, "_event_handler")
+        ):
+            try:
+                self._dispatcher.event_handlers = [
+                    h
+                    for h in self._dispatcher.event_handlers
+                    if h is not self._event_handler
+                ]
+            except Exception:
+                pass
 
 
 class _BaseCallbackManagerInitWrapper:

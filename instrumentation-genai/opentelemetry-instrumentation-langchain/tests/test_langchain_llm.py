@@ -242,7 +242,7 @@ def test_langchain_call_with_tools(
     assert "multiply" in tool_names
 
 
-# --------------- Streaming test (TTFT) ---------------
+# --------------- Streaming test (TTFC) ---------------
 
 
 @pytest.mark.vcr()
