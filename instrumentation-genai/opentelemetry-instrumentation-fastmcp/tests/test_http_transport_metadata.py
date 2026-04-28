@@ -462,8 +462,8 @@ class TestClientInitializeHttpEnrichment:
         assert init_op.server_address is None
 
     @pytest.mark.asyncio
-    async def test_initialize_span_has_duration(self, mock_telemetry_handler):
-        """initialize MCPOperation has duration_s set."""
+    async def test_initialize_span_has_start_time(self, mock_telemetry_handler):
+        """initialize MCPOperation has start_time auto-set by GenAI base class."""
         instrumentor = ClientInstrumentor(mock_telemetry_handler)
         wrapper = instrumentor._client_enter_wrapper()
 
@@ -477,8 +477,9 @@ class TestClientInitializeHttpEnrichment:
         await wrapper(mock_wrapped, mock_instance, (), {})
 
         init_op = mock_telemetry_handler.start_mcp_operation.call_args[0][0]
-        assert init_op.duration_s is not None
-        assert init_op.duration_s >= 0
+        # start_time is set by GenAI base class default_factory; handler sets end_time
+        assert init_op.start_time > 0
+        assert init_op.duration_s is None  # instrumentation layer does not set this
 
 
 # ---------------------------------------------------------------------------
@@ -567,4 +568,5 @@ class TestClientOpErrorType:
         tool_call = fail_call[0]
         assert tool_call.error_type == "ValueError"
         assert tool_call.is_error is True
-        assert tool_call.duration_s is not None
+        # duration_s is computed by the handler (end_time - start_time); not set here
+        assert tool_call.duration_s is None

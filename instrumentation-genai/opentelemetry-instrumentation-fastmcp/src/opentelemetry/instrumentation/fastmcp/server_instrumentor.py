@@ -15,7 +15,6 @@
 """FastMCP server-side instrumentation."""
 
 import logging
-import time
 from contextvars import ContextVar
 from typing import Optional
 from uuid import uuid4
@@ -194,14 +193,11 @@ class ServerInstrumentor:
                 init_op.network_protocol_name = "http"
 
             handler.start_mcp_operation(init_op)
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-                init_op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(init_op)
                 return result
             except Exception as e:
-                init_op.duration_s = time.time() - start_time
                 init_op.is_error = True
                 init_op.error_type = type(e).__name__
                 init_op.mcp_error_type = type(e).__qualname__
@@ -244,12 +240,9 @@ class ServerInstrumentor:
 
             handler.start_tool_call(tool_call)
             token = _IN_TOOL_CALL.set(True)
-            start_time = time.time()
 
             try:
                 result = await wrapped(*args, **kwargs)
-
-                tool_call.duration_s = time.time() - start_time
 
                 if result:
                     try:
@@ -273,7 +266,6 @@ class ServerInstrumentor:
                 return result
 
             except Exception as e:
-                tool_call.duration_s = time.time() - start_time
                 tool_call.is_error = True
                 tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
@@ -309,14 +301,11 @@ class ServerInstrumentor:
 
             handler.start_mcp_operation(op)
 
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
-                op.duration_s = time.time() - start_time
                 op.is_error = True
                 op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
@@ -356,14 +345,11 @@ class ServerInstrumentor:
 
             handler.start_mcp_operation(op)
 
-            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
-                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
-                op.duration_s = time.time() - start_time
                 op.is_error = True
                 op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
