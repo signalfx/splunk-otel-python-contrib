@@ -40,6 +40,9 @@ class TestClientInstrumentor:
 
         mock_instance = MagicMock()
         mock_instance.initialize_result = None
+        mock_instance.session = None
+        mock_instance._session = None
+        mock_instance.transport = None
         mock_wrapped = AsyncMock(return_value="session_result")
 
         result = await wrapper(mock_wrapped, mock_instance, (), {})

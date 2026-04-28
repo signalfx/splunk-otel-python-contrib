@@ -212,10 +212,49 @@ class TransportInstrumentor:
                         carrier,
                     )
 
+                net_proto_name = None
+                net_proto_version = None
+                client_addr = None
+                client_port = None
+                session_id = None
+
+                if transport == "tcp" and message is not None:
+                    net_proto_name = "http"
+                    net_proto_version = "1.1"
+                    try:
+                        msg_meta = getattr(message, "message_metadata", None)
+                        if msg_meta is not None:
+                            starlette_req = getattr(msg_meta, "request_context", None)
+                            if starlette_req is not None:
+                                scope = getattr(starlette_req, "scope", None)
+                                if scope and isinstance(scope, dict):
+                                    http_ver = scope.get("http_version")
+                                    if http_ver:
+                                        net_proto_version = str(http_ver)
+
+                                client_obj = getattr(starlette_req, "client", None)
+                                if client_obj is not None:
+                                    client_addr = getattr(client_obj, "host", None)
+                                    client_port = getattr(client_obj, "port", None)
+
+                                headers = getattr(starlette_req, "headers", None)
+                                if headers is not None:
+                                    session_id = headers.get("mcp-session-id")
+                    except Exception:
+                        _LOGGER.debug(
+                            "Could not extract HTTP metadata from message",
+                            exc_info=True,
+                        )
+
                 mcp_ctx = MCPRequestContext(
                     jsonrpc_request_id=jsonrpc_id,
                     mcp_method_name=method_name,
                     network_transport=transport,
+                    network_protocol_name=net_proto_name,
+                    network_protocol_version=net_proto_version,
+                    client_address=client_addr,
+                    client_port=client_port,
+                    mcp_session_id=session_id,
                 )
                 set_mcp_request_context(mcp_ctx)
 

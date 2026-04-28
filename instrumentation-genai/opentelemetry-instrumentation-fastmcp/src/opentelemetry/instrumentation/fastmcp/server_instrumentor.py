@@ -15,6 +15,7 @@
 """FastMCP server-side instrumentation."""
 
 import logging
+import time
 from contextvars import ContextVar
 from typing import Optional
 from uuid import uuid4
@@ -55,6 +56,16 @@ def _enrich_from_request_context(op: MCPOperation) -> None:
         op.jsonrpc_request_id = ctx.jsonrpc_request_id
     if ctx.network_transport and op.network_transport is None:
         op.network_transport = ctx.network_transport
+    if ctx.network_protocol_name and op.network_protocol_name is None:
+        op.network_protocol_name = ctx.network_protocol_name
+    if ctx.network_protocol_version and op.network_protocol_version is None:
+        op.network_protocol_version = ctx.network_protocol_version
+    if ctx.client_address and op.client_address is None:
+        op.client_address = ctx.client_address
+    if ctx.client_port and op.client_port is None:
+        op.client_port = ctx.client_port
+    if ctx.mcp_session_id and op.mcp_session_id is None:
+        op.mcp_session_id = ctx.mcp_session_id
 
 
 class ServerInstrumentor:
@@ -168,24 +179,31 @@ class ServerInstrumentor:
 
         async def traced_server_run(wrapped, instance, args, kwargs):
             server_name = instrumentor._server_name or "mcp_server"
+            transport = detect_transport(instance)
 
             init_op = MCPOperation(
                 target="",
                 mcp_method_name="initialize",
-                network_transport="pipe",
+                network_transport=transport,
                 sdot_mcp_server_name=server_name,
                 is_client=False,
                 framework="fastmcp",
                 system="mcp",
             )
+            if transport == "tcp":
+                init_op.network_protocol_name = "http"
 
             handler.start_mcp_operation(init_op)
+            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
+                init_op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(init_op)
                 return result
             except Exception as e:
+                init_op.duration_s = time.time() - start_time
                 init_op.is_error = True
+                init_op.error_type = type(e).__name__
                 init_op.mcp_error_type = type(e).__qualname__
                 handler.fail_mcp_operation(
                     init_op,
@@ -226,9 +244,12 @@ class ServerInstrumentor:
 
             handler.start_tool_call(tool_call)
             token = _IN_TOOL_CALL.set(True)
+            start_time = time.time()
 
             try:
                 result = await wrapped(*args, **kwargs)
+
+                tool_call.duration_s = time.time() - start_time
 
                 if result:
                     try:
@@ -252,6 +273,7 @@ class ServerInstrumentor:
                 return result
 
             except Exception as e:
+                tool_call.duration_s = time.time() - start_time
                 tool_call.is_error = True
                 tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
@@ -287,12 +309,16 @@ class ServerInstrumentor:
 
             handler.start_mcp_operation(op)
 
+            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
+                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
+                op.duration_s = time.time() - start_time
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
@@ -330,12 +356,16 @@ class ServerInstrumentor:
 
             handler.start_mcp_operation(op)
 
+            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
+                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
+                op.duration_s = time.time() - start_time
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
