@@ -70,7 +70,6 @@ def _build_mcp_server_params(
     otel_instrument = shutil.which("opentelemetry-instrument")
 
     if use_otel_wrapper and otel_instrument:
-        # Weather-agent style: wrap the spawned MCP server process.
         command = otel_instrument
         args = [sys.executable, mcp_script_path]
     else:

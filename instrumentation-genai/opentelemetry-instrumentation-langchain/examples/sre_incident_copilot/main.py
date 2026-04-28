@@ -52,10 +52,15 @@ from agents import (
     quality_gate_agent,
     triage_agent,
 )
+from dotenv import load_dotenv
+
 from config import Config
 from data_loader import DataLoader
 from validation import ValidationHarness
 from incident_types import IncidentState
+
+# Load .env if present — does not override values already set in the environment.
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=False)
 
 # Persistent checkpoint directory — stores SQLite DBs keyed by conversation_id
 CHECKPOINTS_DIR = Path("checkpoints")
@@ -901,6 +906,7 @@ def _configure_manual_instrumentation(config: Config):
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
         OTLPSpanExporter,
     )
+    from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor
     from opentelemetry.instrumentation.langchain import LangchainInstrumentor
     from opentelemetry.sdk._events import EventLoggerProvider
     from opentelemetry.sdk._logs import LoggerProvider
@@ -922,8 +928,8 @@ def _configure_manual_instrumentation(config: Config):
     )
     _events.set_event_logger_provider(EventLoggerProvider())
 
-    instrumentor = LangchainInstrumentor()
-    instrumentor.instrument()
+    LangchainInstrumentor().instrument()
+    FastMCPInstrumentor().instrument()
 
 
 if __name__ == "__main__":
