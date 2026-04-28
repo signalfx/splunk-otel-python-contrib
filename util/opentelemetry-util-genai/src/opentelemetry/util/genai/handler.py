@@ -1336,7 +1336,9 @@ class TelemetryHandler:
         if isinstance(workflow_or_name, Workflow):
             return self._start_workflow_legacy(workflow_or_name)
         # New-style factory path
-        resolved_name = workflow_or_name if isinstance(workflow_or_name, str) else name
+        resolved_name = (
+            workflow_or_name if isinstance(workflow_or_name, str) else name
+        )
         return self._start_workflow_factory(
             name=resolved_name,
             workflow_type=workflow_type,
