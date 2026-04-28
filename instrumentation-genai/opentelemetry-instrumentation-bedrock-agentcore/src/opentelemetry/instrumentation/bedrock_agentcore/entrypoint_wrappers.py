@@ -85,13 +85,21 @@ def wrap_bedrock_agentcore_app_entrypoint(
             @functools.wraps(decorated_func)
             async def async_workflow_wrapper(*call_args, **call_kwargs):
                 workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
-                if call_args:
-                    workflow.input_messages = [_make_input_message(call_args[0])]
                 handler.start_workflow(workflow)
                 try:
+                    if call_args:
+                        try:
+                            workflow.input_messages = [
+                                _make_input_message(call_args[0])
+                            ]
+                        except Exception:
+                            pass
                     result = await decorated_func(*call_args, **call_kwargs)
                     if result is not None:
-                        workflow.output_messages = [_make_output_message(result)]
+                        try:
+                            workflow.output_messages = [_make_output_message(result)]
+                        except Exception:
+                            pass
                     handler.stop_workflow(workflow)
                     return result
                 except Exception as e:
@@ -105,13 +113,19 @@ def wrap_bedrock_agentcore_app_entrypoint(
         @functools.wraps(decorated_func)
         def workflow_wrapper(*call_args, **call_kwargs):
             workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
-            if call_args:
-                workflow.input_messages = [_make_input_message(call_args[0])]
             handler.start_workflow(workflow)
             try:
+                if call_args:
+                    try:
+                        workflow.input_messages = [_make_input_message(call_args[0])]
+                    except Exception:
+                        pass
                 result = decorated_func(*call_args, **call_kwargs)
                 if result is not None:
-                    workflow.output_messages = [_make_output_message(result)]
+                    try:
+                        workflow.output_messages = [_make_output_message(result)]
+                    except Exception:
+                        pass
                 handler.stop_workflow(workflow)
                 return result
             except Exception as e:
