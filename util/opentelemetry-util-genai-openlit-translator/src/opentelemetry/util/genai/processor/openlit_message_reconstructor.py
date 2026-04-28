@@ -1,11 +1,8 @@
 """
-Reconstruct LangChain message objects from Langsmith serialized data.
+Reconstruct LangChain message objects from openlit serialized data.
 
-This module enables evaluations to work with Langsmith SDK alone,
+This module enables evaluations to work with Openlit SDK alone,
 without requiring LangChain instrumentation.
-
-Langsmith is the observability platform for LangChain applications,
-and it uses its own serialization format for tracing LangChain calls.
 """
 
 from __future__ import annotations
@@ -14,27 +11,27 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from .content_normalizer import normalize_langsmith_content
+from .openlit_content_normalizer import normalize_openlit_content
 
 _logger = logging.getLogger(__name__)
 
 
-def reconstruct_messages_from_langsmith(
+def reconstruct_messages_from_openlit(
     input_data: Any, output_data: Any
 ) -> tuple[Optional[List[Any]], Optional[List[Any]]]:
     """
-    Reconstruct LangChain message objects from Langsmith serialized data.
+    Reconstruct LangChain message objects from openlit serialized data.
 
     Args:
-        input_data: Raw langsmith.entity.input or gen_ai.input.messages value (string or dict)
-        output_data: Raw langsmith.entity.output or gen_ai.output.messages value (string or dict)
+        input_data: Raw openlit.entity.input value (string or dict)
+        output_data: Raw openlit.entity.output value (string or dict)
 
     Returns:
         Tuple of (input_messages, output_messages) as LangChain BaseMessage lists,
         or (None, None) if reconstruction fails or LangChain is not available.
 
     This function:
-    1. Parses the JSON-serialized Langsmith data
+    1. Parses the JSON-serialized openlit data
     2. Normalizes it to standard message format
     3. Reconstructs LangChain BaseMessage objects (HumanMessage, AIMessage, etc.)
     4. Returns them for use in evaluations
@@ -55,7 +52,7 @@ def reconstruct_messages_from_langsmith(
         except ImportError:
             _logger.debug(
                 "LangChain not available; message reconstruction skipped. "
-                "Install langchain-core to enable evaluations with Langsmith."
+                "Install langchain-core to enable evaluations with openlit."
             )
             return None, None
 
@@ -65,15 +62,15 @@ def reconstruct_messages_from_langsmith(
         # Reconstruct input messages
         if input_data:
             try:
-                # Normalize the Langsmith data to standard format
-                normalized_input = normalize_langsmith_content(
+                # Normalize the openlit data to standard format
+                normalized_input = normalize_openlit_content(
                     input_data, "input"
                 )
                 input_messages = _convert_normalized_to_langchain(
                     normalized_input, "input"
                 )
                 _logger.debug(
-                    f"Reconstructed {len(input_messages)} input messages from Langsmith data"
+                    f"Reconstructed {len(input_messages)} input messages from openlit data"
                 )
             except Exception as e:
                 _logger.debug(f"Failed to reconstruct input messages: {e}")
@@ -81,15 +78,15 @@ def reconstruct_messages_from_langsmith(
         # Reconstruct output messages
         if output_data:
             try:
-                # Normalize the Langsmith data to standard format
-                normalized_output = normalize_langsmith_content(
+                # Normalize the openlit data to standard format
+                normalized_output = normalize_openlit_content(
                     output_data, "output"
                 )
                 output_messages = _convert_normalized_to_langchain(
                     normalized_output, "output"
                 )
                 _logger.debug(
-                    f"Reconstructed {len(output_messages)} output messages from Langsmith data"
+                    f"Reconstructed {len(output_messages)} output messages from openlit data"
                 )
             except Exception as e:
                 _logger.debug(f"Failed to reconstruct output messages: {e}")
@@ -108,7 +105,7 @@ def _convert_normalized_to_langchain(
     Convert normalized message format to LangChain BaseMessage objects.
 
     Args:
-        normalized_messages: List of normalized messages from normalize_langsmith_content
+        normalized_messages: List of normalized messages from normalize_openlit_content
         direction: 'input' or 'output' (for logging/debugging)
 
     Returns:
@@ -192,10 +189,7 @@ def _convert_normalized_to_langchain(
             # Import Text from GenAI types
             from opentelemetry.util.genai.types import Text
 
-            # Create a Text part from the content
             text_part = Text(content=content, type="text")
-
-            # Add .parts attribute (monkeypatch on the instance)
             langchain_msg.parts = [text_part]  # type: ignore[attr-defined]
 
             _logger.debug(
@@ -218,5 +212,5 @@ def _convert_normalized_to_langchain(
 
 
 __all__ = [
-    "reconstruct_messages_from_langsmith",
+    "reconstruct_messages_from_openlit",
 ]

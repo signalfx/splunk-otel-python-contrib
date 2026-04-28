@@ -42,7 +42,7 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 
-from .message_reconstructor import reconstruct_messages_from_openlit
+from .openlit_message_reconstructor import reconstruct_messages_from_openlit
 
 try:
     from opentelemetry.util.genai.version import __version__

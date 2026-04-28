@@ -1,8 +1,11 @@
 """
-Reconstruct LangChain message objects from Traceloop serialized data.
+Reconstruct LangChain message objects from Langsmith serialized data.
 
-This module enables evaluations to work with Traceloop SDK alone,
+This module enables evaluations to work with Langsmith SDK alone,
 without requiring LangChain instrumentation.
+
+Langsmith is the observability platform for LangChain applications,
+and it uses its own serialization format for tracing LangChain calls.
 """
 
 from __future__ import annotations
@@ -11,27 +14,27 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from .content_normalizer import normalize_traceloop_content
+from .langsmith_content_normalizer import normalize_langsmith_content
 
 _logger = logging.getLogger(__name__)
 
 
-def reconstruct_messages_from_traceloop(
+def reconstruct_messages_from_langsmith(
     input_data: Any, output_data: Any
 ) -> tuple[Optional[List[Any]], Optional[List[Any]]]:
     """
-    Reconstruct LangChain message objects from Traceloop serialized data.
+    Reconstruct LangChain message objects from Langsmith serialized data.
 
     Args:
-        input_data: Raw traceloop.entity.input value (string or dict)
-        output_data: Raw traceloop.entity.output value (string or dict)
+        input_data: Raw langsmith.entity.input or gen_ai.input.messages value (string or dict)
+        output_data: Raw langsmith.entity.output or gen_ai.output.messages value (string or dict)
 
     Returns:
         Tuple of (input_messages, output_messages) as LangChain BaseMessage lists,
         or (None, None) if reconstruction fails or LangChain is not available.
 
     This function:
-    1. Parses the JSON-serialized Traceloop data
+    1. Parses the JSON-serialized Langsmith data
     2. Normalizes it to standard message format
     3. Reconstructs LangChain BaseMessage objects (HumanMessage, AIMessage, etc.)
     4. Returns them for use in evaluations
@@ -52,7 +55,7 @@ def reconstruct_messages_from_traceloop(
         except ImportError:
             _logger.debug(
                 "LangChain not available; message reconstruction skipped. "
-                "Install langchain-core to enable evaluations with Traceloop."
+                "Install langchain-core to enable evaluations with Langsmith."
             )
             return None, None
 
@@ -62,15 +65,15 @@ def reconstruct_messages_from_traceloop(
         # Reconstruct input messages
         if input_data:
             try:
-                # Normalize the Traceloop data to standard format
-                normalized_input = normalize_traceloop_content(
+                # Normalize the Langsmith data to standard format
+                normalized_input = normalize_langsmith_content(
                     input_data, "input"
                 )
                 input_messages = _convert_normalized_to_langchain(
                     normalized_input, "input"
                 )
                 _logger.debug(
-                    f"Reconstructed {len(input_messages)} input messages from Traceloop data"
+                    f"Reconstructed {len(input_messages)} input messages from Langsmith data"
                 )
             except Exception as e:
                 _logger.debug(f"Failed to reconstruct input messages: {e}")
@@ -78,15 +81,15 @@ def reconstruct_messages_from_traceloop(
         # Reconstruct output messages
         if output_data:
             try:
-                # Normalize the Traceloop data to standard format
-                normalized_output = normalize_traceloop_content(
+                # Normalize the Langsmith data to standard format
+                normalized_output = normalize_langsmith_content(
                     output_data, "output"
                 )
                 output_messages = _convert_normalized_to_langchain(
                     normalized_output, "output"
                 )
                 _logger.debug(
-                    f"Reconstructed {len(output_messages)} output messages from Traceloop data"
+                    f"Reconstructed {len(output_messages)} output messages from Langsmith data"
                 )
             except Exception as e:
                 _logger.debug(f"Failed to reconstruct output messages: {e}")
@@ -105,7 +108,7 @@ def _convert_normalized_to_langchain(
     Convert normalized message format to LangChain BaseMessage objects.
 
     Args:
-        normalized_messages: List of normalized messages from normalize_traceloop_content
+        normalized_messages: List of normalized messages from normalize_langsmith_content
         direction: 'input' or 'output' (for logging/debugging)
 
     Returns:
@@ -215,5 +218,5 @@ def _convert_normalized_to_langchain(
 
 
 __all__ = [
-    "reconstruct_messages_from_traceloop",
+    "reconstruct_messages_from_langsmith",
 ]

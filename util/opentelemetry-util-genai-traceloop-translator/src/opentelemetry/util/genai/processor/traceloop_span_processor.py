@@ -41,8 +41,8 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 
-from .content_normalizer import normalize_traceloop_content
-from .message_reconstructor import reconstruct_messages_from_traceloop
+from .traceloop_content_normalizer import normalize_traceloop_content
+from .traceloop_message_reconstructor import reconstruct_messages_from_traceloop
 
 _ENV_RULES = "OTEL_GENAI_SPAN_TRANSFORM_RULES"
 
