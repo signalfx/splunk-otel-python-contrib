@@ -1,0 +1,91 @@
+# Copyright Splunk Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Wrapt wrapper for BedrockAgentCoreApp.entrypoint."""
+
+import asyncio
+import functools
+from typing import Any
+
+from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.types import Error, Workflow
+
+from .utils import safe_str
+
+
+def wrap_bedrock_agentcore_app_entrypoint(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+) -> Any:
+    """Wrap BedrockAgentCoreApp.entrypoint to create Workflow span per invocation.
+
+    entrypoint is a decorator factory: it takes a function and returns a wrapped
+    function. We intercept it and further wrap the returned function so that each
+    call to the entrypoint function creates a Workflow span at invocation time,
+    not at decoration time.
+
+    Args:
+        wrapped: Original entrypoint decorator method
+        instance: BedrockAgentCoreApp instance
+        args: Positional arguments (the function being decorated)
+        kwargs: Keyword arguments
+        handler: TelemetryHandler instance
+
+    Returns:
+        Decorated function that creates a Workflow span on each call
+    """
+    try:
+        # Call original entrypoint decorator to get the decorated function
+        decorated_func = wrapped(*args, **kwargs)
+
+        workflow_name = getattr(instance, "name", None) or "BedrockAgentCore"
+
+        if asyncio.iscoroutinefunction(decorated_func):
+
+            @functools.wraps(decorated_func)
+            async def async_workflow_wrapper(*call_args, **call_kwargs):
+                workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
+                handler.start_workflow(workflow)
+                try:
+                    result = await decorated_func(*call_args, **call_kwargs)
+                    handler.stop_workflow(workflow)
+                    return result
+                except Exception as e:
+                    handler.fail_workflow(
+                        workflow, Error(type=type(e).__name__, message=safe_str(e))
+                    )
+                    raise
+
+            return async_workflow_wrapper
+
+        @functools.wraps(decorated_func)
+        def workflow_wrapper(*call_args, **call_kwargs):
+            workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
+            handler.start_workflow(workflow)
+            try:
+                result = decorated_func(*call_args, **call_kwargs)
+                handler.stop_workflow(workflow)
+                return result
+            except Exception as e:
+                handler.fail_workflow(
+                    workflow, Error(type=type(e).__name__, message=safe_str(e))
+                )
+                raise
+
+        return workflow_wrapper
+    except Exception:
+        return wrapped(*args, **kwargs)
