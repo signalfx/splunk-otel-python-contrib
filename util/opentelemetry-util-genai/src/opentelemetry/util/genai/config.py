@@ -80,7 +80,7 @@ def parse_env() -> Settings:
         baseline, (True, False, False)
     )
 
-    _legacy_mode_key = (
+    _LEGACY_CAPTURE_MESSAGE_CONTENT_MODE = (
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"
     )
     capture_messages_override = any(
@@ -88,7 +88,7 @@ def parse_env() -> Settings:
         for env in (
             os.environ.get(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT),
             os.environ.get(OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT),
-            os.environ.get(_legacy_mode_key),
+            os.environ.get(_LEGACY_CAPTURE_MESSAGE_CONTENT_MODE),
         )
     )
     capture_mode = get_content_capturing_mode()

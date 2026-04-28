@@ -41,6 +41,19 @@ def is_experimental_mode() -> bool:  # backward stub (always false)
 
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
+_MODE_SYNONYMS = {
+    "span_only": ContentCapturingMode.SPAN_ONLY,
+    "span": ContentCapturingMode.SPAN_ONLY,
+    "event_only": ContentCapturingMode.EVENT_ONLY,
+    "events": ContentCapturingMode.EVENT_ONLY,
+    "span_and_event": ContentCapturingMode.SPAN_AND_EVENT,
+    "span_and_events": ContentCapturingMode.SPAN_AND_EVENT,
+    "both": ContentCapturingMode.SPAN_AND_EVENT,
+    "all": ContentCapturingMode.SPAN_AND_EVENT,
+    "none": ContentCapturingMode.NO_CONTENT,
+    "no_content": ContentCapturingMode.NO_CONTENT,
+}
+
 
 def _is_truthy(value: str | None) -> bool:
     if value is None:
@@ -51,24 +64,14 @@ def _is_truthy(value: str | None) -> bool:
 def _parse_legacy_mode_fragment(raw_mode: str) -> ContentCapturingMode:
     """Parse deprecated MODE env or invalid-legacy fallback (defaults SPAN_AND_EVENT)."""
     normalized = raw_mode.lower().replace("-", "_")
-    mapping = {
-        "event_only": ContentCapturingMode.EVENT_ONLY,
-        "events": ContentCapturingMode.EVENT_ONLY,
-        "span_only": ContentCapturingMode.SPAN_ONLY,
-        "span": ContentCapturingMode.SPAN_ONLY,
-        "span_and_event": ContentCapturingMode.SPAN_AND_EVENT,
-        "both": ContentCapturingMode.SPAN_AND_EVENT,
-        "none": ContentCapturingMode.NO_CONTENT,
-        "no_content": ContentCapturingMode.NO_CONTENT,
-    }
-    mode = mapping.get(normalized)
+    mode = _MODE_SYNONYMS.get(normalized)
     if mode is not None:
         return mode
     logger.warning(
-        "%s is not a valid option for deprecated `%s`. Must be one of "
-        "span_only, event_only, span_and_event, none. Defaulting to `SPAN_AND_EVENT`.",
+        "%s is not a valid option for deprecated `%s`. Must be one of %s (case-insensitive). Defaulting to `SPAN_AND_EVENT`.",
         raw_mode,
         _LEGACY_CAPTURE_MESSAGE_CONTENT_MODE,
+        ", ".join(e.name for e in ContentCapturingMode),
     )
     return ContentCapturingMode.SPAN_AND_EVENT
 
@@ -97,28 +100,16 @@ def get_content_capturing_mode() -> ContentCapturingMode:
         return ContentCapturingMode.NO_CONTENT
 
     raw = str(envvar).strip()
-    upper = raw.upper().replace("-", "_")
+    raw_upper = raw.upper().replace("-", "_")
 
     try:
-        return ContentCapturingMode[upper]
+        return ContentCapturingMode[raw_upper]
     except KeyError:
         pass
 
     normalized = raw.lower().replace("-", "_")
-    synonym_to_mode = {
-        "span_only": ContentCapturingMode.SPAN_ONLY,
-        "span": ContentCapturingMode.SPAN_ONLY,
-        "event_only": ContentCapturingMode.EVENT_ONLY,
-        "events": ContentCapturingMode.EVENT_ONLY,
-        "span_and_event": ContentCapturingMode.SPAN_AND_EVENT,
-        "span_and_events": ContentCapturingMode.SPAN_AND_EVENT,
-        "both": ContentCapturingMode.SPAN_AND_EVENT,
-        "all": ContentCapturingMode.SPAN_AND_EVENT,
-        "none": ContentCapturingMode.NO_CONTENT,
-        "no_content": ContentCapturingMode.NO_CONTENT,
-    }
-    if normalized in synonym_to_mode:
-        return synonym_to_mode[normalized]
+    if normalized in _MODE_SYNONYMS:
+        return _MODE_SYNONYMS[normalized]
 
     if _is_truthy(raw):
         legacy_mode = os.environ.get(_LEGACY_CAPTURE_MESSAGE_CONTENT_MODE)
@@ -135,7 +126,7 @@ def get_content_capturing_mode() -> ContentCapturingMode:
         return ContentCapturingMode.NO_CONTENT
 
     logger.warning(
-        "%s is not a valid option for `%s` environment variable. Must be one of %s. Defaulting to `NO_CONTENT`.",
+        "%s is not a valid option for `%s` environment variable. Must be one of %s (case-insensitive). Defaulting to `NO_CONTENT`.",
         raw,
         OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
         ", ".join(e.name for e in ContentCapturingMode),
