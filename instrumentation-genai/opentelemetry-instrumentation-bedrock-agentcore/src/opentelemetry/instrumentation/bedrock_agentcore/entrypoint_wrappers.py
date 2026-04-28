@@ -19,7 +19,13 @@ import functools
 from typing import Any
 
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import Error, InputMessage, OutputMessage, Text, Workflow
+from opentelemetry.util.genai.types import (
+    Error,
+    InputMessage,
+    OutputMessage,
+    Text,
+    Workflow,
+)
 
 from .utils import safe_json_dumps, safe_str
 
@@ -39,7 +45,9 @@ def _make_output_message(result: Any) -> OutputMessage:
         content = result
     else:
         content = safe_json_dumps(result)
-    return OutputMessage(role="assistant", parts=[Text(content=content)], finish_reason="stop")
+    return OutputMessage(
+        role="assistant", parts=[Text(content=content)], finish_reason="stop"
+    )
 
 
 def wrap_bedrock_agentcore_app_entrypoint(

@@ -56,6 +56,7 @@ class MockBrowserClient:
 # wrap_browser_start
 # ---------------------------------------------------------------------------
 
+
 def test_browser_start_creates_tool_call(stub_handler):
     """wrap_browser_start creates a ToolCall span with browser_id attribute."""
     browser = MockBrowserClient()
@@ -77,6 +78,7 @@ def test_browser_start_creates_tool_call(stub_handler):
 # ---------------------------------------------------------------------------
 # wrap_browser_stop
 # ---------------------------------------------------------------------------
+
 
 def test_browser_stop_tracks_session(stub_handler):
     """wrap_browser_stop records session_id attribute and creates span."""
@@ -120,6 +122,7 @@ def test_browser_stop_no_content_by_default(stub_handler):
 # wrap_browser_take_control / wrap_browser_release_control
 # ---------------------------------------------------------------------------
 
+
 def test_browser_take_control_creates_tool_call(stub_handler):
     """wrap_browser_take_control creates ToolCall span."""
     browser = MockBrowserClient()
@@ -152,6 +155,7 @@ def test_browser_release_control_creates_tool_call(stub_handler):
 # ---------------------------------------------------------------------------
 # wrap_browser_get_session
 # ---------------------------------------------------------------------------
+
 
 def test_browser_get_session_tracks_status(stub_handler):
     """wrap_browser_get_session records session_status attribute."""
@@ -209,6 +213,7 @@ def test_browser_get_session_no_content_by_default(stub_handler):
 # ---------------------------------------------------------------------------
 # wrap_browser_operation (generic factory)
 # ---------------------------------------------------------------------------
+
 
 def test_browser_operation_creates_tool_call(stub_handler):
     """wrap_browser_operation factory creates a ToolCall span."""
@@ -274,6 +279,7 @@ def test_browser_operation_exception_fails_tool_call(stub_handler):
 # ---------------------------------------------------------------------------
 # Exception propagation
 # ---------------------------------------------------------------------------
+
 
 def test_browser_exception_fails_tool_call(stub_handler):
     """Exceptions in browser operations fail the tool call."""

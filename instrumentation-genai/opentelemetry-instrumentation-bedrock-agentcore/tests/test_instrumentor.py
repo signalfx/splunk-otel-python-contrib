@@ -56,6 +56,7 @@ def test_instrumentation_dependencies():
 # is_content_enabled
 # ---------------------------------------------------------------------------
 
+
 def test_is_content_enabled_false_by_default():
     """is_content_enabled returns False when env var is unset."""
     os.environ.pop("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", None)
