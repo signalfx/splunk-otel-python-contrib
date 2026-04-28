@@ -53,7 +53,9 @@ from opentelemetry.util.genai.types import (
 )
 
 from .langsmith_content_normalizer import normalize_langsmith_content
-from .langsmith_message_reconstructor import reconstruct_messages_from_langsmith
+from .langsmith_message_reconstructor import (
+    reconstruct_messages_from_langsmith,
+)
 
 try:
     from opentelemetry.util.genai.version import __version__

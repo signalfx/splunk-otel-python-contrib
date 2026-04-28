@@ -35,6 +35,9 @@ _WRAPPER_MARKER = "_openlit_translator_wrapper"
 #
 _DEFAULT_ATTR_TRANSFORMATIONS = {
     "rename": {
+        # OpenLit span/entity kind -> OTel semconv
+        "openlit.span.kind": "gen_ai.span.kind",
+        "openlit.entity.name": "gen_ai.agent.name",
         # OpenLit uses indexed content format, OTel uses structured messages
         "gen_ai.prompt": "gen_ai.input.messages",
         "gen_ai.completion": "gen_ai.output.messages",

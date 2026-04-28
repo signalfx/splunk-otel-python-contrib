@@ -99,6 +99,7 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "langsmith.usage.completion_tokens": "gen_ai.usage.output_tokens",
         "langsmith.usage.total_tokens": "gen_ai.usage.total_tokens",
         # --- 5. Tool & Function Calling ---
+        "langsmith.tool.name": "gen_ai.tool.call.name",
         "langsmith.session_id": "gen_ai.conversation.id",
         "langsmith.thread_id": "gen_ai.conversation.id",
         "langsmith.run_id": "gen_ai.run.id",

@@ -275,7 +275,7 @@ class OpenlitSpanProcessor(SpanProcessor):
                 attr_key_lower = str(attr_key).lower()
                 if any(
                     marker in attr_key_lower
-                    for marker in ["llm", "ai", "gen_ai", "model"]
+                    for marker in ["llm", "ai", "gen_ai", "model", "openlit"]
                 ):
                     return True
         return False

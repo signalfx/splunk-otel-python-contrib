@@ -34,6 +34,8 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
     Handles formats like:
     - {"messages": [{"lc": 1, "kwargs": {"content": "text", "type": "human"}}]}
     - {"outputs": {"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}}
+    - {"inputs": {"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}}
+    - {"args": [{"messages": [{"lc": 1, "kwargs": {"content": "text"}}]}]}
 
     Returns list of extracted messages with their content and role.
     """
@@ -49,10 +51,21 @@ def _extract_langchain_messages(content_val: Any) -> List[Dict[str, Any]]:
 
         if not isinstance(content_val, dict):
             return []
-        if "outputs" in content_val and isinstance(
-            content_val["outputs"], dict
-        ):
-            content_val = content_val["outputs"]
+
+        # Unwrap common envelope keys: outputs, inputs
+        for envelope_key in ("outputs", "inputs"):
+            if envelope_key in content_val and isinstance(
+                content_val[envelope_key], dict
+            ):
+                content_val = content_val[envelope_key]
+                break
+
+        # Handle "args" format: {"args": [{"messages": [...]}]}
+        if "args" in content_val and isinstance(content_val["args"], list):
+            for arg in content_val["args"]:
+                if isinstance(arg, dict) and "messages" in arg:
+                    content_val = arg
+                    break
 
         messages = content_val.get("messages", [])
         if not isinstance(messages, list):
@@ -105,15 +118,89 @@ def normalize_openlit_content(
         normalized: List[Dict[str, Any]] = []
         limit = INPUT_MAX if direction == "input" else OUTPUT_MAX
         for m in raw[:limit]:
+            # Check if item is a LangChain constructor object directly
+            if m.get("lc") == 1 and "kwargs" in m:
+                kwargs = m["kwargs"]
+                if isinstance(kwargs, dict):
+                    msg_content = kwargs.get("content")
+                    msg_type = kwargs.get("type", "unknown")
+                    if msg_content is not None:
+                        if msg_type == "human":
+                            role = "user"
+                        elif msg_type == "ai":
+                            role = "assistant"
+                        elif msg_type == "system":
+                            role = "system"
+                        else:
+                            role = (
+                                "user" if direction == "input" else "assistant"
+                            )
+                        parts = [_coerce_text_part(msg_content)]
+                        msg: Dict[str, Any] = {"role": role, "parts": parts}
+                        if direction == "output":
+                            resp_meta = kwargs.get("response_metadata", {})
+                            fr = (
+                                resp_meta.get("finish_reason")
+                                if isinstance(resp_meta, dict)
+                                else None
+                            ) or "stop"
+                            msg["finish_reason"] = fr
+                        normalized.append(msg)
+                continue
+
             role = m.get(
                 "role", "user" if direction == "input" else "assistant"
             )
             content_val = m.get("content")
+
+            # Handle "parts" array format: {"role": "user", "parts": [{"type": "text", "content": "..."}]}
+            appended_from_parts = False
+            if (
+                content_val is None
+                and "parts" in m
+                and isinstance(m["parts"], list)
+            ):
+                for part in m["parts"]:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        part_content = part.get("content")
+                        if part_content is not None:
+                            # Try to parse part content as JSON with nested LC messages
+                            lc_from_part = _extract_langchain_messages(
+                                part_content
+                            )
+                            if lc_from_part:
+                                for lc_msg in lc_from_part:
+                                    parts_list = [
+                                        _coerce_text_part(lc_msg["content"])
+                                    ]
+                                    lc_dict: Dict[str, Any] = {
+                                        "role": lc_msg["role"],
+                                        "parts": parts_list,
+                                    }
+                                    if direction == "output":
+                                        lc_dict["finish_reason"] = (
+                                            m.get("finish_reason")
+                                            or m.get("finishReason")
+                                            or "stop"
+                                        )
+                                    normalized.append(lc_dict)
+                                appended_from_parts = True
+                                break
+                            else:
+                                # Plain text part - use it as content
+                                content_val = part_content
+                                break
+
+            # Skip if we already appended messages from parts processing
+            if appended_from_parts:
+                continue
+
             if content_val is None:
                 temp = {
                     k: v
                     for k, v in m.items()
-                    if k not in ("role", "finish_reason", "finishReason")
+                    if k
+                    not in ("role", "finish_reason", "finishReason", "parts")
                 }
                 content_val = temp or ""
 
@@ -240,6 +327,9 @@ def normalize_openlit_content(
             if isinstance(first_arg, dict):
                 # Recursively process - will find "messages" array
                 return normalize_openlit_content(first_arg, direction)
+        # wrapper outputs (LangChain/openlit format: {"outputs": {"messages": [...]}, "kwargs": {...}})
+        if "outputs" in raw and isinstance(raw["outputs"], dict):
+            return normalize_openlit_content(raw["outputs"], direction)
         # wrapper inputs
         if "inputs" in raw:
             inner = raw["inputs"]

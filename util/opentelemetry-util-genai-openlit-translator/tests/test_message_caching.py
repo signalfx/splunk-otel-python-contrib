@@ -187,23 +187,27 @@ class TestMessageCaching:
             setup_tracer_with_handler
         )
 
-        # Create span with openlit attributes
+        # Create span with openlit attributes (both input and output required for LLMInvocation)
         input_data = json.dumps(
             {"messages": [{"role": "user", "content": "Cached message test"}]}
+        )
+        output_data = json.dumps(
+            {"messages": [{"role": "assistant", "content": "Cached response"}]}
         )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("openlit.entity.input", input_data)
+            span.set_attribute("openlit.entity.output", output_data)
             span.set_attribute("llm.request.model", "gpt-5-nano")
 
         # Force flush to process spans
         provider.force_flush()
 
-        # Check that start_llm was called
-        assert mock_handler.start_llm.called, "start_llm should be called"
+        # Check that finish was called (processor calls handler.finish for LLM spans)
+        assert mock_handler.finish.called, "finish should be called"
 
-        # Get the invocation passed to start_llm
-        call_args = mock_handler.start_llm.call_args
+        # Get the invocation passed to finish
+        call_args = mock_handler.finish.call_args
         invocation = call_args[0][0]
 
         # Verify invocation has messages
@@ -366,6 +370,8 @@ class TestRecursionGuards:
         mock_span = Mock(spec=ReadableSpan)
         mock_span.name = "normal_span"
         mock_span.attributes = {}
+        # Prevent the instrumentation_scope check from returning a truthy Mock
+        mock_span.instrumentation_scope = None
 
         # Should not skip
         assert processor._should_skip_span(mock_span, 99999) is False, (
@@ -378,25 +384,24 @@ class TestRecursionGuards:
             setup_tracer_with_handler
         )
 
-        # Create a span that will generate a synthetic span
+        # Create a span with both input and output (required for LLMInvocation)
         input_data = json.dumps(
             {"messages": [{"role": "user", "content": "Test"}]}
+        )
+        output_data = json.dumps(
+            {"messages": [{"role": "assistant", "content": "Test response"}]}
         )
 
         with tracer.start_as_current_span("openai.chat") as span:
             span.set_attribute("openlit.entity.input", input_data)
+            span.set_attribute("openlit.entity.output", output_data)
             span.set_attribute("llm.request.model", "gpt-5-nano")
 
         provider.force_flush()
 
-        # start_llm should be called once (for the synthetic span)
-        assert mock_handler.start_llm.call_count == 1, (
-            "start_llm should be called once for synthetic span"
-        )
-
-        # stop_llm should be called once
-        assert mock_handler.stop_llm.call_count == 1, (
-            "stop_llm should be called once"
+        # finish should be called exactly once (span is processed exactly once, not reprocessed)
+        assert mock_handler.finish.call_count == 1, (
+            "finish should be called exactly once"
         )
 
 
