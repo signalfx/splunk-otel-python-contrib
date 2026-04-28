@@ -315,7 +315,9 @@ def wrap_browser_get_session(
                     "browser_id": browser_id,
                     "session_id": session_id,
                 }
-            ) if capture_content else None,
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -379,7 +381,9 @@ def wrap_browser_operation(
         try:
             invocation = ToolCall(
                 name=f"browser.{operation_name}",
-                arguments=safe_json_dumps(kwargs) if capture_content and kwargs else None,
+                arguments=safe_json_dumps(kwargs)
+                if capture_content and kwargs
+                else None,
                 system="bedrock-agentcore",
             )
 

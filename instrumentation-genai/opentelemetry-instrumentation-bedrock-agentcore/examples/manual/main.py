@@ -63,7 +63,9 @@ from opentelemetry.semconv.resource import ResourceAttributes
 try:
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter,
+    )
 
     _OTLP_AVAILABLE = True
 except ImportError:
@@ -106,14 +108,20 @@ def setup_telemetry() -> TracerProvider:
 
     # --- log provider for events ---
     from opentelemetry.sdk._logs import LoggerProvider
-    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
+    from opentelemetry.sdk._logs.export import (
+        BatchLogRecordProcessor,
+        ConsoleLogExporter,
+    )
     from opentelemetry._logs import set_logger_provider
 
     logger_provider = LoggerProvider(resource=resource)
 
     # --- meter provider for metrics ---
     from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
+    from opentelemetry.sdk.metrics.export import (
+        ConsoleMetricExporter,
+        PeriodicExportingMetricReader,
+    )
     from opentelemetry.metrics import set_meter_provider
 
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
@@ -126,9 +134,15 @@ def setup_telemetry() -> TracerProvider:
         )
         meter_provider = MeterProvider(
             resource=resource,
-            metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=otlp_endpoint))],
+            metric_readers=[
+                PeriodicExportingMetricReader(
+                    OTLPMetricExporter(endpoint=otlp_endpoint)
+                )
+            ],
         )
-        logger.info("Sending spans, metrics, and events to OTLP collector at %s", otlp_endpoint)
+        logger.info(
+            "Sending spans, metrics, and events to OTLP collector at %s", otlp_endpoint
+        )
     else:
         tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
         logger_provider.add_log_record_processor(

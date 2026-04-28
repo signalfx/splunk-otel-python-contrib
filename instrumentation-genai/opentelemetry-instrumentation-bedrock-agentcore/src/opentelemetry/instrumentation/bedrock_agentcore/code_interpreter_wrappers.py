@@ -53,7 +53,9 @@ def wrap_code_interpreter_execute(
         # Create ToolCall
         tool_call = ToolCall(
             name="code_interpreter.execute",
-            arguments=safe_json_dumps({"code": code[:500]}) if capture_content else None,
+            arguments=safe_json_dumps({"code": code[:500]})
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -141,7 +143,9 @@ def wrap_code_interpreter_install_packages(
         # Create ToolCall
         tool_call = ToolCall(
             name="code_interpreter.install_packages",
-            arguments=safe_json_dumps({"packages": packages}) if capture_content else None,
+            arguments=safe_json_dumps({"packages": packages})
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -218,7 +222,9 @@ def wrap_code_interpreter_upload_file(
                     "filename": filename,
                     "description": description,
                 }
-            ) if capture_content else None,
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -414,7 +420,9 @@ def wrap_code_interpreter_operation(
         try:
             invocation = ToolCall(
                 name=f"code_interpreter.{operation_name}",
-                arguments=safe_json_dumps(kwargs) if capture_content and kwargs else None,
+                arguments=safe_json_dumps(kwargs)
+                if capture_content and kwargs
+                else None,
                 system="bedrock-agentcore",
             )
 

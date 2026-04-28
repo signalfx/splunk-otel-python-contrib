@@ -56,6 +56,7 @@ class MockCodeInterpreter:
 # wrap_code_interpreter_start
 # ---------------------------------------------------------------------------
 
+
 def test_code_interpreter_start_creates_tool_call(stub_handler):
     """wrap_code_interpreter_start creates a ToolCall span."""
     interpreter = MockCodeInterpreter()
@@ -79,6 +80,7 @@ def test_code_interpreter_start_creates_tool_call(stub_handler):
 # wrap_code_interpreter_stop
 # ---------------------------------------------------------------------------
 
+
 def test_code_interpreter_stop_creates_tool_call(stub_handler):
     """wrap_code_interpreter_stop creates a ToolCall span."""
     interpreter = MockCodeInterpreter()
@@ -90,12 +92,16 @@ def test_code_interpreter_stop_creates_tool_call(stub_handler):
     assert len(stub_handler.stopped_tool_calls) == 1
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.name == "code_interpreter.stop"
-    assert tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] == "session-123"
+    assert (
+        tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"]
+        == "session-123"
+    )
 
 
 # ---------------------------------------------------------------------------
 # wrap_code_interpreter_execute
 # ---------------------------------------------------------------------------
+
 
 def test_code_interpreter_execute_with_content(stub_handler):
     """wrap_code_interpreter_execute captures code and output when content enabled."""
@@ -140,7 +146,9 @@ def test_code_interpreter_execute_no_content_by_default(stub_handler):
     assert tool_call.tool_result is None
 
 
-def test_code_interpreter_execute_has_errors_attribute_set_regardless_of_content(stub_handler):
+def test_code_interpreter_execute_has_errors_attribute_set_regardless_of_content(
+    stub_handler,
+):
     """has_errors attribute is set even when content capture is disabled."""
     interpreter = MockCodeInterpreter()
 
@@ -201,6 +209,7 @@ def test_code_interpreter_execute_kwargs_preferred_over_args(stub_handler):
 # wrap_code_interpreter_install_packages
 # ---------------------------------------------------------------------------
 
+
 def test_code_interpreter_install_packages_with_content(stub_handler):
     """wrap_code_interpreter_install_packages captures package list when content enabled."""
     interpreter = MockCodeInterpreter()
@@ -248,6 +257,7 @@ def test_code_interpreter_install_packages_no_content_by_default(stub_handler):
 # wrap_code_interpreter_upload_file
 # ---------------------------------------------------------------------------
 
+
 def test_code_interpreter_upload_file_with_content(stub_handler):
     """wrap_code_interpreter_upload_file captures filename and result when content enabled."""
     interpreter = MockCodeInterpreter()
@@ -266,7 +276,10 @@ def test_code_interpreter_upload_file_with_content(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.name == "code_interpreter.upload_file"
-    assert tool_call.attributes["bedrock.agentcore.code_interpreter.filename"] == "data.csv"
+    assert (
+        tool_call.attributes["bedrock.agentcore.code_interpreter.filename"]
+        == "data.csv"
+    )
     assert "data.csv" in tool_call.arguments
     assert tool_call.tool_result is not None
 
@@ -285,7 +298,10 @@ def test_code_interpreter_upload_file_no_content_by_default(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     # filename attribute is safe metadata — always captured
-    assert tool_call.attributes["bedrock.agentcore.code_interpreter.filename"] == "data.csv"
+    assert (
+        tool_call.attributes["bedrock.agentcore.code_interpreter.filename"]
+        == "data.csv"
+    )
     assert tool_call.arguments is None
     assert tool_call.tool_result is None
 
@@ -293,6 +309,7 @@ def test_code_interpreter_upload_file_no_content_by_default(stub_handler):
 # ---------------------------------------------------------------------------
 # wrap_code_interpreter_operation (generic factory)
 # ---------------------------------------------------------------------------
+
 
 def test_code_interpreter_operation_creates_tool_call(stub_handler):
     """wrap_code_interpreter_operation factory creates a ToolCall span."""
@@ -370,6 +387,7 @@ def test_code_interpreter_operation_exception_fails_tool_call(stub_handler):
 # ---------------------------------------------------------------------------
 # Exception propagation (original tests)
 # ---------------------------------------------------------------------------
+
 
 def test_code_interpreter_exception_fails_tool_call(stub_handler):
     """Exceptions in code interpreter operations fail the tool call."""

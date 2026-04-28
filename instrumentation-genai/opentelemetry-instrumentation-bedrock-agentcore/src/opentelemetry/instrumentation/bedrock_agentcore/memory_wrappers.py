@@ -117,7 +117,9 @@ def wrap_memory_create_event(
                     "actor_id": safe_str(actor_id),
                     "session_id": safe_str(session_id),
                 }
-            ) if capture_content else None,
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
         )
 
@@ -177,7 +179,9 @@ def wrap_memory_create_blob_event(
                     "actor_id": safe_str(actor_id),
                     "session_id": safe_str(session_id),
                 }
-            ) if capture_content else None,
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
         )
 
@@ -229,7 +233,9 @@ def wrap_memory_list_events(
 
         invocation = ToolCall(
             name="memory.list_events",
-            arguments=safe_json_dumps({"memory_id": safe_str(memory_id)}) if capture_content else None,
+            arguments=safe_json_dumps({"memory_id": safe_str(memory_id)})
+            if capture_content
+            else None,
             system="bedrock-agentcore",
         )
 
@@ -278,7 +284,9 @@ def wrap_memory_operation(
         try:
             invocation = ToolCall(
                 name=f"memory.{operation_name}",
-                arguments=safe_json_dumps(kwargs) if capture_content and kwargs else None,
+                arguments=safe_json_dumps(kwargs)
+                if capture_content and kwargs
+                else None,
                 system="bedrock-agentcore",
             )
 

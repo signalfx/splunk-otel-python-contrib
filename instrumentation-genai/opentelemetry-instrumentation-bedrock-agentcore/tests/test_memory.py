@@ -54,6 +54,7 @@ class MockMemoryClient:
 # wrap_memory_retrieve
 # ---------------------------------------------------------------------------
 
+
 def test_memory_retrieve_creates_retrieval_invocation(stub_handler):
     """wrap_memory_retrieve creates a RetrievalInvocation span with content."""
     client = MockMemoryClient()
@@ -159,6 +160,7 @@ def test_memory_retrieve_exception_fails_invocation(stub_handler):
 # wrap_memory_create_event
 # ---------------------------------------------------------------------------
 
+
 def test_memory_create_event_creates_tool_call(stub_handler):
     """wrap_memory_create_event creates a ToolCall span with content."""
     client = MockMemoryClient()
@@ -262,6 +264,7 @@ def test_memory_create_event_exception_fails_tool_call(stub_handler):
 # wrap_memory_create_blob_event
 # ---------------------------------------------------------------------------
 
+
 def test_memory_create_blob_event_creates_tool_call(stub_handler):
     """wrap_memory_create_blob_event creates a ToolCall span with content."""
     client = MockMemoryClient()
@@ -324,6 +327,7 @@ def test_memory_create_blob_event_kwargs_preferred_over_args(stub_handler):
 # wrap_memory_list_events
 # ---------------------------------------------------------------------------
 
+
 def test_memory_list_events_creates_tool_call(stub_handler):
     """wrap_memory_list_events creates a ToolCall span with content."""
     client = MockMemoryClient()
@@ -367,6 +371,7 @@ def test_memory_list_events_no_content_by_default(stub_handler):
 # ---------------------------------------------------------------------------
 # wrap_memory_operation (generic factory)
 # ---------------------------------------------------------------------------
+
 
 def test_memory_operation_creates_tool_call(stub_handler):
     """wrap_memory_operation factory creates a ToolCall span."""
