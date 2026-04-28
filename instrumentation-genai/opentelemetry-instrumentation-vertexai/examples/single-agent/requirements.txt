@@ -1,0 +1,8 @@
+google-cloud-aiplatform>=1.64
+
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-instrumentation-vertexai
+
+python-dotenv
+requests
