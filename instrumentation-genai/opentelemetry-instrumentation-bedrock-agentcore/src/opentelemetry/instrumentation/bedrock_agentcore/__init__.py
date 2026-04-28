@@ -238,48 +238,96 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
         )
 
         # Additional MemoryClient operations
-        for method in ["create_memory", "create_memory_and_wait", "create_or_get_memory",
-                       "delete_memory", "delete_memory_and_wait", "get_memory_status", "list_memories",
-                       "wait_for_memories", "save_conversation", "fork_conversation",
-                       "get_conversation_tree", "get_last_k_turns", "list_branch_events",
-                       "list_branches", "merge_branch_context", "process_turn_with_llm",
-                       "add_strategy", "add_episodic_strategy", "add_episodic_strategy_and_wait",
-                       "add_semantic_strategy", "add_semantic_strategy_and_wait",
-                       "add_summary_strategy", "add_summary_strategy_and_wait",
-                       "add_user_preference_strategy", "add_user_preference_strategy_and_wait",
-                       "add_custom_episodic_strategy", "add_custom_episodic_strategy_and_wait",
-                       "add_custom_semantic_strategy", "add_custom_semantic_strategy_and_wait",
-                       "delete_strategy", "modify_strategy", "get_memory_strategies",
-                       "update_memory_strategies", "update_memory_strategies_and_wait"]:
+        for method in [
+            "create_memory",
+            "create_memory_and_wait",
+            "create_or_get_memory",
+            "delete_memory",
+            "delete_memory_and_wait",
+            "get_memory_status",
+            "list_memories",
+            "wait_for_memories",
+            "save_conversation",
+            "fork_conversation",
+            "get_conversation_tree",
+            "get_last_k_turns",
+            "list_branch_events",
+            "list_branches",
+            "merge_branch_context",
+            "process_turn_with_llm",
+            "add_strategy",
+            "add_episodic_strategy",
+            "add_episodic_strategy_and_wait",
+            "add_semantic_strategy",
+            "add_semantic_strategy_and_wait",
+            "add_summary_strategy",
+            "add_summary_strategy_and_wait",
+            "add_user_preference_strategy",
+            "add_user_preference_strategy_and_wait",
+            "add_custom_episodic_strategy",
+            "add_custom_episodic_strategy_and_wait",
+            "add_custom_semantic_strategy",
+            "add_custom_semantic_strategy_and_wait",
+            "delete_strategy",
+            "modify_strategy",
+            "get_memory_strategies",
+            "update_memory_strategies",
+            "update_memory_strategies_and_wait",
+        ]:
             _safe_wrap(
                 "bedrock_agentcore.memory.client",
                 f"MemoryClient.{method}",
-                lambda wrapped, instance, args, kwargs, m=method: wrap_memory_operation(m)(
-                    wrapped, instance, args, kwargs, _handler
-                ),
+                lambda wrapped, instance, args, kwargs, m=method: wrap_memory_operation(
+                    m
+                )(wrapped, instance, args, kwargs, _handler),
             )
 
         # Additional CodeInterpreter operations
-        for method in ["download_file", "download_files", "upload_files",
-                       "get_session", "list_sessions", "execute_command", "clear_context", "invoke",
-                       "create_code_interpreter", "delete_code_interpreter",
-                       "get_code_interpreter", "list_code_interpreters"]:
+        for method in [
+            "download_file",
+            "download_files",
+            "upload_files",
+            "get_session",
+            "list_sessions",
+            "execute_command",
+            "clear_context",
+            "invoke",
+            "create_code_interpreter",
+            "delete_code_interpreter",
+            "get_code_interpreter",
+            "list_code_interpreters",
+        ]:
             _safe_wrap(
                 "bedrock_agentcore.tools.code_interpreter_client",
                 f"CodeInterpreter.{method}",
-                lambda wrapped, instance, args, kwargs, m=method: wrap_code_interpreter_operation(m)(
+                lambda wrapped,
+                instance,
+                args,
+                kwargs,
+                m=method: wrap_code_interpreter_operation(m)(
                     wrapped, instance, args, kwargs, _handler
                 ),
             )
 
         # Additional BrowserClient operations
-        for method in ["list_sessions", "create_browser", "delete_browser",
-                       "get_browser", "list_browsers", "generate_live_view_url",
-                       "generate_ws_headers", "update_stream"]:
+        for method in [
+            "list_sessions",
+            "create_browser",
+            "delete_browser",
+            "get_browser",
+            "list_browsers",
+            "generate_live_view_url",
+            "generate_ws_headers",
+            "update_stream",
+        ]:
             _safe_wrap(
                 "bedrock_agentcore.tools.browser_client",
                 f"BrowserClient.{method}",
-                lambda wrapped, instance, args, kwargs, m=method: wrap_browser_operation(m)(
+                lambda wrapped,
+                instance,
+                args,
+                kwargs,
+                m=method: wrap_browser_operation(m)(
                     wrapped, instance, args, kwargs, _handler
                 ),
             )
