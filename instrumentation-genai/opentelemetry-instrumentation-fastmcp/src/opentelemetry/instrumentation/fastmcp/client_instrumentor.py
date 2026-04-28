@@ -148,8 +148,11 @@ class ClientInstrumentor:
                             init_op.sdot_mcp_server_name = str(
                                 init_result.serverInfo.name
                             )
-                except Exception:
-                    pass
+                except AttributeError:
+                    _LOGGER.debug(
+                        "Failed to enrich initialize span with server info",
+                        exc_info=True,
+                    )
 
                 instrumentor._active_sessions[id(instance)] = init_op
                 return result
@@ -201,13 +204,11 @@ class ClientInstrumentor:
     def _client_call_tool_wrapper(self):
         """Wrapper for FastMCP Client.call_tool."""
         handler = self._handler
-        instrumentor = self
 
         async def traced_call_tool(wrapped, instance, args, kwargs):
             tool_name = args[0] if args else kwargs.get("name", "unknown")
             tool_args = args[1] if len(args) > 1 else kwargs.get("arguments", {})
 
-            parent_session = instrumentor._active_sessions.get(id(instance))
             transport = detect_transport(instance)
 
             tool_call = MCPToolCall(
@@ -221,9 +222,6 @@ class ClientInstrumentor:
                 network_transport=transport,
                 is_client=True,
             )
-
-            if parent_session:
-                pass  # parent context inherited automatically via OTel span hierarchy
 
             if should_capture_content() and tool_args:
                 try:
