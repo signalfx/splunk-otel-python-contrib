@@ -1,0 +1,82 @@
+interactions:
+- request:
+    body: |-
+      {
+        "input": [
+          "What is the capital of France?"
+        ],
+        "model": "text-embedding-ada-002",
+        "encoding_format": "float"
+      }
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      api-key:
+      - test-api-key
+      authorization:
+      - Bearer test_openai_api_key
+      connection:
+      - keep-alive
+      content-length:
+      - '100'
+      content-type:
+      - application/json
+      host:
+      - chat-ai.cisco.com
+      user-agent:
+      - OpenAI/Python 1.108.1
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.108.1
+      x-stainless-raw-response:
+      - 'true'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.10
+    method: POST
+    uri: https://chat-ai.cisco.com/openai/deployments/text-embedding-ada-002/embeddings
+  response:
+    body:
+      string: |-
+        {
+          "object": "list",
+          "data": [
+            {
+              "object": "embedding",
+              "index": 0,
+              "embedding": [0.0023064255, -0.009327292, 0.015797734, -0.007560048, -0.004185689, 0.004745676, 0.018524898, -0.006234094, 0.015041459, -0.017862586]
+            }
+          ],
+          "model": "text-embedding-ada-002-v2",
+          "usage": {
+            "prompt_tokens": 7,
+            "total_tokens": 7
+          }
+        }
+    headers:
+      content-type:
+      - application/json
+      date:
+      - Sun, 21 Sep 2025 04:10:00 GMT
+      openai-organization:
+      - test_openai_org_id
+      x-request-id:
+      - emb-req-001
+      content-length:
+      - '350'
+    status:
+      code: 200
+      message: OK
+version: 1

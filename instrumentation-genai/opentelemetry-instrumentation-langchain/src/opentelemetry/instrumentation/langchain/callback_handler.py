@@ -807,7 +807,7 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 inv.agent_name = _safe_str(agent_name_value)
                 inv.agent_id = _agent_span_id(context_agent)
         inv.parent_span = self._resolve_parent_span(parent_run_id)
-        # Store start time for TTFT calculation (will be used in on_llm_new_token)
+        # Store start time for TTFC calculation (will be used in on_llm_new_token)
         inv._start_time = time.perf_counter()
         self._handler.start_llm(inv)
         self._invocation_manager.add(run_id, parent_run_id, inv)
