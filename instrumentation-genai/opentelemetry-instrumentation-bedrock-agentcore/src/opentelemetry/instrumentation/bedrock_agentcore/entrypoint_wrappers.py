@@ -19,9 +19,27 @@ import functools
 from typing import Any
 
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import Error, Workflow
+from opentelemetry.util.genai.types import Error, InputMessage, OutputMessage, Text, Workflow
 
-from .utils import safe_str
+from .utils import safe_json_dumps, safe_str
+
+
+def _make_input_message(event: Any) -> InputMessage:
+    """Convert an entrypoint event payload to an InputMessage for eval context."""
+    if isinstance(event, str):
+        content = event
+    else:
+        content = safe_json_dumps(event)
+    return InputMessage(role="user", parts=[Text(content=content)])
+
+
+def _make_output_message(result: Any) -> OutputMessage:
+    """Convert an entrypoint return value to an OutputMessage for eval context."""
+    if isinstance(result, str):
+        content = result
+    else:
+        content = safe_json_dumps(result)
+    return OutputMessage(role="assistant", parts=[Text(content=content)], finish_reason="stop")
 
 
 def wrap_bedrock_agentcore_app_entrypoint(
@@ -59,9 +77,13 @@ def wrap_bedrock_agentcore_app_entrypoint(
             @functools.wraps(decorated_func)
             async def async_workflow_wrapper(*call_args, **call_kwargs):
                 workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
+                if call_args:
+                    workflow.input_messages = [_make_input_message(call_args[0])]
                 handler.start_workflow(workflow)
                 try:
                     result = await decorated_func(*call_args, **call_kwargs)
+                    if result is not None:
+                        workflow.output_messages = [_make_output_message(result)]
                     handler.stop_workflow(workflow)
                     return result
                 except Exception as e:
@@ -75,9 +97,13 @@ def wrap_bedrock_agentcore_app_entrypoint(
         @functools.wraps(decorated_func)
         def workflow_wrapper(*call_args, **call_kwargs):
             workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
+            if call_args:
+                workflow.input_messages = [_make_input_message(call_args[0])]
             handler.start_workflow(workflow)
             try:
                 result = decorated_func(*call_args, **call_kwargs)
+                if result is not None:
+                    workflow.output_messages = [_make_output_message(result)]
                 handler.stop_workflow(workflow)
                 return result
             except Exception as e:

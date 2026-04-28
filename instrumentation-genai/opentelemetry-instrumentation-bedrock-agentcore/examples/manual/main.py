@@ -28,6 +28,26 @@ components with one representative operation per span type:
 Spans are sent to an OTLP collector (default: http://localhost:4317).
 Set OTEL_EXPORTER_OTLP_ENDPOINT to override. If the OTLP exporter is
 not installed the spans are printed to stdout instead.
+
+Evaluations
+-----------
+Evals run automatically on each Workflow span (the @app.entrypoint call).
+They are configured via environment variables before instrumentation starts:
+
+    # Enable the built-in length evaluator (no extra dependencies):
+    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS=length
+
+    # Enable DeepEval evaluators (requires: pip install opentelemetry-util-genai-evals-deepeval):
+    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS=Deepeval
+
+    # Enable specific DeepEval metrics only:
+    OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS=Deepeval(Workflow(bias,toxicity))
+
+    # Enable content capture so eval input/output is also visible on spans:
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+
+Eval scores are emitted as OpenTelemetry metrics (gen_ai.evaluation.score)
+and as log events attached to the Workflow span.
 """
 
 import logging
@@ -42,6 +62,8 @@ from opentelemetry.semconv.resource import ResourceAttributes
 
 try:
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 
     _OTLP_AVAILABLE = True
 except ImportError:
@@ -60,7 +82,19 @@ logger = logging.getLogger(__name__)
 
 
 def setup_telemetry() -> TracerProvider:
-    """Configure OpenTelemetry with OTLP (preferred) or console exporter."""
+    """Configure OpenTelemetry with OTLP (preferred) or console exporter.
+
+    Events (OTel log records) are emitted for the Workflow span — i.e. every
+    @app.entrypoint invocation — when the following env vars are set:
+
+        OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event
+        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+
+    The Workflow event carries the serialised input event payload and the
+    agent's return value so downstream tools can inspect or evaluate them.
+    ToolCall and RetrievalInvocation spans do not emit content events by
+    framework design; their data is captured on span attributes instead.
+    """
     resource = Resource(
         attributes={
             ResourceAttributes.SERVICE_NAME: "bedrock-agentcore-demo",
@@ -70,22 +104,55 @@ def setup_telemetry() -> TracerProvider:
 
     tracer_provider = TracerProvider(resource=resource)
 
+    # --- log provider for events ---
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
+    from opentelemetry._logs import set_logger_provider
+
+    logger_provider = LoggerProvider(resource=resource)
+
+    # --- meter provider for metrics ---
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
+    from opentelemetry.metrics import set_meter_provider
+
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
     if _OTLP_AVAILABLE:
-        exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
-        logger.info("Sending spans to OTLP collector at %s", otlp_endpoint)
+        tracer_provider.add_span_processor(
+            BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
+        )
+        logger_provider.add_log_record_processor(
+            BatchLogRecordProcessor(OTLPLogExporter(endpoint=otlp_endpoint))
+        )
+        meter_provider = MeterProvider(
+            resource=resource,
+            metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=otlp_endpoint))],
+        )
+        logger.info("Sending spans, metrics, and events to OTLP collector at %s", otlp_endpoint)
     else:
-        exporter = ConsoleSpanExporter()
+        tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+        logger_provider.add_log_record_processor(
+            BatchLogRecordProcessor(ConsoleLogExporter())
+        )
+        meter_provider = MeterProvider(
+            resource=resource,
+            metric_readers=[PeriodicExportingMetricReader(ConsoleMetricExporter())],
+        )
         logger.warning(
             "opentelemetry-exporter-otlp-proto-grpc is not installed. "
             "Falling back to console. "
             "Install with: pip install opentelemetry-exporter-otlp-proto-grpc"
         )
 
-    tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(tracer_provider)
+    set_logger_provider(logger_provider)
+    set_meter_provider(meter_provider)
 
-    BedrockAgentCoreInstrumentor().instrument(tracer_provider=tracer_provider)
+    BedrockAgentCoreInstrumentor().instrument(
+        tracer_provider=tracer_provider,
+        logger_provider=logger_provider,
+        meter_provider=meter_provider,
+    )
     logger.info("BedrockAgentCoreInstrumentor active — all 69 methods instrumented")
 
     return tracer_provider

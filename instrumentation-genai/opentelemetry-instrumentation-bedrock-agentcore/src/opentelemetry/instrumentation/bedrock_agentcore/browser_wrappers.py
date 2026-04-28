@@ -31,6 +31,7 @@ def wrap_browser_start(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap BrowserClient.start to create ToolCall span.
 
@@ -103,6 +104,7 @@ def wrap_browser_stop(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap BrowserClient.stop to create ToolCall span.
 
@@ -140,7 +142,8 @@ def wrap_browser_stop(
             result = wrapped(*args, **kwargs)
 
             # Populate result
-            tool_call.tool_result = safe_json_dumps({"success": result})
+            if capture_content:
+                tool_call.tool_result = safe_json_dumps({"success": result})
 
             # Stop the tool call successfully
             handler.stop_tool_call(tool_call)
@@ -165,6 +168,7 @@ def wrap_browser_take_control(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap BrowserClient.take_control to create ToolCall span.
 
@@ -224,6 +228,7 @@ def wrap_browser_release_control(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap BrowserClient.release_control to create ToolCall span.
 
@@ -283,6 +288,7 @@ def wrap_browser_get_session(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap BrowserClient.get_session to create ToolCall span.
 
@@ -309,7 +315,7 @@ def wrap_browser_get_session(
                     "browser_id": browser_id,
                     "session_id": session_id,
                 }
-            ),
+            ) if capture_content else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -368,11 +374,12 @@ def wrap_browser_operation(
         args: tuple,
         kwargs: dict,
         handler: TelemetryHandler,
+        capture_content: bool = False,
     ) -> Any:
         try:
             invocation = ToolCall(
                 name=f"browser.{operation_name}",
-                arguments=safe_json_dumps(kwargs) if kwargs else safe_json_dumps({}),
+                arguments=safe_json_dumps(kwargs) if capture_content and kwargs else None,
                 system="bedrock-agentcore",
             )
 
@@ -381,7 +388,7 @@ def wrap_browser_operation(
             try:
                 result = wrapped(*args, **kwargs)
 
-                if result is not None:
+                if capture_content and result is not None:
                     invocation.tool_result = (
                         safe_json_dumps(result)
                         if not isinstance(result, str)

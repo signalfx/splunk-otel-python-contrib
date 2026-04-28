@@ -31,6 +31,7 @@ def wrap_code_interpreter_execute(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap CodeInterpreter.execute_code to create ToolCall span.
 
@@ -40,6 +41,7 @@ def wrap_code_interpreter_execute(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture code/output content in spans
 
     Returns:
         Result of original execute_code
@@ -51,7 +53,7 @@ def wrap_code_interpreter_execute(
         # Create ToolCall
         tool_call = ToolCall(
             name="code_interpreter.execute",
-            arguments=safe_json_dumps({"code": code[:500]}),  # Truncate long code
+            arguments=safe_json_dumps({"code": code[:500]}) if capture_content else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -74,25 +76,24 @@ def wrap_code_interpreter_execute(
             if result:
                 # CodeInterpreter returns a dict with output, errors, etc.
                 if isinstance(result, dict):
-                    output = result.get("output", "")
                     errors = result.get("errors", [])
 
-                    tool_call.tool_result = safe_json_dumps(
-                        {
-                            "output": output[:1000]
-                            if output
-                            else "",  # Truncate long output
-                            "has_errors": bool(errors),
-                            "error_count": len(errors) if errors else 0,
-                        }
-                    )
+                    if capture_content:
+                        output = result.get("output", "")
+                        tool_call.tool_result = safe_json_dumps(
+                            {
+                                "output": output[:1000] if output else "",
+                                "has_errors": bool(errors),
+                                "error_count": len(errors) if errors else 0,
+                            }
+                        )
 
                     # Track if there were execution errors (not exceptions)
                     if errors:
                         tool_call.attributes[
                             "bedrock.agentcore.code_interpreter.has_errors"
                         ] = True
-                else:
+                elif capture_content:
                     tool_call.tool_result = safe_str(result)[:1000]
 
             # Stop the tool call successfully
@@ -118,6 +119,7 @@ def wrap_code_interpreter_install_packages(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap CodeInterpreter.install_packages to create ToolCall span.
 
@@ -127,6 +129,7 @@ def wrap_code_interpreter_install_packages(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture package list/result content in spans
 
     Returns:
         Result of original install_packages
@@ -138,7 +141,7 @@ def wrap_code_interpreter_install_packages(
         # Create ToolCall
         tool_call = ToolCall(
             name="code_interpreter.install_packages",
-            arguments=safe_json_dumps({"packages": packages}),
+            arguments=safe_json_dumps({"packages": packages}) if capture_content else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -161,7 +164,7 @@ def wrap_code_interpreter_install_packages(
             result = wrapped(*args, **kwargs)
 
             # Populate result data
-            if result:
+            if capture_content and result:
                 tool_call.tool_result = safe_json_dumps(result)
 
             # Stop the tool call successfully
@@ -187,6 +190,7 @@ def wrap_code_interpreter_upload_file(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap CodeInterpreter.upload_file to create ToolCall span.
 
@@ -196,6 +200,7 @@ def wrap_code_interpreter_upload_file(
         args: Positional arguments
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture filename/result content in spans
 
     Returns:
         Result of original upload_file
@@ -213,7 +218,7 @@ def wrap_code_interpreter_upload_file(
                     "filename": filename,
                     "description": description,
                 }
-            ),
+            ) if capture_content else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -236,7 +241,7 @@ def wrap_code_interpreter_upload_file(
             result = wrapped(*args, **kwargs)
 
             # Populate result data
-            if result:
+            if capture_content and result:
                 # Result typically contains file_id or similar identifier
                 tool_call.tool_result = safe_json_dumps(result)
 
@@ -263,6 +268,7 @@ def wrap_code_interpreter_start(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap CodeInterpreter.start to create ToolCall span.
 
@@ -329,6 +335,7 @@ def wrap_code_interpreter_stop(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap CodeInterpreter.stop to create ToolCall span.
 
@@ -402,11 +409,12 @@ def wrap_code_interpreter_operation(
         args: tuple,
         kwargs: dict,
         handler: TelemetryHandler,
+        capture_content: bool = False,
     ) -> Any:
         try:
             invocation = ToolCall(
                 name=f"code_interpreter.{operation_name}",
-                arguments=safe_json_dumps(kwargs) if kwargs else safe_json_dumps({}),
+                arguments=safe_json_dumps(kwargs) if capture_content and kwargs else None,
                 system="bedrock-agentcore",
             )
 
@@ -415,7 +423,7 @@ def wrap_code_interpreter_operation(
             try:
                 result = wrapped(*args, **kwargs)
 
-                if result is not None:
+                if capture_content and result is not None:
                     invocation.tool_result = (
                         safe_json_dumps(result)
                         if not isinstance(result, str)
