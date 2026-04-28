@@ -432,9 +432,7 @@ class SpanEmitter(EmitterMeta):
         store_span_context(invocation, extract_span_context(span))
 
     # ---- lifecycle -------------------------------------------------------
-    def on_start(
-        self, invocation: LLMInvocation | EmbeddingInvocation
-    ) -> None:  # type: ignore[override]
+    def on_start(self, invocation: Any) -> None:
         # Handle new-style invocations (check before old-style to avoid overlap)
         if isinstance(invocation, WorkflowInvocation):
             self._start_workflow(invocation)
@@ -478,8 +476,8 @@ class SpanEmitter(EmitterMeta):
             self._add_span_to_invocation(invocation, span)
             self._apply_start_attrs(invocation)
 
-    def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
-        _apply_evaluation_attributes(invocation.span, invocation)  # type: ignore[override]
+    def on_end(self, invocation: Any) -> None:
+        _apply_evaluation_attributes(invocation.span, invocation)
         # New-style invocations (check before old-style)
         if isinstance(invocation, WorkflowInvocation):
             self._finish_workflow(invocation)
@@ -557,9 +555,7 @@ class SpanEmitter(EmitterMeta):
                         GEN_AI_FINISH_REASON_DESCRIPTION, error.message
                     )
 
-    def on_error(
-        self, error: Error, invocation: LLMInvocation | EmbeddingInvocation
-    ) -> None:  # type: ignore[override]
+    def on_error(self, error: Error, invocation: Any) -> None:
         # New-style invocations (check before old-style)
         if isinstance(invocation, WorkflowInvocation):
             self._error_workflow(error, invocation)
