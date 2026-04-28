@@ -18,6 +18,8 @@ from ..types import (
     EmbeddingInvocation,
     Error,
     LLMInvocation,
+    MCPOperation,
+    MCPToolCall,
     RetrievalInvocation,
     ToolCall,
     Workflow,
@@ -46,6 +48,9 @@ class MetricsEmitter(EmitterMeta):
             instruments.operation_duration_histogram
         )
         self._token_histogram: Histogram = instruments.token_usage_histogram
+        self._time_to_first_chunk_histogram: Histogram = (
+            instruments.time_to_first_chunk_histogram
+        )
         self._workflow_duration_histogram: Histogram = (
             instruments.workflow_duration_histogram
         )
@@ -119,36 +124,35 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs,
                 span=getattr(llm_invocation, "span", None),
             )
-            return
-        if isinstance(obj, ToolCall):
-            tool_invocation = obj
-            metric_attrs = _get_metric_attributes(
-                tool_invocation.name,
-                None,
-                GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
-                tool_invocation.provider,
-                tool_invocation.framework,
-            )
-            # Add agent context if available
-            if tool_invocation.agent_name:
-                metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
-                    tool_invocation.agent_name
+            # Record time to first chunk for streaming operations
+            if llm_invocation.request_stream:
+                ttfc = llm_invocation.attributes.get(
+                    "gen_ai.response.time_to_first_chunk"
                 )
-            if tool_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
+                if ttfc is not None:
+                    span = getattr(llm_invocation, "span", None)
+                    context = None
+                    if span is not None:
+                        try:
+                            context = trace.set_span_in_context(span)
+                        except (
+                            TypeError,
+                            ValueError,
+                            AttributeError,
+                        ):  # pragma: no cover - defensive
+                            context = None
+                    self._time_to_first_chunk_histogram.record(
+                        ttfc, attributes=metric_attrs, context=context
+                    )
+            return
+        if isinstance(obj, MCPOperation):
+            self._record_mcp_operation_metrics(obj)
+            if isinstance(obj, MCPToolCall) and obj.is_client:
+                self._record_execute_tool_metrics(obj)
+            return
 
-            # Add session context if configured
-            metric_attrs.update(get_context_metric_attributes(tool_invocation))
-
-            _record_duration(
-                self._duration_histogram,
-                tool_invocation,
-                metric_attrs,
-                span=getattr(tool_invocation, "span", None),
-            )
-
-            # Record MCP-specific metrics if this is an MCP tool call
-            self._record_mcp_tool_metrics(tool_invocation)
+        if isinstance(obj, ToolCall):
+            self._record_execute_tool_metrics(obj)
 
         if isinstance(obj, EmbeddingInvocation):
             embedding_invocation = obj
@@ -199,7 +203,7 @@ class MetricsEmitter(EmitterMeta):
             self._record_workflow_metrics(obj)
             return
         if isinstance(obj, AgentInvocation):
-            self._record_agent_metrics(obj)
+            self._record_agent_metrics(obj, error=error)
             return
         # Step metrics removed
 
@@ -231,16 +235,56 @@ class MetricsEmitter(EmitterMeta):
                 self._duration_histogram, llm_invocation, metric_attrs
             )
             return
+
+        if isinstance(obj, MCPOperation):
+            obj.is_error = True
+            if getattr(error, "type", None) is not None:
+                obj.mcp_error_type = error.type.__qualname__
+            self._record_mcp_operation_metrics(obj)
+            if isinstance(obj, MCPToolCall) and obj.is_client:
+                metric_attrs = _get_metric_attributes(
+                    None,
+                    None,
+                    GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+                    obj.provider,
+                    obj.framework,
+                )
+                metric_attrs[GenAI.GEN_AI_TOOL_NAME] = obj.name
+                if obj.agent_name:
+                    metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
+                if obj.agent_id:
+                    metric_attrs[GenAI.GEN_AI_AGENT_ID] = obj.agent_id
+                if getattr(error, "type", None) is not None:
+                    metric_attrs[ErrorAttributes.ERROR_TYPE] = (
+                        error.type.__qualname__
+                    )
+                metric_attrs.update(get_context_metric_attributes(obj))
+                duration = obj.duration_s
+                if duration is None and obj.end_time is not None:
+                    duration = obj.end_time - obj.start_time
+                if duration is not None:
+                    context = None
+                    span = getattr(obj, "span", None)
+                    if span is not None:
+                        try:
+                            context = trace.set_span_in_context(span)
+                        except (TypeError, ValueError, AttributeError):
+                            context = None
+                    self._duration_histogram.record(
+                        duration, attributes=metric_attrs, context=context
+                    )
+            return
+
         if isinstance(obj, ToolCall):
             tool_invocation = obj
             metric_attrs = _get_metric_attributes(
-                tool_invocation.name,
+                None,
                 None,
                 GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                 tool_invocation.provider,
                 tool_invocation.framework,
             )
-            # Add agent context if available
+            metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool_invocation.name
             if tool_invocation.agent_name:
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     tool_invocation.agent_name
@@ -307,6 +351,7 @@ class MetricsEmitter(EmitterMeta):
             (
                 LLMInvocation,
                 ToolCall,
+                MCPOperation,
                 Workflow,
                 AgentInvocation,
                 EmbeddingInvocation,
@@ -340,7 +385,9 @@ class MetricsEmitter(EmitterMeta):
             duration, attributes=metric_attrs, context=context
         )
 
-    def _record_agent_metrics(self, agent: AgentInvocation) -> None:
+    def _record_agent_metrics(
+        self, agent: AgentInvocation, error: Optional[Error] = None
+    ) -> None:
         """Record metrics for an agent operation."""
         if agent.end_time is None:
             return
@@ -370,6 +417,72 @@ class MetricsEmitter(EmitterMeta):
         self._agent_duration_histogram.record(
             duration, attributes=metric_attrs, context=context
         )
+
+        # Additionally record MCP session duration if this is an MCP session
+        if agent.system == "mcp" and agent.agent_type in (
+            "mcp_client",
+            "mcp_server",
+        ):
+            self._record_mcp_session_metrics(agent, error=error)
+
+    def _record_mcp_session_metrics(
+        self, agent: AgentInvocation, error: Optional[Error] = None
+    ) -> None:
+        """Record mcp.client.session.duration or mcp.server.session.duration.
+
+        Per OTel semconv: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
+
+        Attributes (from agent.attributes):
+        - error.type (conditionally required, if error)
+        - network.transport (recommended)
+        - mcp.protocol.version (recommended)
+        - server.address (recommended)
+        - server.port (recommended)
+        """
+        if agent.end_time is None:
+            return
+        duration = agent.end_time - agent.start_time
+
+        # Build attributes per semconv
+        mcp_attrs: dict[str, Any] = {}
+
+        # Conditionally required: error.type
+        error_type = agent.attributes.get("error.type")
+        if error_type:
+            mcp_attrs["error.type"] = error_type
+        elif error is not None and getattr(error, "type", None) is not None:
+            mcp_attrs["error.type"] = error.type.__qualname__
+
+        # Recommended attributes
+        for attr_key in (
+            "network.transport",
+            "mcp.protocol.version",
+            "network.protocol.name",
+            "network.protocol.version",
+            "server.address",
+            "server.port",
+        ):
+            val = agent.attributes.get(attr_key)
+            if val is not None:
+                mcp_attrs[attr_key] = val
+
+        # Get span context for metric correlation
+        context = None
+        span = getattr(agent, "span", None)
+        if span is not None:
+            try:
+                context = trace.set_span_in_context(span)
+            except (ValueError, RuntimeError):  # pragma: no cover - defensive
+                context = None
+
+        # Choose client or server histogram
+        is_client = agent.agent_type == "mcp_client"
+        histogram = (
+            self._mcp_client_session_duration
+            if is_client
+            else self._mcp_server_session_duration
+        )
+        histogram.record(duration, attributes=mcp_attrs, context=context)
 
     def _record_retrieval_metrics(
         self, retrieval: RetrievalInvocation, error: Optional[Error] = None
@@ -408,83 +521,84 @@ class MetricsEmitter(EmitterMeta):
             duration, attributes=metric_attrs, context=context
         )
 
-    def _record_mcp_tool_metrics(self, tool: ToolCall) -> None:
-        """Record MCP-specific metrics for tool calls.
+    def _record_execute_tool_metrics(self, tool: ToolCall) -> None:
+        """Record ``gen_ai.client.operation.duration`` for an execute_tool."""
+        metric_attrs = _get_metric_attributes(
+            None,
+            None,
+            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+            tool.provider,
+            tool.framework,
+        )
+        metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool.name
+        if tool.agent_name:
+            metric_attrs[GenAI.GEN_AI_AGENT_NAME] = tool.agent_name
+        if tool.agent_id:
+            metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool.agent_id
+        metric_attrs.update(get_context_metric_attributes(tool))
+        _record_duration(
+            self._duration_histogram,
+            tool,
+            metric_attrs,
+            span=getattr(tool, "span", None),
+        )
+
+    def _record_mcp_operation_metrics(self, op: MCPOperation) -> None:
+        """Record MCP-specific metrics for any MCP operation.
 
         Per OTel semconv: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
 
         Metrics:
         - mcp.client.operation.duration / mcp.server.operation.duration
         - mcp.tool.output.size (custom: tracks output bytes for LLM context)
-
-        Required attributes:
-        - mcp.method.name
-
-        Conditionally required (for tool calls):
-        - gen_ai.tool.name
-        - error.type (if operation fails)
-
-        Recommended (low-cardinality):
-        - gen_ai.operation.name (set to "execute_tool" for tool calls)
-        - network.transport
-        - mcp.protocol.version
         """
-        # Only emit MCP metrics if mcp_method_name is set
-        # (indicates this is an MCP tool call, not a generic ToolCall)
-        if not tool.mcp_method_name:
+        if not op.mcp_method_name:
             return
 
-        # Build MCP metric attributes per semconv
-        # Only low-cardinality attributes should be included
         mcp_attrs: dict[str, Any] = {
-            # Required
-            "mcp.method.name": tool.mcp_method_name,
-            # Conditionally required for tool calls
-            GenAI.GEN_AI_TOOL_NAME: tool.name,
+            "mcp.method.name": op.mcp_method_name,
         }
 
-        # Recommended: gen_ai.operation.name (only for tool calls)
-        if tool.mcp_method_name == "tools/call":
-            mcp_attrs[GenAI.GEN_AI_OPERATION_NAME] = (
-                GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value
-            )
+        if isinstance(op, MCPToolCall):
+            mcp_attrs[GenAI.GEN_AI_TOOL_NAME] = op.name
+            if op.mcp_method_name == "tools/call":
+                mcp_attrs[GenAI.GEN_AI_OPERATION_NAME] = (
+                    GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value
+                )
 
-        # Recommended: network.transport
-        if tool.network_transport:
-            mcp_attrs["network.transport"] = tool.network_transport
+        if op.network_transport:
+            mcp_attrs["network.transport"] = op.network_transport
+        if op.mcp_protocol_version:
+            mcp_attrs["mcp.protocol.version"] = op.mcp_protocol_version
+        if op.is_error and op.mcp_error_type:
+            mcp_attrs["error.type"] = op.mcp_error_type
+        elif op.is_error:
+            mcp_attrs["error.type"] = "operation_error"
 
-        # Recommended: mcp.protocol.version
-        if tool.mcp_protocol_version:
-            mcp_attrs["mcp.protocol.version"] = tool.mcp_protocol_version
-
-        # Conditionally required: error.type (if operation fails)
-        if tool.is_error:
-            mcp_attrs["error.type"] = "tool_error"
-
-        # Get span context for metric correlation
         context = None
-        span = getattr(tool, "span", None)
+        span = getattr(op, "span", None)
         if span is not None:
             try:
                 context = trace.set_span_in_context(span)
             except (ValueError, RuntimeError):
                 context = None
 
-        # Record duration metric
-        duration = tool.duration_s
-        if duration is None and tool.end_time is not None:
-            duration = tool.end_time - tool.start_time
+        duration = op.duration_s
+        if duration is None and op.end_time is not None:
+            duration = op.end_time - op.start_time
         if duration is not None:
-            # Choose client or server histogram based on is_client flag
             histogram = (
                 self._mcp_client_operation_duration
-                if tool.is_client
+                if op.is_client
                 else self._mcp_server_operation_duration
             )
             histogram.record(duration, attributes=mcp_attrs, context=context)
 
-        # Record output size metric (useful for tracking LLM context growth)
-        if tool.output_size_bytes is not None and tool.output_size_bytes > 0:
+        if (
+            isinstance(op, MCPToolCall)
+            and op.output_size_bytes is not None
+            and op.output_size_bytes > 0
+        ):
             self._mcp_tool_output_size.record(
-                tool.output_size_bytes, attributes=mcp_attrs, context=context
+                op.output_size_bytes, attributes=mcp_attrs, context=context
             )

@@ -31,10 +31,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-instruments = ["langchain >= 0.3.21"]
+instruments = ["langchain >= 0.3.21", "langgraph >= 0.4.0, <= 1.1.6"]
 test = [
   "langchain-core >= 1.0.0",
   "langchain-openai >= 1.0.0",
+  "langgraph >= 0.4.0, <= 1.1.6",
+  "opentelemetry-sdk >= 1.20.0",
+  "pytest-asyncio >= 0.23.0",
   "pytest-recording >= 0.13.0",
   "vcrpy >= 7.0.0",
   "pyyaml >= 6.0.0",

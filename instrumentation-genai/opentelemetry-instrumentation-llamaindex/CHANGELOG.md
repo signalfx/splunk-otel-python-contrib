@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Streaming TTFC (Time To First Chunk) support for LLM spans:
+  - `gen_ai.response.time_to_first_chunk` attribute measuring latency to first streaming token
+  - `gen_ai.request.stream` flag (true when streaming detected, false otherwise)
+- TTFC tracking via LlamaIndex event system (`event_handler.py`):
+  - `TTFCTracker` class for recording start times and calculating TTFC
+  - `LlamaindexEventHandler` listening to `LLMChatStartEvent`/`LLMChatInProgressEvent` for per-chunk timing
+  - ContextVar correlation bridging callback handler (event_id) with event handler (span_id)
+
+### Added
+- LLM span attributes for async agent flows:
+  - `gen_ai.response.model` extracted from raw LLM response with fallback to request model
+  - `gen_ai.response.finish_reasons` from response choices
+  - `gen_ai.request.max_tokens` with fallback chain (serialized -> metadata -> Settings.llm)
+  - `gen_ai.tool.definitions` via agent context propagation (gated by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS`)
+  - Provider detection from LLM class name
+- Agent tool registration in `wrap_agent_run()` for tool definitions propagation across async boundaries
+- `find_agent_with_tools()` fallback in invocation manager when ContextVar does not propagate across asyncio tasks
+
+### Fixed
+- Corrected retrieval span `gen_ai.operation.name` from `"retrieve"` to `"retrieval"` per OpenTelemetry semantic conventions. Removed explicit override in callback handler; now uses the `RetrievalInvocation` dataclass default from `util-genai`.
+
 ## [0.1.1] - 2026-01-30
 
 ### Fixed

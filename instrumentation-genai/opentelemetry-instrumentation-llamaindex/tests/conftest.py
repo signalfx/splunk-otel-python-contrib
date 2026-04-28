@@ -7,8 +7,9 @@ import pytest
 from opentelemetry.instrumentation.llamaindex import LlamaindexInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
@@ -45,10 +46,22 @@ def _instrument_once():
     """Instrument LlamaIndex once for the entire test session."""
     os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
     os.environ["OTEL_INSTRUMENTATION_GENAI_EMITTERS"] = "span_metric"
-    setattr(genai_handler.get_telemetry_handler, "_default_handler", None)
+    genai_handler.TelemetryHandler._reset_for_testing()
 
-    tracer_provider = TracerProvider()
+    service_name = os.environ.get("OTEL_SERVICE_NAME", "llamaindex-test")
+    resource = Resource.create({"service.name": service_name})
+    tracer_provider = TracerProvider(resource=resource)
     tracer_provider.add_span_processor(SimpleSpanProcessor(_session_span_exporter))
+
+    # Also export to OTLP if endpoint is configured
+    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if otlp_endpoint:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
+
+        otlp_exporter = OTLPSpanExporter(endpoint=f"{otlp_endpoint}/v1/traces")
+        tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
 
     meter_provider = MeterProvider(metric_readers=[_session_metric_reader])
 

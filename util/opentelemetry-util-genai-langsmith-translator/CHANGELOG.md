@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 0.1.2 - 2026-04-10
+- Updated requests version and python version.
+
 ## Version 0.1.1 - 2026-02-06
 - Resolved issue with missing Agent evaluations.
 - Removed redundant calls which was causing duplicate metrics & evaluations.

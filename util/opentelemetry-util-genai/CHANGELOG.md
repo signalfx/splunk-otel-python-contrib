@@ -2,7 +2,68 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.11
+## [Unreleased]
+
+### Fixed
+- **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
+- **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
+
+## Version 0.1.13
+
+### Fixed
+- **OTel context now attached in async contexts** — Removed the `_is_async_context()` guard from `_push_current_span`. Context is now always attached via `context_api.attach()` regardless of sync/async, enabling downstream instrumentations (HTTP, DB, MCP transport) to see the correct parent span. `_pop_current_span` handles detach failures gracefully for cross-task / `copy_context` scenarios.
+
+### Added
+- **`MCPOperation` type** — New dataclass for non-tool-call MCP operations (`tools/list`, `resources/read`, `prompts/get`, etc.). Produces spans with `{mcp.method.name} {target}` naming and CLIENT/SERVER SpanKind.
+- **New MCP semconv attributes** — `jsonrpc.request.id`, `rpc.response.status_code`, `mcp.resource.uri`, `gen_ai.prompt.name`, `network.protocol.name`, `network.protocol.version`, `server.address`, `server.port`, `client.address`, `client.port` on both `MCPOperation` and `MCPToolCall`.
+- **`MCPRequestContext` ContextVar bridge** — Passes transport-layer metadata (jsonrpc ID, network transport) from the transport instrumentor to the server instrumentor.
+- **TelemetryHandler MCPOperation lifecycle** — `start_mcp_operation`, `stop_mcp_operation`, `fail_mcp_operation` methods.
+- **SpanEmitter MCPOperation dispatch** — Unified `_start_mcp_operation`/`_finish_mcp_operation`/`_error_mcp_operation` handles both `MCPToolCall` and `MCPOperation`.
+- **MetricsEmitter MCPOperation dispatch** — MCP duration metrics now emitted for all MCP operations (not just tool calls), including on the error path.
+- Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
+
+### Changed
+- **`MCPToolCall` now inherits from `MCPOperation`** — MRO: `MCPToolCall → MCPOperation → ToolCall → GenAI`. All MCP transport/protocol attributes are defined on `MCPOperation` and inherited by `MCPToolCall`.
+- **Renamed `mcp_server_name` → `sdot_mcp_server_name`** — SDOT-custom attribute now uses `sdot.mcp.server_name` to distinguish from OTel semconv attributes. **Breaking**: callers using `mcp_server_name=` must update.
+- **Renamed `_record_mcp_tool_metrics` → `_record_mcp_operation_metrics`** — Generalized to handle all MCP operation types.
+- Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
+
+### Fixed
+- **MCP session duration metrics now recorded** — `mcp.client.session.duration` and `mcp.server.session.duration` histogram instruments were declared in `instruments.py` but never `.record()`ed. Added `_record_mcp_session_metrics()` to `MetricsEmitter` that detects MCP sessions (`system="mcp"`, `agent_type` in `{"mcp_client", "mcp_server"}`) within `_record_agent_metrics()` and records the appropriate histogram with semconv attributes (`network.transport`, `mcp.protocol.version`, `server.address`, `server.port`, `error.type`).
+
+## Version 0.1.12
+
+### Added
+- **Client-side streaming attributes** — New attributes for observing streaming LLM requests:
+  - `gen_ai.request.stream` (boolean) — Whether the request uses streaming mode
+  - `gen_ai.response.time_to_first_chunk` (float) — Client-side time in seconds from request sent to first chunk received
+  - Added `request_stream` field to `LLMInvocation` dataclass with semconv metadata
+  - Added `GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK` to span emitter's allowed supplemental keys
+- **Time to first chunk metric** — New histogram metric `gen_ai.client.operation.time_to_first_chunk` for streaming operations:
+  - Recorded only when `gen_ai.request.stream` is `true`
+  - Value matches `gen_ai.response.time_to_first_chunk` span attribute
+  - Uses same bucket boundaries as operation duration
+  - Follows OpenTelemetry semantic conventions spec
+- **Tool definitions attribute** — New `gen_ai.tool.definitions` attribute for capturing tool/function schemas:
+  - `GEN_AI_TOOL_DEFINITIONS` constant in attributes module
+  - `tool_definitions` field on `LLMInvocation` dataclass with opt-in semconv_content metadata
+  - `should_capture_tool_definitions()` helper in utils module for early gating (requires both message content and tool definitions capture enabled)
+  - Environment variable `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS` (default: `true`)
+
+## Version 0.1.11 - 2026-04-07
+
+### Added
+- **Conversation root span identification** — New `gen_ai.conversation_root` attribute marks the root GenAI span in a conversation tree. Root spans are promoted to `AgentInvocation` type for consistent observability.
+
+### Fixed
+- **MCP span naming aligned with OTel MCP semantic conventions** — `MCPToolCall` spans now use `{mcp.method.name} {tool_name}` format (e.g. `tools/call add`) instead of `execute_tool {tool_name}`. SpanKind is `CLIENT` or `SERVER` based on `is_client` flag, matching the MCP semconv spec.
+- **MCP metric histogram bucket boundaries** — All MCP duration histograms (`mcp.client.operation.duration`, `mcp.server.operation.duration`, `mcp.client.session.duration`, `mcp.server.session.duration`) now use the semconv-specified bucket boundaries `[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]`.
+
+### Changed
+- **TelemetryHandler is now a process-wide singleton** — `TelemetryHandler` uses class-level `__new__` with double-checked locking to guarantee a single instance per process. Both `TelemetryHandler(...)` and `get_telemetry_handler(...)` return the same singleton, ensuring handler-internal context stacks (workflow, agent) are shared across instrumentation boundaries (e.g. aidefense + openai-v2 + crewai).
+- **`get_telemetry_handler()` simplified** — Now delegates directly to `TelemetryHandler()`; the singleton logic lives entirely in `__new__`.
+- **`TelemetryHandler._reset_for_testing()`** — New classmethod for test teardown. Replaces all manual `delattr(get_telemetry_handler, "_default_handler")` patterns across test suites.
+- **Removed `run_id` from GenAI types** — The `run_id` field has been removed from GenAI dataclasses as it was not a general instrumentation concept.
 
 ### Fixed
 - **OTel context detachment errors in async instrumentation** — Replaced `tracer.start_as_current_span()` with `tracer.start_span()` in `SpanEmitter` to prevent `ValueError: <Token> was created in a different Context` errors when spans are started and stopped in different `asyncio.Task`s. Removed all `context_token` / `cm.__exit__()` detach blocks.

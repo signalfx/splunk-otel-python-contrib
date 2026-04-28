@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+## [0.2.1] - 2026-04-07
+
+### Fixed
+- **Use shared singleton TelemetryHandler** — `AIDefenseInstrumentor` now obtains its handler via `get_telemetry_handler()` instead of directly constructing `TelemetryHandler()`, ensuring it shares the same process-wide singleton (and its workflow/agent context stacks) with other instrumentations like openai-v2 and crewai.
+- **Make cisco-aidefense-sdk optional for Gateway Mode** — SDK Mode gracefully handles missing `cisco-aidefense-sdk` dependency, allowing Gateway Mode to work without the SDK installed.
+
 ## [0.2.0] - 2026-01-08
 
 ### Added

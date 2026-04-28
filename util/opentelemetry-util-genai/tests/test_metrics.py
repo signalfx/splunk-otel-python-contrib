@@ -23,7 +23,10 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     EmbeddingInvocation,
@@ -54,11 +57,9 @@ class TestMetricsEmission(unittest.TestCase):
             metric_readers=[self.metric_reader]
         )
         # Reset handler singleton
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
         # Reset handler singleton
-        if hasattr(get_telemetry_handler, "_default_handler"):
-            delattr(get_telemetry_handler, "_default_handler")
+        TelemetryHandler._reset_for_testing()
 
     def _invoke(
         self,
@@ -86,8 +87,7 @@ class TestMetricsEmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -143,8 +143,7 @@ class TestMetricsEmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -341,8 +340,7 @@ class TestMetricsEmission(unittest.TestCase):
             OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
         }
         with patch.dict(os.environ, env, clear=False):
-            if hasattr(get_telemetry_handler, "_default_handler"):
-                delattr(get_telemetry_handler, "_default_handler")
+            TelemetryHandler._reset_for_testing()
             handler = get_telemetry_handler(
                 tracer_provider=self.tracer_provider,
                 meter_provider=self.meter_provider,
@@ -429,6 +427,361 @@ class TestMetricsEmission(unittest.TestCase):
             has_error_attr,
             f"Expected duration metric datapoint to include {error_key}",
         )
+
+    def _invoke_streaming(
+        self,
+        generator: str,
+        capture_mode: str,
+        *,
+        is_streaming: bool = True,
+        ttfc_value: float = 0.123,
+    ) -> LLMInvocation:
+        """Helper to simulate streaming LLM invocation with time to first chunk."""
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: generator,
+        }
+        if capture_mode is not None:
+            upper_mode = capture_mode.upper()
+            capture_enabled = upper_mode != "NONE"
+            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
+                "true" if capture_enabled else "false"
+            )
+            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE] = (
+                upper_mode
+            )
+        with patch.dict(os.environ, env, clear=False):
+            _OpenTelemetrySemanticConventionStability._initialized = False
+            _OpenTelemetrySemanticConventionStability._initialize()
+            TelemetryHandler._reset_for_testing()
+            handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            inv = LLMInvocation(
+                request_model="gpt-4o-mini",
+                input_messages=[
+                    InputMessage(role="user", parts=[Text(content="hello")])
+                ],
+            )
+            inv.provider = "openai"
+            inv.request_stream = is_streaming
+            if is_streaming:
+                # Simulate streaming: set time to first chunk in attributes
+                inv.attributes["gen_ai.response.time_to_first_chunk"] = (
+                    ttfc_value
+                )
+            handler.start_llm(inv)
+            time.sleep(0.01)  # ensure measurable duration
+            inv.output_messages = [
+                OutputMessage(
+                    role="assistant",
+                    parts=[Text(content="Hi!")],
+                    finish_reason="stop",
+                )
+            ]
+            inv.input_tokens = 3
+            inv.output_tokens = 2
+            handler.stop_llm(inv)
+            # Force flush isolated meter provider
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            time.sleep(0.005)
+            try:
+                self.metric_reader.collect()
+            except Exception:
+                pass
+        return inv
+
+    def test_streaming_time_to_first_chunk_metric_emitted(self):
+        """Verify time_to_first_chunk metric is emitted for streaming calls."""
+        ttfc_value = 0.234
+        self._invoke_streaming(
+            "span_metric", "span", is_streaming=True, ttfc_value=ttfc_value
+        )
+        metrics_list = self._collect_metrics()
+
+        # Find the time_to_first_chunk metric
+        ttfc_metric = None
+        for metric in metrics_list:
+            if metric.name == "gen_ai.client.operation.time_to_first_chunk":
+                ttfc_metric = metric
+                break
+
+        self.assertIsNotNone(
+            ttfc_metric,
+            "Expected gen_ai.client.operation.time_to_first_chunk metric for streaming call",
+        )
+
+        # Verify the metric has datapoints with correct value
+        data = getattr(ttfc_metric, "data", None)
+        self.assertIsNotNone(data, "Expected metric to have data")
+        data_points = getattr(data, "data_points", []) or []
+        self.assertTrue(
+            data_points, "Expected at least one datapoint for TTFC metric"
+        )
+
+        # Verify the recorded value matches
+        found_correct_value = False
+        for dp in data_points:
+            # For histogram, check sum or bucket counts
+            if hasattr(dp, "sum"):
+                # The sum should be approximately the TTFC value
+                if abs(dp.sum - ttfc_value) < 0.001:
+                    found_correct_value = True
+                    break
+
+        self.assertTrue(
+            found_correct_value,
+            f"Expected TTFC metric to record value ~{ttfc_value}",
+        )
+
+        # Verify attributes match (same as duration/token metrics)
+        for dp in data_points:
+            attrs = getattr(dp, "attributes", {}) or {}
+            self.assertEqual(
+                attrs.get("gen_ai.request.model"),
+                "gpt-4o-mini",
+                "Expected request model in TTFC metric attributes",
+            )
+            self.assertEqual(
+                attrs.get("gen_ai.provider.name"),
+                "openai",
+                "Expected provider in TTFC metric attributes",
+            )
+
+    def test_non_streaming_does_not_emit_time_to_first_chunk_metric(self):
+        """Verify time_to_first_chunk metric is NOT emitted for non-streaming calls."""
+        self._invoke_streaming(
+            "span_metric", "span", is_streaming=False, ttfc_value=0.0
+        )
+        metrics_list = self._collect_metrics()
+
+        # Verify the time_to_first_chunk metric is NOT present
+        ttfc_metric = None
+        for metric in metrics_list:
+            if metric.name == "gen_ai.client.operation.time_to_first_chunk":
+                ttfc_metric = metric
+                break
+
+        self.assertIsNone(
+            ttfc_metric,
+            "Expected NO gen_ai.client.operation.time_to_first_chunk metric for non-streaming call",
+        )
+
+        # Verify standard metrics are still emitted
+        names = {m.name for m in metrics_list}
+        self.assertIn(
+            "gen_ai.client.operation.duration",
+            names,
+            "Expected duration metric for non-streaming call",
+        )
+        self.assertIn(
+            "gen_ai.client.token.usage",
+            names,
+            "Expected token usage metric for non-streaming call",
+        )
+
+
+class TestMCPSessionDurationMetrics(unittest.TestCase):
+    """Tests for mcp.client.session.duration and mcp.server.session.duration."""
+
+    def setUp(self):
+        self.span_exporter = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(
+            SimpleSpanProcessor(self.span_exporter)
+        )
+        trace.set_tracer_provider(tracer_provider)
+        self.tracer_provider = tracer_provider
+        self.metric_reader = InMemoryMetricReader()
+        self.meter_provider = MeterProvider(
+            metric_readers=[self.metric_reader]
+        )
+        TelemetryHandler._reset_for_testing()
+
+    def _collect_metrics(self, retries: int = 5, delay: float = 0.1):
+        for attempt in range(retries):
+            try:
+                self.metric_reader.collect()
+            except Exception:
+                pass
+            data: Any = None
+            try:
+                data = self.metric_reader.get_metrics_data()
+            except Exception:
+                data = None
+            points: list[Any] = []
+            if data is not None:
+                data_any = cast(Any, data)
+                for rm in getattr(data_any, "resource_metrics", []) or []:
+                    for scope_metrics in (
+                        getattr(rm, "scope_metrics", []) or []
+                    ):
+                        for metric in (
+                            getattr(scope_metrics, "metrics", []) or []
+                        ):
+                            points.append(metric)
+            if points or attempt == retries - 1:
+                return points
+            time.sleep(delay)
+        return []
+
+    def _get_handler(self):
+        env = {
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            TelemetryHandler._reset_for_testing()
+            return get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+
+    def test_mcp_client_session_duration_on_normal_close(self):
+        """mcp.client.session.duration is recorded when a client MCP session closes normally."""
+        handler = self._get_handler()
+
+        session = AgentInvocation(
+            name="mcp.client",
+            agent_type="mcp_client",
+            system="mcp",
+        )
+        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
+        session.attributes["network.transport"] = "pipe"
+
+        handler.start_agent(session)
+        time.sleep(0.01)
+        handler.stop_agent(session)
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertIn(
+            "mcp.client.session.duration",
+            names,
+            f"Expected mcp.client.session.duration in {names}",
+        )
+
+        # Verify attributes
+        for metric in metrics_list:
+            if metric.name != "mcp.client.session.duration":
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                attrs = getattr(dp, "attributes", {}) or {}
+                self.assertEqual(attrs.get("network.transport"), "pipe")
+                self.assertNotIn("error.type", attrs)
+
+    def test_mcp_client_session_duration_on_error_close(self):
+        """mcp.client.session.duration includes error.type when session fails."""
+        handler = self._get_handler()
+
+        session = AgentInvocation(
+            name="mcp.client",
+            agent_type="mcp_client",
+            system="mcp",
+        )
+        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
+        session.attributes["network.transport"] = "pipe"
+        session.attributes["error.type"] = "ConnectionError"
+
+        handler.start_agent(session)
+        time.sleep(0.01)
+        handler.fail_agent(
+            session, Error(type=ConnectionError, message="connection lost")
+        )
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertIn(
+            "mcp.client.session.duration",
+            names,
+            f"Expected mcp.client.session.duration in {names}",
+        )
+
+        # Verify error.type attribute
+        for metric in metrics_list:
+            if metric.name != "mcp.client.session.duration":
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                attrs = getattr(dp, "attributes", {}) or {}
+                self.assertEqual(attrs.get("error.type"), "ConnectionError")
+
+    def test_mcp_server_session_duration_recorded(self):
+        """mcp.server.session.duration is recorded for server-side MCP sessions."""
+        handler = self._get_handler()
+
+        session = AgentInvocation(
+            name="mcp.server",
+            agent_type="mcp_server",
+            system="mcp",
+        )
+        session.attributes["gen_ai.operation.name"] = "mcp.server_session"
+        session.attributes["network.transport"] = "tcp"
+
+        handler.start_agent(session)
+        time.sleep(0.01)
+        handler.stop_agent(session)
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertIn(
+            "mcp.server.session.duration",
+            names,
+            f"Expected mcp.server.session.duration in {names}",
+        )
+
+    def test_non_mcp_agent_does_not_emit_session_duration(self):
+        """Regular agent invocations should NOT emit mcp.*.session.duration."""
+        handler = self._get_handler()
+
+        agent = AgentInvocation(
+            name="regular_agent",
+            agent_type="researcher",
+        )
+
+        handler.start_agent(agent)
+        time.sleep(0.01)
+        handler.stop_agent(agent)
+
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+
+        self.assertNotIn("mcp.client.session.duration", names)
+        self.assertNotIn("mcp.server.session.duration", names)
+        self.assertIn("gen_ai.agent.duration", names)
 
     # ---- Embedding token metrics tests ----
 

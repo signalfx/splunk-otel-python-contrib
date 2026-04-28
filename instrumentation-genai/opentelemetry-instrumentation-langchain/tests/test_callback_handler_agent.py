@@ -365,13 +365,13 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
             run_id=run_id,
             invocation_params={
                 "model_name": "gpt-5-nano",
+                "max_tokens": 256,
                 "top_p": 0.5,
                 "seed": 42,
                 "model_kwargs": {"user": "abc"},
             },
             metadata={
                 "ls_provider": "openai",
-                "ls_max_tokens": 256,
                 "custom_meta": "value",
             },
             tags=["agent"],
@@ -398,7 +398,6 @@ def test_llm_attributes_independent_of_emitters(monkeypatch):
     assert "traceloop.callback_name" not in attrs
     # ls_* fields are excluded from attributes - extracted to dedicated fields instead
     assert "ls_provider" not in attrs
-    assert "ls_max_tokens" not in attrs
     assert "ls_model_name" not in attrs
     assert "langchain_legacy" not in attrs
     assert "model_kwargs" in attrs
@@ -661,11 +660,10 @@ def test_root_agent_has_conversation_root_on_span(
     tracer_provider, span_exporter, meter_provider
 ):
     """Root agent chain (no parent_run_id) gets conversation_root=True on its span."""
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 
     # Reset singleton so we get a fresh handler with test providers
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     real_handler = get_telemetry_handler(
         tracer_provider=tracer_provider,
@@ -698,10 +696,9 @@ def test_child_agent_lacks_conversation_root_on_span(
     tracer_provider, span_exporter, meter_provider
 ):
     """Child agent chain (with parent_run_id) does NOT get conversation_root."""
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     real_handler = get_telemetry_handler(
         tracer_provider=tracer_provider,
@@ -758,10 +755,9 @@ def test_root_chain_without_agent_tag_has_conversation_root_on_span(
     tracer_provider, span_exporter, meter_provider
 ):
     """Root chain (no parent_run_id, no agent tag) creates agent span with conversation_root=True."""
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     real_handler = get_telemetry_handler(
         tracer_provider=tracer_provider,
@@ -794,12 +790,11 @@ def test_env_var_root_as_workflow_creates_workflow(
     tracer_provider, span_exporter, meter_provider, monkeypatch
 ):
     """When OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW=true, root creates Workflow."""
-    from opentelemetry.util.genai.handler import get_telemetry_handler
+    from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW", "true")
 
-    if hasattr(get_telemetry_handler, "_default_handler"):
-        delattr(get_telemetry_handler, "_default_handler")
+    TelemetryHandler._reset_for_testing()
 
     real_handler = get_telemetry_handler(
         tracer_provider=tracer_provider,

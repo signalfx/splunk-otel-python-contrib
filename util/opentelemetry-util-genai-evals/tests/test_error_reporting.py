@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
@@ -88,68 +89,99 @@ def test_error_tracker_tracks_multiple_types():
     assert summary["unique_error_types"] == 3
 
 
-def test_manager_tracks_handler_failures(monkeypatch):
+def test_manager_tracks_handler_failures(monkeypatch, caplog):
     """Test that Manager tracks handler failures without crashing."""
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
     handler = _FailingHandler(fail_on_publish=True)
-    manager = Manager(handler)
+    logger = logging.getLogger("opentelemetry.util.genai.evals.manager")
+    logger.propagate = False
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(
+            logging.ERROR, logger="opentelemetry.util.genai.evals.manager"
+        ):
+            manager = Manager(handler)
 
-    # Create a simple evaluator setup
-    manager._evaluators = {"LLMInvocation": []}
-    manager._aggregate_results = True
+            # Create a simple evaluator setup
+            manager._evaluators = {"LLMInvocation": []}
+            manager._aggregate_results = True
 
-    # Create invocation and fake results
-    invocation = LLMInvocation(request_model="test-model")
-    buckets = [[EvaluationResult(metric_name="test", score=0.5)]]
+            # Create invocation and fake results
+            invocation = LLMInvocation(request_model="test-model")
+            buckets = [[EvaluationResult(metric_name="test", score=0.5)]]
 
-    # This should not raise even though handler fails
-    result = manager._publish_results(invocation, buckets)
+            # This should not raise even though handler fails
+            result = manager._publish_results(invocation, buckets)
 
-    # Handler should have been called
-    assert handler.publish_attempts == 1
+            # Handler should have been called
+            assert handler.publish_attempts == 1
 
-    # Should still return the flattened results
-    assert len(result) == 1
-    assert result[0].metric_name == "test"
+            # Should still return the flattened results
+            assert len(result) == 1
+            assert result[0].metric_name == "test"
 
-    # Should have recorded the error
-    summary = manager.get_error_summary()
-    assert summary["total_errors"] == 1
-    assert "handler_error:manager:none" in summary["error_counts"]
+            # Should have recorded the error
+            summary = manager.get_error_summary()
+            assert summary["total_errors"] == 1
+            assert "handler_error:manager:none" in summary["error_counts"]
+
+        # Verify the expected error was logged
+        assert any(
+            "Handler evaluation_results callback failed" in r.message
+            for r in caplog.records
+        )
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.propagate = True
 
 
-def test_manager_continues_after_evaluator_failure(monkeypatch):
+def test_manager_continues_after_evaluator_failure(monkeypatch, caplog):
     """Test that Manager continues processing after an evaluator fails."""
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", "none")
     handler = Mock()
-    manager = Manager(handler)
+    logger = logging.getLogger("opentelemetry.util.genai.evals.manager")
+    logger.propagate = False
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(
+            logging.WARNING, logger="opentelemetry.util.genai.evals.manager"
+        ):
+            manager = Manager(handler)
 
-    # Create a failing evaluator
-    failing_evaluator = Mock()
-    failing_evaluator.evaluate.side_effect = RuntimeError("Evaluator failed")
+            # Create a failing evaluator
+            failing_evaluator = Mock()
+            failing_evaluator.evaluate.side_effect = RuntimeError(
+                "Evaluator failed"
+            )
 
-    # Create a succeeding evaluator
-    succeeding_evaluator = Mock()
-    succeeding_evaluator.evaluate.return_value = [
-        EvaluationResult(metric_name="success", score=0.9)
-    ]
+            # Create a succeeding evaluator
+            succeeding_evaluator = Mock()
+            succeeding_evaluator.evaluate.return_value = [
+                EvaluationResult(metric_name="success", score=0.9)
+            ]
 
-    manager._evaluators = {
-        "LLMInvocation": [failing_evaluator, succeeding_evaluator]
-    }
+            manager._evaluators = {
+                "LLMInvocation": [failing_evaluator, succeeding_evaluator]
+            }
 
-    invocation = LLMInvocation(request_model="test-model")
+            invocation = LLMInvocation(request_model="test-model")
 
-    # This should not crash
-    buckets = manager._evaluate_invocation(invocation)
+            # This should not crash
+            buckets = manager._evaluate_invocation(invocation)
 
-    # Should have one bucket from the succeeding evaluator
-    assert len(buckets) == 1
-    assert buckets[0][0].metric_name == "success"
+            # Should have one bucket from the succeeding evaluator
+            assert len(buckets) == 1
+            assert buckets[0][0].metric_name == "success"
 
-    # Should have recorded the error
-    summary = manager.get_error_summary()
-    assert summary["total_errors"] >= 1
+            # Should have recorded the error
+            summary = manager.get_error_summary()
+            assert summary["total_errors"] >= 1
+
+        # Verify the expected warning was logged
+        assert any("Evaluator failed" in r.message for r in caplog.records)
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.propagate = True
 
 
 def test_error_event_includes_exception_details():

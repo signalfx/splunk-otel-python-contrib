@@ -32,6 +32,7 @@ from ..attributes import (
     GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_ENCODING_FORMATS,
+    GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK,
     GEN_AI_RETRIEVAL_DOCUMENTS_RETRIEVED,
     GEN_AI_RETRIEVAL_QUERY_TEXT,
     GEN_AI_RETRIEVAL_TOP_K,
@@ -41,6 +42,7 @@ from ..attributes import (
     GEN_AI_STEP_SOURCE,
     GEN_AI_STEP_STATUS,
     GEN_AI_STEP_TYPE,
+    GEN_AI_TOOL_DEFINITIONS,
     GEN_AI_WORKFLOW_DESCRIPTION,
     GEN_AI_WORKFLOW_NAME,
     GEN_AI_WORKFLOW_TYPE,
@@ -57,6 +59,8 @@ from ..types import (
     Error,
     ErrorClassification,
     LLMInvocation,
+    MCPOperation,
+    MCPToolCall,
     RetrievalInvocation,
     Step,
     ToolCall,
@@ -78,6 +82,7 @@ _SPAN_ALLOWED_SUPPLEMENTAL_KEYS: tuple[str, ...] = (
     "gen_ai.request.id",
     GEN_AI_COMMAND,
     GEN_AI_FINISH_REASON,
+    GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK,
     GEN_AI_WORKFLOW_NAME,
 )
 _SPAN_BLOCKED_SUPPLEMENTAL_KEYS: set[str] = {"request_top_p", "ls_temperature"}
@@ -170,6 +175,22 @@ def _apply_tool_semconv_attributes(
                     pass
 
 
+def _apply_mcp_semconv_attributes(span: Span, op: "MCPOperation") -> None:
+    """Apply semconv attributes from MCPOperation dataclass fields.
+
+    Like ``_apply_tool_semconv_attributes`` but for non-tool-call MCP
+    operations (list, read, get, etc.).
+    """
+    for data_field in dataclass_fields(op):
+        semconv_key = data_field.metadata.get("semconv")
+        if semconv_key:
+            value = getattr(op, data_field.name)
+            if value is not None:
+                sanitized = _sanitize_span_attribute_value(value)
+                if sanitized is not None:
+                    span.set_attribute(semconv_key, sanitized)
+
+
 def _apply_custom_attributes(
     span: Span,
     attributes: Optional[dict[str, Any]],
@@ -236,12 +257,18 @@ class SpanEmitter(EmitterMeta):
     ):
         self._tracer: Tracer = tracer or trace.get_tracer(__name__)
         self._capture_content = capture_content
+        self._capture_tool_definitions = False
         self._content_mode = ContentCapturingMode.NO_CONTENT
 
     def set_capture_content(
         self, value: bool
     ):  # pragma: no cover - trivial mutator
         self._capture_content = value
+
+    def set_capture_tool_definitions(
+        self, value: bool
+    ):  # pragma: no cover - trivial mutator
+        self._capture_tool_definitions = value
 
     def set_content_mode(
         self, mode: ContentCapturingMode
@@ -317,6 +344,15 @@ class SpanEmitter(EmitterMeta):
         # function definitions (semantic conv derived from structured list)
         if isinstance(invocation, LLMInvocation):
             _apply_function_definitions(span, invocation.request_functions)
+            # Opt-in: gen_ai.tool.definitions (requires capture_content + capture_tool_definitions)
+            tool_defs = invocation.tool_definitions
+            if (
+                self._capture_content
+                and self._capture_tool_definitions
+                and tool_defs
+                and tool_defs not in ("[]", "null", "{}")
+            ):
+                span.set_attribute(GEN_AI_TOOL_DEFINITIONS, tool_defs)
         # Agent context (already covered by semconv metadata on base fields)
 
     def _apply_finish_attrs(
@@ -351,6 +387,17 @@ class SpanEmitter(EmitterMeta):
         # Finish-time semconv attributes (response + usage tokens + functions)
         if isinstance(invocation, LLMInvocation):
             _apply_llm_finish_semconv(span, invocation)
+            # Opt-in: gen_ai.tool.definitions (requires capture_content + capture_tool_definitions)
+            # Applied at finish time since some instrumentations populate this field at end time
+            tool_defs = invocation.tool_definitions
+            if (
+                self._capture_content
+                and self._capture_tool_definitions
+                and tool_defs
+                and tool_defs not in ("[]", "null", "{}")
+                and GEN_AI_TOOL_DEFINITIONS not in (span.attributes or {})
+            ):
+                span.set_attribute(GEN_AI_TOOL_DEFINITIONS, tool_defs)
         _apply_gen_ai_semconv_attributes(
             span, invocation.semantic_convention_attributes()
         )
@@ -390,7 +437,9 @@ class SpanEmitter(EmitterMeta):
             self._start_agent(invocation)
         elif isinstance(invocation, Step):
             self._start_step(invocation)
-        # Handle existing types
+        # MCPOperation check before ToolCall (MCPToolCall inherits both)
+        elif isinstance(invocation, MCPOperation):
+            self._start_mcp_operation(invocation)
         elif isinstance(invocation, ToolCall):
             self._start_tool_call(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
@@ -424,6 +473,8 @@ class SpanEmitter(EmitterMeta):
             self._finish_agent(invocation)
         elif isinstance(invocation, Step):
             self._finish_step(invocation)
+        elif isinstance(invocation, MCPOperation):
+            self._finish_mcp_operation(invocation)
         elif isinstance(invocation, ToolCall):
             self._finish_tool_call(invocation)
         elif isinstance(invocation, EmbeddingInvocation):
@@ -494,6 +545,8 @@ class SpanEmitter(EmitterMeta):
             self._error_agent(error, invocation)
         elif isinstance(invocation, Step):
             self._error_step(error, invocation)
+        elif isinstance(invocation, MCPOperation):
+            self._error_mcp_operation(error, invocation)
         elif isinstance(invocation, ToolCall):
             self._error_tool_call(error, invocation)
         elif isinstance(invocation, EmbeddingInvocation):
@@ -758,15 +811,87 @@ class SpanEmitter(EmitterMeta):
         )
         span.end()
 
+    # ---- MCP operation lifecycle ------------------------------------------
+    def _start_mcp_operation(self, op: MCPOperation) -> None:
+        """Start a span for any MCP operation (tool call or non-tool-call).
+
+        Span name: ``{mcp.method.name} {target}`` where target is
+        ``ToolCall.name`` for ``MCPToolCall`` or ``MCPOperation.target``
+        for other operations.
+        SpanKind: CLIENT if ``is_client`` else SERVER.
+        See: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/
+        """
+        method = op.mcp_method_name or ""
+        if isinstance(op, MCPToolCall):
+            target = op.name or ""
+        else:
+            target = op.target or ""
+        span_name = f"{method} {target}".strip()
+
+        kind = SpanKind.CLIENT if op.is_client else SpanKind.SERVER
+
+        parent_span = getattr(op, "parent_span", None)
+        parent_ctx = (
+            trace.set_span_in_context(parent_span)
+            if parent_span is not None
+            else None
+        )
+
+        span = self._tracer.start_span(
+            span_name, kind=kind, context=parent_ctx
+        )
+        self._add_span_to_invocation(op, span)
+
+        if isinstance(op, MCPToolCall):
+            span.set_attribute(
+                GenAI.GEN_AI_OPERATION_NAME,
+                GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+            )
+            _apply_tool_semconv_attributes(span, op, self._capture_content)
+        else:
+            _apply_mcp_semconv_attributes(span, op)
+
+        _apply_custom_attributes(span, getattr(op, "attributes", None))
+
+    def _finish_mcp_operation(self, op: MCPOperation) -> None:
+        """Finish a span for any MCP operation."""
+        span = op.span
+        if span is None:
+            return
+        is_recording = hasattr(span, "is_recording") and span.is_recording()
+        if not is_recording:
+            return
+
+        if isinstance(op, MCPToolCall):
+            _apply_tool_semconv_attributes(span, op, self._capture_content)
+        else:
+            _apply_mcp_semconv_attributes(span, op)
+
+        if op.rpc_response_status_code is not None:
+            span.set_attribute(
+                "rpc.response.status_code", op.rpc_response_status_code
+            )
+        span.end()
+
+    def _error_mcp_operation(self, error: Error, op: MCPOperation) -> None:
+        """Handle error for any MCP operation."""
+        span = op.span
+        if span is None:
+            return
+        self._apply_error_status(span, error)
+        if isinstance(op, MCPToolCall):
+            _apply_tool_semconv_attributes(span, op, self._capture_content)
+        else:
+            _apply_mcp_semconv_attributes(span, op)
+        span.end()
+
     # ---- Tool Call lifecycle ---------------------------------------------
     def _start_tool_call(self, tool: ToolCall) -> None:
         """Start a tool call span per execute_tool semantic conventions.
 
         Span name: execute_tool {gen_ai.tool.name}
         Span kind: INTERNAL
-        See: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md#execute-tool-span
         """
-        # Span name per semconv: "execute_tool {gen_ai.tool.name}"
         span_name = f"execute_tool {tool.name}"
         parent_span = getattr(tool, "parent_span", None)
         parent_ctx = (
@@ -781,17 +906,11 @@ class SpanEmitter(EmitterMeta):
         )
         self._add_span_to_invocation(tool, span)
 
-        # Required: gen_ai.operation.name = "execute_tool"
         span.set_attribute(
             GenAI.GEN_AI_OPERATION_NAME,
             GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
         )
-
-        # Apply all semconv attributes from dataclass fields
-        # This handles gen_ai.tool.*, mcp.*, network.*, error.type
         _apply_tool_semconv_attributes(span, tool, self._capture_content)
-
-        # Apply any supplemental custom attributes
         _apply_custom_attributes(span, getattr(tool, "attributes", None))
 
     def _finish_tool_call(self, tool: ToolCall) -> None:

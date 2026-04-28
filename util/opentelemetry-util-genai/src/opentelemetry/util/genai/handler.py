@@ -48,10 +48,10 @@ Usage:
     # handler.fail_llm(invocation, Error(type="...", message="..."))
 """
 
-import asyncio
 import logging
 import os
-import time
+import threading
+import timeit
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -95,6 +95,7 @@ from opentelemetry.util.genai.types import (
     GenAI,
     InputMessage,
     LLMInvocation,
+    MCPOperation,
     RetrievalInvocation,
     Step,
     ToolCall,
@@ -112,6 +113,7 @@ from .callbacks import CompletionCallback
 from .config import parse_env
 from .environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS,
     OTEL_INSTRUMENTATION_GENAI_EVALS_USE_SINGLE_METRIC,
@@ -161,15 +163,6 @@ _genai_context: ContextVar[GenAIContext] = ContextVar(
 _current_genai_span: ContextVar[Optional[Span]] = ContextVar(
     "_current_genai_span", default=None
 )
-
-
-def _is_async_context() -> bool:
-    """Return True when called inside a running asyncio event loop."""
-    try:
-        asyncio.get_running_loop()
-        return True
-    except RuntimeError:
-        return False
 
 
 def set_genai_context(
@@ -329,7 +322,48 @@ class TelemetryHandler:
     High-level handler managing GenAI invocation lifecycles and emitting
     them as spans, metrics, and events. Evaluation execution & emission is
     delegated to EvaluationManager for extensibility (mirrors emitter design).
+
+    This class is a **singleton**: all calls to ``TelemetryHandler(...)`` and
+    ``get_telemetry_handler(...)`` return the same process-wide instance so
+    that handler-internal context stacks (workflow, agent) are shared across
+    instrumentation boundaries.
+
+    Use ``TelemetryHandler._reset_for_testing()`` in test teardown to clear
+    the singleton.
     """
+
+    _instance: Optional["TelemetryHandler"] = None
+    _lock: threading.Lock = threading.Lock()
+
+    def __new__(
+        cls,
+        tracer_provider: TracerProvider | None = None,
+        logger_provider: LoggerProvider | None = None,
+        meter_provider: MeterProvider | None = None,
+    ) -> "TelemetryHandler":
+        if cls._instance is not None:
+            return cls._instance
+        with cls._lock:
+            if cls._instance is not None:
+                return cls._instance
+            instance = super().__new__(cls)
+            cls._instance = instance
+            return instance
+
+    @classmethod
+    def _reset_for_testing(cls) -> None:
+        """Reset the singleton instance.
+
+        Intended **only** for test teardown.  Clears the singleton so the next
+        call to ``TelemetryHandler(...)`` or ``get_telemetry_handler(...)``
+        creates a fresh instance.
+        """
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance._initialized = False
+            cls._instance = None
+            if hasattr(get_telemetry_handler, "_default_handler"):
+                delattr(get_telemetry_handler, "_default_handler")
 
     def __init__(
         self,
@@ -337,6 +371,25 @@ class TelemetryHandler:
         logger_provider: LoggerProvider | None = None,
         meter_provider: MeterProvider | None = None,
     ):
+        if getattr(self, "_initialized", False):
+            supplied = {
+                name
+                for name, val in (
+                    ("tracer_provider", tracer_provider),
+                    ("logger_provider", logger_provider),
+                    ("meter_provider", meter_provider),
+                )
+                if val is not None
+            }
+            if supplied:
+                _LOGGER.warning(
+                    "TelemetryHandler is a singleton and has already been "
+                    "initialized; the following provider arguments are being "
+                    "ignored: %s. To use different providers, call "
+                    "TelemetryHandler._reset_for_testing() first (test only).",
+                    ", ".join(sorted(supplied)),
+                )
+            return
         self._tracer = get_tracer(
             __name__,
             __version__,
@@ -462,6 +515,7 @@ class TelemetryHandler:
         # agent_id may be None if not provided by instrumentation
         self._agent_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
+        self._initialized = True
 
     def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
         try:
@@ -535,6 +589,18 @@ class TelemetryHandler:
                         em.set_capture_content(desired)  # type: ignore[attr-defined]
                     except Exception:
                         pass
+                # Propagate tool-definitions flag to span emitters
+                if hasattr(em, "set_capture_tool_definitions"):
+                    try:
+                        em.set_capture_tool_definitions(  # type: ignore[attr-defined]
+                            is_truthy_env(
+                                os.environ.get(
+                                    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS
+                                )
+                            )
+                        )
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -557,16 +623,15 @@ class TelemetryHandler:
     def _push_current_span(invocation: GenAI) -> None:
         """After span creation, track this span as current for child resolution.
 
-        In sync contexts, also attach to OTel context so downstream
-        non-GenAI instrumentations (HTTP, DB) see the correct parent.
-        Skipped in async contexts to avoid cross-task detach errors.
+        Also attach to OTel context so downstream instrumentations (HTTP, DB,
+        MCP transport) see the correct parent.  ``_pop_current_span`` handles
+        detach failures gracefully for cross-task / ``copy_context`` scenarios.
         """
         span = getattr(invocation, "span", None)
         if span is not None:
             _current_genai_span.set(span)
-            if not _is_async_context():
-                ctx = trace.set_span_in_context(span)
-                invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
+            ctx = trace.set_span_in_context(span)
+            invocation._otel_context_token = context_api.attach(ctx)  # type: ignore[attr-defined]
 
     @staticmethod
     def _pop_current_span(invocation: GenAI) -> None:
@@ -630,7 +695,7 @@ class TelemetryHandler:
 
     def stop_llm(self, invocation: LLMInvocation) -> LLMInvocation:
         """Finalize an LLM invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         # Determine if this invocation should be sampled for evaluation
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
@@ -674,7 +739,7 @@ class TelemetryHandler:
         self, invocation: LLMInvocation, error: Error
     ) -> LLMInvocation:
         """Fail an LLM invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -719,7 +784,7 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
-        invocation.start_time = time.time()
+        invocation.start_time = timeit.default_timer()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -729,7 +794,7 @@ class TelemetryHandler:
         self, invocation: EmbeddingInvocation
     ) -> EmbeddingInvocation:
         """Finalize an embedding invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
@@ -753,7 +818,7 @@ class TelemetryHandler:
         self, invocation: EmbeddingInvocation, error: Error
     ) -> EmbeddingInvocation:
         """Fail an embedding invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -782,7 +847,7 @@ class TelemetryHandler:
                 invocation.agent_name = top_name
             if not invocation.agent_id:
                 invocation.agent_id = top_id
-        invocation.start_time = time.time()
+        invocation.start_time = timeit.default_timer()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -792,7 +857,7 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation
     ) -> RetrievalInvocation:
         """Finalize a retrieval invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
@@ -816,7 +881,7 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation, error: Error
     ) -> RetrievalInvocation:
         """Fail a retrieval invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
@@ -849,7 +914,7 @@ class TelemetryHandler:
 
     def stop_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Finalize a tool call invocation successfully and end its span."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
 
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
@@ -862,11 +927,44 @@ class TelemetryHandler:
 
     def fail_tool_call(self, invocation: ToolCall, error: Error) -> ToolCall:
         """Fail a tool call invocation and end its span with error status."""
-        invocation.end_time = time.time()
+        invocation.end_time = timeit.default_timer()
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
         return invocation
+
+    # MCPOperation lifecycle (non-tool-call MCP operations) ----------------
+    def start_mcp_operation(self, op: MCPOperation) -> MCPOperation:
+        """Start a non-tool-call MCP operation (list, read, get, etc.)."""
+        _apply_genai_context(op)
+        if (
+            not op.agent_name or not op.agent_id
+        ) and self._agent_context_stack:
+            top_name, top_id = self._agent_context_stack[-1]
+            if not op.agent_name:
+                op.agent_name = top_name
+            if not op.agent_id:
+                op.agent_id = top_id
+        self._inherit_parent_span(op)
+        self._emitter.on_start(op)
+        self._push_current_span(op)
+        return op
+
+    def stop_mcp_operation(self, op: MCPOperation) -> MCPOperation:
+        """Finalize a non-tool-call MCP operation successfully."""
+        op.end_time = timeit.default_timer()
+        self._emitter.on_end(op)
+        self._pop_current_span(op)
+        return op
+
+    def fail_mcp_operation(
+        self, op: MCPOperation, error: Error
+    ) -> MCPOperation:
+        """Fail a non-tool-call MCP operation."""
+        op.end_time = timeit.default_timer()
+        self._emitter.on_error(error, op)
+        self._pop_current_span(op)
+        return op
 
     @staticmethod
     def _maybe_mark_conversation_root(entity: GenAI) -> None:
@@ -1123,7 +1221,7 @@ class TelemetryHandler:
 
     def stop_workflow(self, workflow: Workflow) -> Workflow:
         """Finalize a workflow successfully and end its span."""
-        workflow.end_time = time.time()
+        workflow.end_time = timeit.default_timer()
 
         workflow.sample_for_evaluation = self._should_sample_for_evaluation(
             workflow.trace_id
@@ -1144,7 +1242,7 @@ class TelemetryHandler:
 
     def fail_workflow(self, workflow: Workflow, error: Error) -> Workflow:
         """Fail a workflow and end its span with error status."""
-        workflow.end_time = time.time()
+        workflow.end_time = timeit.default_timer()
         self._emitter.on_error(error, workflow)
         self._notify_completion(workflow)
         self._pop_current_span(workflow)
@@ -1184,7 +1282,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation
     ) -> AgentCreation | AgentInvocation:
         """Finalize an agent operation successfully and end its span."""
-        agent.end_time = time.time()
+        agent.end_time = timeit.default_timer()
 
         agent.sample_for_evaluation = self._should_sample_for_evaluation(
             agent.trace_id
@@ -1216,7 +1314,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation, error: Error
     ) -> AgentCreation | AgentInvocation:
         """Fail an agent operation and end its span with error status."""
-        agent.end_time = time.time()
+        agent.end_time = timeit.default_timer()
         self._emitter.on_error(error, agent)
         self._notify_completion(agent)
         self._pop_current_span(agent)
@@ -1251,7 +1349,7 @@ class TelemetryHandler:
 
     def stop_step(self, step: Step) -> Step:
         """Finalize a step successfully and end its span."""
-        step.end_time = time.time()
+        step.end_time = timeit.default_timer()
 
         step.sample_for_evaluation = self._should_sample_for_evaluation(
             step.trace_id
@@ -1272,7 +1370,7 @@ class TelemetryHandler:
 
     def fail_step(self, step: Step, error: Error) -> Step:
         """Fail a step and end its span with error status."""
-        step.end_time = time.time()
+        step.end_time = timeit.default_timer()
         self._emitter.on_error(error, step)
         self._notify_completion(step)
         self._pop_current_span(step)
@@ -1403,16 +1501,14 @@ def get_telemetry_handler(
     logger_provider: LoggerProvider | None = None,
 ) -> TelemetryHandler:
     """
-    Returns a singleton TelemetryHandler instance.
+    Returns the process-wide singleton ``TelemetryHandler`` instance.
+
+    This is the **preferred** public API for obtaining a handler.  Both this
+    function and ``TelemetryHandler(...)`` return the same singleton;
+    ``TelemetryHandler.__new__`` handles the thread-safe singleton logic.
     """
-    handler: Optional[TelemetryHandler] = getattr(
-        get_telemetry_handler, "_default_handler", None
+    return TelemetryHandler(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+        logger_provider=logger_provider,
     )
-    if handler is None:
-        handler = TelemetryHandler(
-            tracer_provider=tracer_provider,
-            meter_provider=meter_provider,
-            logger_provider=logger_provider,
-        )
-        setattr(get_telemetry_handler, "_default_handler", handler)
-    return handler
