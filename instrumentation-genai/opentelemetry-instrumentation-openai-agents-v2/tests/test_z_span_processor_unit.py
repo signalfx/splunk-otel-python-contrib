@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from types import SimpleNamespace
+from types import SimpleNamespace as NS
 from typing import Any
 
 import pytest
@@ -28,6 +29,7 @@ from opentelemetry.util.genai.handler import (
     TelemetryHandler,
     get_telemetry_handler,
 )
+from opentelemetry.util.genai.types import Text, ToolCallRequest
 
 
 def _ensure_semconv_enums() -> None:
@@ -1037,3 +1039,141 @@ def test_llm_invocation_tool_definitions_populated(processor_setup):
     parsed_tools = json.loads(invocation.tool_definitions)
     assert len(parsed_tools) == 1
     assert parsed_tools[0]["function"]["name"] == "get_weather"
+
+
+# ---------------------------------------------------------------------------
+# _make_output_messages — new message type flag on vs off
+# ---------------------------------------------------------------------------
+
+
+def _make_processor():
+    """Return a fresh GenAISemanticProcessor without full lifecycle."""
+    TelemetryHandler._reset_for_testing()
+    provider = TracerProvider()
+    handler = get_telemetry_handler(tracer_provider=provider)
+    return sp.GenAISemanticProcessor(handler=handler, system_name="openai")
+
+
+def test_make_output_messages_flag_off_tool_call_stays_dict(monkeypatch):
+    monkeypatch.delenv(
+        "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", raising=False
+    )
+    processor = _make_processor()
+    messages = [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "tool_name": "search",
+                    "tool_call_id": "c1",
+                    "arguments": "{}",
+                },
+            ],
+        }
+    ]
+    result = processor._make_output_messages(messages)
+    assert len(result) == 1
+    # When flag is off, tool_call parts stay as raw dicts
+    assert isinstance(result[0].parts[0], dict)
+    assert result[0].parts[0]["type"] == "tool_call"
+    processor.shutdown()
+
+
+def test_make_output_messages_flag_on_tool_call_becomes_tool_call_request(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+    )
+    processor = _make_processor()
+    messages = [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "tool_name": "search",
+                    "tool_call_id": "c1",
+                    "arguments": {"q": "hello"},
+                },
+            ],
+        }
+    ]
+    result = processor._make_output_messages(messages)
+    assert len(result) == 1
+    part = result[0].parts[0]
+    assert isinstance(part, ToolCallRequest)
+    assert part.name == "search"
+    assert part.id == "c1"
+    assert part.arguments == {"q": "hello"}
+    processor.shutdown()
+
+
+def test_make_output_messages_text_always_becomes_text(monkeypatch):
+    for flag_val in ("true", None):
+        if flag_val:
+            monkeypatch.setenv(
+                "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", flag_val
+            )
+        else:
+            monkeypatch.delenv(
+                "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
+                raising=False,
+            )
+        processor = _make_processor()
+        messages = [
+            {"role": "assistant", "parts": [{"type": "text", "content": "hi"}]}
+        ]
+        result = processor._make_output_messages(messages)
+        assert isinstance(result[0].parts[0], Text)
+        assert result[0].parts[0].content == "hi"
+        processor.shutdown()
+
+
+def test_format_output_item_function_call_unaffected_by_flag(monkeypatch):
+    for flag in ("true", None):
+        if flag:
+            monkeypatch.setenv(
+                "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", flag
+            )
+        else:
+            monkeypatch.delenv(
+                "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
+                raising=False,
+            )
+        processor = _make_processor()
+        processor.include_sensitive_data = True
+        item = NS(
+            type="function_call",
+            name="lookup",
+            arguments='{"q":"x"}',
+            call_id="c1",
+        )
+        result = processor._format_output_item(item)
+        assert result is not None
+        assert result["type"] == "tool_call"
+        assert result["tool_name"] == "lookup"
+        processor.shutdown()
+
+
+def test_format_output_item_reasoning_always_returns_none(monkeypatch):
+    for flag in ("true", None):
+        if flag:
+            monkeypatch.setenv(
+                "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", flag
+            )
+        else:
+            monkeypatch.delenv(
+                "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
+                raising=False,
+            )
+        processor = _make_processor()
+        processor.include_sensitive_data = True
+        item = NS(
+            type="reasoning",
+            summary=[NS(type="summary_text", text="I thought about it")],
+        )
+        result = processor._format_output_item(item)
+        assert result is None
+        processor.shutdown()

@@ -47,9 +47,13 @@ from opentelemetry.util.genai.types import (
     OutputMessage,
     Text,
     ToolCall,
+    ToolCallRequest,
     Workflow,
 )
-from opentelemetry.util.genai.utils import gen_ai_json_dumps
+from opentelemetry.util.genai.utils import (
+    gen_ai_json_dumps,
+    is_new_message_types_enabled,
+)
 from opentelemetry.util.types import AttributeValue
 from opentelemetry.metrics import get_meter
 from opentelemetry.trace import Span as OtelSpan
@@ -901,10 +905,8 @@ class GenAISemanticProcessor(TracingProcessor):
                 "arguments": arguments,
             }
 
-        # Handle reasoning (ResponseReasoningItem) - skip or summarize
+        # Handle reasoning (ResponseReasoningItem)
         if item_type == "reasoning":
-            # Reasoning items typically don't have user-visible content
-            # Return None to skip, or include a marker if needed
             return None
 
         # Handle text content
@@ -1425,6 +1427,7 @@ class GenAISemanticProcessor(TracingProcessor):
         self, messages: list[Any]
     ) -> list[OutputMessage]:
         """Create OutputMessage objects from message dicts (LangChain pattern)."""
+        new_types = is_new_message_types_enabled()
         result: list[OutputMessage] = []
         for msg in messages:
             if isinstance(msg, dict):
@@ -1435,6 +1438,20 @@ class GenAISemanticProcessor(TracingProcessor):
                 for p in parts_data:
                     if isinstance(p, dict) and p.get("type") == "text":
                         parts.append(Text(content=str(p.get("content", ""))))
+                    elif (
+                        isinstance(p, dict)
+                        and p.get("type") == "tool_call"
+                        and new_types
+                    ):
+                        parts.append(
+                            ToolCallRequest(
+                                id=p.get("tool_call_id") or p.get("id"),
+                                name=p.get("tool_name")
+                                or p.get("name")
+                                or "unnamed_tool_call",
+                                arguments=p.get("arguments"),
+                            )
+                        )
                     else:
                         parts.append(p)
                 if parts:

@@ -23,6 +23,7 @@ from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT,
+    OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES,
 )
 from opentelemetry.util.genai.types import ContentCapturingMode
 
@@ -74,6 +75,13 @@ def _parse_legacy_mode_fragment(raw_mode: str) -> ContentCapturingMode:
         ", ".join(e.name for e in ContentCapturingMode),
     )
     return ContentCapturingMode.SPAN_AND_EVENT
+
+
+def is_new_message_types_enabled() -> bool:
+    """Return True when the expanded MessagePart type system is opted in."""
+    return _is_truthy(
+        os.environ.get(OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES)
+    )
 
 
 def get_content_capturing_mode() -> ContentCapturingMode:
