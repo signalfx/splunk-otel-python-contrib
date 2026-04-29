@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.9 - 2026-04-29
+- Fixed namespace package conflicts between translator packages.
+- Added CI tests.
+
 ## Version 0.1.8 - 2026-02-06
 - Resolved issue with missing Agent evaluations & skip already instrumented spans.
 - Removed redundant calls which was causing duplicate metrics & evaluations.

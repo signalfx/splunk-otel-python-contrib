@@ -52,8 +52,10 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 
-from .content_normalizer import normalize_langsmith_content
-from .message_reconstructor import reconstruct_messages_from_langsmith
+from .langsmith_content_normalizer import normalize_langsmith_content
+from .langsmith_message_reconstructor import (
+    reconstruct_messages_from_langsmith,
+)
 
 try:
     from opentelemetry.util.genai.version import __version__
@@ -929,7 +931,7 @@ class LangsmithSpanProcessor(SpanProcessor):
                                             content, str
                                         ) and content.startswith("{"):
                                             try:
-                                                from .content_normalizer import (
+                                                from .langsmith_content_normalizer import (
                                                     _extract_langchain_messages,
                                                 )
 
