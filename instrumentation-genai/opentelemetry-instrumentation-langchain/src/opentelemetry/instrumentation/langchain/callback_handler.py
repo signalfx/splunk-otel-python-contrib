@@ -29,6 +29,7 @@ from opentelemetry.util.genai.types import (
     OutputMessage,
     Text,
     ToolCall,
+    ToolCallRequest,
     Error as GenAIError,
     ErrorClassification,
 )
@@ -38,6 +39,7 @@ from opentelemetry.util.genai.attributes import (
     FINISH_REASON_INTERRUPTED,
 )
 from opentelemetry.util.genai.utils import (
+    is_new_message_types_enabled,
     should_capture_tool_definitions as _should_capture_tool_definitions,
 )
 
@@ -859,11 +861,36 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                 else None
             )
         if content is not None:
-            if finish_reason == "tool_calls":
+            if finish_reason == "tool_calls" and is_new_message_types_enabled():
+                message_obj = (
+                    generations[0][0].message
+                    if generations and generations[0] and generations[0][0].message
+                    else None
+                )
+                raw_tool_calls = getattr(message_obj, "tool_calls", None) or []
+                parts = [
+                    ToolCallRequest(
+                        id=tc.get("id"),
+                        name=tc.get("name") or "unnamed_tool_call",
+                        arguments=tc.get("args"),
+                    )
+                    for tc in raw_tool_calls
+                    if isinstance(tc, dict)
+                ]
+                if not parts:
+                    parts = [Text(content="")]
                 inv.output_messages = [
                     OutputMessage(
                         role="assistant",
-                        parts=["ToolCall"],
+                        parts=parts,
+                        finish_reason=finish_reason or "tool_calls",
+                    )
+                ]
+            elif finish_reason == "tool_calls":
+                inv.output_messages = [
+                    OutputMessage(
+                        role="assistant",
+                        parts=[Text(content="")],
                         finish_reason=finish_reason or "tool_calls",
                     )
                 ]

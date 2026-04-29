@@ -36,17 +36,21 @@ from opentelemetry.util.genai.handler import (
 )
 from opentelemetry.util.genai.types import (
     EmbeddingInvocation,
+    GenericPart,
     InputMessage,
     LLMInvocation,
     MessagePart,
     OutputMessage,
+    Reasoning,
     Text,
+    ToolCallRequest,
 )
 from opentelemetry.util.genai.types import (
     ToolCall as GenAIToolCall,
 )
 from opentelemetry.util.genai.utils import (
     gen_ai_json_dumps,
+    is_new_message_types_enabled,
     should_capture_tool_definitions,
 )
 
@@ -206,6 +210,7 @@ def _build_chat_invocation(
 def _build_output_messages_from_response(
     result: Any, capture_content: bool
 ) -> list[OutputMessage]:
+    new_types = is_new_message_types_enabled()
     output_messages: list[OutputMessage] = []
     for choice in getattr(result, "choices", []) or []:
         message = getattr(choice, "message", None)
@@ -213,17 +218,25 @@ def _build_output_messages_from_response(
         parts: list[MessagePart] = []
         content = getattr(message, "content", None) if message else None
         if content is not None:
-            parts = _to_text_parts(content, capture_content)
+            if new_types:
+                parts = _content_to_parts(content, capture_content)
+            else:
+                parts = _to_text_parts(content, capture_content)
         tool_calls = getattr(message, "tool_calls", None) if message else None
         if tool_calls:
             for tool_call in tool_calls:
-                genai_tool_call, _ = _build_tool_call_invocation(
-                    tool_call, capture_content
-                )
-                genai_tool_call.provider = (
-                    GenAIAttributes.GenAiProviderNameValues.OPENAI.value
-                )
-                parts.append(genai_tool_call)
+                if new_types:
+                    parts.append(
+                        _build_tool_call_request(tool_call, capture_content)
+                    )
+                else:
+                    genai_tool_call, _ = _build_tool_call_invocation(
+                        tool_call, capture_content
+                    )
+                    genai_tool_call.provider = (
+                        GenAIAttributes.GenAiProviderNameValues.OPENAI.value
+                    )
+                    parts.append(genai_tool_call)
         finish_reason = getattr(choice, "finish_reason", None) or "error"
         output_messages.append(
             OutputMessage(
@@ -233,6 +246,91 @@ def _build_output_messages_from_response(
             )
         )
     return output_messages
+
+
+def _content_to_parts(
+    content: Any, capture_content: bool
+) -> list[MessagePart]:
+    """Convert OpenAI message content to MessagePart list (new type system).
+
+    Handles str, list of content blocks (text, refusal, image_url, etc.).
+    Reasoning summary blocks from o-series models become Reasoning parts.
+    Unknown block types are wrapped in GenericPart.
+    """
+    if content is None:
+        return []
+    if isinstance(content, str):
+        return [Text(content=content if capture_content else "")]
+
+    parts: list[MessagePart] = []
+    for item in content:
+        block_type = (
+            item.get("type")
+            if isinstance(item, dict)
+            else getattr(item, "type", None)
+        )
+        if block_type == "text":
+            text_val = (
+                item.get("text")
+                if isinstance(item, dict)
+                else getattr(item, "text", "")
+            ) or ""
+            parts.append(Text(content=text_val if capture_content else ""))
+        elif block_type in ("reasoning", "thinking"):
+            reasoning_val = (
+                item.get("content") or item.get("text")
+                if isinstance(item, dict)
+                else getattr(item, "content", None)
+                or getattr(item, "text", "")
+            ) or ""
+            parts.append(
+                Reasoning(
+                    content=str(reasoning_val) if capture_content else ""
+                )
+            )
+        else:
+            parts.append(GenericPart(value=item if capture_content else None))
+    return parts
+
+
+def _build_tool_call_request(
+    tool_call: Any, capture_content: bool
+) -> ToolCallRequest:
+    """Build a ToolCallRequest message part from an OpenAI tool_call object."""
+    function = getattr(tool_call, "function", None)
+    if isinstance(tool_call, dict):
+        function = tool_call.get("function", function)
+
+    if isinstance(function, dict):
+        function_name = function.get("name") or "unnamed_tool_call"
+        raw_arguments = function.get("arguments")
+    else:
+        function_name = getattr(function, "name", None) or "unnamed_tool_call"
+        raw_arguments = getattr(function, "arguments", None)
+
+    tool_call_id = (
+        tool_call.get("id")
+        if isinstance(tool_call, dict)
+        else getattr(tool_call, "id", None)
+    )
+
+    if not capture_content:
+        arguments = None
+    elif isinstance(raw_arguments, str):
+        try:
+            import json as _json
+
+            arguments = _json.loads(raw_arguments)
+        except (ValueError, TypeError):
+            arguments = raw_arguments
+    else:
+        arguments = raw_arguments
+
+    return ToolCallRequest(
+        id=tool_call_id,
+        name=function_name,
+        arguments=arguments,
+    )
 
 
 def _apply_chat_response_to_invocation(
