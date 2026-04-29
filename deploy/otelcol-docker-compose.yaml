@@ -1,10 +1,23 @@
+# Credentials are loaded from a .env file next to this compose file.
+# Copy .env.example to .env and fill in your values before running.
+# The Splunk Distro validates access_token at startup (not just at export time).
+
 services:
   otelcol:
-    image: otel/opentelemetry-collector-contrib:0.123.0
+    # Splunk Distribution of the OTel Collector is required for
+    # send_otlp_histograms: true in the signalfx exporter.
+    # The upstream otel/opentelemetry-collector-contrib image ships a
+    # community signalfx exporter that does NOT support that flag.
+    # Ref: https://help.splunk.com/en/splunk-observability-cloud/manage-data/
+    #      metrics-metadata-and-events/metrics-events-and-metadata/get-histogram-data-in
+    image: quay.io/signalfx/splunk-otel-collector:0.123.0
     container_name: otelcol-local
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false   # graceful if .env is missing; fall back to shell env
     volumes:
-      - ./otelcol-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./otelcol-config.yaml:/etc/otelcol/config.yaml:ro
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
@@ -13,4 +26,4 @@ services:
     environment:
       - SPLUNK_ACCESS_TOKEN=${SPLUNK_ACCESS_TOKEN}
       - SPLUNK_REALM=${SPLUNK_REALM}
-    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    command: ["--config=/etc/otelcol/config.yaml"]

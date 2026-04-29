@@ -6,15 +6,18 @@ Local development deployment helpers for the Splunk OpenTelemetry Python Contrib
 
 | File | Purpose |
 |------|---------|
-| `otelcol-docker-compose.yaml` | Docker Compose to run a local OTel Collector container |
-| `otelcol-config.yaml` | Collector config: receives OTLP, forwards traces/logs to Splunk O11y Cloud (OTLP HTTP) and metrics via SignalFx exporter |
+| `otelcol-docker-compose.yaml` | Docker Compose — runs Splunk Distro OTel Collector on `localhost:4317/4318` |
+| `otelcol-config.yaml` | Collector config: OTLP receiver → traces/logs via `otlphttp/splunk`, metrics via `signalfx` (with `send_otlp_histograms: true`) |
+| `.env.example` | Template for `SPLUNK_ACCESS_TOKEN` and `SPLUNK_REALM` — copy to `.env` before starting |
 | `run-sre-copilot-skill.md` | Cursor agent skill — runbook for setting up and running the SRE Incident Copilot demo |
 
 ---
 
 ## Local OTel Collector
 
-Starts an `otel/opentelemetry-collector-contrib` container listening on:
+Uses the **Splunk Distribution of the OTel Collector** (`quay.io/signalfx/splunk-otel-collector`) — required for `send_otlp_histograms: true` in the signalfx exporter. The upstream `otel/opentelemetry-collector-contrib` image does not support that flag.
+
+Listens on:
 - `localhost:4317` — OTLP gRPC
 - `localhost:4318` — OTLP HTTP
 - `localhost:13133` — health check
@@ -22,14 +25,19 @@ Starts an `otel/opentelemetry-collector-contrib` container listening on:
 ### Prerequisites
 
 ```bash
-export SPLUNK_ACCESS_TOKEN="<your-ingest-token>"
-export SPLUNK_REALM="us1"   # or us0, eu0, etc.
+# Copy and fill in your Splunk O11y credentials
+cp deploy/.env.example deploy/.env
+# Edit deploy/.env: set SPLUNK_ACCESS_TOKEN and SPLUNK_REALM
 ```
+
+The Splunk Distro validates `access_token` at **startup** (not just at export time) — the container will exit immediately if the token is empty.
 
 ### Start
 
 ```bash
 docker compose -f deploy/otelcol-docker-compose.yaml up -d
+# Verify
+curl http://localhost:13133
 ```
 
 ### Stop

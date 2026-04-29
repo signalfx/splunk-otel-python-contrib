@@ -44,7 +44,9 @@ exporters:
     access_token: "${SPLUNK_ACCESS_TOKEN}"
     realm: "${SPLUNK_REALM}"
     # Preserve histogram bucket data so percentile/mean charts work in Splunk IMM.
-    # Requires Splunk Distribution of OTel Collector >= 0.98.
+    # IMPORTANT: Only works with the Splunk Distribution of the OTel Collector
+    # (quay.io/signalfx/splunk-otel-collector). The upstream community signalfx
+    # exporter does NOT support this flag. Requires Splunk Distro >= 0.98.
     # See: https://help.splunk.com/en/splunk-observability-cloud/manage-data/metrics-metadata-and-events/metrics-events-and-metadata/get-histogram-data-in
     send_otlp_histograms: true
     sending_queue:
