@@ -17,6 +17,9 @@ from pkgutil import extend_path
 __path__ = extend_path(__path__, __name__)
 
 # Public API exports for GenAI context management
+from opentelemetry.util.genai._embedding_invocation import (
+    EmbeddingInvocation as NewEmbeddingInvocation,
+)
 from opentelemetry.util.genai.handler import (
     GenAIContext,
     clear_genai_context,
@@ -24,6 +27,14 @@ from opentelemetry.util.genai.handler import (
     get_genai_context,
     get_telemetry_handler,
     set_genai_context,
+)
+
+# New-style invocation classes
+from opentelemetry.util.genai.invocation import (
+    GenAIInvocation,
+    InferenceInvocation,
+    ToolInvocation,
+    WorkflowInvocation,
 )
 
 __all__ = [
@@ -35,4 +46,10 @@ __all__ = [
     "clear_genai_context",
     # Handler
     "get_telemetry_handler",
+    # New-style invocation classes
+    "GenAIInvocation",
+    "InferenceInvocation",
+    "NewEmbeddingInvocation",
+    "ToolInvocation",
+    "WorkflowInvocation",
 ]

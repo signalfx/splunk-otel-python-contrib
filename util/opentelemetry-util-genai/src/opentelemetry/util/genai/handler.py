@@ -77,6 +77,23 @@ from opentelemetry.trace import (
     TracerProvider,
     get_tracer,
 )
+from opentelemetry.util.genai._embedding_invocation import (
+    EmbeddingInvocation as NewEmbeddingInvocation,
+)
+from opentelemetry.util.genai._inference_invocation import (
+    InferenceInvocation,
+)
+
+# New-style invocation classes
+from opentelemetry.util.genai._invocation import (
+    GenAIInvocation,
+)
+from opentelemetry.util.genai._tool_invocation import (
+    ToolInvocation,
+)
+from opentelemetry.util.genai._workflow_invocation import (
+    WorkflowInvocation,
+)
 from opentelemetry.util.genai.emitters.configuration import (
     build_emitter_pipeline,
 )
@@ -652,11 +669,205 @@ class TelemetryHandler:
             except Exception:  # noqa: BLE001
                 pass
 
+    # -- Internal helpers ----------------------------------------------------
+
+    def _invocation_components(self) -> dict:
+        """Return the component dict needed by new-style invocation classes."""
+        return dict(
+            emitter=self._emitter,
+            agent_context_stack=self._agent_context_stack,
+            completion_callbacks=self._completion_callbacks,
+            sampler_fn=self._should_sample_for_evaluation,
+            meter_provider=getattr(self, "_meter_provider", None),
+            capture_refresh_fn=self._refresh_capture_content,
+        )
+
+    def _maybe_force_flush(self) -> None:
+        """Force flush metrics if a custom meter provider is available."""
+        if (
+            hasattr(self, "_meter_provider")
+            and self._meter_provider is not None
+        ):
+            try:  # pragma: no cover - defensive
+                self._meter_provider.force_flush()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+    # -- New-style factory methods -------------------------------------------
+    # These construct and start new invocation objects in one call.
+    # The returned invocation manages its own lifecycle via stop() / fail().
+
+    def start_inference(
+        self,
+        provider: str,
+        *,
+        request_model: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
+    ) -> InferenceInvocation:
+        """Create and start an LLM inference invocation.
+
+        Set remaining attributes (input_messages, temperature, etc.) on the
+        returned invocation, then call ``invocation.stop()`` or
+        ``invocation.fail()``.
+        """
+        return InferenceInvocation(
+            **self._invocation_components(),
+            provider=provider,
+            request_model=request_model,
+            server_address=server_address,
+            server_port=server_port,
+        )
+
+    def _start_embedding_factory(
+        self,
+        provider: str,
+        *,
+        request_model: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
+    ) -> NewEmbeddingInvocation:
+        """Create and start an embedding invocation (new-style factory).
+
+        Set remaining attributes (encoding_formats, etc.) on the returned
+        invocation, then call ``invocation.stop()`` or ``invocation.fail()``.
+        """
+        return NewEmbeddingInvocation(
+            **self._invocation_components(),
+            provider=provider,
+            request_model=request_model,
+            server_address=server_address,
+            server_port=server_port,
+        )
+
+    def start_tool(
+        self,
+        name: str,
+        *,
+        arguments: Any = None,
+        tool_call_id: Optional[str] = None,
+        tool_type: Optional[str] = None,
+        tool_description: Optional[str] = None,
+    ) -> ToolInvocation:
+        """Create and start a tool invocation.
+
+        Set tool_result on the returned invocation when done, then call
+        ``invocation.stop()`` or ``invocation.fail()``.
+        """
+        return ToolInvocation(
+            **self._invocation_components(),
+            name=name,
+            arguments=arguments,
+            tool_id=tool_call_id,
+            tool_type=tool_type,
+            tool_description=tool_description,
+        )
+
+    def _start_workflow_factory(
+        self,
+        *,
+        name: Optional[str] = None,
+        workflow_type: Optional[str] = None,
+        framework: Optional[str] = None,
+        system: Optional[str] = None,
+    ) -> WorkflowInvocation:
+        """Create and start a workflow invocation (new-style factory).
+
+        Set remaining attributes on the returned invocation, then call
+        ``invocation.stop()`` or ``invocation.fail()``.
+        """
+        return WorkflowInvocation(
+            **self._invocation_components(),
+            name=name or "",
+            workflow_type=workflow_type,
+            framework=framework,
+            system=system,
+        )
+
+    # -- Context manager convenience methods ---------------------------------
+
+    def inference(
+        self,
+        provider: str,
+        *,
+        request_model: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
+    ):
+        """Context manager for LLM inference invocations.
+
+        Starts the span on entry. On normal exit, finalizes the invocation
+        and ends the span. If an exception occurs, marks the span as error,
+        ends it, and re-raises the original exception.
+        """
+        return self.start_inference(
+            provider=provider,
+            request_model=request_model,
+            server_address=server_address,
+            server_port=server_port,
+        )._managed()
+
+    def embedding(
+        self,
+        provider: str,
+        *,
+        request_model: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
+    ):
+        """Context manager for embedding invocations."""
+        return self._start_embedding_factory(
+            provider=provider,
+            request_model=request_model,
+            server_address=server_address,
+            server_port=server_port,
+        )._managed()
+
+    def tool(
+        self,
+        name: str,
+        *,
+        arguments: Any = None,
+        tool_call_id: Optional[str] = None,
+        tool_type: Optional[str] = None,
+        tool_description: Optional[str] = None,
+    ):
+        """Context manager for tool invocations."""
+        return self.start_tool(
+            name,
+            arguments=arguments,
+            tool_call_id=tool_call_id,
+            tool_type=tool_type,
+            tool_description=tool_description,
+        )._managed()
+
+    def workflow(
+        self,
+        name: Optional[str] = None,
+        *,
+        workflow_type: Optional[str] = None,
+        framework: Optional[str] = None,
+        system: Optional[str] = None,
+    ):
+        """Context manager for workflow invocations."""
+        return self._start_workflow_factory(
+            name=name,
+            workflow_type=workflow_type,
+            framework=framework,
+            system=system,
+        )._managed()
+
+    # -- Deprecated lifecycle methods ----------------------------------------
+    # The following methods are preserved for backward compatibility.
+    # Prefer the new factory methods (start_inference, start_tool, etc.)
+    # and invocation.stop() / invocation.fail() instead.
+
     def start_llm(
         self,
         invocation: LLMInvocation,
     ) -> LLMInvocation:
         """Start an LLM invocation and create a pending span entry."""
+        invocation._handler = self
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
@@ -724,15 +935,7 @@ class TelemetryHandler:
             )
         except Exception:  # pragma: no cover
             pass
-        # Force flush metrics if a custom provider with force_flush is present
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover - defensive
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._maybe_force_flush()
         return invocation
 
     def fail_llm(
@@ -759,20 +962,49 @@ class TelemetryHandler:
             )
         except Exception:  # pragma: no cover
             pass
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._maybe_force_flush()
         return invocation
 
     def start_embedding(
+        self,
+        provider_or_invocation: "str | EmbeddingInvocation" = None,
+        *,
+        request_model: Optional[str] = None,
+        server_address: Optional[str] = None,
+        server_port: Optional[int] = None,
+    ) -> "NewEmbeddingInvocation | EmbeddingInvocation":
+        """Create and start an embedding invocation.
+
+        New-style (preferred)::
+
+            inv = handler.start_embedding("openai", request_model="text-embedding-3-small")
+            inv.stop()
+
+        Legacy (deprecated — pass an ``EmbeddingInvocation`` dataclass)::
+
+            inv = EmbeddingInvocation(...)
+            handler.start_embedding(inv)
+            handler.stop_embedding(inv)
+        """
+        if isinstance(provider_or_invocation, str):
+            return self._start_embedding_factory(
+                provider_or_invocation,
+                request_model=request_model,
+                server_address=server_address,
+                server_port=server_port,
+            )
+        # Legacy path: treat as old-style dataclass invocation
+        return self._start_embedding_legacy(provider_or_invocation)
+
+    def _start_embedding_legacy(
         self, invocation: EmbeddingInvocation
     ) -> EmbeddingInvocation:
-        """Start an embedding invocation and create a pending span entry."""
+        """Start an embedding invocation (legacy dataclass path).
+
+        .. deprecated::
+            Use ``handler.start_embedding(provider)`` (new factory) instead.
+        """
+        invocation._handler = self
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
@@ -803,15 +1035,7 @@ class TelemetryHandler:
         self._notify_completion(invocation)
         self._emitter.on_end(invocation)
         self._pop_current_span(invocation)
-        # Force flush metrics if a custom provider with force_flush is present
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._maybe_force_flush()
         return invocation
 
     def fail_embedding(
@@ -822,20 +1046,14 @@ class TelemetryHandler:
         self._emitter.on_error(error, invocation)
         self._notify_completion(invocation)
         self._pop_current_span(invocation)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._maybe_force_flush()
         return invocation
 
     def start_retrieval(
         self, invocation: RetrievalInvocation
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
+        invocation._handler = self
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
@@ -898,6 +1116,7 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
+        invocation._handler = self
         _apply_genai_context(invocation)
         if (
             not invocation.agent_name or not invocation.agent_id
@@ -1092,8 +1311,48 @@ class TelemetryHandler:
         return entity
 
     # Workflow lifecycle --------------------------------------------------
-    def start_workflow(self, workflow: Workflow) -> Workflow:
-        """Start a workflow and create a pending span entry."""
+    def start_workflow(
+        self,
+        workflow_or_name: "Workflow | str | None" = None,
+        *,
+        name: Optional[str] = None,
+        workflow_type: Optional[str] = None,
+        framework: Optional[str] = None,
+        system: Optional[str] = None,
+    ) -> "WorkflowInvocation | Workflow":
+        """Create and start a workflow invocation.
+
+        New-style (preferred)::
+
+            inv = handler.start_workflow(name="my-workflow")
+            inv.stop()
+
+        Legacy (deprecated — pass a ``Workflow`` dataclass)::
+
+            wf = Workflow(name="my-workflow", ...)
+            handler.start_workflow(wf)
+            handler.stop_workflow(wf)
+        """
+        if isinstance(workflow_or_name, Workflow):
+            return self._start_workflow_legacy(workflow_or_name)
+        # New-style factory path
+        resolved_name = (
+            workflow_or_name if isinstance(workflow_or_name, str) else name
+        )
+        return self._start_workflow_factory(
+            name=resolved_name,
+            workflow_type=workflow_type,
+            framework=framework,
+            system=system,
+        )
+
+    def _start_workflow_legacy(self, workflow: Workflow) -> Workflow:
+        """Start a workflow (legacy dataclass path).
+
+        .. deprecated::
+            Use ``handler.start_workflow(name=...)`` (new factory) instead.
+        """
+        workflow._handler = self
         self._refresh_capture_content()
         _apply_genai_context(workflow)
         self._inherit_parent_span(workflow)
@@ -1230,14 +1489,7 @@ class TelemetryHandler:
         self._notify_completion(workflow)
         self._emitter.on_end(workflow)
         self._pop_current_span(workflow)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._maybe_force_flush()
         return workflow
 
     def fail_workflow(self, workflow: Workflow, error: Error) -> Workflow:
@@ -1246,14 +1498,7 @@ class TelemetryHandler:
         self._emitter.on_error(error, workflow)
         self._notify_completion(workflow)
         self._pop_current_span(workflow)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._maybe_force_flush()
         return workflow
 
     # Agent lifecycle -----------------------------------------------------
@@ -1261,6 +1506,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
+        agent._handler = self
         self._refresh_capture_content()
         _apply_genai_context(agent)
         self._inherit_parent_span(agent)
@@ -1340,6 +1586,7 @@ class TelemetryHandler:
     # Step lifecycle ------------------------------------------------------
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
+        step._handler = self
         self._refresh_capture_content()
         _apply_genai_context(step)
         self._inherit_parent_span(step)
@@ -1438,6 +1685,58 @@ class TelemetryHandler:
         if manager is None or not manager.has_evaluators:
             return
         manager.wait_for_all(timeout)  # type: ignore[attr-defined]
+
+    # Internal dispatch for invocation.stop() / invocation.fail() ---------
+    def _stop_invocation(self, obj: Any) -> None:
+        """Internal: dispatch stop to the appropriate type-specific method.
+
+        Called by ``GenAI.stop()`` on the invocation object.
+        New-style ``GenAIInvocation`` instances handle their own stop()
+        directly (no dispatch needed here); this is only used by the
+        deprecated ``GenAI.stop()`` path on old dataclasses.
+        """
+        if isinstance(obj, GenAIInvocation):
+            # New-style: invocation handles everything internally
+            obj.stop()
+            return
+        if isinstance(obj, Workflow):
+            self.stop_workflow(obj)
+        elif isinstance(obj, (AgentCreation, AgentInvocation)):
+            self.stop_agent(obj)
+        elif isinstance(obj, Step):
+            self.stop_step(obj)
+        elif isinstance(obj, LLMInvocation):
+            self.stop_llm(obj)
+        elif isinstance(obj, EmbeddingInvocation):
+            self.stop_embedding(obj)
+        elif isinstance(obj, RetrievalInvocation):
+            self.stop_retrieval(obj)
+        elif isinstance(obj, ToolCall):
+            self.stop_tool_call(obj)
+
+    def _fail_invocation(self, obj: Any, error: Error) -> None:
+        """Internal: dispatch fail to the appropriate type-specific method.
+
+        Called by ``GenAI.fail()`` on the invocation object.
+        """
+        if isinstance(obj, GenAIInvocation):
+            # New-style: invocation handles everything internally
+            obj.fail(error)
+            return
+        if isinstance(obj, Workflow):
+            self.fail_workflow(obj, error)
+        elif isinstance(obj, (AgentCreation, AgentInvocation)):
+            self.fail_agent(obj, error)
+        elif isinstance(obj, Step):
+            self.fail_step(obj, error)
+        elif isinstance(obj, LLMInvocation):
+            self.fail_llm(obj, error)
+        elif isinstance(obj, EmbeddingInvocation):
+            self.fail_embedding(obj, error)
+        elif isinstance(obj, RetrievalInvocation):
+            self.fail_retrieval(obj, error)
+        elif isinstance(obj, ToolCall):
+            self.fail_tool_call(obj, error)
 
     # Generic lifecycle API ------------------------------------------------
     def start(self, obj: Any) -> Any:

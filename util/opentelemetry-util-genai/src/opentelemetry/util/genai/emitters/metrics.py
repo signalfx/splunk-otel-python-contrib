@@ -11,6 +11,7 @@ from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
 
+from .._invocation import GenAIInvocation
 from ..instruments import Instruments
 from ..interfaces import EmitterMeta
 from ..types import (
@@ -81,6 +82,12 @@ class MetricsEmitter(EmitterMeta):
         return None
 
     def on_end(self, obj: Any) -> None:
+        # GenAIInvocation subclasses with an emitter provide their own
+        # metric attributes via hooks.
+        if isinstance(obj, GenAIInvocation) and obj._emitter is not None:
+            self._record_invocation_metrics(obj)
+            return
+
         if isinstance(obj, Workflow):
             self._record_workflow_metrics(obj)
             return
@@ -198,7 +205,13 @@ class MetricsEmitter(EmitterMeta):
             self._record_retrieval_metrics(obj)
 
     def on_error(self, error: Error, obj: Any) -> None:
-        # Handle new agentic types
+        # GenAIInvocation subclasses with an emitter provide their own
+        # metric attributes via hooks.
+        if isinstance(obj, GenAIInvocation) and obj._emitter is not None:
+            self._record_invocation_metrics(obj, error=error)
+            return
+
+        # Handle agentic types
         if isinstance(obj, Workflow):
             self._record_workflow_metrics(obj)
             return
@@ -349,6 +362,7 @@ class MetricsEmitter(EmitterMeta):
         return isinstance(
             obj,
             (
+                GenAIInvocation,
                 LLMInvocation,
                 ToolCall,
                 MCPOperation,
@@ -602,3 +616,45 @@ class MetricsEmitter(EmitterMeta):
             self._mcp_tool_output_size.record(
                 op.output_size_bytes, attributes=mcp_attrs, context=context
             )
+
+    def _record_invocation_metrics(
+        self, obj: GenAIInvocation, error: Optional[Error] = None
+    ) -> None:
+        """Record metrics for a GenAIInvocation using its hook methods."""
+        if obj.end_time is None:
+            return
+
+        metric_attrs = obj._get_metric_attributes()
+
+        # Add session context if configured
+        metric_attrs.update(get_context_metric_attributes(obj))
+
+        # Add error type if present
+        if error is not None and getattr(error, "type", None) is not None:
+            metric_attrs[ErrorAttributes.ERROR_TYPE] = error.type.__qualname__
+
+        # Get span context for metric correlation
+        span = getattr(obj, "span", None)
+        context = None
+        if span is not None:
+            try:
+                context = trace.set_span_in_context(span)
+            except (TypeError, ValueError, AttributeError):
+                context = None
+
+        # Record token metrics from hook
+        token_counts = obj._get_metric_token_counts()
+        if token_counts:
+            for token_type, count in token_counts.items():
+                if isinstance(count, (int, float)):
+                    token_attrs = {GenAI.GEN_AI_TOKEN_TYPE: token_type}
+                    token_attrs.update(metric_attrs)
+                    self._token_histogram.record(
+                        count, attributes=token_attrs, context=context
+                    )
+
+        # Record duration
+        duration = obj.end_time - obj.start_time
+        self._duration_histogram.record(
+            duration, attributes=metric_attrs, context=context
+        )

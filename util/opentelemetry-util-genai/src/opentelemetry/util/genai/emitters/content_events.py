@@ -5,6 +5,9 @@ from typing import Any, Optional
 
 from opentelemetry._logs import Logger, get_logger
 
+from .._inference_invocation import InferenceInvocation
+from .._invocation import GenAIInvocation
+from .._workflow_invocation import WorkflowInvocation
 from ..interfaces import EmitterMeta
 from ..types import (
     AgentCreation,
@@ -65,6 +68,14 @@ class ContentEventsEmitter(EmitterMeta):
                     type(obj).__name__,
                 )
             return
+        # InferenceInvocation emits the same event as LLMInvocation
+        if isinstance(obj, InferenceInvocation):
+            self._emit_inference_event(obj)
+            return
+        # WorkflowInvocation emits the same event as Workflow
+        if isinstance(obj, WorkflowInvocation):
+            self._emit_workflow_invocation_event(obj)
+            return
         # Emit workflow event (includes initial input + final output messages)
         if isinstance(obj, Workflow):
             self._emit_workflow_event(obj)
@@ -110,7 +121,14 @@ class ContentEventsEmitter(EmitterMeta):
     def handles(self, obj: Any) -> bool:
         return isinstance(
             obj,
-            (LLMInvocation, Workflow, AgentCreation, AgentInvocation, Step),
+            (
+                GenAIInvocation,
+                LLMInvocation,
+                Workflow,
+                AgentCreation,
+                AgentInvocation,
+                Step,
+            ),
         )
 
     # Helper methods for new agentic types
@@ -147,6 +165,36 @@ class ContentEventsEmitter(EmitterMeta):
         """Emit an event for an embedding operation."""
         try:
             record = _embedding_to_log_record(embedding, self._capture_content)
+            if record and self._logger:
+                self._logger.emit(record)
+        except (TypeError, ValueError, AttributeError):
+            return None
+
+    def _emit_inference_event(self, obj: InferenceInvocation) -> None:
+        """Emit a content event for an InferenceInvocation.
+
+        Reuses the LLM log record builder since InferenceInvocation has the
+        same fields (input_messages, output_messages, etc.).
+        """
+        try:
+            record = _llm_invocation_to_log_record(obj, self._capture_content)
+            if record and self._logger:
+                self._logger.emit(record)
+        except (TypeError, ValueError, AttributeError) as e:
+            logging.getLogger(__name__).warning(
+                "Failed to emit inference invocation event: %s",
+                e,
+                exc_info=True,
+            )
+
+    def _emit_workflow_invocation_event(self, obj: WorkflowInvocation) -> None:
+        """Emit a content event for a WorkflowInvocation.
+
+        Reuses the workflow log record builder since WorkflowInvocation has
+        the same fields (name, input_messages, output_messages, etc.).
+        """
+        try:
+            record = _workflow_to_log_record(obj, self._capture_content)
             if record and self._logger:
                 self._logger.emit(record)
         except (TypeError, ValueError, AttributeError):
