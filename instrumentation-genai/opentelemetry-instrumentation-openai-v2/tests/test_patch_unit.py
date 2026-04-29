@@ -16,13 +16,24 @@
 
 import json
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from opentelemetry.instrumentation.openai_v2.patch import (
     StreamWrapper,
     _build_chat_invocation,
+    _build_output_messages_from_response,
+    _build_tool_call_request,
+    _content_to_parts,
 )
-from opentelemetry.util.genai.types import LLMInvocation
+from opentelemetry.util.genai.types import (
+    GenericPart,
+    LLMInvocation,
+    Reasoning,
+    Text,
+    ToolCall,
+    ToolCallRequest,
+)
 
 
 class TestBuildChatInvocation:
@@ -259,3 +270,228 @@ class TestRequestStreamFlag:
         # via the StreamWrapper which expects request_stream to be True
         invocation.request_stream = True
         assert invocation.request_stream is True
+
+
+# ---------------------------------------------------------------------------
+# Helpers for new message type tests
+# ---------------------------------------------------------------------------
+
+
+def _make_response(choices):
+    """Build a minimal OpenAI-like response object."""
+    response = SimpleNamespace(choices=choices, id="resp-1", model="gpt-4o")
+    return response
+
+
+def _make_choice(content=None, tool_calls=None, finish_reason="stop"):
+    message = SimpleNamespace(
+        role="assistant",
+        content=content,
+        tool_calls=tool_calls,
+    )
+    return SimpleNamespace(message=message, finish_reason=finish_reason)
+
+
+def _make_tool_call(name, arguments, call_id="call-1"):
+    function = SimpleNamespace(name=name, arguments=arguments)
+    return SimpleNamespace(id=call_id, function=function)
+
+
+# ---------------------------------------------------------------------------
+# _content_to_parts
+# ---------------------------------------------------------------------------
+
+
+class TestContentToParts:
+    def test_string_content_captured(self):
+        parts = _content_to_parts("hello", capture_content=True)
+        assert parts == [Text(content="hello")]
+
+    def test_string_content_redacted(self):
+        parts = _content_to_parts("secret", capture_content=False)
+        assert parts == [Text(content="")]
+
+    def test_none_returns_empty(self):
+        assert _content_to_parts(None, capture_content=True) == []
+
+    def test_text_block_captured(self):
+        blocks = [{"type": "text", "text": "world"}]
+        parts = _content_to_parts(blocks, capture_content=True)
+        assert parts == [Text(content="world")]
+
+    def test_text_block_redacted(self):
+        blocks = [{"type": "text", "text": "world"}]
+        parts = _content_to_parts(blocks, capture_content=False)
+        assert parts == [Text(content="")]
+
+    def test_reasoning_block_captured(self):
+        blocks = [{"type": "reasoning", "content": "I think..."}]
+        parts = _content_to_parts(blocks, capture_content=True)
+        assert parts == [Reasoning(content="I think...")]
+
+    def test_thinking_block_captured(self):
+        blocks = [{"type": "thinking", "content": "hmm"}]
+        parts = _content_to_parts(blocks, capture_content=True)
+        assert parts == [Reasoning(content="hmm")]
+
+    def test_reasoning_block_redacted(self):
+        blocks = [{"type": "reasoning", "content": "secret thoughts"}]
+        parts = _content_to_parts(blocks, capture_content=False)
+        assert parts == [Reasoning(content="")]
+
+    def test_unknown_block_becomes_generic_part(self):
+        block = {"type": "image_url", "url": "http://example.com/img.png"}
+        parts = _content_to_parts([block], capture_content=True)
+        assert len(parts) == 1
+        assert isinstance(parts[0], GenericPart)
+        assert parts[0].value == block
+
+    def test_unknown_block_redacted(self):
+        block = {"type": "image_url", "url": "sensitive"}
+        parts = _content_to_parts([block], capture_content=False)
+        assert isinstance(parts[0], GenericPart)
+        assert parts[0].value is None
+
+    def test_mixed_blocks(self):
+        blocks = [
+            {"type": "text", "text": "hi"},
+            {"type": "reasoning", "content": "thinking"},
+            {"type": "image_url", "url": "x"},
+        ]
+        parts = _content_to_parts(blocks, capture_content=True)
+        assert isinstance(parts[0], Text)
+        assert isinstance(parts[1], Reasoning)
+        assert isinstance(parts[2], GenericPart)
+
+
+# ---------------------------------------------------------------------------
+# _build_tool_call_request
+# ---------------------------------------------------------------------------
+
+
+class TestBuildToolCallRequest:
+    def test_basic_object(self):
+        tc = _make_tool_call("get_weather", '{"city": "SF"}', "call-42")
+        result = _build_tool_call_request(tc, capture_content=True)
+        assert isinstance(result, ToolCallRequest)
+        assert result.name == "get_weather"
+        assert result.id == "call-42"
+        assert result.arguments == {"city": "SF"}
+
+    def test_arguments_string_parse_failure_kept_as_string(self):
+        tc = _make_tool_call("fn", "not-json", "call-1")
+        result = _build_tool_call_request(tc, capture_content=True)
+        assert result.arguments == "not-json"
+
+    def test_arguments_none_when_no_capture(self):
+        tc = _make_tool_call("fn", '{"x": 1}', "call-1")
+        result = _build_tool_call_request(tc, capture_content=False)
+        assert result.arguments is None
+
+    def test_dict_tool_call(self):
+        tc = {
+            "id": "call-dict",
+            "function": {"name": "lookup", "arguments": '{"q": "otel"}'},
+        }
+        result = _build_tool_call_request(tc, capture_content=True)
+        assert result.name == "lookup"
+        assert result.id == "call-dict"
+        assert result.arguments == {"q": "otel"}
+
+    def test_missing_name_defaults(self):
+        tc = SimpleNamespace(
+            id="c", function=SimpleNamespace(name=None, arguments=None)
+        )
+        result = _build_tool_call_request(tc, capture_content=True)
+        assert result.name == "unnamed_tool_call"
+
+
+# ---------------------------------------------------------------------------
+# _build_output_messages_from_response  (flag on vs off)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildOutputMessagesNewTypes:
+    def test_flag_off_text_produces_tool_call_legacy(self, monkeypatch):
+        monkeypatch.delenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
+            raising=False,
+        )
+        tc = _make_tool_call("search", '{"q": "hello"}')
+        response = _make_response(
+            [_make_choice(tool_calls=[tc], finish_reason="tool_calls")]
+        )
+        msgs = _build_output_messages_from_response(
+            response, capture_content=True
+        )
+        assert len(msgs) == 1
+        assert len(msgs[0].parts) == 1
+        assert isinstance(msgs[0].parts[0], ToolCall)
+
+    def test_flag_on_tool_call_produces_tool_call_request(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+        )
+        tc = _make_tool_call("search", '{"q": "hello"}', "call-99")
+        response = _make_response(
+            [_make_choice(tool_calls=[tc], finish_reason="tool_calls")]
+        )
+        msgs = _build_output_messages_from_response(
+            response, capture_content=True
+        )
+        assert len(msgs) == 1
+        assert len(msgs[0].parts) == 1
+        part = msgs[0].parts[0]
+        assert isinstance(part, ToolCallRequest)
+        assert part.name == "search"
+        assert part.id == "call-99"
+        assert part.arguments == {"q": "hello"}
+
+    def test_flag_off_text_produces_text_part(self, monkeypatch):
+        monkeypatch.delenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
+            raising=False,
+        )
+        response = _make_response([_make_choice(content="hello")])
+        msgs = _build_output_messages_from_response(
+            response, capture_content=True
+        )
+        assert isinstance(msgs[0].parts[0], Text)
+        assert msgs[0].parts[0].content == "hello"
+
+    def test_flag_on_text_produces_text_part(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+        )
+        response = _make_response([_make_choice(content="hello")])
+        msgs = _build_output_messages_from_response(
+            response, capture_content=True
+        )
+        assert isinstance(msgs[0].parts[0], Text)
+        assert msgs[0].parts[0].content == "hello"
+
+    def test_flag_on_reasoning_block_produces_reasoning_part(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+        )
+        content = [{"type": "reasoning", "content": "step by step"}]
+        response = _make_response([_make_choice(content=content)])
+        msgs = _build_output_messages_from_response(
+            response, capture_content=True
+        )
+        assert isinstance(msgs[0].parts[0], Reasoning)
+        assert msgs[0].parts[0].content == "step by step"
+
+    def test_no_choices_returns_empty(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+        )
+        response = _make_response([])
+        assert (
+            _build_output_messages_from_response(
+                response, capture_content=True
+            )
+            == []
+        )
