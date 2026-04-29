@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "dev-assistant": {
+      "command": "/Users/admehra/olly-dev/splunk-otel-python-contrib/.venv/bin/python",
+      "args": [
+        "/Users/admehra/olly-dev/splunk-otel-python-contrib/instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/dev_assistant_server.py"
+      ],
+      "env": {
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+        "OTEL_SERVICE_NAME": "mcp-dev-assistant-server",
+        "OTEL_INSTRUMENTATION_GENAI_EMITTERS": "span_metric",
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
+        "OTEL_METRIC_EXPORT_INTERVAL": "5000",
+        "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "delta"
+      }
+    }
+  }
+}
