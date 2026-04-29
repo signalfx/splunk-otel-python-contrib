@@ -48,47 +48,6 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 
 ---
 
----
-
-## dev-assistant as a Cursor MCP Server
-
-`dev_assistant_server.py` exposes 7 tools (list_files, read_file, write_file, run_command, git_status, search_code, get_system_info) that Cursor can use as an MCP server.
-
-The workspace `.cursor/mcp.json` already contains a ready-to-use entry:
-
-```json
-{
-  "mcpServers": {
-    "dev-assistant": {
-      "command": "<repo>/.venv/bin/python",
-      "args": ["<repo>/instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/dev_assistant_server.py"],
-      "env": {
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
-        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-        "OTEL_SERVICE_NAME": "mcp-dev-assistant-server",
-        "OTEL_INSTRUMENTATION_GENAI_EMITTERS": "span_metric",
-        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true"
-      }
-    }
-  }
-}
-```
-
-**To activate**: open Cursor Settings → MCP → reload, or restart Cursor. The `dev-assistant` server will appear in the MCP panel.
-
-**Prerequisites for server spans**:
-
-```bash
-# Create .env in the examples folder (inherited by the server subprocess)
-cp instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/.env.example \
-   instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/.env
-
-# Start the local OTel Collector
-docker compose -f deploy/otelcol-docker-compose.yaml up -d
-```
-
----
-
 ## SRE Incident Copilot Skill
 
 `run-sre-copilot-skill.md` is a [Cursor agent skill](https://docs.cursor.com/context/rules) that teaches the AI agent how to set up and run the SRE Incident Copilot demo without re-explaining the setup each session.
