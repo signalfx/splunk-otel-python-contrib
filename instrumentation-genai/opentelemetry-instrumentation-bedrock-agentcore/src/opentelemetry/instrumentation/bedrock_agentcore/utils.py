@@ -64,3 +64,25 @@ def safe_str(value: Any) -> str:
         return str(value)
     except Exception:
         return repr(value)
+
+
+_ERROR_MAX_LEN = 256
+
+
+def truncate_error(e: Exception) -> str:
+    """Return a truncated, safe string from an exception.
+
+    AWS SDK exceptions (ClientError etc.) can include ARNs, account IDs, and
+    request metadata. We truncate to a fixed limit to avoid leaking sensitive
+    details into spans.
+
+    Args:
+        e: Exception to convert
+
+    Returns:
+        Truncated string representation, at most _ERROR_MAX_LEN characters
+    """
+    msg = safe_str(e)
+    if len(msg) > _ERROR_MAX_LEN:
+        return msg[:_ERROR_MAX_LEN] + "..."
+    return msg

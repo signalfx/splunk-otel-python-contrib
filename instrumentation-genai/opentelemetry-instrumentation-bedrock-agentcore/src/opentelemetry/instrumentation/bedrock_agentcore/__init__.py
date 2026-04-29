@@ -337,6 +337,8 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
 
     def _uninstrument(self, **kwargs: Any) -> None:
         """Remove instrumentation from Bedrock AgentCore components."""
+        global _handler
+        _handler = None
 
         # Unwrap helper function
         def _safe_unwrap(module: str, name: str) -> None:
