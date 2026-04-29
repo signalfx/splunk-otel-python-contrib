@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-instruments = ["langchain >= 0.3.21", "langgraph >= 0.4.0, != 1.1.7"]
+instruments = ["langchain-core >= 0.3.21", "langgraph >= 0.4.0, != 1.1.7"]
 test = [
   "langchain-core >= 1.0.0",
   "langchain-openai >= 1.0.0",
