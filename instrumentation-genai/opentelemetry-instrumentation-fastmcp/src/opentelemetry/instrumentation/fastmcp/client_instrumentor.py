@@ -27,6 +27,11 @@ from opentelemetry.util.genai.types import (
     MCPToolCall,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    FASTMCP_FRAMEWORK,
+    HTTP_PROTOCOL_NAME,
+    HTTP_PROTOCOL_VERSION_DEFAULT,
+    MCP_SYSTEM,
+    TRANSPORT_TCP,
     detect_transport,
     extract_protocol_version,
     extract_server_info,
@@ -41,9 +46,11 @@ _LOGGER = logging.getLogger(__name__)
 
 def _enrich_client_op(op: MCPOperation, instance: object) -> None:
     """Populate transport-derived fields on a client-side MCP operation."""
-    if op.network_transport == "tcp":
-        op.network_protocol_name = "http"
-        op.network_protocol_version = op.network_protocol_version or "1.1"
+    if op.network_transport == TRANSPORT_TCP:
+        op.network_protocol_name = HTTP_PROTOCOL_NAME
+        op.network_protocol_version = (
+            op.network_protocol_version or HTTP_PROTOCOL_VERSION_DEFAULT
+        )
         addr, port = extract_server_info(instance)
         if addr:
             op.server_address = addr
@@ -149,14 +156,14 @@ class ClientInstrumentor:
                 mcp_method_name="initialize",
                 network_transport=transport,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
 
             # Pre-connect: populate server address/port for HTTP transport
-            if transport == "tcp":
-                init_op.network_protocol_name = "http"
-                init_op.network_protocol_version = "1.1"
+            if transport == TRANSPORT_TCP:
+                init_op.network_protocol_name = HTTP_PROTOCOL_NAME
+                init_op.network_protocol_version = HTTP_PROTOCOL_VERSION_DEFAULT
                 addr, port = extract_server_info(instance)
                 if addr:
                     init_op.server_address = addr
@@ -257,8 +264,8 @@ class ClientInstrumentor:
                 name=tool_name,
                 arguments=tool_args,
                 id=str(uuid.uuid4()),
-                framework="fastmcp",
-                provider="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                provider=MCP_SYSTEM,
                 tool_type="extension",
                 mcp_method_name="tools/call",
                 network_transport=transport,
@@ -315,8 +322,8 @@ class ClientInstrumentor:
                 mcp_method_name="tools/list",
                 network_transport=transport,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             ),
         )
 
@@ -333,11 +340,10 @@ class ClientInstrumentor:
                 network_transport=transport,
                 mcp_resource_uri=uri or None,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
             _enrich_client_op(op, instance)
-
             handler.start_mcp_operation(op)
             try:
                 result = await wrapped(*args, **kwargs)
@@ -364,11 +370,10 @@ class ClientInstrumentor:
                 network_transport=transport,
                 gen_ai_prompt_name=prompt_name or None,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
             _enrich_client_op(op, instance)
-
             handler.start_mcp_operation(op)
             try:
                 result = await wrapped(*args, **kwargs)

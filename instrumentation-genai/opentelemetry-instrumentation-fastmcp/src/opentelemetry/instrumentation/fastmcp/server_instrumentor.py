@@ -16,7 +16,7 @@
 
 import logging
 from contextvars import ContextVar
-from typing import Optional
+from typing import Callable, Optional
 from uuid import uuid4
 
 from wrapt import register_post_import_hook, wrap_function_wrapper
@@ -31,6 +31,10 @@ from opentelemetry.instrumentation.fastmcp._mcp_context import (
     get_mcp_request_context,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    FASTMCP_FRAMEWORK,
+    HTTP_PROTOCOL_NAME,
+    MCP_SYSTEM,
+    TRANSPORT_TCP,
     detect_transport,
     extract_tool_info,
     extract_result_content,
@@ -39,6 +43,41 @@ from opentelemetry.instrumentation.fastmcp.utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _traced_server_mcp_op(
+    handler: TelemetryHandler,
+    build_op: Callable[["tuple", "dict"], MCPOperation],
+) -> Callable:
+    """Generic async wrapper for server-side MCPOperation lifecycle.
+
+    ``build_op(args, kwargs)`` must return a ready-to-start
+    :class:`MCPOperation` with *no* transport fields pre-filled.  The helper:
+    1. Enriches transport/session from the per-request ``MCPRequestContext``
+       ContextVar (populated by ``TransportInstrumentor._server_handle_request_wrapper``).
+    2. Falls back to ``detect_transport(instance)`` when context is absent.
+    3. Handles start / stop / fail lifecycle uniformly.
+    """
+
+    async def wrapper(wrapped, instance, args, kwargs):
+        op = build_op(args, kwargs)
+        _enrich_from_request_context(op)
+        if op.network_transport is None:
+            op.network_transport = detect_transport(instance)
+
+        handler.start_mcp_operation(op)
+        try:
+            result = await wrapped(*args, **kwargs)
+            handler.stop_mcp_operation(op)
+            return result
+        except Exception as e:
+            op.is_error = True
+            op.error_type = type(e).__name__
+            handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
+            raise
+
+    return wrapper
+
 
 # FastMCP 3.x call_tool recurses through middleware (run_middleware=True →
 # middleware → self.call_tool(..., run_middleware=False)).  This guard
@@ -186,11 +225,11 @@ class ServerInstrumentor:
                 network_transport=transport,
                 sdot_mcp_server_name=server_name,
                 is_client=False,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
-            if transport == "tcp":
-                init_op.network_protocol_name = "http"
+            if transport == TRANSPORT_TCP:
+                init_op.network_protocol_name = HTTP_PROTOCOL_NAME
 
             handler.start_mcp_operation(init_op)
             try:
@@ -222,21 +261,25 @@ class ServerInstrumentor:
                 return await wrapped(*args, **kwargs)
 
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
-            transport = detect_transport(instance)
 
             tool_call = MCPToolCall(
                 name=tool_name,
                 arguments=tool_arguments,
                 id=str(uuid4()),
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
                 tool_type="extension",
                 mcp_method_name="tools/call",
-                network_transport=transport,
                 sdot_mcp_server_name=instrumentor._server_name,
                 is_client=False,
             )
+            # MCPRequestContext carries accurate transport from the incoming
+            # request (set by transport_instrumentor).  Prefer it over the
+            # instance-based detect_transport fallback which cannot reliably
+            # distinguish HTTP from stdio when called on a FastMCP object.
             _enrich_from_request_context(tool_call)
+            if tool_call.network_transport is None:
+                tool_call.network_transport = detect_transport(instance)
 
             handler.start_tool_call(tool_call)
             token = _IN_TOOL_CALL.set(True)
@@ -281,37 +324,20 @@ class ServerInstrumentor:
     def _read_resource_wrapper(self):
         """Wrapper for FastMCP.read_resource."""
         instrumentor = self
-        handler = self._handler
 
-        async def traced_read_resource(wrapped, instance, args, kwargs):
+        def build_op(args: tuple, kwargs: dict) -> MCPOperation:
             uri = str(args[0]) if args else str(kwargs.get("uri", ""))
-            transport = detect_transport(instance)
-
-            op = MCPOperation(
+            return MCPOperation(
                 target=uri,
                 mcp_method_name="resources/read",
-                network_transport=transport,
                 mcp_resource_uri=uri or None,
                 sdot_mcp_server_name=instrumentor._server_name,
                 is_client=False,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
-            _enrich_from_request_context(op)
 
-            handler.start_mcp_operation(op)
-
-            try:
-                result = await wrapped(*args, **kwargs)
-                handler.stop_mcp_operation(op)
-                return result
-            except Exception as e:
-                op.is_error = True
-                op.error_type = type(e).__name__
-                handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
-                raise
-
-        return traced_read_resource
+        return _traced_server_mcp_op(self._handler, build_op)
 
     # ------------------------------------------------------------------
     # prompts/get  (maps to FastMCP.render_prompt, not get_prompt)
@@ -325,39 +351,17 @@ class ServerInstrumentor:
         the MCP request path.
         """
         instrumentor = self
-        handler = self._handler
 
-        async def traced_render_prompt(wrapped, instance, args, kwargs):
+        def build_op(args: tuple, kwargs: dict) -> MCPOperation:
             prompt_name = str(args[0]) if args else str(kwargs.get("name", ""))
-            transport = detect_transport(instance)
-
-            op = MCPOperation(
+            return MCPOperation(
                 target=prompt_name,
                 mcp_method_name="prompts/get",
-                network_transport=transport,
                 gen_ai_prompt_name=prompt_name or None,
                 sdot_mcp_server_name=instrumentor._server_name,
                 is_client=False,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
-            _enrich_from_request_context(op)
 
-            handler.start_mcp_operation(op)
-
-            try:
-                result = await wrapped(*args, **kwargs)
-                handler.stop_mcp_operation(op)
-                return result
-            except Exception as e:
-                op.is_error = True
-                op.error_type = type(e).__name__
-                handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
-                raise
-
-        return traced_render_prompt
-
-    # Kept for backward compatibility with existing tests
-    def _get_prompt_wrapper(self):
-        """Deprecated: use _render_prompt_wrapper instead."""
-        return self._render_prompt_wrapper()
+        return _traced_server_mcp_op(self._handler, build_op)

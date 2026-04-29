@@ -37,8 +37,6 @@ class MCPRequestContext:
     network_protocol_version: Optional[str] = None
     client_address: Optional[str] = None
     client_port: Optional[int] = None
-    server_address: Optional[str] = None
-    server_port: Optional[int] = None
     mcp_session_id: Optional[str] = None
 
 

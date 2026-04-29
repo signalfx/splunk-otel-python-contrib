@@ -39,7 +39,13 @@ from opentelemetry.instrumentation.fastmcp._mcp_context import (
     clear_mcp_request_context,
     set_mcp_request_context,
 )
-from opentelemetry.instrumentation.fastmcp.utils import detect_transport
+from opentelemetry.instrumentation.fastmcp.utils import (
+    HTTP_PROTOCOL_NAME,
+    HTTP_PROTOCOL_VERSION_DEFAULT,
+    MCP_SESSION_ID_HEADER,
+    TRANSPORT_TCP,
+    detect_transport,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -218,28 +224,43 @@ class TransportInstrumentor:
                 client_port = None
                 session_id = None
 
-                if transport == "tcp" and message is not None:
-                    net_proto_name = "http"
-                    net_proto_version = "1.1"
+                # Detect HTTP transport directly from the message metadata rather
+                # than relying on detect_transport(instance), which inspects the
+                # FastMCP/client object and cannot see the active transport when
+                # called on a low-level mcp.server.lowlevel.Server instance.
+                # If the message carries a Starlette request context it is HTTP.
+                starlette_req = None
+                try:
+                    msg_meta = (
+                        getattr(message, "message_metadata", None)
+                        if message is not None
+                        else None
+                    )
+                    if msg_meta is not None:
+                        starlette_req = getattr(msg_meta, "request_context", None)
+                except Exception:
+                    pass
+
+                if starlette_req is not None:
+                    # Override transport: message_metadata proves this is HTTP.
+                    transport = TRANSPORT_TCP
+                    net_proto_name = HTTP_PROTOCOL_NAME
+                    net_proto_version = HTTP_PROTOCOL_VERSION_DEFAULT
                     try:
-                        msg_meta = getattr(message, "message_metadata", None)
-                        if msg_meta is not None:
-                            starlette_req = getattr(msg_meta, "request_context", None)
-                            if starlette_req is not None:
-                                scope = getattr(starlette_req, "scope", None)
-                                if scope and isinstance(scope, dict):
-                                    http_ver = scope.get("http_version")
-                                    if http_ver:
-                                        net_proto_version = str(http_ver)
+                        scope = getattr(starlette_req, "scope", None)
+                        if scope and isinstance(scope, dict):
+                            http_ver = scope.get("http_version")
+                            if http_ver:
+                                net_proto_version = str(http_ver)
 
-                                client_obj = getattr(starlette_req, "client", None)
-                                if client_obj is not None:
-                                    client_addr = getattr(client_obj, "host", None)
-                                    client_port = getattr(client_obj, "port", None)
+                        client_obj = getattr(starlette_req, "client", None)
+                        if client_obj is not None:
+                            client_addr = getattr(client_obj, "host", None)
+                            client_port = getattr(client_obj, "port", None)
 
-                                headers = getattr(starlette_req, "headers", None)
-                                if headers is not None:
-                                    session_id = headers.get("mcp-session-id")
+                        headers = getattr(starlette_req, "headers", None)
+                        if headers is not None:
+                            session_id = headers.get(MCP_SESSION_ID_HEADER)
                     except Exception:
                         _LOGGER.debug(
                             "Could not extract HTTP metadata from message",

@@ -24,6 +24,25 @@ from urllib.parse import urlparse
 
 _LOGGER = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Shared constants — use these instead of bare string literals
+# ---------------------------------------------------------------------------
+
+# OTel network.transport values (semconv)
+TRANSPORT_TCP: str = "tcp"
+TRANSPORT_PIPE: str = "pipe"
+
+# OTel network.protocol.name / network.protocol.version defaults for HTTP
+HTTP_PROTOCOL_NAME: str = "http"
+HTTP_PROTOCOL_VERSION_DEFAULT: str = "1.1"
+
+# MCP HTTP header carrying the session identifier
+MCP_SESSION_ID_HEADER: str = "mcp-session-id"
+
+# Framework/system tags used on every MCP span
+FASTMCP_FRAMEWORK: str = "fastmcp"
+MCP_SYSTEM: str = "mcp"
+
 
 def dont_throw(func):
     """Decorator that catches and logs exceptions without re-raising.
@@ -163,7 +182,7 @@ def detect_transport(instance: object) -> str:
         if transport_obj is not None:
             cls_name = type(transport_obj).__name__.lower()
             if any(kw in cls_name for kw in _TCP_KEYWORDS):
-                return "tcp"
+                return TRANSPORT_TCP
     except Exception:
         pass
 
@@ -171,11 +190,11 @@ def detect_transport(instance: object) -> str:
         _settings = import_module("fastmcp.settings")
         val = getattr(_settings, "transport", None)
         if isinstance(val, str) and any(kw in val.lower() for kw in _TCP_KEYWORDS):
-            return "tcp"
+            return TRANSPORT_TCP
     except Exception:
         pass
 
-    return "pipe"
+    return TRANSPORT_PIPE
 
 
 def extract_server_info(instance: object) -> tuple[Optional[str], Optional[int]]:

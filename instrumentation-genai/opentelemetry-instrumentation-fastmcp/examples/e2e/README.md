@@ -38,75 +38,61 @@ pip install fastmcp
 
 ## Quick Start
 
-### Option 1: Run the Demo Script (Single Terminal)
+### Configure telemetry (.env)
 
-The easiest way to see everything working:
-
-```bash
-cd instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/e2e
-
-# Run with console output (traces + metrics)
-OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric" python run_demo.py --console
-
-# Run with just traces
-python run_demo.py --console
-```
-
-### Option 2: Run Server and Client in Separate Terminals
-
-This approach lets you see server-side and client-side telemetry separately,
-each with its own service name for proper attribution in your observability backend.
-
-The server runs in **SSE (Server-Sent Events) mode** to accept external connections.
-
-#### Terminal 1 - Start the Instrumented Server
+A `.env` file is provided with Splunk OTLP settings. Load it before running:
 
 ```bash
-cd instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/e2e
-
-# Set service name for the server
-export OTEL_SERVICE_NAME="mcp-calculator-server"
-
-# Enable metrics (optional)
-export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
-
-# For OTLP export (optional):
-# export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-
-# Start the instrumented server in SSE mode
-python server_instrumented.py --sse --port 8000
+source .env
 ```
 
-You should see:
-```
-✅ Console exporters enabled
-✅ FastMCP instrumentation applied (service: mcp-calculator-server)
-============================================================
-MCP Calculator Server with OpenTelemetry Instrumentation
-============================================================
+### Option 1: stdio mode — Demo Script (Single Terminal)
 
-🌐 Starting SSE server at http://localhost:8000/sse
-   Connect with: python client.py --server-url http://localhost:8000/sse --console
-
-Press Ctrl+C to stop.
-```
-
-#### Terminal 2 - Run the Client
+The easiest way to see everything working (server spawned as subprocess):
 
 ```bash
-cd instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/e2e
+source .env
 
-# Set a DIFFERENT service name for the client
-export OTEL_SERVICE_NAME="mcp-calculator-client"
+# Traces + metrics, wait 5s for telemetry flush
+python run_demo.py --console --wait 5
 
-# Enable metrics
-export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
+# Send to Splunk (OTLP from .env)
+python run_demo.py --wait 5
+```
 
-# For OTLP export (optional - same endpoint as server):
-# export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+### Option 2: HTTP mode — Demo Script (Single Terminal)
 
-# Connect to the SSE server
-python client.py --server-url http://localhost:8000/sse --console --wait 10
+Uses Streamable-HTTP transport. `run_demo.py` spawns the server subprocess automatically:
+
+```bash
+source .env
+
+# HTTP mode with console output
+python run_demo.py --http --console --wait 5
+
+# Custom port
+python run_demo.py --http --port 8001 --wait 5
+```
+
+You will see `network.transport: tcp`, `network.protocol.name: http`, `server.address` and
+`server.port` on each span.
+
+### Option 3: Separate Terminals (HTTP — Streamable-HTTP)
+
+Run server and client in separate processes for independent service names.
+
+#### Terminal 1 — Start the Instrumented Server
+
+```bash
+source .env
+OTEL_SERVICE_NAME=mcp-calculator-server python server_instrumented.py --http --port 8000
+```
+
+#### Terminal 2 — Run the Client
+
+```bash
+source .env
+python client.py --server-url http://localhost:8000/mcp --wait 5
 ```
 
 #### What You'll See
@@ -178,7 +164,9 @@ The instrumentation creates spans for:
 
 ### Metrics
 
-When `OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"`:
+Set `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric` (already in `.env`).
+
+When enabled:
 
 - **`mcp.client.operation.duration`**: Duration of client-side MCP operations
 - **`mcp.tool.output.size`**: Size of tool output in bytes (useful for tracking LLM context growth)
@@ -216,16 +204,29 @@ MCP End-to-End Demo with OpenTelemetry Instrumentation
 
 ## Architecture
 
+### stdio transport
 ```
 ┌─────────────────┐     stdio      ┌─────────────────────────┐
 │   MCP Client    │ ─────────────► │      MCP Server         │
 │  (client.py)    │ ◄───────────── │  (server_instrumented.py│
-│                 │                │   or server.py)         │
-│ Instrumented:   │                │                         │
-│ • Session spans │                │ Instrumented:           │
-│ • Tool calls    │                │ • Tool spans            │
-│ • Metrics       │                │ • Duration metrics      │
+│ Instrumented:   │                │ Instrumented:           │
+│ • Session spans │                │ • Tool spans            │
+│ • Tool calls    │                │ • Duration metrics      │
 └─────────────────┘                └─────────────────────────┘
+```
+
+### HTTP transport (Streamable-HTTP)
+```
+┌─────────────────┐  HTTP/mcp   ┌────────────────────────────┐
+│   MCP Client    │ ──────────► │  MCP Server (HTTP mode)    │
+│  (client.py)    │ ◄────────── │  server_instrumented.py    │
+│                 │             │  --http --port 8000        │
+│ Span attrs:     │             │                            │
+│ • network.transport: tcp      │ Span attrs:                │
+│ • network.protocol.name: http │ • network.transport: tcp   │
+│ • server.address / port       │ • client.address / port    │
+│ • mcp.protocol.version        │ • mcp.session.id           │
+└─────────────────┘             └────────────────────────────┘
          │                                  │
          ▼                                  ▼
 ┌──────────────────────────────────────────────────────┐

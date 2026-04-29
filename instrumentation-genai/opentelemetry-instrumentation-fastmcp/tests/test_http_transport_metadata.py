@@ -384,6 +384,9 @@ class TestTransportInstrumentorHttpMetadata:
         mock_message = MagicMock()
         mock_message.request_meta = None
         mock_message.request_id = "rpc-10"
+        # stdio has no Starlette request context — explicitly clear so
+        # MagicMock auto-creation doesn't trigger the HTTP path.
+        mock_message.message_metadata = None
 
         mock_instance = MagicMock()
         mock_instance.transport = None  # stdio = pipe
