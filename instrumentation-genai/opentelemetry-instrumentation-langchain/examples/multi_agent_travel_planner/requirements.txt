@@ -1,9 +1,13 @@
-langchain>=1.0.0
-langchain-openai>=1.0.0
-langgraph>=1.0.0
-python-dotenv>=1.0.0
-deepeval
-litellm
+# Pinned 2026-04-28 from project venv (Python 3.11)
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
+
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.6
+python-dotenv==1.2.2
+deepeval==3.3.9
+litellm==1.83.8
 
 # Splunk OpenTelemetry GenAI packages
 splunk-otel-util-genai==0.1.9

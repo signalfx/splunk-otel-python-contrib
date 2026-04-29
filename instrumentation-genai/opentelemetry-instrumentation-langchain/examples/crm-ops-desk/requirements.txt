@@ -1,13 +1,16 @@
 # CRM Ops Desk — LangGraph multi-agent demo
-langgraph>=1.0.0,!=1.1.7
-langchain-core>=1.0.1
-langchain-openai>=1.0.1
-faiss-cpu>=1.7.4
-numpy>=1.24.0
-pydantic>=2.0.0
-python-dotenv>=1.0.0
-colorama>=0.4.6
+# Pinned 2026-04-28 from project venv (Python 3.11)
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
+
+langgraph==1.1.6
+langchain-core==1.2.29
+langchain-openai==1.1.13
+faiss-cpu==1.13.2
+numpy==2.4.4
+pydantic==2.12.5
+python-dotenv==1.2.2
+colorama==0.4.6
 
 # OTel zero-code instrumentation (required for opentelemetry-instrument CLI)
-opentelemetry-distro>=0.59b0
-opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0

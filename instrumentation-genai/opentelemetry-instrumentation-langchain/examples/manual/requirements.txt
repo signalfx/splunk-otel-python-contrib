@@ -1,4 +1,8 @@
-deepeval
+# Pinned 2026-04-28 from project venv (Python 3.11)
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
+
+deepeval==3.3.9
 langchain==1.0.2
 #langchain-classic==1.0.0
 langchain-core==1.0.1
@@ -9,7 +13,7 @@ langgraph==1.0.1
 langgraph-checkpoint==3.0.0
 #langgraph-cli==0.4.4
 langgraph-prebuilt==1.0.1
-langgraph-runtime-inmem==0.14.1
+langgraph-runtime-inmem==0.28.0
 #langgraph-sdk==0.2.9
 #langsmith==0.4.38
-requests
+requests==2.32.5

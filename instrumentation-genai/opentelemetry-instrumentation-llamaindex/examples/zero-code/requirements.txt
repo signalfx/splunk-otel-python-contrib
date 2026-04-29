@@ -1,10 +1,14 @@
-llama-index>=0.14.0
-python-dotenv>=1.0.0
-requests>=2.31.0
-opentelemetry-distro
-opentelemetry-exporter-otlp
-splunk-otel-instrumentation-llamaindex
-splunk-otel-util-genai
-splunk-otel-genai-emitters-splunk
-splunk-otel-util-genai-evals
-splunk-otel-genai-evals-deepeval
+# Pinned 2026-04-28 from project venv (Python 3.11) + latest PyPI
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
+
+llama-index==0.14.21
+python-dotenv==1.2.2
+requests==2.32.5
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp==1.38.0
+splunk-otel-instrumentation-llamaindex==0.1.1
+splunk-otel-util-genai==0.1.11
+splunk-otel-genai-emitters-splunk==0.1.8
+splunk-otel-util-genai-evals==0.1.8
+splunk-otel-genai-evals-deepeval==0.1.14

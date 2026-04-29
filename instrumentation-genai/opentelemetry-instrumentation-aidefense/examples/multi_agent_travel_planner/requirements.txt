@@ -1,28 +1,35 @@
-# OpenTelemetry core
-opentelemetry-api>=1.38.0
-opentelemetry-sdk>=1.38.0
-opentelemetry-instrumentation>=0.59b0
-opentelemetry-semantic-conventions>=0.59b0
-opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+# Pinned 2026-04-28 from latest PyPI
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
 
-# Splunk GenAI packages (from git - not yet on PyPI)
-# util-genai with security_event_id support
+# OpenTelemetry core
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+
+# Splunk GenAI packages
+# TODO (HYBIM-586): These git branch refs should be replaced with PyPI versions or
+# commit-SHA refs once the aidefense feature branch is merged and published.
+# Installing from a branch name is not reproducible and poses a supply-chain risk.
 git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=util/opentelemetry-util-genai
 
 # AI Defense instrumentation (from git - not yet on PyPI)
+# TODO (HYBIM-586): replace with PyPI version or commit SHA when available
 git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=instrumentation-genai/opentelemetry-instrumentation-aidefense
 
 # LangChain instrumentation (from git - not yet on PyPI)
+# TODO (HYBIM-586): replace with PyPI version or commit SHA when available
 git+https://github.com/signalfx/splunk-otel-python-contrib.git@feature/aidefense-instrumentation#subdirectory=instrumentation-genai/opentelemetry-instrumentation-langchain
 
 # Cisco AI Defense SDK
-cisco-aidefense-sdk>=2.0.0
+cisco-aidefense-sdk==2.1.1
 
 # LangChain / LangGraph
-langchain>=0.3.0
-langchain-openai>=0.2.0
-langgraph>=0.2.0
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.6
 
 # HTTP client
-requests>=2.31.0
-
+requests==2.32.5

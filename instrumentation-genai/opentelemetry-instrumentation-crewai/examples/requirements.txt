@@ -1,33 +1,36 @@
+# Pinned 2026-04-28 from project venv (Python 3.11)
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
+
 # Core CrewAI dependencies
-crewai>=0.70.0
-crewai-tools>=0.12.0
+crewai==0.11.2
+crewai-tools==0.0.1
 
 # OpenAI and LiteLLM
-openai>=1.0.0
-litellm>=1.0.0
+openai==2.32.0
+litellm==1.83.8
 
-# OpenTelemetry core packages (all pinned to compatible versions)
-opentelemetry-api>=1.31.0
-opentelemetry-sdk>=1.31.0
-opentelemetry-exporter-otlp-proto-grpc>=1.31.0
-opentelemetry-instrumentation~=0.57b0
-opentelemetry-semantic-conventions~=0.57b0
+# OpenTelemetry core packages
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
 
 # OpenTelemetry Distro (for zero-code instrumentation)
-opentelemetry-distro~=0.57b0
+opentelemetry-distro==0.59b0
 
 # Splunk GenAI utilities and emitters
-splunk-otel-instrumentation-crewai>=0.1.2
-splunk-otel-util-genai>=0.1.9
-splunk-otel-genai-emitters-splunk>=0.1.6
-splunk-otel-util-genai-evals>=0.1.7
-splunk-otel-genai-evals-deepeval>=0.1.6
+splunk-otel-instrumentation-crewai==0.1.3
+splunk-otel-util-genai==0.1.11
+splunk-otel-genai-emitters-splunk==0.1.8
+splunk-otel-util-genai-evals==0.1.8
+splunk-otel-genai-evals-deepeval==0.1.14
 
 # DeepEval for evaluations
-deepeval>=3.0.0
+deepeval==3.3.9
 
 # Other dependencies
-pydantic>=2.0.0
-python-dotenv>=1.0.0
-requests>=2.25.0
-
+pydantic==2.12.5
+python-dotenv==1.2.2
+requests==2.32.5
