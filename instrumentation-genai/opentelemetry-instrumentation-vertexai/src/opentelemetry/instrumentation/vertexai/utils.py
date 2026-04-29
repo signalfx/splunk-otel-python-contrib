@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from os import environ
 from typing import (
     TYPE_CHECKING,
     Iterable,
@@ -240,11 +239,7 @@ def is_content_enabled(
     ],
 ) -> Union[bool, ContentCapturingMode]:
     if mode == _StabilityMode.DEFAULT:
-        capture_content = environ.get(
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, "false"
-        )
-
-        return capture_content.lower() == "true"
+        return get_content_capturing_mode() != ContentCapturingMode.NO_CONTENT
     return get_content_capturing_mode()
 
 

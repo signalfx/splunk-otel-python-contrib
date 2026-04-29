@@ -615,17 +615,11 @@ def main():
 
     # Enable content capture for both spans and events
     if not os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"):
-        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
-        print(
-            "⚠️  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT not set, defaulting to 'true'\n"
-        )
-
-    if not os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"):
-        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"] = (
+        os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = (
             "SPAN_AND_EVENT"
         )
         print(
-            "⚠️  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE not set, defaulting to 'SPAN_AND_EVENT' (enables parsable events)\n"
+            "⚠️  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT not set, defaulting to 'SPAN_AND_EVENT'\n"
         )
 
     # Setup telemetry first
