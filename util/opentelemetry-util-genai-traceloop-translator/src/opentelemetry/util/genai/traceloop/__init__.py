@@ -234,7 +234,7 @@ def _install_deferred_registration() -> None:
 # be fully resolved yet.
 try:
     _auto_enable()
-except (ImportError, ModuleNotFoundError):
+except ImportError:
     _LOGGER.debug(
         "Traceloop translator deferred: processor module not yet available"
     )
