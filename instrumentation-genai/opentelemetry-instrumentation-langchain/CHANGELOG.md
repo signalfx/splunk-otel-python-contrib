@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.13
+
+### Fixed
+- **Exclude langgraph 1.1.7** — Use `!= 1.1.7` instead of `<= 1.1.6` cap; fixed upstream in 1.1.8.
+- **Add opentelemetry-distro to dev dependencies** — Required for `opentelemetry-instrument` SDK initialization.
+
 ## Version 0.1.12
 
 ### Fixed
