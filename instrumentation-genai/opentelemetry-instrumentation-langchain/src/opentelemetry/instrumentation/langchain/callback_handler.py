@@ -30,7 +30,6 @@ from opentelemetry.util.genai.types import (
     Text,
     ToolCall,
     ToolCallRequest,
-    ToolCallResponse,
     Error as GenAIError,
     ErrorClassification,
 )
