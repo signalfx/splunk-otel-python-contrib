@@ -14,55 +14,45 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import asdict
+import json
+import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
-    Callable,
-    Literal,
     MutableSequence,
-    Union,
-    cast,
-    overload,
 )
 
-from opentelemetry._logs import Logger, LogRecord
-from opentelemetry.instrumentation._semconv import (
-    _StabilityMode,
-)
 from opentelemetry.instrumentation.vertexai.utils import (
     GenerateContentParams,
     _map_finish_reason,
     convert_content_to_message_parts,
+    extract_tool_definitions,
     get_genai_request_attributes,
-    get_genai_response_attributes,
     get_server_attributes,
-    get_span_name,
-    request_to_events,
-    response_to_events,
 )
 from opentelemetry.semconv._incubating.attributes import (
-    gen_ai_attributes as GenAI,
+    gen_ai_attributes as GenAIAttributes,
 )
-from opentelemetry.trace import SpanKind, Tracer
-from opentelemetry.util.genai.completion_hook import CompletionHook
+from opentelemetry.semconv.attributes import (
+    server_attributes as ServerAttributes,
+)
+from opentelemetry.util.genai.handler import (
+    Error as InvocationError,
+)
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+)
 from opentelemetry.util.genai.types import (
-    ContentCapturingMode,
     InputMessage,
+    LLMInvocation,
     OutputMessage,
 )
-from opentelemetry.util.genai.utils import gen_ai_json_dumps
+from opentelemetry.util.genai.utils import should_capture_tool_definitions
 
 if TYPE_CHECKING:
-    from google.cloud.aiplatform_v1.services.prediction_service import client
     from google.cloud.aiplatform_v1.types import (
         content,
         prediction_service,
-    )
-    from google.cloud.aiplatform_v1beta1.services.prediction_service import (
-        client as client_v1beta1,
     )
     from google.cloud.aiplatform_v1beta1.types import (
         content as content_v1beta1,
@@ -109,263 +99,206 @@ def _extract_params(
     )
 
 
-# For details about GEN_AI_LATEST_EXPERIMENTAL stability mode see
-# https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-agent-spans.md?plain=1#L18-L37
-class MethodWrappers:
-    @overload
-    def __init__(
-        self,
-        tracer: Tracer,
-        logger: Logger,
-        capture_content: ContentCapturingMode,
-        sem_conv_opt_in_mode: Literal[
-            _StabilityMode.GEN_AI_LATEST_EXPERIMENTAL
-        ],
-        completion_hook: CompletionHook,
-    ) -> None: ...
+def _build_invocation(
+    params: GenerateContentParams,
+    api_endpoint: str,
+    capture_content: bool,
+) -> LLMInvocation:
+    """Build an LLMInvocation from Vertex AI request parameters."""
+    request_attributes = get_genai_request_attributes(params)
+    server_attrs = get_server_attributes(api_endpoint)
 
-    @overload
-    def __init__(
-        self,
-        tracer: Tracer,
-        logger: Logger,
-        capture_content: bool,
-        sem_conv_opt_in_mode: Literal[_StabilityMode.DEFAULT],
-        completion_hook: CompletionHook,
-    ) -> None: ...
-
-    def __init__(
-        self,
-        tracer: Tracer,
-        logger: Logger,
-        capture_content: Union[bool, ContentCapturingMode],
-        sem_conv_opt_in_mode: Union[
-            Literal[_StabilityMode.DEFAULT],
-            Literal[_StabilityMode.GEN_AI_LATEST_EXPERIMENTAL],
-        ],
-        completion_hook: CompletionHook,
-    ) -> None:
-        self.tracer = tracer
-        self.logger = logger
-        self.capture_content = capture_content
-        self.sem_conv_opt_in_mode = sem_conv_opt_in_mode
-        self.completion_hook = completion_hook
-
-    @contextmanager
-    def _with_new_instrumentation(
-        self,
-        capture_content: ContentCapturingMode,
-        instance: client.PredictionServiceClient
-        | client_v1beta1.PredictionServiceClient,
-        args: Any,
-        kwargs: Any,
-    ):
-        params = _extract_params(*args, **kwargs)
-        request_attributes = get_genai_request_attributes(True, params)
-        with self.tracer.start_as_current_span(
-            name=f"{GenAI.GenAiOperationNameValues.CHAT.value} {request_attributes.get(GenAI.GEN_AI_REQUEST_MODEL, '')}".strip(),
-            kind=SpanKind.CLIENT,
-        ) as span:
-
-            def handle_response(
-                response: prediction_service.GenerateContentResponse
-                | prediction_service_v1beta1.GenerateContentResponse
-                | None,
-            ) -> None:
-                attributes = (
-                    get_server_attributes(instance.api_endpoint)  # type: ignore[reportUnknownMemberType]
-                    | request_attributes
-                    | get_genai_response_attributes(response)
-                )
-                event = LogRecord(
-                    event_name="gen_ai.client.inference.operation.details",
-                )
-                event.attributes = attributes.copy()
-                system_instructions, inputs, outputs = [], [], []
-                if params.system_instruction:
-                    system_instructions = convert_content_to_message_parts(
+    # Build input messages
+    input_messages: list[InputMessage] = []
+    if capture_content:
+        # Vertex AI uses a dedicated system_instruction field (equivalent to OpenAI's
+        # role="system") but its Content proto only supports role="user"|"model".
+        # We set role="system" so the emitter routes it to gen_ai.system_instructions.
+        if params.system_instruction:
+            input_messages.append(
+                InputMessage(
+                    role="system",
+                    parts=convert_content_to_message_parts(
                         params.system_instruction
-                    )
-                if params.contents:
-                    inputs = [
-                        InputMessage(
-                            role=content.role,
-                            parts=convert_content_to_message_parts(content),
-                        )
-                        for content in params.contents
-                    ]
-                if response:
-                    outputs = [
-                        OutputMessage(
-                            finish_reason=_map_finish_reason(
-                                candidate.finish_reason
-                            ),
-                            role=candidate.content.role,
-                            parts=convert_content_to_message_parts(
-                                candidate.content
-                            ),
-                        )
-                        for candidate in response.candidates
-                    ]
-                self.completion_hook.on_completion(
-                    inputs=inputs,
-                    outputs=outputs,
-                    system_instruction=system_instructions,
-                    span=span,
-                    log_record=event,
+                    ),
                 )
-                content_attributes = {
-                    k: [asdict(x) for x in v]
-                    for k, v in [
-                        (
-                            GenAI.GEN_AI_SYSTEM_INSTRUCTIONS,
-                            system_instructions,
-                        ),
-                        (GenAI.GEN_AI_INPUT_MESSAGES, inputs),
-                        (GenAI.GEN_AI_OUTPUT_MESSAGES, outputs),
-                    ]
-                    if v
-                }
-                if span.is_recording():
-                    span.set_attributes(attributes)
-                    if capture_content in (
-                        ContentCapturingMode.SPAN_AND_EVENT,
-                        ContentCapturingMode.SPAN_ONLY,
-                    ):
-                        span.set_attributes(
-                            {
-                                k: gen_ai_json_dumps(v)
-                                for k, v in content_attributes.items()
-                            }
-                        )
-                if capture_content in (
-                    ContentCapturingMode.SPAN_AND_EVENT,
-                    ContentCapturingMode.EVENT_ONLY,
-                ):
-                    event.attributes |= content_attributes
-                self.logger.emit(event)
+            )
+        if params.contents:
+            for c in params.contents:
+                input_messages.append(
+                    InputMessage(
+                        role=c.role or "user",
+                        parts=convert_content_to_message_parts(c),
+                    )
+                )
 
-            yield handle_response
+    # Tool definitions are request metadata, not message content.
+    request_functions = extract_tool_definitions(params.tools)
 
-    @contextmanager
-    def _with_default_instrumentation(
-        self,
-        capture_content: bool,
-        instance: client.PredictionServiceClient
-        | client_v1beta1.PredictionServiceClient,
-        args: Any,
-        kwargs: Any,
-    ):
+    invocation = LLMInvocation(
+        request_model=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_MODEL, ""
+        ),
+        input_messages=input_messages,
+        provider="vertex_ai",
+        framework="google-cloud-aiplatform",
+        server_address=server_attrs.get(ServerAttributes.SERVER_ADDRESS),
+        server_port=server_attrs.get(ServerAttributes.SERVER_PORT),
+        request_temperature=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_TEMPERATURE
+        ),
+        request_top_p=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_TOP_P
+        ),
+        request_max_tokens=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_MAX_TOKENS
+        ),
+        request_presence_penalty=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_PRESENCE_PENALTY
+        ),
+        request_frequency_penalty=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_FREQUENCY_PENALTY
+        ),
+        request_stop_sequences=list(
+            request_attributes.get(
+                GenAIAttributes.GEN_AI_REQUEST_STOP_SEQUENCES, []
+            )
+        ),
+        request_seed=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_SEED
+        ),
+        request_top_k=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_TOP_K
+        ),
+        request_choice_count=request_attributes.get(
+            GenAIAttributes.GEN_AI_REQUEST_CHOICE_COUNT
+        ),
+        output_type=request_attributes.get(GenAIAttributes.GEN_AI_OUTPUT_TYPE),
+        request_functions=request_functions,
+    )
+
+    if capture_content and params.tools and should_capture_tool_definitions():
+        from google.protobuf import json_format as _jf
+
+        tool_defs = [_jf.MessageToDict(t._pb) for t in params.tools]  # type: ignore[union-attr]
+        invocation.tool_definitions = json.dumps(tool_defs)
+
+    return invocation
+
+
+def _apply_response_to_invocation(
+    invocation: LLMInvocation,
+    response: prediction_service.GenerateContentResponse
+    | prediction_service_v1beta1.GenerateContentResponse,
+    capture_content: bool,
+) -> None:
+    """Apply response data to an existing LLMInvocation."""
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        invocation.input_tokens = response.usage_metadata.prompt_token_count
+        invocation.output_tokens = (
+            response.usage_metadata.candidates_token_count
+        )
+
+    model = getattr(response, "model_version", None)
+    if model:
+        invocation.response_model_name = model
+
+    finish_reasons = []
+    output_messages: list[OutputMessage] = []
+    for candidate in response.candidates:
+        # Vertex AI has no TOOL_CALLS finish reason; STOP is returned even for function calls.
+        fr = _map_finish_reason(candidate.finish_reason)
+        parts = []
+        if capture_content:
+            parts = convert_content_to_message_parts(candidate.content)
+        finish_reasons.append(fr)
+        output_messages.append(
+            OutputMessage(
+                role=getattr(candidate.content, "role", None) or "model",
+                parts=parts,
+                finish_reason=fr,
+            )
+        )
+
+    invocation.response_finish_reasons = finish_reasons
+    invocation.output_messages = output_messages
+
+
+def generate_content(capture_content: bool, handler: TelemetryHandler):
+    """Wrap the sync `generate_content` method to trace it."""
+
+    def traced_method(wrapped, instance, args, kwargs):
         params = _extract_params(*args, **kwargs)
         api_endpoint: str = instance.api_endpoint  # type: ignore[reportUnknownMemberType]
-        span_attributes = {
-            **get_genai_request_attributes(False, params),
-            **get_server_attributes(api_endpoint),
-        }
+        invocation = _build_invocation(params, api_endpoint, capture_content)
+        handler.start_llm(invocation)
 
-        span_name = get_span_name(span_attributes)
+        try:
+            response = wrapped(*args, **kwargs)
+        except Exception as error:
+            try:  # pragma: no cover - defensive
+                handler.fail_llm(
+                    invocation,
+                    InvocationError(message=str(error), type=type(error)),
+                )
+            except Exception:
+                logging.exception("Failed to record LLM error")
+            raise
 
-        with self.tracer.start_as_current_span(
-            name=span_name,
-            kind=SpanKind.CLIENT,
-            attributes=span_attributes,
-        ) as span:
-            for event in request_to_events(
-                params=params, capture_content=capture_content
-            ):
-                self.logger.emit(event)
+        try:
+            _apply_response_to_invocation(
+                invocation, response, capture_content
+            )
+            handler.stop_llm(invocation)
+        except Exception as error:  # pragma: no cover - defensive
+            try:
+                handler.fail_llm(
+                    invocation,
+                    InvocationError(message=str(error), type=type(error)),
+                )
+            except Exception:
+                logging.exception("Failed to record LLM response")
 
-            # TODO: set error.type attribute
-            # https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md
+        return response
 
-            def handle_response(
-                response: prediction_service.GenerateContentResponse
-                | prediction_service_v1beta1.GenerateContentResponse,
-            ) -> None:
-                if span.is_recording():
-                    # When streaming, this is called multiple times so attributes would be
-                    # overwritten. In practice, it looks the API only returns the interesting
-                    # attributes on the last streamed response. However, I couldn't find
-                    # documentation for this and setting attributes shouldn't be too expensive.
-                    span.set_attributes(
-                        get_genai_response_attributes(response)
-                    )
+    return traced_method
 
-                for event in response_to_events(
-                    response=response, capture_content=capture_content
-                ):
-                    self.logger.emit(event)
 
-            yield handle_response
+def agenerate_content(capture_content: bool, handler: TelemetryHandler):
+    """Wrap the async `generate_content` method to trace it."""
 
-    def generate_content(
-        self,
-        wrapped: Callable[
-            ...,
-            prediction_service.GenerateContentResponse
-            | prediction_service_v1beta1.GenerateContentResponse,
-        ],
-        instance: client.PredictionServiceClient
-        | client_v1beta1.PredictionServiceClient,
-        args: Any,
-        kwargs: Any,
-    ) -> (
-        prediction_service.GenerateContentResponse
-        | prediction_service_v1beta1.GenerateContentResponse
-    ):
-        if self.sem_conv_opt_in_mode == _StabilityMode.DEFAULT:
-            capture_content_bool = cast(bool, self.capture_content)
-            with self._with_default_instrumentation(
-                capture_content_bool, instance, args, kwargs
-            ) as handle_response:
-                response = wrapped(*args, **kwargs)
-                handle_response(response)
-                return response
-        else:
-            capture_content = cast(ContentCapturingMode, self.capture_content)
-            with self._with_new_instrumentation(
-                capture_content, instance, args, kwargs
-            ) as handle_response:
-                response = None
-                try:
-                    response = wrapped(*args, **kwargs)
-                    return response
-                finally:
-                    handle_response(response)
+    async def traced_method(wrapped, instance, args, kwargs):
+        params = _extract_params(*args, **kwargs)
+        api_endpoint: str = instance.api_endpoint  # type: ignore[reportUnknownMemberType]
+        invocation = _build_invocation(params, api_endpoint, capture_content)
+        handler.start_llm(invocation)
 
-    async def agenerate_content(
-        self,
-        wrapped: Callable[
-            ...,
-            Awaitable[
-                prediction_service.GenerateContentResponse
-                | prediction_service_v1beta1.GenerateContentResponse
-            ],
-        ],
-        instance: client.PredictionServiceClient
-        | client_v1beta1.PredictionServiceClient,
-        args: Any,
-        kwargs: Any,
-    ) -> (
-        prediction_service.GenerateContentResponse
-        | prediction_service_v1beta1.GenerateContentResponse
-    ):
-        if self.sem_conv_opt_in_mode == _StabilityMode.DEFAULT:
-            capture_content_bool = cast(bool, self.capture_content)
-            with self._with_default_instrumentation(
-                capture_content_bool, instance, args, kwargs
-            ) as handle_response:
-                response = await wrapped(*args, **kwargs)
-                handle_response(response)
-                return response
-        else:
-            capture_content = cast(ContentCapturingMode, self.capture_content)
-            with self._with_new_instrumentation(
-                capture_content, instance, args, kwargs
-            ) as handle_response:
-                response = None
-                try:
-                    response = await wrapped(*args, **kwargs)
-                    return response
-                finally:
-                    handle_response(response)
+        try:
+            response = await wrapped(*args, **kwargs)
+        except Exception as error:
+            try:  # pragma: no cover - defensive
+                handler.fail_llm(
+                    invocation,
+                    InvocationError(message=str(error), type=type(error)),
+                )
+            except Exception:
+                logging.exception("Failed to record LLM error")
+            raise
+
+        try:
+            _apply_response_to_invocation(
+                invocation, response, capture_content
+            )
+            handler.stop_llm(invocation)
+        except Exception as error:  # pragma: no cover - defensive
+            try:
+                handler.fail_llm(
+                    invocation,
+                    InvocationError(message=str(error), type=type(error)),
+                )
+            except Exception:
+                logging.exception("Failed to record LLM response")
+
+        return response
+
+    return traced_method

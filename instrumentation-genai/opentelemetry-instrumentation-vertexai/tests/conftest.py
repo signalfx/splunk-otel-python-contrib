@@ -30,15 +30,14 @@ from vertexai.generative_models import (
     GenerativeModel,
 )
 
-from opentelemetry.instrumentation._semconv import (
-    OTEL_SEMCONV_STABILITY_OPT_IN,
-    _OpenTelemetrySemanticConventionStability,
-)
 from opentelemetry.instrumentation.vertexai import VertexAIInstrumentor
-from opentelemetry.instrumentation.vertexai.utils import (
-    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
-)
 from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.util.genai import handler as genai_handler
+from opentelemetry.util.genai.environment_variables import (
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS,
+)
 
 # Backward compatibility for InMemoryLogExporter -> InMemoryLogRecordExporter rename
 try:
@@ -110,6 +109,26 @@ def fixture_meter_provider(metric_reader):
 
 
 @pytest.fixture(autouse=True)
+def environment():
+    """Reset TelemetryHandler singleton and evaluator config between tests."""
+    original_evals = os.environ.get(
+        "OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"
+    )
+    os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = "none"
+    genai_handler.TelemetryHandler._reset_for_testing()
+
+    yield
+
+    if original_evals is None:
+        os.environ.pop("OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS", None)
+    else:
+        os.environ["OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS"] = (
+            original_evals
+        )
+    genai_handler.TelemetryHandler._reset_for_testing()
+
+
+@pytest.fixture(autouse=True)
 def vertexai_init(vcr: VCR) -> None:
     # When not recording (in CI), don't do any auth. That prevents trying to read application
     # default credentials from the filesystem or metadata server and oauth token exchange. This
@@ -125,15 +144,15 @@ def vertexai_init(vcr: VCR) -> None:
 
 
 @pytest.fixture(scope="function")
-def instrument_no_content(
-    tracer_provider, logger_provider, meter_provider, request
-):
-    # Reset global state..
-    _OpenTelemetrySemanticConventionStability._initialized = False
-    os.environ.update({OTEL_SEMCONV_STABILITY_OPT_IN: "stable"})
+def instrument_no_content(tracer_provider, logger_provider, meter_provider):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "False"}
     )
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
+
+    genai_handler.TelemetryHandler._reset_for_testing()
 
     instrumentor = VertexAIInstrumentor()
     instrumentor.instrument(
@@ -144,100 +163,22 @@ def instrument_no_content(
 
     yield instrumentor
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
     if instrumentor.is_instrumented_by_opentelemetry:
         instrumentor.uninstrument()
 
 
 @pytest.fixture(scope="function")
-def instrument_no_content_with_experimental_semconvs(
-    tracer_provider, logger_provider, meter_provider, request
-):
-    # Reset global state..
-    _OpenTelemetrySemanticConventionStability._initialized = False
-    os.environ.update(
-        {OTEL_SEMCONV_STABILITY_OPT_IN: "gen_ai_latest_experimental"}
-    )
-    os.environ.update(
-        {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "NO_CONTENT"}
-    )
-
-    instrumentor = VertexAIInstrumentor()
-    instrumentor.instrument(
-        tracer_provider=tracer_provider,
-        logger_provider=logger_provider,
-        meter_provider=meter_provider,
-    )
-
-    yield instrumentor
-    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
-    if instrumentor.is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
-
-
-@pytest.fixture(scope="function")
-def instrument_with_experimental_semconvs(
-    tracer_provider, logger_provider, meter_provider
-):
-    # Reset global state..
-    _OpenTelemetrySemanticConventionStability._initialized = False
-    os.environ.update(
-        {OTEL_SEMCONV_STABILITY_OPT_IN: "gen_ai_latest_experimental"}
-    )
-    os.environ.update(
-        {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_AND_EVENT"}
-    )
-    instrumentor = VertexAIInstrumentor()
-    instrumentor.instrument(
-        tracer_provider=tracer_provider,
-        logger_provider=logger_provider,
-        meter_provider=meter_provider,
-    )
-
-    yield instrumentor
-    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
-    if instrumentor.is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
-
-
-@pytest.fixture(scope="function")
-def instrument_with_upload_hook(
-    tracer_provider, logger_provider, meter_provider
-):
-    # Reset global state..
-    _OpenTelemetrySemanticConventionStability._initialized = False
-    os.environ.update(
-        {
-            OTEL_SEMCONV_STABILITY_OPT_IN: "gen_ai_latest_experimental",
-            "OTEL_INSTRUMENTATION_GENAI_COMPLETION_HOOK": "upload",
-            "OTEL_INSTRUMENTATION_GENAI_UPLOAD_BASE_PATH": "memory://",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_AND_EVENT",
-        }
-    )
-    instrumentor = VertexAIInstrumentor()
-    instrumentor.instrument(
-        tracer_provider=tracer_provider,
-        logger_provider=logger_provider,
-        meter_provider=meter_provider,
-    )
-
-    yield instrumentor
-    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
-    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_COMPLETION_HOOK", None)
-    os.environ.pop("OTEL_INSTRUMENTATION_GENAI_UPLOAD_BASE_PATH", None)
-    if instrumentor.is_instrumented_by_opentelemetry:
-        instrumentor.uninstrument()
-
-
-@pytest.fixture(scope="function")
-def instrument_with_content(
-    tracer_provider, logger_provider, meter_provider, request
-):
-    # Reset global state..
-    _OpenTelemetrySemanticConventionStability._initialized = False
-    os.environ.update({OTEL_SEMCONV_STABILITY_OPT_IN: "stable"})
+def instrument_with_content(tracer_provider, logger_provider, meter_provider):
     os.environ.update(
         {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True"}
     )
+    os.environ.update(
+        {OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event"}
+    )
+
+    genai_handler.TelemetryHandler._reset_for_testing()
+
     instrumentor = VertexAIInstrumentor()
     instrumentor.instrument(
         tracer_provider=tracer_provider,
@@ -247,6 +188,36 @@ def instrument_with_content(
 
     yield instrumentor
     os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
+    if instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+
+
+@pytest.fixture(scope="function")
+def instrument_with_content_and_tool_defs(
+    tracer_provider, logger_provider, meter_provider
+):
+    os.environ.update(
+        {
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "True",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS: "True",
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event",
+        }
+    )
+
+    genai_handler.TelemetryHandler._reset_for_testing()
+
+    instrumentor = VertexAIInstrumentor()
+    instrumentor.instrument(
+        tracer_provider=tracer_provider,
+        logger_provider=logger_provider,
+        meter_provider=meter_provider,
+    )
+
+    yield instrumentor
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS, None)
+    os.environ.pop(OTEL_INSTRUMENTATION_GENAI_EMITTERS, None)
     if instrumentor.is_instrumented_by_opentelemetry:
         instrumentor.uninstrument()
 

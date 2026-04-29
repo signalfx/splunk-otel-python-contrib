@@ -1,7 +1,10 @@
+import json
+
 import pytest
 from tests.shared_test_utils import (
     ask_about_weather,
     ask_about_weather_function_response,
+    assert_handler_event,
 )
 
 from opentelemetry.instrumentation.vertexai import VertexAIInstrumentor
@@ -33,112 +36,98 @@ def test_function_call_choice(
     # Emits span
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 1
-    assert spans[0].name == "chat gemini-2.5-pro"
-    assert dict(spans[0].attributes) == {
-        "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gemini-2.5-pro",
-        "gen_ai.response.finish_reasons": ("stop",),
-        "gen_ai.response.model": "gemini-2.5-pro",
-        "gen_ai.system": "vertex_ai",
-        "gen_ai.usage.input_tokens": 74,
-        "gen_ai.usage.output_tokens": 16,
-        "server.address": "us-central1-aiplatform.googleapis.com",
-        "server.port": 443,
-    }
+    span = spans[0]
+    assert span.name == "chat gemini-2.5-pro"
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.operation.name"] == "chat"
+    assert attrs["gen_ai.request.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.response.finish_reasons"] == ("stop",)
+    assert attrs["gen_ai.response.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.provider.name"] == "vertex_ai"
+    assert attrs["gen_ai.usage.input_tokens"] == 74
+    assert attrs["gen_ai.usage.output_tokens"] == 16
+    assert attrs["server.address"] == "us-central1-aiplatform.googleapis.com"
+    assert attrs["server.port"] == 443
 
-    # Emits user and choice events
-    logs = log_exporter.get_finished_logs()
-    assert len(logs) == 2
-    user_log, choice_log = [log_data.log_record for log_data in logs]
-    assert user_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert user_log.event_name == "gen_ai.user.message"
-    assert user_log.body == {
-        "content": [
-            {"text": "Get weather details in New Delhi and San Francisco?"}
-        ],
-        "role": "user",
-    }
+    # Tool definitions are always emitted (independent of content capture)
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+    assert (
+        attrs["gen_ai.request.function.0.description"]
+        == "Get the current weather in a given location"
+    )
+    assert "gen_ai.request.function.0.parameters" in attrs
 
-    assert choice_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert choice_log.event_name == "gen_ai.choice"
-    assert choice_log.body == {
-        "finish_reason": "stop",
-        "index": 0,
-        "message": {
-            "content": [
+    # Content on span
+    assert "gen_ai.input.messages" in attrs
+    input_msgs = json.loads(attrs["gen_ai.input.messages"])
+    assert input_msgs == [
+        {
+            "role": "user",
+            "parts": [
                 {
-                    "function_call": {
-                        "args": {"location": "New Delhi"},
-                        "name": "get_current_weather",
-                    }
-                },
-                {
-                    "function_call": {
-                        "args": {"location": "San Francisco"},
-                        "name": "get_current_weather",
-                    }
-                },
+                    "type": "text",
+                    "content": "Get weather details in New Delhi and San Francisco?",
+                }
             ],
-            "role": "model",
-        },
-        "tool_calls": [
-            {
-                "function": {
-                    "arguments": {"location": "New Delhi"},
-                    "name": "get_current_weather",
-                },
-                "id": "get_current_weather_0",
-                "type": "function",
-            },
-            {
-                "function": {
-                    "arguments": {"location": "San Francisco"},
-                    "name": "get_current_weather",
-                },
-                "id": "get_current_weather_1",
-                "type": "function",
-            },
-        ],
+        }
+    ]
+
+    # Output messages on span — function_call parts now appear as ToolCall
+    assert "gen_ai.output.messages" in attrs
+    output_msgs = json.loads(attrs["gen_ai.output.messages"])
+    assert len(output_msgs) == 1
+    assert output_msgs[0]["role"] == "model"
+    assert output_msgs[0]["finish_reason"] == "stop"
+    assert len(output_msgs[0]["parts"]) == 2
+    assert output_msgs[0]["parts"][0]["type"] == "tool_call"
+    assert output_msgs[0]["parts"][0]["name"] == "get_current_weather"
+    assert output_msgs[0]["parts"][0]["arguments"] == {"location": "New Delhi"}
+    assert output_msgs[0]["parts"][1]["type"] == "tool_call"
+    assert output_msgs[0]["parts"][1]["name"] == "get_current_weather"
+    assert output_msgs[0]["parts"][1]["arguments"] == {
+        "location": "San Francisco"
     }
+
+    # Content events emitter emits a single event
+    logs = log_exporter.get_finished_logs()
+    assert len(logs) == 1
+    body = assert_handler_event(logs[0], span)
+    assert "gen_ai.input.messages" in body
+    assert "gen_ai.output.messages" in body
 
 
 @pytest.mark.vcr()
 def test_function_call_choice_no_content(
+    span_exporter: InMemorySpanExporter,
     log_exporter: InMemoryLogRecordExporter,
     instrument_no_content: VertexAIInstrumentor,
     generate_content: callable,
 ):
     ask_about_weather(generate_content)
 
-    # Emits user and choice events
-    logs = log_exporter.get_finished_logs()
-    assert len(logs) == 2
-    user_log, choice_log = [log_data.log_record for log_data in logs]
-    assert user_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert user_log.event_name == "gen_ai.user.message"
-    assert user_log.body == {
-        "role": "user",
-    }
+    # Emits span without content
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes)
+    assert attrs["gen_ai.operation.name"] == "chat"
+    assert attrs["gen_ai.request.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.response.finish_reasons"] == ("stop",)
+    assert attrs["gen_ai.provider.name"] == "vertex_ai"
 
-    assert choice_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert choice_log.event_name == "gen_ai.choice"
-    assert choice_log.body == {
-        "finish_reason": "stop",
-        "index": 0,
-        "message": {"role": "model"},
-        "tool_calls": [
-            {
-                "function": {"name": "get_current_weather"},
-                "id": "get_current_weather_0",
-                "type": "function",
-            },
-            {
-                "function": {"name": "get_current_weather"},
-                "id": "get_current_weather_1",
-                "type": "function",
-            },
-        ],
-    }
+    # Tool definitions are always emitted (independent of content capture)
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+    assert (
+        attrs["gen_ai.request.function.0.description"]
+        == "Get the current weather in a given location"
+    )
+    assert "gen_ai.request.function.0.parameters" in attrs
+
+    assert "gen_ai.input.messages" not in attrs
+    assert "gen_ai.output.messages" not in attrs
+
+    # No events emitted when content is disabled
+    logs = log_exporter.get_finished_logs()
+    assert len(logs) == 0
 
 
 @pytest.mark.vcr()
@@ -153,84 +142,71 @@ def test_tool_events(
     # Emits span
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 1
-    assert spans[0].name == "chat gemini-2.5-pro"
-    assert dict(spans[0].attributes) == {
-        "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gemini-2.5-pro",
-        "gen_ai.response.finish_reasons": ("stop",),
-        "gen_ai.response.model": "gemini-2.5-pro",
-        "gen_ai.system": "vertex_ai",
-        "gen_ai.usage.input_tokens": 128,
-        "gen_ai.usage.output_tokens": 26,
-        "server.address": "us-central1-aiplatform.googleapis.com",
-        "server.port": 443,
-    }
-    logs = log_exporter.get_finished_logs()
-    # Emits user, assistant, two tool, and choice events
-    assert len(logs) == 5
-    user_log, assistant_log, tool_log1, tool_log2, choice_log = [
-        log_data.log_record for log_data in logs
+    span = spans[0]
+    assert span.name == "chat gemini-2.5-pro"
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.operation.name"] == "chat"
+    assert attrs["gen_ai.request.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.response.finish_reasons"] == ("stop",)
+    assert attrs["gen_ai.response.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.provider.name"] == "vertex_ai"
+    assert attrs["gen_ai.usage.input_tokens"] == 128
+    assert attrs["gen_ai.usage.output_tokens"] == 26
+    assert attrs["server.address"] == "us-central1-aiplatform.googleapis.com"
+    assert attrs["server.port"] == 443
+
+    # Tool definitions are always emitted
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+    assert (
+        attrs["gen_ai.request.function.0.description"]
+        == "Get the current weather in a given location"
+    )
+    assert "gen_ai.request.function.0.parameters" in attrs
+
+    # Content on span: user text, model function_call, user tool responses, model text response
+    assert "gen_ai.input.messages" in attrs
+    input_msgs = json.loads(attrs["gen_ai.input.messages"])
+    assert len(input_msgs) == 3
+    # First message: user text
+    assert input_msgs[0]["role"] == "user"
+    assert input_msgs[0]["parts"] == [
+        {
+            "type": "text",
+            "content": "Get weather details in New Delhi and San Francisco?",
+        }
     ]
-    assert user_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert user_log.event_name == "gen_ai.user.message"
-    assert user_log.body == {
-        "content": [
-            {"text": "Get weather details in New Delhi and San Francisco?"}
-        ],
-        "role": "user",
+    # Second message: model with function_call parts now mapped to ToolCall
+    assert input_msgs[1]["role"] == "model"
+    assert len(input_msgs[1]["parts"]) == 2
+    assert input_msgs[1]["parts"][0]["type"] == "tool_call"
+    assert input_msgs[1]["parts"][0]["name"] == "get_current_weather"
+    assert input_msgs[1]["parts"][0]["arguments"] == {"location": "New Delhi"}
+    assert input_msgs[1]["parts"][1]["type"] == "tool_call"
+    assert input_msgs[1]["parts"][1]["name"] == "get_current_weather"
+    assert input_msgs[1]["parts"][1]["arguments"] == {
+        "location": "San Francisco"
     }
+    # Third message: user with tool call responses
+    assert input_msgs[2]["role"] == "user"
+    assert len(input_msgs[2]["parts"]) == 2
+    assert input_msgs[2]["parts"][0]["type"] == "tool_call_response"
+    assert input_msgs[2]["parts"][1]["type"] == "tool_call_response"
 
-    assert assistant_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert assistant_log.event_name == "gen_ai.assistant.message"
-    assert assistant_log.body == {
-        "role": "model",
-        "content": [
-            {
-                "function_call": {
-                    "name": "get_current_weather",
-                    "args": {"location": "New Delhi"},
-                }
-            },
-            {
-                "function_call": {
-                    "name": "get_current_weather",
-                    "args": {"location": "San Francisco"},
-                }
-            },
-        ],
-    }
+    # Output messages on span
+    assert "gen_ai.output.messages" in attrs
+    output_msgs = json.loads(attrs["gen_ai.output.messages"])
+    assert len(output_msgs) == 1
+    assert output_msgs[0]["role"] == "model"
+    assert output_msgs[0]["finish_reason"] == "stop"
+    assert len(output_msgs[0]["parts"]) == 1
+    assert output_msgs[0]["parts"][0]["type"] == "text"
 
-    assert tool_log1.attributes == {"gen_ai.system": "vertex_ai"}
-    assert tool_log1.event_name == "gen_ai.tool.message"
-
-    assert tool_log1.body == {
-        "role": "user",
-        "id": "get_current_weather_0",
-        "content": {"content": '{"temperature": 35, "unit": "C"}'},
-    }
-
-    assert tool_log2.attributes == {"gen_ai.system": "vertex_ai"}
-    assert tool_log2.event_name == "gen_ai.tool.message"
-    assert tool_log2.body == {
-        "role": "user",
-        "id": "get_current_weather_1",
-        "content": {"content": '{"temperature": 25, "unit": "C"}'},
-    }
-
-    assert choice_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert choice_log.event_name == "gen_ai.choice"
-    assert choice_log.body == {
-        "finish_reason": "stop",
-        "index": 0,
-        "message": {
-            "content": [
-                {
-                    "text": "The current temperature in New Delhi is 35°C, and in San Francisco, it is 25°C."
-                }
-            ],
-            "role": "model",
-        },
-    }
+    # Content events emitter emits a single event
+    logs = log_exporter.get_finished_logs()
+    assert len(logs) == 1
+    body = assert_handler_event(logs[0], span)
+    assert "gen_ai.input.messages" in body
+    assert "gen_ai.output.messages" in body
 
 
 @pytest.mark.vcr()
@@ -242,57 +218,78 @@ def test_tool_events_no_content(
 ):
     ask_about_weather_function_response(generate_content)
 
-    # Emits span
+    # Emits span without content
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 1
-    assert spans[0].name == "chat gemini-2.5-pro"
-    assert dict(spans[0].attributes) == {
-        "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gemini-2.5-pro",
-        "gen_ai.response.finish_reasons": ("stop",),
-        "gen_ai.response.model": "gemini-2.5-pro",
-        "gen_ai.system": "vertex_ai",
-        "gen_ai.usage.input_tokens": 128,
-        "gen_ai.usage.output_tokens": 22,
-        "server.address": "us-central1-aiplatform.googleapis.com",
-        "server.port": 443,
-    }
+    attrs = dict(spans[0].attributes)
+    assert attrs["gen_ai.operation.name"] == "chat"
+    assert attrs["gen_ai.request.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.response.finish_reasons"] == ("stop",)
+    assert attrs["gen_ai.response.model"] == "gemini-2.5-pro"
+    assert attrs["gen_ai.provider.name"] == "vertex_ai"
+    assert attrs["gen_ai.usage.input_tokens"] == 128
+    assert attrs["gen_ai.usage.output_tokens"] == 22
+    assert attrs["server.address"] == "us-central1-aiplatform.googleapis.com"
+    assert attrs["server.port"] == 443
+
+    # Tool definitions are always emitted (independent of content capture)
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+    assert (
+        attrs["gen_ai.request.function.0.description"]
+        == "Get the current weather in a given location"
+    )
+    assert "gen_ai.request.function.0.parameters" in attrs
+
+    # finish_reason stays "stop" because the *response* is a final text
+    # answer (no function_call parts in the response candidates)
+    assert "gen_ai.input.messages" not in attrs
+    assert "gen_ai.output.messages" not in attrs
+
+    # No events emitted when content is disabled
     logs = log_exporter.get_finished_logs()
-    # Emits user, assistant, two tool, and choice events
-    assert len(logs) == 5
-    user_log, assistant_log, tool_log1, tool_log2, choice_log = [
-        log_data.log_record for log_data in logs
-    ]
-    assert user_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert user_log.event_name == "gen_ai.user.message"
-    assert user_log.body == {"role": "user"}
+    assert len(logs) == 0
 
-    assert assistant_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert assistant_log.event_name == "gen_ai.assistant.message"
-    assert assistant_log.body == {"role": "model"}
 
-    assert tool_log1.attributes == {
-        "gen_ai.system": "vertex_ai",
-    }
-    assert tool_log1.event_name == "gen_ai.tool.message"
-    assert tool_log1.body == {
-        "role": "user",
-        "id": "get_current_weather_0",
-    }
-    assert tool_log1.event_name == "gen_ai.tool.message"
+@pytest.mark.vcr()
+def test_tool_definitions_emitted_when_opted_in(
+    span_exporter: InMemorySpanExporter,
+    log_exporter: InMemoryLogRecordExporter,
+    instrument_with_content_and_tool_defs: VertexAIInstrumentor,
+    generate_content: callable,
+):
+    ask_about_weather(generate_content)
 
-    assert tool_log2.attributes == {"gen_ai.system": "vertex_ai"}
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes)
 
-    assert tool_log2.body == {
-        "role": "user",
-        "id": "get_current_weather_1",
-    }
-    assert tool_log2.event_name == "gen_ai.tool.message"
+    # request_functions always emitted
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
 
-    assert choice_log.attributes == {"gen_ai.system": "vertex_ai"}
-    assert choice_log.event_name == "gen_ai.choice"
-    assert choice_log.body == {
-        "finish_reason": "stop",
-        "index": 0,
-        "message": {"role": "model"},
-    }
+    # tool_definitions emitted only when CAPTURE_TOOL_DEFINITIONS is set
+    assert "gen_ai.tool.definitions" in attrs
+    tool_defs = json.loads(attrs["gen_ai.tool.definitions"])
+    assert isinstance(tool_defs, list)
+    assert len(tool_defs) == 1
+    func_decls = tool_defs[0]["functionDeclarations"]
+    assert func_decls[0]["name"] == "get_current_weather"
+
+
+@pytest.mark.vcr()
+def test_tool_definitions_not_emitted_without_opt_in(
+    span_exporter: InMemorySpanExporter,
+    log_exporter: InMemoryLogRecordExporter,
+    instrument_with_content: VertexAIInstrumentor,
+    generate_content: callable,
+):
+    ask_about_weather(generate_content)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes)
+
+    # request_functions always emitted
+    assert attrs["gen_ai.request.function.0.name"] == "get_current_weather"
+
+    # tool_definitions NOT emitted when CAPTURE_TOOL_DEFINITIONS is not set
+    assert "gen_ai.tool.definitions" not in attrs
