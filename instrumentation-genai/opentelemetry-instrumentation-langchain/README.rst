@@ -64,6 +64,23 @@ app with the OpenTelemetry LangChain Instrumentor enabled::
     response = llm.invoke(messages)
     print(response.content)
 
+Embedding Support
+^^^^^^^^^^^^^^^^^
+
+The instrumentation wraps ``embed_documents()`` and ``embed_query()`` methods for 
+embedding classes (e.g., ``OpenAIEmbeddings``, ``AzureOpenAIEmbeddings``).
+
+**Token Counting**: For token usage metrics, the instrumentation uses ``tiktoken`` 
+to count input tokens client-side. This is necessary because:
+
+- LangChain's embedding methods only return embedding vectors (``list[list[float]]``)
+- The API's ``usage`` response is discarded internally by LangChain
+- LangChain has no embedding callbacks (unlike LLM callbacks)
+
+``tiktoken`` is already a required dependency of ``langchain-openai``, so no additional 
+installation is needed when using OpenAI embeddings. If ``tiktoken`` is unavailable 
+(e.g., for non-OpenAI providers), token metrics are gracefully omitted.
+
 Interrupt/Resume Support
 ^^^^^^^^^^^^^^^^^^^^^^^^
 

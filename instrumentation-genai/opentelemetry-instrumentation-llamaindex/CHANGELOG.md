@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Streaming TTFC (Time To First Chunk) support for LLM spans:
+  - `gen_ai.response.time_to_first_chunk` attribute measuring latency to first streaming token
+  - `gen_ai.request.stream` flag (true when streaming detected, false otherwise)
+- TTFC tracking via LlamaIndex event system (`event_handler.py`):
+  - `TTFCTracker` class for recording start times and calculating TTFC
+  - `LlamaindexEventHandler` listening to `LLMChatStartEvent`/`LLMChatInProgressEvent` for per-chunk timing
+  - ContextVar correlation bridging callback handler (event_id) with event handler (span_id)
+
+### Added
 - LLM span attributes for async agent flows:
   - `gen_ai.response.model` extracted from raw LLM response with fallback to request model
   - `gen_ai.response.finish_reasons` from response choices

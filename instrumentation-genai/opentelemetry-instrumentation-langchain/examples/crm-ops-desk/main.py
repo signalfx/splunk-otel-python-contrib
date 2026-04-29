@@ -142,7 +142,12 @@ async def run_scenario(
         ) as root_span:
             result = await graph.ainvoke(
                 invoke_input,
-                config={"metadata": {"agent_name": "CRM Ops Desk"}},
+                config={
+                    "metadata": {
+                        "agent_name": "CRM Ops Desk",
+                        "workflow_name": "CRM Ops Desk",
+                    }
+                },
             )
             resolution = result.get("action_output", {}).get("resolution", "unknown")
             status_code = 200 if result.get("status") != "error" else 500
@@ -152,7 +157,12 @@ async def run_scenario(
     else:
         result = await graph.ainvoke(
             invoke_input,
-            config={"metadata": {"agent_name": "CRM Ops Desk"}},
+            config={
+                "metadata": {
+                    "agent_name": "CRM Ops Desk",
+                    "workflow_name": "CRM Ops Desk",
+                }
+            },
         )
 
     # Display result

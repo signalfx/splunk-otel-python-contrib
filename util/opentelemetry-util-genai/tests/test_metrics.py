@@ -29,6 +29,7 @@ from opentelemetry.util.genai.handler import (
 )
 from opentelemetry.util.genai.types import (
     AgentInvocation,
+    EmbeddingInvocation,
     Error,
     InputMessage,
     LLMInvocation,
@@ -781,6 +782,123 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         self.assertNotIn("mcp.client.session.duration", names)
         self.assertNotIn("mcp.server.session.duration", names)
         self.assertIn("gen_ai.agent.duration", names)
+
+    # ---- Embedding token metrics tests ----
+
+    def _invoke_embedding(
+        self,
+        generator: str,
+        *,
+        input_tokens: int | None = 10,
+    ) -> EmbeddingInvocation:
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: generator,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            _OpenTelemetrySemanticConventionStability._initialized = False
+            _OpenTelemetrySemanticConventionStability._initialize()
+            if hasattr(get_telemetry_handler, "_default_handler"):
+                delattr(get_telemetry_handler, "_default_handler")
+            handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            emb = EmbeddingInvocation(
+                request_model="text-embedding-ada-002",
+                input_texts=["hello world"],
+                provider="openai",
+            )
+            handler.start_embedding(emb)
+            time.sleep(0.01)  # ensure measurable duration
+            emb.input_tokens = input_tokens
+            handler.stop_embedding(emb)
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            time.sleep(0.005)
+            try:
+                self.metric_reader.collect()
+            except Exception:
+                pass
+        return emb
+
+    def _invoke_embedding_failure(
+        self,
+        generator: str,
+        *,
+        input_tokens: int | None = 10,
+        error_type: type[BaseException] = RuntimeError,
+    ) -> EmbeddingInvocation:
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: generator,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            _OpenTelemetrySemanticConventionStability._initialized = False
+            _OpenTelemetrySemanticConventionStability._initialize()
+            if hasattr(get_telemetry_handler, "_default_handler"):
+                delattr(get_telemetry_handler, "_default_handler")
+            handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            emb = EmbeddingInvocation(
+                request_model="text-embedding-ada-002",
+                input_texts=["hello world"],
+                provider="openai",
+            )
+            handler.start_embedding(emb)
+            time.sleep(0.01)
+            emb.input_tokens = input_tokens
+            handler.fail_embedding(
+                emb,
+                Error(message="boom", type=error_type),
+            )
+            try:
+                self.meter_provider.force_flush()
+            except Exception:
+                pass
+            time.sleep(0.005)
+            try:
+                self.metric_reader.collect()
+            except Exception:
+                pass
+        return emb
+
+    def test_embedding_emits_input_token_metric(self):
+        """Embedding should emit token.usage with operation_name=embeddings and only input token type."""
+        self._invoke_embedding("span_metric")
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+        self.assertIn("gen_ai.client.token.usage", names)
+        self.assertIn("gen_ai.client.operation.duration", names)
+        # Collect all embedding token datapoints
+        token_types = []
+        for metric in metrics_list:
+            if metric.name != "gen_ai.client.token.usage":
+                continue
+            data = getattr(metric, "data", None)
+            if not data:
+                continue
+            for dp in getattr(data, "data_points", []) or []:
+                attrs = getattr(dp, "attributes", {}) or {}
+                self.assertEqual(
+                    attrs.get("gen_ai.operation.name"),
+                    "embeddings",
+                )
+                token_types.append(attrs.get("gen_ai.token.type"))
+        # Only input tokens, no output/completion
+        self.assertEqual(token_types, ["input"])
+
+    def test_embedding_failure_emits_token_metric(self):
+        """Embedding failure path should also emit token usage metric."""
+        self._invoke_embedding_failure("span_metric", input_tokens=8)
+        metrics_list = self._collect_metrics()
+        names = {m.name for m in metrics_list}
+        self.assertIn("gen_ai.client.token.usage", names)
+        self.assertIn("gen_ai.client.operation.duration", names)
 
 
 if __name__ == "__main__":  # pragma: no cover

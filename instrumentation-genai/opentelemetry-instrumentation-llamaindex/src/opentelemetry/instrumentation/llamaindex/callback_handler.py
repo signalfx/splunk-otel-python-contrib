@@ -23,6 +23,7 @@ from opentelemetry.util.genai.utils import (
 
 from .invocation_manager import _InvocationManager
 from .vendor_detection import detect_vendor_from_class
+from .event_handler import set_current_llm_event_id
 
 
 def _safe_str(value: Any) -> str:
@@ -313,6 +314,9 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         if not self._handler or not payload:
             return
 
+        # Set current event_id for TTFC correlation with EventHandler
+        set_current_llm_event_id(event_id)
+
         # Extract model information and parameters from payload
         serialized = payload.get("serialized", {})
         model_name = (
@@ -592,6 +596,21 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
         # This works even when response is None (e.g., LLM call errored)
         if not llm_inv.response_model_name and llm_inv.request_model:
             llm_inv.response_model_name = _safe_str(llm_inv.request_model)
+
+        # Get TTFC from EventHandler via InvocationManager
+        is_streaming = self._invocation_manager.is_streaming_event(event_id)
+        if is_streaming:
+            llm_inv.request_stream = True
+            ttfc = self._invocation_manager.get_ttfc_for_event(event_id)
+            llm_inv.attributes["gen_ai.response.time_to_first_chunk"] = ttfc
+        else:
+            # Explicitly mark as non-streaming when no streaming was detected
+            if llm_inv.request_stream is None:
+                llm_inv.request_stream = False
+        self._invocation_manager.cleanup_event_tracking(event_id)
+
+        # Clear current event_id
+        set_current_llm_event_id(None)
 
         # Stop the LLM invocation
         llm_inv = self._handler.stop_llm(llm_inv)
