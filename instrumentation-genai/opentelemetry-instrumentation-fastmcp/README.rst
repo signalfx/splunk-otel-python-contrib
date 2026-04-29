@@ -90,19 +90,26 @@ Server-side (v0.1.x — FastMCP 2.x):
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - FastMCP server initialization
-- Tool execution via ``ToolManager.call_tool``
+- Tool execution via ``FastMCP.call_tool`` / ``ToolManager.call_tool``
+- Resource reads via ``FastMCP.read_resource``
+- Prompt rendering via ``FastMCP.render_prompt`` (MCP ``prompts/get``)
 
 Client-side:
 ~~~~~~~~~~~~
 
 - FastMCP client session lifecycle
-- Tool calls and listings
+- Tool calls (``Client.call_tool``)
+- Tool listings (``Client.list_tools``)
+- Resource reads (``Client.read_resource``)
+- Prompt retrieval (``Client.get_prompt``)
 
 Transport-level:
 ~~~~~~~~~~~~~~~~
 
 - Automatic trace context propagation via ``_meta`` field
 - Works for all MCP transports: stdio, SSE, streamable-http
+- HTTP transport metadata extraction (server address/port, client address/port,
+  HTTP version, session ID)
 
 Trace Context Propagation
 -------------------------
@@ -175,32 +182,90 @@ running against ``mcp >= 2.x``, allowing a wider version range.
 Telemetry
 ---------
 
+Spans follow the `OTel MCP semantic conventions
+<https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md>`_.
+
 Spans:
 ~~~~~~
 
-- ``mcp.server`` - Parent span for server operations
-- ``{tool_name}.tool`` - Child span for each tool execution
-- ``mcp.client`` - Parent span for client session
+- ``tools/call {tool_name}`` — CLIENT or SERVER span per MCP call
+- ``tools/list`` — CLIENT or SERVER span for tool listing
+- ``resources/read {uri}`` — CLIENT or SERVER span for resource reads
+- ``prompts/get {name}`` — CLIENT or SERVER span for prompt retrieval
+- ``mcp.client`` — Agent span wrapping the client session
+
+Span attributes (per semconv):
+
++----------------------------------+-----------+-------+--------+
+| Attribute                        | Req Level | Client| Server |
++==================================+===========+=======+========+
+| ``mcp.method.name``              | Required  | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``error.type``                   | Cond. Req | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``gen_ai.tool.name``             | Cond. Req | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``gen_ai.prompt.name``           | Cond. Req | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``mcp.resource.uri``             | Cond. Req | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``jsonrpc.request.id``           | Cond. Req | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``rpc.response.status_code``     | Cond. Req | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``network.transport``            | Rec       | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``network.protocol.name``        | Rec (tcp) | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``network.protocol.version``     | Rec (tcp) | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``server.address``               | Rec (tcp) | ✓     |        |
++----------------------------------+-----------+-------+--------+
+| ``server.port``                  | Rec (tcp) | ✓     |        |
++----------------------------------+-----------+-------+--------+
+| ``client.address``               | Rec (tcp) |       | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``client.port``                  | Rec (tcp) |       | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``mcp.session.id``               | Rec       | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+| ``mcp.protocol.version``         | Rec       | ✓     | ✓      |
++----------------------------------+-----------+-------+--------+
+
+Transport recording reference:
+
++-------------------+---------------------+-------------------------+----------------------------+
+| MCP transport     | ``network.transport``| ``network.protocol.name``| ``network.protocol.version``|
++===================+=====================+=========================+============================+
+| stdio             | ``pipe``            | *(not set)*             | *(not set)*                |
++-------------------+---------------------+-------------------------+----------------------------+
+| Streamable HTTP   | ``tcp``             | ``http``                | ``2`` or ``1.1``           |
++-------------------+---------------------+-------------------------+----------------------------+
+| HTTP with SSE     | ``tcp``             | ``http``                | ``1.1`` or ``2``           |
++-------------------+---------------------+-------------------------+----------------------------+
 
 Metrics:
 ~~~~~~~~
 
-- ``gen_ai.mcp.tool.duration`` - Duration of tool executions (histogram)
+- ``mcp.client.operation.duration`` — Client-side MCP operation duration (histogram)
+- ``mcp.server.operation.duration`` — Server-side MCP operation duration (histogram)
+- ``mcp.tool.output.size`` — Tool output size in bytes (histogram)
+- ``gen_ai.client.operation.duration`` — Generic GenAI duration for ``MCPToolCall`` (histogram)
 
 Events:
 ~~~~~~~
 
 When content capture is enabled:
 
-- ``mcp.tool.input`` - Tool arguments
-- ``mcp.tool.output`` - Tool results
+- ``gen_ai.tool.call.arguments`` — Tool arguments (span attribute)
+- ``gen_ai.tool.call.result`` — Tool results (span attribute)
 
 
 References
 ----------
 
-- `FastMCP 3.x <https://github.com/gofastmcp/fastmcp>`_ (>= 3.0.0)
-- `FastMCP 2.x <https://github.com/jlowin/fastmcp>`_ (<= 2.14.7)
+- `OTel MCP Semantic Conventions <https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/mcp.md>`_
+- `FastMCP <https://github.com/jlowin/fastmcp>`_
 - `Model Context Protocol <https://modelcontextprotocol.io/>`_
 - `OpenTelemetry GenAI MCP Semantic Conventions <https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/>`_
 - `OpenTelemetry Project <https://opentelemetry.io/>`_

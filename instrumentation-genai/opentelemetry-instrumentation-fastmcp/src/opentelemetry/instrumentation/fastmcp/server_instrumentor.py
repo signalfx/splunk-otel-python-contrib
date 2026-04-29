@@ -23,7 +23,6 @@ from wrapt import register_post_import_hook, wrap_function_wrapper
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
-    AgentInvocation,
     Error,
     MCPOperation,
     MCPToolCall,
@@ -59,15 +58,55 @@ def _enrich_from_request_context(op: MCPOperation) -> None:
         op.network_transport = ctx.network_transport
 
 
+def _has_native_telemetry() -> bool:
+    """Return True if FastMCP ships its own ``server_span`` tracing.
+
+    FastMCP >= 3.x added ``fastmcp.server.telemetry.server_span`` which
+    already creates SERVER spans for ``call_tool``, ``read_resource``, and
+    ``render_prompt``.  When present we skip our own server-side spans to
+    avoid duplicate instrumentation.
+    """
+    try:
+        from fastmcp.server.telemetry import server_span  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _enrich_from_request_context(op: MCPOperation) -> None:
+    """Copy transport-layer metadata from the ContextVar into an operation."""
+    ctx = get_mcp_request_context()
+    if ctx is None:
+        return
+    if ctx.jsonrpc_request_id and op.jsonrpc_request_id is None:
+        op.jsonrpc_request_id = ctx.jsonrpc_request_id
+    if ctx.network_transport and op.network_transport is None:
+        op.network_transport = ctx.network_transport
+    if ctx.network_protocol_name and op.network_protocol_name is None:
+        op.network_protocol_name = ctx.network_protocol_name
+    if ctx.network_protocol_version and op.network_protocol_version is None:
+        op.network_protocol_version = ctx.network_protocol_version
+    if ctx.client_address and op.client_address is None:
+        op.client_address = ctx.client_address
+    if ctx.client_port and op.client_port is None:
+        op.client_port = ctx.client_port
+    if ctx.mcp_session_id and op.mcp_session_id is None:
+        op.mcp_session_id = ctx.mcp_session_id
+
+
 class ServerInstrumentor:
     """Handles FastMCP 3.x server-side instrumentation.
 
     Instruments:
     - FastMCP.__init__: Capture server name for context
-    - Server.run: Track server session lifecycle (mcp.server.session.duration)
-    - FastMCP.call_tool: Trace tool executions
+    - FastMCP.call_tool / ToolManager.call_tool: Trace tool executions
     - FastMCP.read_resource: Trace resource reads
-    - FastMCP.render_prompt: Trace prompt rendering
+    - FastMCP.render_prompt: Trace prompt rendering (the MCP ``prompts/get``
+      handler; ``get_prompt`` is only the internal lookup)
+
+    When FastMCP >= 3.x ships its own ``server_span`` telemetry, our server
+    wrappers detect this and skip creating duplicate SDOT spans.
     """
 
     def __init__(self, telemetry_handler: TelemetryHandler):
@@ -86,7 +125,14 @@ class ServerInstrumentor:
             "fastmcp",
         )
 
-        # Instrument Server.run to track server session lifecycle
+        register_post_import_hook(
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.call_tool",
+                self._tool_call_wrapper(),
+            ),
+            "fastmcp.server.server",
+        )
         register_post_import_hook(
             lambda _: wrap_function_wrapper(
                 "mcp.server.lowlevel.server",
@@ -124,6 +170,40 @@ class ServerInstrumentor:
             "fastmcp.server.server",
         )
 
+        register_post_import_hook(
+            lambda _: wrap_function_wrapper(
+                "fastmcp.server.server",
+                "FastMCP.read_resource",
+                self._read_resource_wrapper(),
+            ),
+            "fastmcp.server.server",
+        )
+
+        # FastMCP 3.x uses render_prompt as the MCP prompts/get handler;
+        # FastMCP 2.x used get_prompt directly.  Hook both with graceful
+        # failure so the instrumentor works across major versions.
+        prompt_wrapper = self._render_prompt_wrapper()
+        register_post_import_hook(
+            lambda _: self._try_wrap(
+                "fastmcp.server.server", "FastMCP.render_prompt", prompt_wrapper
+            ),
+            "fastmcp.server.server",
+        )
+        register_post_import_hook(
+            lambda _: self._try_wrap(
+                "fastmcp.server.server", "FastMCP.get_prompt", prompt_wrapper
+            ),
+            "fastmcp.server.server",
+        )
+
+    @staticmethod
+    def _try_wrap(module: str, name: str, wrapper) -> None:
+        """Attempt to wrap a target; silently skip if it doesn't exist."""
+        try:
+            wrap_function_wrapper(module, name, wrapper)
+        except (ImportError, AttributeError):
+            _LOGGER.debug("Skipping wrap %s.%s (not available)", module, name)
+
     def uninstrument(self):
         """Remove FastMCP server-side instrumentation.
 
@@ -157,42 +237,6 @@ class ServerInstrumentor:
 
         return traced_init
 
-    def _server_run_wrapper(self):
-        """Wrapper for mcp.server.lowlevel.Server.run to track server session.
-
-        Creates an AgentInvocation(agent_type="mcp_server") that spans the
-        entire Server.run() lifetime, enabling mcp.server.session.duration
-        metric recording via MetricsEmitter.
-        """
-        instrumentor = self
-        handler = self._handler
-
-        async def traced_server_run(wrapped, instance, args, kwargs):
-            server_name = instrumentor._server_name or "mcp_server"
-            session = AgentInvocation(
-                name=f"mcp.server.{server_name}",
-                agent_type="mcp_server",
-                framework="fastmcp",
-                system="mcp",
-            )
-            session.attributes["gen_ai.operation.name"] = "mcp.server_session"
-            session.attributes["network.transport"] = "pipe"  # stdio = pipe
-
-            handler.start_agent(session)
-            try:
-                result = await wrapped(*args, **kwargs)
-                handler.stop_agent(session)
-                return result
-            except Exception as e:
-                session.attributes["error.type"] = type(e).__qualname__
-                handler.fail_agent(
-                    session,
-                    Error(type=type(e), message=str(e)),
-                )
-                raise
-
-        return traced_server_run
-
     # ------------------------------------------------------------------
     # tools/call
     # ------------------------------------------------------------------
@@ -202,7 +246,7 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_tool_call(wrapped, instance, args, kwargs):
-            if _IN_TOOL_CALL.get():
+            if _has_native_telemetry():
                 return await wrapped(*args, **kwargs)
 
             tool_name, tool_arguments = extract_tool_info(args, kwargs)
@@ -228,6 +272,8 @@ class ServerInstrumentor:
             try:
                 result = await wrapped(*args, **kwargs)
 
+                tool_call.duration_s = time.time() - start_time
+
                 if result:
                     try:
                         output_content = extract_result_content(result)
@@ -250,6 +296,7 @@ class ServerInstrumentor:
                 return result
 
             except Exception as e:
+                tool_call.duration_s = time.time() - start_time
                 tool_call.is_error = True
                 tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
@@ -268,6 +315,9 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_read_resource(wrapped, instance, args, kwargs):
+            if _has_native_telemetry():
+                return await wrapped(*args, **kwargs)
+
             uri = str(args[0]) if args else str(kwargs.get("uri", ""))
             transport = detect_transport(instance)
 
@@ -285,12 +335,16 @@ class ServerInstrumentor:
 
             handler.start_mcp_operation(op)
 
+            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
+                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
+                op.duration_s = time.time() - start_time
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
@@ -311,6 +365,9 @@ class ServerInstrumentor:
         handler = self._handler
 
         async def traced_render_prompt(wrapped, instance, args, kwargs):
+            if _has_native_telemetry():
+                return await wrapped(*args, **kwargs)
+
             prompt_name = str(args[0]) if args else str(kwargs.get("name", ""))
             transport = detect_transport(instance)
 
@@ -328,12 +385,16 @@ class ServerInstrumentor:
 
             handler.start_mcp_operation(op)
 
+            start_time = time.time()
             try:
                 result = await wrapped(*args, **kwargs)
+                op.duration_s = time.time() - start_time
                 handler.stop_mcp_operation(op)
                 return result
             except Exception as e:
+                op.duration_s = time.time() - start_time
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 

@@ -147,12 +147,57 @@ class MetricsEmitter(EmitterMeta):
             return
         if isinstance(obj, MCPOperation):
             self._record_mcp_operation_metrics(obj)
-            if isinstance(obj, MCPToolCall) and obj.is_client:
-                self._record_execute_tool_metrics(obj)
+            if isinstance(obj, MCPToolCall):
+                metric_attrs = _get_metric_attributes(
+                    obj.name,
+                    None,
+                    GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+                    obj.provider,
+                    obj.framework,
+                )
+                if obj.agent_name:
+                    metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
+                if obj.agent_id:
+                    metric_attrs[GenAI.GEN_AI_AGENT_ID] = obj.agent_id
+                metric_attrs.update(get_context_metric_attributes(obj))
+                duration = obj.duration_s
+                if duration is None and obj.end_time is not None:
+                    duration = obj.end_time - obj.start_time
+                if duration is not None:
+                    context = None
+                    span = getattr(obj, "span", None)
+                    if span is not None:
+                        try:
+                            context = trace.set_span_in_context(span)
+                        except (TypeError, ValueError, AttributeError):
+                            context = None
+                    self._duration_histogram.record(
+                        duration, attributes=metric_attrs, context=context
+                    )
             return
 
         if isinstance(obj, ToolCall):
-            self._record_execute_tool_metrics(obj)
+            tool_invocation = obj
+            metric_attrs = _get_metric_attributes(
+                tool_invocation.name,
+                None,
+                GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
+                tool_invocation.provider,
+                tool_invocation.framework,
+            )
+            if tool_invocation.agent_name:
+                metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
+                    tool_invocation.agent_name
+                )
+            if tool_invocation.agent_id:
+                metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
+            metric_attrs.update(get_context_metric_attributes(tool_invocation))
+            _record_duration(
+                self._duration_histogram,
+                tool_invocation,
+                metric_attrs,
+                span=getattr(tool_invocation, "span", None),
+            )
 
         if isinstance(obj, EmbeddingInvocation):
             embedding_invocation = obj
@@ -238,18 +283,17 @@ class MetricsEmitter(EmitterMeta):
 
         if isinstance(obj, MCPOperation):
             obj.is_error = True
-            if getattr(error, "type", None) is not None:
-                obj.mcp_error_type = error.type.__qualname__
+            if not obj.error_type and getattr(error, "type", None) is not None:
+                obj.error_type = error.type.__qualname__
             self._record_mcp_operation_metrics(obj)
-            if isinstance(obj, MCPToolCall) and obj.is_client:
+            if isinstance(obj, MCPToolCall):
                 metric_attrs = _get_metric_attributes(
-                    None,
+                    obj.name,
                     None,
                     GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
                     obj.provider,
                     obj.framework,
                 )
-                metric_attrs[GenAI.GEN_AI_TOOL_NAME] = obj.name
                 if obj.agent_name:
                     metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
                 if obj.agent_id:
@@ -284,7 +328,6 @@ class MetricsEmitter(EmitterMeta):
                 tool_invocation.provider,
                 tool_invocation.framework,
             )
-            metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool_invocation.name
             if tool_invocation.agent_name:
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     tool_invocation.agent_name
@@ -521,28 +564,6 @@ class MetricsEmitter(EmitterMeta):
             duration, attributes=metric_attrs, context=context
         )
 
-    def _record_execute_tool_metrics(self, tool: ToolCall) -> None:
-        """Record ``gen_ai.client.operation.duration`` for an execute_tool."""
-        metric_attrs = _get_metric_attributes(
-            None,
-            None,
-            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
-            tool.provider,
-            tool.framework,
-        )
-        metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool.name
-        if tool.agent_name:
-            metric_attrs[GenAI.GEN_AI_AGENT_NAME] = tool.agent_name
-        if tool.agent_id:
-            metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool.agent_id
-        metric_attrs.update(get_context_metric_attributes(tool))
-        _record_duration(
-            self._duration_histogram,
-            tool,
-            metric_attrs,
-            span=getattr(tool, "span", None),
-        )
-
     def _record_mcp_operation_metrics(self, op: MCPOperation) -> None:
         """Record MCP-specific metrics for any MCP operation.
 
@@ -566,12 +587,25 @@ class MetricsEmitter(EmitterMeta):
                     GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value
                 )
 
+        if op.gen_ai_prompt_name:
+            mcp_attrs["gen_ai.prompt.name"] = op.gen_ai_prompt_name
         if op.network_transport:
             mcp_attrs["network.transport"] = op.network_transport
+        if op.network_protocol_name:
+            mcp_attrs["network.protocol.name"] = op.network_protocol_name
+        if op.network_protocol_version:
+            mcp_attrs["network.protocol.version"] = op.network_protocol_version
         if op.mcp_protocol_version:
             mcp_attrs["mcp.protocol.version"] = op.mcp_protocol_version
-        if op.is_error and op.mcp_error_type:
-            mcp_attrs["error.type"] = op.mcp_error_type
+        if op.rpc_response_status_code:
+            mcp_attrs["rpc.response.status_code"] = op.rpc_response_status_code
+        if op.is_client:
+            if op.server_address:
+                mcp_attrs["server.address"] = op.server_address
+            if op.server_port:
+                mcp_attrs["server.port"] = op.server_port
+        if op.is_error and op.error_type:
+            mcp_attrs["error.type"] = op.error_type
         elif op.is_error:
             mcp_attrs["error.type"] = "operation_error"
 
