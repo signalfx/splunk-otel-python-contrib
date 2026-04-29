@@ -32,6 +32,7 @@ opentelemetry-exporter-otlp-proto-grpc==1.38.0
 opentelemetry-exporter-otlp-proto-common==1.38.0
 opentelemetry-proto==1.38.0
 opentelemetry-instrumentation==0.59b0
+opentelemetry-distro==0.59b0
 
 # DeepEval dependency for opentelemetry-util-genai-evals-deepeval
 deepeval>=3.3.9,<3.8.0

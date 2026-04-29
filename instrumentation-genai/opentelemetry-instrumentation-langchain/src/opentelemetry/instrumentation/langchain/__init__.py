@@ -173,6 +173,28 @@ class LangchainInstrumentor(BaseInstrumentor):
             #     wrapper=openai_tracing_wrapper,
             # )
 
+    def _count_tokens(self, texts: list[str], model: str) -> int | None:
+        """Count tokens using tiktoken. Returns None if tiktoken is unavailable."""
+        try:
+            import tiktoken
+        except ImportError:
+            return None
+
+        try:
+            # Try to get encoding for the specific model
+            try:
+                encoding = tiktoken.encoding_for_model(model)
+            except KeyError:
+                # Fall back to cl100k_base (used by text-embedding-ada-002 and newer)
+                encoding = tiktoken.get_encoding("cl100k_base")
+
+            total_tokens = 0
+            for text in texts:
+                total_tokens += len(encoding.encode(text))
+            return total_tokens
+        except Exception:
+            return None
+
     def _wrap_embedding_functions(self):
         """Wrap embedding methods for telemetry capture."""
 
@@ -206,12 +228,19 @@ class LangchainInstrumentor(BaseInstrumentor):
             elif "Ollama" in class_name:
                 provider = "ollama"
 
+            # Normalize input texts
+            input_texts = texts if isinstance(texts, list) else [texts]
+
+            # Count input tokens using tiktoken
+            input_tokens = self._count_tokens(input_texts, request_model)
+
             # Create embedding invocation
             embedding = UtilEmbeddingInvocation(
                 operation_name="embedding",
                 request_model=request_model,
-                input_texts=texts if isinstance(texts, list) else [texts],
+                input_texts=input_texts,
                 provider=provider,
+                input_tokens=input_tokens,
                 attributes={"framework": "langchain"},
             )
 
