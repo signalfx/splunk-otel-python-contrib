@@ -1,0 +1,133 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crm-galileo
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crm-demo-config
+  namespace: crm-galileo
+data:
+  OPENAI_BASE_URL: "https://<your-resource>.openai.azure.com/openai/v1/"
+  OPENAI_MODEL: "gpt-4o-mini"
+  AZURE_OPENAI_ENDPOINT: "https://<your-resource>.cognitiveservices.azure.com/"
+  AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
+  AZURE_EMBEDDING_DEPLOYMENT: "text-embedding-3-large"
+  AZURE_EMBEDDING_DIMENSIONS: "1536"
+
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "DELTA"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_AND_EVENT"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event,splunk"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crm-demo-secrets
+  namespace: crm-galileo
+type: Opaque
+stringData:
+  OPENAI_API_KEY: "<your-azure-openai-api-key>"
+  AZURE_OPENAI_API_KEY: "<your-azure-openai-api-key>"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crm-demo-single
+  namespace: crm-galileo
+  labels:
+    app: crm-demo
+    component: single
+spec:
+  schedule: "0 */4 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+
+  jobTemplate:
+    metadata:
+      labels:
+        app: crm-demo
+        component: single-job
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+
+      template:
+        metadata:
+          labels:
+            app: crm-demo
+            component: single-pod
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+
+          containers:
+          - name: crm-demo
+            image: <your-registry>/crm-demo:<tag>
+            imagePullPolicy: Always
+
+            envFrom:
+            - configMapRef:
+                name: crm-demo-config
+
+            env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: crm-demo-secrets
+                  key: OPENAI_API_KEY
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: crm-demo-secrets
+                  key: AZURE_OPENAI_API_KEY
+            - name: OTEL_SERVICE_NAME
+              value: "crm-demo"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=<your-environment>"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):24317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+
+            command: ["sh", "-c"]
+            args:
+            - |
+              INDEX=$((RANDOM % 14))
+              echo "Running scenario index: $INDEX"
+              opentelemetry-instrument python main.py --index $INDEX
+              echo "Waiting for OTel span flush..."
+              sleep 10
+
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: false
