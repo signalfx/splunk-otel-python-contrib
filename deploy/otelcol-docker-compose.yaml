@@ -1,0 +1,16 @@
+services:
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    container_name: otelcol-local
+    restart: unless-stopped
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "13133:13133" # health_check
+      - "1777:1777"   # pprof
+    environment:
+      - SPLUNK_ACCESS_TOKEN=${SPLUNK_ACCESS_TOKEN}
+      - SPLUNK_REALM=${SPLUNK_REALM}
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
