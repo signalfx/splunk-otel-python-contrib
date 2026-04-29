@@ -6,17 +6,22 @@ A sample MCP server with useful development tools to demonstrate
 OpenTelemetry instrumentation with Splunk Distro.
 
 Usage:
-    # Set environment variables for observability
-    export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-    export OTEL_SERVICE_NAME="mcp-dev-assistant-server"
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="true"
-
-    # Run the server
+    # Option A — copy .env.example to .env and fill in your values:
+    cp examples/.env.example examples/.env
     python dev_assistant_server.py
+
+    # Option B — set env vars directly:
+    OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317" \
+    OTEL_SERVICE_NAME="mcp-dev-assistant-server" \
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric" \
+    python dev_assistant_server.py
+
+    # Option C — register as a Cursor MCP server in .cursor/mcp.json
+    # (see deploy/README.md for the full JSON snippet)
 
 NOTE: MCP servers that use stdio transport CANNOT use ConsoleSpanExporter
       because it writes to stdout which interferes with MCP protocol.
-      Use OTLP exporter for production or export to stderr for debugging.
+      Use OTLP exporter (set OTEL_EXPORTER_OTLP_ENDPOINT) for observability.
 """
 
 import os
@@ -26,48 +31,62 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-from fastmcp import FastMCP
-from pydantic import BaseModel
+# Load .env BEFORE any package that reads env vars at import time.
+# override=False keeps explicit env vars (e.g. from Cursor mcp.json) winning.
+from dotenv import load_dotenv  # noqa: E402
 
-# Import and apply instrumentation BEFORE creating FastMCP instance
-from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=False)
 
-# Configure OpenTelemetry
-# NOTE: For stdio-based MCP servers, we must NOT use ConsoleSpanExporter
-# because it writes to stdout which breaks the MCP protocol.
-# Instead, use OTLP exporter for production or skip console export.
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
+# Configure OpenTelemetry providers BEFORE importing FastMCP/instrumentation
+# so the correct providers are in place when instrumentation patches the SDK.
+# NOTE: Do NOT use ConsoleSpanExporter on stdio servers — it corrupts the
+#       MCP protocol by writing JSON to stdout.
+from opentelemetry import metrics, trace  # noqa: E402
+from opentelemetry.sdk.metrics import MeterProvider  # noqa: E402
+from opentelemetry.sdk.resources import Resource  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 
-# Check if OTLP endpoint is configured
-otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-if otlp_endpoint:
-    # Use OTLP exporter for production
+_resource = Resource.create(
+    {"service.name": os.environ.get("OTEL_SERVICE_NAME", "mcp-dev-assistant-server")}
+)
+_trace_provider = TracerProvider(resource=_resource)
+
+_otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if _otlp_endpoint:
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # noqa: E402
+            OTLPMetricExporter,
+        )
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: E402
             OTLPSpanExporter,
         )
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.metrics.export import (  # noqa: E402
+            PeriodicExportingMetricReader,
+        )
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: E402
 
-        provider = TracerProvider()
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-        trace.set_tracer_provider(provider)
-        print("Using OTLP exporter", file=sys.stderr)
+        _trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        metrics.set_meter_provider(
+            MeterProvider(
+                resource=_resource,
+                metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+            )
+        )
+        print(f"Server OTel → OTLP at {_otlp_endpoint}", file=sys.stderr)
     except ImportError:
-        print("OTLP exporter not available, spans not exported", file=sys.stderr)
-        trace.set_tracer_provider(TracerProvider())
+        print("OTLP exporter not available, server spans not exported", file=sys.stderr)
 else:
-    # No exporter - spans are created but not exported
-    # This is fine for demo - the client will show its spans
-    trace.set_tracer_provider(TracerProvider())
     print("No OTLP endpoint configured, server spans not exported", file=sys.stderr)
 
-# Apply FastMCP instrumentation
+trace.set_tracer_provider(_trace_provider)
+
+# Apply FastMCP instrumentation BEFORE importing FastMCP to ensure all hooks fire
+from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor  # noqa: E402
+
 FastMCPInstrumentor().instrument()
 
-# Load environment variables
-load_dotenv()
+from fastmcp import FastMCP  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
 
 # Initialize the MCP server
 server = FastMCP("dev-assistant")

@@ -64,3 +64,9 @@ target
 
 # Local working files (PR descriptions, notes, drafts)
 .local/
+
+# local .env files (copy from .env.example)
+.env
+
+# Cursor workspace MCP config (machine-specific paths)
+.cursor/mcp.json
