@@ -2,23 +2,56 @@
 """
 MCP Development Assistant Server
 
-A sample MCP server with useful development tools to demonstrate
-OpenTelemetry instrumentation with Splunk Distro.
+A sample MCP server with useful development tools (list_files, read_file,
+write_file, run_command, git_status, search_code, get_system_info) that
+demonstrates OpenTelemetry instrumentation with the Splunk Distro.
 
-Usage:
-    # Set environment variables for observability
-    export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-    export OTEL_SERVICE_NAME="mcp-dev-assistant-server"
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="true"
+Supports both transport modes:
+  • stdio  — server is spawned as a sub-process; client communicates via
+             stdin/stdout pipes.  Use this with ``dev_assistant_client.py``
+             (default, no extra flags needed).
+  • HTTP   — server listens on a TCP port using Streamable-HTTP; client
+             connects over the network.  Pass ``--http`` (and optionally
+             ``--port``/``--host``).
 
-    # Run the server
-    python dev_assistant_server.py
+Usage — stdio (default):
+    # Terminal 1 — start client (it spawns the server automatically):
+    source .env
+    OTEL_SERVICE_NAME=dev-assistant-client \\
+        python dev_assistant_client.py
 
-NOTE: MCP servers that use stdio transport CANNOT use ConsoleSpanExporter
-      because it writes to stdout which interferes with MCP protocol.
-      Use OTLP exporter for production or export to stderr for debugging.
+Usage — HTTP:
+    # Terminal 1 — start the HTTP server:
+    source .env
+    OTEL_SERVICE_NAME=dev-assistant-server \\
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric \\
+        python dev_assistant_server.py --http --port 8001
+
+    # Terminal 2 — run the client:
+    source .env
+    OTEL_SERVICE_NAME=dev-assistant-client \\
+        python dev_assistant_client.py --http --server-url http://localhost:8001/mcp
+
+Usage — zero-code instrumentation (HTTP):
+    source .env
+    OTEL_SERVICE_NAME=dev-assistant-server \\
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric \\
+        opentelemetry-instrument python dev_assistant_server.py --http
+
+Environment Variables:
+    OTEL_SERVICE_NAME                       Service name reported in Splunk
+    OTEL_EXPORTER_OTLP_ENDPOINT            OTLP gRPC endpoint (e.g. http://localhost:4317)
+    OTEL_EXPORTER_OTLP_HEADERS             Auth headers (e.g. X-SF-Token=<token>)
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS    span | span_metric | span_metric_event (default: span)
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT  true/false (default: false)
+    MCP_HOST                                Bind host for HTTP mode (default: 0.0.0.0)
+    MCP_PORT                                Bind port for HTTP mode (default: 8001)
+
+NOTE: stdio servers MUST NOT write to stdout — it is reserved for the MCP
+      wire protocol.  All diagnostic output goes to stderr.
 """
 
+import argparse
 import os
 import subprocess
 import sys
@@ -26,56 +59,91 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-from fastmcp import FastMCP
-from pydantic import BaseModel
+from _otel_helpers import load_dotenv, providers_already_configured
 
-# Import and apply instrumentation BEFORE creating FastMCP instance
-from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor
-
-# Configure OpenTelemetry
-# NOTE: For stdio-based MCP servers, we must NOT use ConsoleSpanExporter
-# because it writes to stdout which breaks the MCP protocol.
-# Instead, use OTLP exporter for production or skip console export.
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-
-# Check if OTLP endpoint is configured
-otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-if otlp_endpoint:
-    # Use OTLP exporter for production
-    try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-            OTLPSpanExporter,
-        )
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-        provider = TracerProvider()
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-        trace.set_tracer_provider(provider)
-        print("Using OTLP exporter", file=sys.stderr)
-    except ImportError:
-        print("OTLP exporter not available, spans not exported", file=sys.stderr)
-        trace.set_tracer_provider(TracerProvider())
-else:
-    # No exporter - spans are created but not exported
-    # This is fine for demo - the client will show its spans
-    trace.set_tracer_provider(TracerProvider())
-    print("No OTLP endpoint configured, server spans not exported", file=sys.stderr)
-
-# Apply FastMCP instrumentation
-FastMCPInstrumentor().instrument()
-
-# Load environment variables
+# Load .env before importing OTel or FastMCP so env vars are available.
 load_dotenv()
 
-# Initialize the MCP server
+
+def setup_telemetry() -> None:
+    """Configure OpenTelemetry SDK and instrument FastMCP.
+
+    Called automatically when OTEL_EXPORTER_OTLP_ENDPOINT is set and the
+    process was *not* already configured by ``opentelemetry-instrument``.
+
+    For stdio servers, ConsoleSpanExporter is intentionally skipped because it
+    writes to stdout which would corrupt the MCP protocol.
+    """
+    from opentelemetry import metrics, trace
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    service_name = os.environ.get("OTEL_SERVICE_NAME", "dev-assistant-server")
+    resource = Resource.create({"service.name": service_name})
+
+    trace_provider = TracerProvider(resource=resource)
+    meter_readers: list = []
+
+    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if otlp_endpoint:
+        try:
+            from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+                OTLPMetricExporter,
+            )
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                OTLPSpanExporter,
+            )
+
+            trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+            meter_readers.append(PeriodicExportingMetricReader(OTLPMetricExporter()))
+            print(f"[server] OTLP exporter → {otlp_endpoint}", file=sys.stderr)
+        except ImportError:
+            print("[server] OTLP exporter unavailable — install opentelemetry-exporter-otlp-proto-grpc", file=sys.stderr)
+    else:
+        print("[server] No OTLP endpoint set — spans created but not exported", file=sys.stderr)
+
+    trace.set_tracer_provider(trace_provider)
+    if meter_readers:
+        metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=meter_readers))
+
+    # Instrument AFTER providers are registered.
+    from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor
+
+    FastMCPInstrumentor().instrument()
+    print("[server] FastMCP instrumentation applied", file=sys.stderr)
+
+
+# Apply telemetry:
+#   • If opentelemetry-instrument already configured the SDK, just instrument.
+#   • If OTLP endpoint is set in .env / env, run full setup.
+#   • Otherwise skip — no-op providers will be used.
+if providers_already_configured():
+    from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor
+    FastMCPInstrumentor().instrument()
+elif os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    setup_telemetry()
+else:
+    print("[server] No OTel provider configured — skipping telemetry setup.", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# FastMCP server definition
+# ---------------------------------------------------------------------------
+from fastmcp import FastMCP  # noqa: E402
+
 server = FastMCP("dev-assistant")
 
 
-class FileInfo(BaseModel):
-    """File information structure."""
+# ---------------------------------------------------------------------------
+# Tool definitions
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel  # noqa: E402
 
+
+class FileInfo(BaseModel):
     name: str
     size: int
     modified: str
@@ -83,8 +151,6 @@ class FileInfo(BaseModel):
 
 
 class GitStatus(BaseModel):
-    """Git status structure."""
-
     branch: str
     staged: List[str]
     modified: List[str]
@@ -94,8 +160,6 @@ class GitStatus(BaseModel):
 
 
 class ProcessResult(BaseModel):
-    """Process execution result."""
-
     command: str
     exit_code: int
     stdout: str
@@ -105,20 +169,11 @@ class ProcessResult(BaseModel):
 
 @server.tool()
 def list_files(directory: str = ".") -> List[FileInfo]:
-    """
-    List files and directories in the specified path.
-
-    Args:
-        directory: The directory path to list (defaults to current directory)
-
-    Returns:
-        List of FileInfo objects with file details
-    """
+    """List files and directories in the specified path."""
     try:
         path = Path(directory).expanduser().resolve()
         if not path.exists():
             raise FileNotFoundError(f"Directory {directory} does not exist")
-
         files = []
         for item in path.iterdir():
             stat = item.stat()
@@ -130,32 +185,21 @@ def list_files(directory: str = ".") -> List[FileInfo]:
                     is_directory=item.is_dir(),
                 )
             )
-
         return sorted(files, key=lambda f: (not f.is_directory, f.name.lower()))
     except Exception as e:
-        raise RuntimeError(f"Failed to list directory: {str(e)}")
+        raise RuntimeError(f"Failed to list directory: {e}")
 
 
 @server.tool()
 def read_file(file_path: str, max_lines: Optional[int] = None) -> str:
-    """
-    Read the contents of a file.
-
-    Args:
-        file_path: Path to the file to read
-        max_lines: Maximum number of lines to read (optional)
-
-    Returns:
-        File contents as a string
-    """
+    """Read the contents of a file."""
     try:
         path = Path(file_path).expanduser().resolve()
         if not path.exists():
             raise FileNotFoundError(f"File {file_path} does not exist")
         if not path.is_file():
             raise ValueError(f"{file_path} is not a file")
-
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             if max_lines:
                 lines = []
                 for i, line in enumerate(f):
@@ -164,161 +208,84 @@ def read_file(file_path: str, max_lines: Optional[int] = None) -> str:
                         break
                     lines.append(line)
                 return "".join(lines)
-            else:
-                return f.read()
+            return f.read()
     except Exception as e:
-        raise RuntimeError(f"Failed to read file: {str(e)}")
+        raise RuntimeError(f"Failed to read file: {e}")
 
 
 @server.tool()
 def write_file(file_path: str, content: str) -> str:
-    """
-    Write content to a file.
-
-    Args:
-        file_path: Path to the file to write
-        content: Content to write to the file
-
-    Returns:
-        Success message with file path and size
-    """
+    """Write content to a file."""
     try:
         path = Path(file_path).expanduser().resolve()
-
-        # Create parent directories if needed
         path.parent.mkdir(parents=True, exist_ok=True)
-
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
-
-        stat = path.stat()
-        return f"Successfully wrote to {path} ({stat.st_size} bytes)"
+        return f"Successfully wrote to {path} ({path.stat().st_size} bytes)"
     except Exception as e:
-        raise RuntimeError(f"Failed to write file: {str(e)}")
+        raise RuntimeError(f"Failed to write file: {e}")
 
 
 @server.tool()
-def run_command(
-    command: str, working_directory: str = ".", timeout: int = 30
-) -> ProcessResult:
-    """
-    Execute a shell command and return the result.
-
-    Args:
-        command: Shell command to execute
-        working_directory: Directory to run the command in (default: current)
-        timeout: Command timeout in seconds (default: 30)
-
-    Returns:
-        Process execution result with stdout, stderr, and exit code
-    """
+def run_command(command: str, working_directory: str = ".", timeout: int = 30) -> ProcessResult:
+    """Execute a shell command and return the result."""
     try:
-        start_time = datetime.now()
+        start = datetime.now()
         result = subprocess.run(
-            command,
-            shell=True,
-            cwd=working_directory,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            command, shell=True, cwd=working_directory,
+            capture_output=True, text=True, timeout=timeout,
         )
-        end_time = datetime.now()
-        execution_time = (end_time - start_time).total_seconds()
-
+        elapsed = (datetime.now() - start).total_seconds()
         return ProcessResult(
-            command=command,
-            exit_code=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            execution_time=execution_time,
+            command=command, exit_code=result.returncode,
+            stdout=result.stdout, stderr=result.stderr, execution_time=elapsed,
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"Command timed out after {timeout} seconds")
     except Exception as e:
-        raise RuntimeError(f"Failed to execute command: {str(e)}")
+        raise RuntimeError(f"Failed to execute command: {e}")
 
 
 @server.tool()
 def git_status(repo_path: str = ".") -> GitStatus:
-    """
-    Get the current Git status of a repository.
-
-    Args:
-        repo_path: Path to the Git repository (default: current directory)
-
-    Returns:
-        GitStatus with branch name, staged/modified/untracked files
-    """
+    """Get the current Git status of a repository."""
     try:
-        # Get current branch
-        branch_result = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
-        branch = (
-            branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
-        )
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=repo_path,
+            capture_output=True, text=True,
+        ).stdout.strip() or "unknown"
 
-        # Get status
-        status_result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
+        status_out = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=repo_path,
+            capture_output=True, text=True,
+        ).stdout
 
-        staged = []
-        modified = []
-        untracked = []
+        staged, modified, untracked = [], [], []
+        for line in status_out.strip().splitlines():
+            if not line:
+                continue
+            code, filename = line[:2], line[3:]
+            if code[0] in "AMDRС":
+                staged.append(filename)
+            if code[1] in "MD":
+                modified.append(filename)
+            if code == "??":
+                untracked.append(filename)
 
-        if status_result.returncode == 0:
-            for line in status_result.stdout.strip().split("\n"):
-                if not line:
-                    continue
-                status_code = line[:2]
-                filename = line[3:]
-
-                if status_code[0] in ["A", "M", "D", "R", "C"]:
-                    staged.append(filename)
-                if status_code[1] in ["M", "D"]:
-                    modified.append(filename)
-                if status_code == "??":
-                    untracked.append(filename)
-
-        # Get ahead/behind info
         ahead, behind = 0, 0
         try:
-            ahead_behind_result = subprocess.run(
-                [
-                    "git",
-                    "rev-list",
-                    "--left-right",
-                    "--count",
-                    f"{branch}...origin/{branch}",
-                ],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-            )
-            if ahead_behind_result.returncode == 0:
-                parts = ahead_behind_result.stdout.strip().split("\t")
-                ahead = int(parts[0]) if len(parts) > 0 else 0
-                behind = int(parts[1]) if len(parts) > 1 else 0
+            ab = subprocess.run(
+                ["git", "rev-list", "--left-right", "--count", f"{branch}...origin/{branch}"],
+                cwd=repo_path, capture_output=True, text=True,
+            ).stdout.strip().split("\t")
+            ahead, behind = int(ab[0]), int(ab[1])
         except Exception:
             pass
 
-        return GitStatus(
-            branch=branch,
-            staged=staged,
-            modified=modified,
-            untracked=untracked,
-            ahead=ahead,
-            behind=behind,
-        )
+        return GitStatus(branch=branch, staged=staged, modified=modified,
+                         untracked=untracked, ahead=ahead, behind=behind)
     except Exception as e:
-        raise RuntimeError(f"Failed to get Git status: {str(e)}")
+        raise RuntimeError(f"Failed to get Git status: {e}")
 
 
 @server.tool()
@@ -328,119 +295,76 @@ def search_code(
     file_extensions: Optional[List[str]] = None,
     max_results: int = 50,
 ) -> Dict[str, List[str]]:
-    """
-    Search for a pattern in code files.
+    """Search for a pattern in code files."""
+    if file_extensions is None:
+        file_extensions = [".py", ".js", ".ts", ".java", ".go", ".rs", ".md", ".yaml", ".yml"]
+    search_path = Path(directory).expanduser().resolve()
+    if not search_path.exists():
+        raise FileNotFoundError(f"Directory {directory} does not exist")
 
-    Args:
-        pattern: Text pattern to search for (case-insensitive)
-        directory: Directory to search in (default: current)
-        file_extensions: List of file extensions to search (default: common code files)
-        max_results: Maximum number of matches to return (default: 50)
-
-    Returns:
-        Dictionary mapping file paths to lists of matching lines
-    """
-    try:
-        if file_extensions is None:
-            file_extensions = [
-                ".py",
-                ".js",
-                ".ts",
-                ".java",
-                ".cpp",
-                ".c",
-                ".h",
-                ".rb",
-                ".go",
-                ".rs",
-                ".md",
-                ".txt",
-                ".yaml",
-                ".yml",
-            ]
-
-        search_path = Path(directory).expanduser().resolve()
-        if not search_path.exists():
-            raise FileNotFoundError(f"Directory {directory} does not exist")
-
-        results: Dict[str, List[str]] = {}
-        total_matches = 0
-
-        for ext in file_extensions:
-            if total_matches >= max_results:
+    results: Dict[str, List[str]] = {}
+    total = 0
+    for ext in file_extensions:
+        if total >= max_results:
+            break
+        for fp in search_path.rglob(f"*{ext}"):
+            if total >= max_results:
                 break
-
-            for file_path in search_path.rglob(f"*{ext}"):
-                if total_matches >= max_results:
-                    break
-
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        matches = []
-                        for line_num, line in enumerate(f, 1):
-                            if pattern.lower() in line.lower():
-                                matches.append(f"{line_num}: {line.strip()}")
-                                total_matches += 1
-                                if total_matches >= max_results:
-                                    break
-
-                        if matches:
-                            relative_path = str(file_path.relative_to(search_path))
-                            results[relative_path] = matches
-                except Exception:
-                    continue
-
-        return results
-    except Exception as e:
-        raise RuntimeError(f"Failed to search code: {str(e)}")
+            try:
+                matches = []
+                with open(fp, encoding="utf-8", errors="ignore") as f:
+                    for n, line in enumerate(f, 1):
+                        if pattern.lower() in line.lower():
+                            matches.append(f"{n}: {line.strip()}")
+                            total += 1
+                            if total >= max_results:
+                                break
+                if matches:
+                    results[str(fp.relative_to(search_path))] = matches
+            except Exception:
+                continue
+    return results
 
 
 @server.tool()
 def get_system_info() -> Dict[str, Any]:
-    """
-    Get system information including Python version, OS, and environment.
-
-    Returns:
-        Dictionary containing system information
-    """
-    try:
-        import platform
-
-        return {
-            "python_version": sys.version,
-            "platform": platform.platform(),
-            "architecture": platform.architecture(),
-            "processor": platform.processor(),
-            "python_executable": sys.executable,
-            "current_directory": str(Path.cwd()),
-            "environment_variables": {
-                k: v
-                for k, v in os.environ.items()
-                if not any(
-                    secret in k.lower()
-                    for secret in ["key", "token", "password", "secret"]
-                )
-            },
-        }
-    except Exception as e:
-        raise RuntimeError(f"Failed to get system info: {str(e)}")
+    """Get system information."""
+    import platform
+    return {
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "architecture": platform.architecture(),
+        "processor": platform.processor(),
+        "python_executable": sys.executable,
+        "current_directory": str(Path.cwd()),
+        "environment_variables": {
+            k: v for k, v in os.environ.items()
+            if not any(s in k.lower() for s in ("key", "token", "password", "secret"))
+        },
+    }
 
 
-def main():
-    """Main entry point for the server."""
-    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def main() -> None:
+    parser = argparse.ArgumentParser(description="MCP Development Assistant Server")
+    parser.add_argument("--http", action="store_true",
+                        help="Use Streamable-HTTP transport instead of stdio")
+    parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"),
+                        help="Bind host (HTTP mode only, default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8001")),
+                        help="Bind port (HTTP mode only, default: 8001)")
+    args = parser.parse_args()
 
-    print(f"Starting Development Assistant MCP Server on {transport}", file=sys.stderr)
-    print("Server has 7 tools available:", file=sys.stderr)
-    print("  - list_files", file=sys.stderr)
-    print("  - read_file", file=sys.stderr)
-    print("  - write_file", file=sys.stderr)
-    print("  - run_command", file=sys.stderr)
-    print("  - git_status", file=sys.stderr)
-    print("  - search_code", file=sys.stderr)
-    print("  - get_system_info", file=sys.stderr)
-
-    server.run(transport=transport)
+    if args.http:
+        print(f"[server] Starting HTTP server on {args.host}:{args.port}", file=sys.stderr)
+        print(f"[server] MCP endpoint: http://{args.host}:{args.port}/mcp", file=sys.stderr)
+        print(f"[server] Service name: {os.environ.get('OTEL_SERVICE_NAME', 'dev-assistant-server')}", file=sys.stderr)
+        server.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        print("[server] Starting stdio server (spawned as sub-process)", file=sys.stderr)
+        server.run(transport="stdio")
 
 
 if __name__ == "__main__":

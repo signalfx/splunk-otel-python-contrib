@@ -77,26 +77,71 @@ sequenceDiagram
 ```bash
 pip install openai fastmcp
 pip install -e ../../  # Install FastMCP instrumentation
-export NVIDIA_API_KEY="nvapi-..."
 ```
 
-### Quick Start
+Configure credentials and OTLP settings in `.env`:
 
 ```bash
-# With console trace output
-python weather_agent.py --console
-
-# Custom query
-python weather_agent.py --query "What's the weather in London and what should I pack for a rainy day?" --console
-
-# With OTLP export (e.g., to Splunk O11y)
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="true"
-python weather_agent.py --wait 10
+source .env
 ```
 
-The agent uses **NVIDIA Nemotron** (`nvidia/llama-3.3-nemotron-super-49b-v1`) via the
-OpenAI-compatible API at `https://integrate.api.nvidia.com/v1`.
+---
+
+### stdio mode — server spawned as subprocess
+
+**Manual instrumentation** (`--manual` sets up OTel providers in-process):
+
+```bash
+source .env
+
+python weather_agent.py --manual --console          # console output
+python weather_agent.py --manual --wait 5           # send to Splunk
+python weather_agent.py --manual --query "Weather in London?" --wait 5
+```
+
+**Zero-code instrumentation** (`opentelemetry-instrument` auto-configures OTel):
+
+```bash
+source .env
+
+opentelemetry-instrument python weather_agent.py
+opentelemetry-instrument python weather_agent.py --wait 5
+```
+
+---
+
+### HTTP mode — server and agent run as separate processes
+
+**Manual instrumentation:**
+
+```bash
+source .env
+
+# Terminal 1: start the server
+OTEL_SERVICE_NAME=weather-mcp-server python weather_server.py --manual --transport http
+
+# Terminal 2: run the agent
+python weather_agent.py --manual --transport http --wait 5
+python weather_agent.py --manual --transport http --query "Weather in Sydney?" --wait 5
+```
+
+**Zero-code instrumentation:**
+
+```bash
+source .env
+
+# Terminal 1: start the server with opentelemetry-instrument
+OTEL_SERVICE_NAME=weather-mcp-server opentelemetry-instrument python weather_server.py --transport http
+
+# Terminal 2: run the agent with opentelemetry-instrument
+OTEL_SERVICE_NAME=weather-agent opentelemetry-instrument python weather_agent.py --transport http --wait 5
+```
+
+> **Note**: In zero-code mode the `opentelemetry-instrument` wrapper automatically discovers `FastMCPInstrumentor` via the `opentelemetry_instrumentor` entry point. No code changes needed.
+
+---
+
+The agent uses the model configured in `.env` (`OPENAI_MODEL`). Defaults to Azure OpenAI `gpt-4o-mini`.
 
 ### What Gets Instrumented
 

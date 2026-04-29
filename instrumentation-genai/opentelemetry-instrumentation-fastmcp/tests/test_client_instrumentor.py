@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, AsyncMock
 from opentelemetry.instrumentation.fastmcp.client_instrumentor import (
     ClientInstrumentor,
 )
-from opentelemetry.util.genai.types import AgentInvocation, MCPToolCall
+from opentelemetry.util.genai.types import MCPOperation, MCPToolCall
 
 
 class TestClientInstrumentor:
@@ -34,60 +34,96 @@ class TestClientInstrumentor:
 
     @pytest.mark.asyncio
     async def test_client_enter_wrapper(self, mock_telemetry_handler):
-        """Test client enter wrapper creates session."""
+        """Test client enter wrapper creates initialize MCPOperation session span."""
         instrumentor = ClientInstrumentor(mock_telemetry_handler)
         wrapper = instrumentor._client_enter_wrapper()
 
-        mock_wrapped = AsyncMock(return_value="session_result")
         mock_instance = MagicMock()
+        mock_instance.initialize_result = None
+        mock_instance.session = None
+        mock_instance._session = None
+        mock_instance.transport = None
+        mock_wrapped = AsyncMock(return_value="session_result")
 
         result = await wrapper(mock_wrapped, mock_instance, (), {})
 
         assert result == "session_result"
-        assert mock_telemetry_handler.start_agent.called
+        assert mock_telemetry_handler.start_mcp_operation.called
 
         # Verify session was stored
         assert id(mock_instance) in instrumentor._active_sessions
 
-        # Verify AgentInvocation was created
-        agent = mock_telemetry_handler.start_agent.call_args[0][0]
-        assert isinstance(agent, AgentInvocation)
-        assert agent.name == "mcp.client"
-        assert agent.framework == "fastmcp"
+        # Verify MCPOperation(initialize) was created
+        init_op = mock_telemetry_handler.start_mcp_operation.call_args[0][0]
+        assert isinstance(init_op, MCPOperation)
+        assert init_op.mcp_method_name == "initialize"
+        assert init_op.is_client is True
+        assert init_op.framework == "fastmcp"
+        assert init_op.mcp_session_id is None
+        assert init_op.conversation_id is None
+
+    @pytest.mark.asyncio
+    async def test_client_enter_wrapper_enriches_protocol_version(
+        self, mock_telemetry_handler
+    ):
+        """Test enter wrapper enriches protocol version from initialize result."""
+        instrumentor = ClientInstrumentor(mock_telemetry_handler)
+        wrapper = instrumentor._client_enter_wrapper()
+
+        mock_init_result = MagicMock()
+        mock_init_result.protocolVersion = "2025-06-18"
+        mock_init_result.serverInfo = MagicMock(name="weather-server")
+        mock_instance = MagicMock()
+        mock_instance.initialize_result = mock_init_result
+        mock_wrapped = AsyncMock(return_value=None)
+
+        await wrapper(mock_wrapped, mock_instance, (), {})
+
+        init_op = instrumentor._active_sessions[id(mock_instance)]
+        assert init_op.mcp_protocol_version == "2025-06-18"
 
     @pytest.mark.asyncio
     async def test_client_exit_wrapper_success(self, mock_telemetry_handler):
-        """Test client exit wrapper for successful session end."""
+        """Test client exit wrapper closes the initialize session span on success."""
         instrumentor = ClientInstrumentor(mock_telemetry_handler)
 
-        # Pre-populate a session
         mock_instance = MagicMock()
-        session = AgentInvocation(name="mcp.client")
-        instrumentor._active_sessions[id(mock_instance)] = session
+        init_op = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            is_client=True,
+            framework="fastmcp",
+            system="mcp",
+        )
+        instrumentor._active_sessions[id(mock_instance)] = init_op
 
         wrapper = instrumentor._client_exit_wrapper()
         mock_wrapped = AsyncMock(return_value=None)
 
-        # Exit with no exception
         await wrapper(mock_wrapped, mock_instance, (None, None, None), {})
 
-        assert mock_telemetry_handler.stop_agent.called
-        assert not mock_telemetry_handler.fail_agent.called
+        assert mock_telemetry_handler.stop_mcp_operation.called
+        assert not mock_telemetry_handler.fail_mcp_operation.called
         assert id(mock_instance) not in instrumentor._active_sessions
 
     @pytest.mark.asyncio
     async def test_client_exit_wrapper_with_exception(self, mock_telemetry_handler):
-        """Test client exit wrapper when session ends with exception."""
+        """Test client exit wrapper marks session as failed on exception."""
         instrumentor = ClientInstrumentor(mock_telemetry_handler)
 
         mock_instance = MagicMock()
-        session = AgentInvocation(name="mcp.client")
-        instrumentor._active_sessions[id(mock_instance)] = session
+        init_op = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            is_client=True,
+            framework="fastmcp",
+            system="mcp",
+        )
+        instrumentor._active_sessions[id(mock_instance)] = init_op
 
         wrapper = instrumentor._client_exit_wrapper()
         mock_wrapped = AsyncMock(return_value=None)
 
-        # Exit with exception
         await wrapper(
             mock_wrapped,
             mock_instance,
@@ -95,8 +131,8 @@ class TestClientInstrumentor:
             {},
         )
 
-        assert mock_telemetry_handler.fail_agent.called
-        assert not mock_telemetry_handler.stop_agent.called
+        assert mock_telemetry_handler.fail_mcp_operation.called
+        assert not mock_telemetry_handler.stop_mcp_operation.called
 
     @pytest.mark.asyncio
     async def test_client_call_tool_wrapper_success(self, mock_telemetry_handler):
@@ -154,8 +190,6 @@ class TestClientInstrumentor:
         assert result == mock_result
         assert mock_telemetry_handler.start_mcp_operation.called
         assert mock_telemetry_handler.stop_mcp_operation.called
-
-        from opentelemetry.util.genai.types import MCPOperation
 
         op = mock_telemetry_handler.start_mcp_operation.call_args[0][0]
         assert isinstance(op, MCPOperation)

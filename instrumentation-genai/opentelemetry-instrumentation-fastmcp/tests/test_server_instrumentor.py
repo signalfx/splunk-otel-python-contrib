@@ -18,6 +18,53 @@ class TestServerInstrumentor:
         assert instrumentor._handler == mock_telemetry_handler
         assert instrumentor._server_name is None
 
+    @pytest.mark.asyncio
+    async def test_server_run_wrapper_success(self, mock_telemetry_handler):
+        """Test server run wrapper creates initialize MCPOperation session span."""
+        instrumentor = ServerInstrumentor(mock_telemetry_handler)
+        instrumentor._server_name = "weather-server"
+        wrapper = instrumentor._server_run_wrapper()
+
+        mock_wrapped = AsyncMock(return_value=None)
+        mock_instance = MagicMock()
+
+        await wrapper(mock_wrapped, mock_instance, (), {})
+
+        assert mock_telemetry_handler.start_mcp_operation.called
+        assert mock_telemetry_handler.stop_mcp_operation.called
+        assert not mock_telemetry_handler.fail_mcp_operation.called
+
+        init_op = mock_telemetry_handler.start_mcp_operation.call_args[0][0]
+        assert isinstance(init_op, MCPOperation)
+        assert init_op.mcp_method_name == "initialize"
+        assert init_op.is_client is False
+        assert init_op.framework == "fastmcp"
+        assert init_op.sdot_mcp_server_name == "weather-server"
+        assert init_op.network_transport == "pipe"
+        assert init_op.mcp_session_id is None
+        assert init_op.conversation_id is None
+
+    @pytest.mark.asyncio
+    async def test_server_run_wrapper_failure(self, mock_telemetry_handler):
+        """Test server run wrapper marks session as failed on exception."""
+        instrumentor = ServerInstrumentor(mock_telemetry_handler)
+        instrumentor._server_name = "test-server"
+        wrapper = instrumentor._server_run_wrapper()
+
+        mock_wrapped = AsyncMock(side_effect=RuntimeError("connection lost"))
+        mock_instance = MagicMock()
+
+        with pytest.raises(RuntimeError, match="connection lost"):
+            await wrapper(mock_wrapped, mock_instance, (), {})
+
+        assert mock_telemetry_handler.start_mcp_operation.called
+        assert mock_telemetry_handler.fail_mcp_operation.called
+        assert not mock_telemetry_handler.stop_mcp_operation.called
+
+        init_op = mock_telemetry_handler.start_mcp_operation.call_args[0][0]
+        assert init_op.is_error is True
+        assert init_op.mcp_error_type == "RuntimeError"
+
     def test_fastmcp_init_wrapper_with_args(self, mock_telemetry_handler):
         """Test that FastMCP init wrapper captures server name from args."""
         instrumentor = ServerInstrumentor(mock_telemetry_handler)
