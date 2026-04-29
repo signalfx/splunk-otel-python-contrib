@@ -64,6 +64,23 @@ app with the OpenTelemetry LangChain Instrumentor enabled::
     response = llm.invoke(messages)
     print(response.content)
 
+Embedding Support
+^^^^^^^^^^^^^^^^^
+
+The instrumentation wraps ``embed_documents()`` and ``embed_query()`` methods for 
+embedding classes (e.g., ``OpenAIEmbeddings``, ``AzureOpenAIEmbeddings``).
+
+**Token Counting**: For token usage metrics, the instrumentation uses ``tiktoken`` 
+to count input tokens client-side. This is necessary because:
+
+- LangChain's embedding methods only return embedding vectors (``list[list[float]]``)
+- The API's ``usage`` response is discarded internally by LangChain
+- LangChain has no embedding callbacks (unlike LLM callbacks)
+
+``tiktoken`` is already a required dependency of ``langchain-openai``, so no additional 
+installation is needed when using OpenAI embeddings. If ``tiktoken`` is unavailable 
+(e.g., for non-OpenAI providers), token metrics are gracefully omitted.
+
 Interrupt/Resume Support
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -76,6 +93,14 @@ The instrumentation automatically detects LangGraph interrupt/resume patterns:
   and set as ``gen_ai.conversation.id`` on root workflow/agent spans.
 
 See the ``examples/multi_agent_travel_planner`` demo for interrupt/resume in action.
+
+Known LangGraph Compatibility Issue
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``langgraph==1.1.7`` introduced a breaking change that silently drops non-``GraphCallbackHandler``
+callback handlers. This prevents the instrumentation from receiving any callbacks.
+The issue was fixed in `langgraph 1.1.8 <https://github.com/langchain-ai/langgraph/releases/tag/1.1.8>`_.
+This package excludes ``langgraph==1.1.7`` via ``!= 1.1.7`` in its dependency specifier.
 
 Testing
 -------

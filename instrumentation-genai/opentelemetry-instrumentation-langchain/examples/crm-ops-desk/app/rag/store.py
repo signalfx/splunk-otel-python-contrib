@@ -1,7 +1,8 @@
 """FAISS-backed in-memory data store with synthetic CRM data.
 
 All data lives in-memory with FAISS indices for vector similarity search
-(orders, policies).  The embed() helper calls OpenAI for query-time embeddings.
+(orders, policies).  The embed() helper calls OpenAI (or Azure OpenAI) for
+query-time embeddings — see app.llm for provider selection logic.
 """
 
 from __future__ import annotations
@@ -12,16 +13,7 @@ from typing import Any
 import faiss
 import numpy as np
 
-# ── OpenAI embedding helper ──────────────────────────────────────────────
-
-
-def embed(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings via OpenAI."""
-    import openai
-
-    client = openai.OpenAI()
-    resp = client.embeddings.create(input=texts, model="text-embedding-3-small")
-    return [d.embedding for d in resp.data]
+# ── Embedding helper (supports OpenAI + Azure OpenAI) ────────────────────
 
 
 # ── Synthetic data ───────────────────────────────────────────────────────
