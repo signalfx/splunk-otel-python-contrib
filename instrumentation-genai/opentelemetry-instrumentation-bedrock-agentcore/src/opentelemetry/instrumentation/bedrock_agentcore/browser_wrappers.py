@@ -20,7 +20,7 @@ from typing import Any
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import Error, ToolCall
 
-from .utils import safe_json_dumps, safe_str
+from .utils import safe_json_dumps, safe_str, truncate_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,10 +87,9 @@ def wrap_browser_start(
             return result
         except Exception as e:
             # Handle error
-            error_message = safe_str(e)
             error_type = type(e).__name__
             handler.fail_tool_call(
-                tool_call, Error(type=error_type, message=error_message)
+                tool_call, Error(type=error_type, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -151,10 +150,9 @@ def wrap_browser_stop(
             return result
         except Exception as e:
             # Handle error
-            error_message = safe_str(e)
             error_type = type(e).__name__
             handler.fail_tool_call(
-                tool_call, Error(type=error_type, message=error_message)
+                tool_call, Error(type=error_type, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -211,10 +209,9 @@ def wrap_browser_take_control(
             return result
         except Exception as e:
             # Handle error
-            error_message = safe_str(e)
             error_type = type(e).__name__
             handler.fail_tool_call(
-                tool_call, Error(type=error_type, message=error_message)
+                tool_call, Error(type=error_type, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -271,10 +268,9 @@ def wrap_browser_release_control(
             return result
         except Exception as e:
             # Handle error
-            error_message = safe_str(e)
             error_type = type(e).__name__
             handler.fail_tool_call(
-                tool_call, Error(type=error_type, message=error_message)
+                tool_call, Error(type=error_type, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -347,10 +343,9 @@ def wrap_browser_get_session(
             return result
         except Exception as e:
             # Handle error
-            error_message = safe_str(e)
             error_type = type(e).__name__
             handler.fail_tool_call(
-                tool_call, Error(type=error_type, message=error_message)
+                tool_call, Error(type=error_type, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -404,7 +399,7 @@ def wrap_browser_operation(
                 return result
             except Exception as e:
                 handler.fail_tool_call(
-                    invocation, Error(type=type(e).__name__, message=safe_str(e))
+                    invocation, Error(type=type(e).__name__, message=truncate_error(e))
                 )
                 raise
         except Exception:

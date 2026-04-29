@@ -20,7 +20,7 @@ from typing import Any
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import Error, RetrievalInvocation, ToolCall
 
-from .utils import safe_json_dumps, safe_str
+from .utils import safe_json_dumps, safe_str, truncate_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,8 +48,14 @@ def wrap_memory_retrieve(
     """
     try:
         # Signature: retrieve_memories(memory_id, namespace, query, actor_id=None, top_k=3)
-        query = kwargs.get("query") or (args[2] if len(args) > 2 else "")
-        top_k = kwargs.get("top_k") or (args[4] if len(args) > 4 else None)
+        query = (
+            kwargs["query"] if "query" in kwargs else (args[2] if len(args) > 2 else "")
+        )
+        top_k = (
+            kwargs["top_k"]
+            if "top_k" in kwargs
+            else (args[4] if len(args) > 4 else None)
+        )
 
         invocation = RetrievalInvocation(
             retriever_type="bedrock-agentcore-memory",
@@ -76,7 +82,7 @@ def wrap_memory_retrieve(
             return result
         except Exception as e:
             handler.fail_retrieval(
-                invocation, Error(type=type(e).__name__, message=safe_str(e))
+                invocation, Error(type=type(e).__name__, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -105,9 +111,21 @@ def wrap_memory_create_event(
         Result of original create_event
     """
     try:
-        memory_id = kwargs.get("memory_id") or (args[0] if args else None)
-        actor_id = kwargs.get("actor_id") or (args[1] if len(args) > 1 else None)
-        session_id = kwargs.get("session_id") or (args[2] if len(args) > 2 else None)
+        memory_id = (
+            kwargs["memory_id"]
+            if "memory_id" in kwargs
+            else (args[0] if args else None)
+        )
+        actor_id = (
+            kwargs["actor_id"]
+            if "actor_id" in kwargs
+            else (args[1] if len(args) > 1 else None)
+        )
+        session_id = (
+            kwargs["session_id"]
+            if "session_id" in kwargs
+            else (args[2] if len(args) > 2 else None)
+        )
 
         invocation = ToolCall(
             name="memory.create_event",
@@ -138,7 +156,7 @@ def wrap_memory_create_event(
             return result
         except Exception as e:
             handler.fail_tool_call(
-                invocation, Error(type=type(e).__name__, message=safe_str(e))
+                invocation, Error(type=type(e).__name__, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -167,9 +185,21 @@ def wrap_memory_create_blob_event(
         Result of original create_blob_event
     """
     try:
-        memory_id = kwargs.get("memory_id") or (args[0] if args else None)
-        actor_id = kwargs.get("actor_id") or (args[1] if len(args) > 1 else None)
-        session_id = kwargs.get("session_id") or (args[2] if len(args) > 2 else None)
+        memory_id = (
+            kwargs["memory_id"]
+            if "memory_id" in kwargs
+            else (args[0] if args else None)
+        )
+        actor_id = (
+            kwargs["actor_id"]
+            if "actor_id" in kwargs
+            else (args[1] if len(args) > 1 else None)
+        )
+        session_id = (
+            kwargs["session_id"]
+            if "session_id" in kwargs
+            else (args[2] if len(args) > 2 else None)
+        )
 
         invocation = ToolCall(
             name="memory.create_blob_event",
@@ -200,7 +230,7 @@ def wrap_memory_create_blob_event(
             return result
         except Exception as e:
             handler.fail_tool_call(
-                invocation, Error(type=type(e).__name__, message=safe_str(e))
+                invocation, Error(type=type(e).__name__, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -229,7 +259,11 @@ def wrap_memory_list_events(
         Result of original list_events
     """
     try:
-        memory_id = kwargs.get("memory_id") or (args[0] if args else None)
+        memory_id = (
+            kwargs["memory_id"]
+            if "memory_id" in kwargs
+            else (args[0] if args else None)
+        )
 
         invocation = ToolCall(
             name="memory.list_events",
@@ -254,7 +288,7 @@ def wrap_memory_list_events(
             return result
         except Exception as e:
             handler.fail_tool_call(
-                invocation, Error(type=type(e).__name__, message=safe_str(e))
+                invocation, Error(type=type(e).__name__, message=truncate_error(e))
             )
             raise
     except Exception:
@@ -307,7 +341,7 @@ def wrap_memory_operation(
                 return result
             except Exception as e:
                 handler.fail_tool_call(
-                    invocation, Error(type=type(e).__name__, message=safe_str(e))
+                    invocation, Error(type=type(e).__name__, message=truncate_error(e))
                 )
                 raise
         except Exception:
