@@ -47,57 +47,15 @@ from wrapt import (
     wrap_function_wrapper,  # type: ignore[reportUnknownVariableType]
 )
 
-from opentelemetry._logs import get_logger
-from opentelemetry.instrumentation._semconv import (
-    _OpenTelemetrySemanticConventionStability,
-    _OpenTelemetryStabilitySignalType,
-    _StabilityMode,
-)
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.instrumentation.vertexai.package import _instruments
-from opentelemetry.instrumentation.vertexai.patch import MethodWrappers
+from opentelemetry.instrumentation.vertexai.patch import (
+    agenerate_content,
+    generate_content,
+)
 from opentelemetry.instrumentation.vertexai.utils import is_content_enabled
-from opentelemetry.semconv.schemas import Schemas
-from opentelemetry.trace import get_tracer
-from opentelemetry.util.genai.completion_hook import load_completion_hook
-
-
-def _methods_to_wrap(
-    method_wrappers: MethodWrappers,
-):
-    # This import is very slow, do it lazily in case instrument() is not called
-    # pylint: disable=import-outside-toplevel
-    from google.cloud.aiplatform_v1.services.prediction_service import (  # noqa: PLC0415
-        async_client,
-        client,
-    )
-    from google.cloud.aiplatform_v1beta1.services.prediction_service import (  # noqa: PLC0415
-        async_client as async_client_v1beta1,
-    )
-    from google.cloud.aiplatform_v1beta1.services.prediction_service import (  # noqa: PLC0415
-        client as client_v1beta1,
-    )
-
-    for client_class in (
-        client.PredictionServiceClient,
-        client_v1beta1.PredictionServiceClient,
-    ):
-        yield (
-            client_class,
-            client_class.generate_content.__name__,  # type: ignore[reportUnknownMemberType]
-            method_wrappers.generate_content,
-        )
-
-    for client_class in (
-        async_client.PredictionServiceAsyncClient,
-        async_client_v1beta1.PredictionServiceAsyncClient,
-    ):
-        yield (
-            client_class,
-            client_class.generate_content.__name__,  # type: ignore[reportUnknownMemberType]
-            method_wrappers.agenerate_content,
-        )
+from opentelemetry.util.genai.handler import get_telemetry_handler
 
 
 class VertexAIInstrumentor(BaseInstrumentor):
@@ -110,61 +68,55 @@ class VertexAIInstrumentor(BaseInstrumentor):
 
     def _instrument(self, **kwargs: Any):
         """Enable VertexAI instrumentation."""
-        completion_hook = (
-            kwargs.get("completion_hook") or load_completion_hook()
-        )
-        sem_conv_opt_in_mode = _OpenTelemetrySemanticConventionStability._get_opentelemetry_stability_opt_in_mode(
-            _OpenTelemetryStabilitySignalType.GEN_AI,
-        )
         tracer_provider = kwargs.get("tracer_provider")
-        schema = (
-            Schemas.V1_28_0.value
-            if sem_conv_opt_in_mode == _StabilityMode.DEFAULT
-            else Schemas.V1_36_0.value
-        )
-        tracer = get_tracer(
-            __name__,
-            "",
-            tracer_provider,
-            schema_url=schema,
-        )
         logger_provider = kwargs.get("logger_provider")
-        logger = get_logger(
-            __name__,
-            "",
+        meter_provider = kwargs.get("meter_provider")
+
+        handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
             logger_provider=logger_provider,
-            schema_url=schema,
         )
-        sem_conv_opt_in_mode = _OpenTelemetrySemanticConventionStability._get_opentelemetry_stability_opt_in_mode(
-            _OpenTelemetryStabilitySignalType.GEN_AI,
+
+        capture_content = is_content_enabled()
+
+        # This import is very slow, do it lazily in case instrument() is not called
+        # pylint: disable=import-outside-toplevel
+        from google.cloud.aiplatform_v1.services.prediction_service import (  # noqa: PLC0415
+            async_client,
+            client,
         )
-        if sem_conv_opt_in_mode == _StabilityMode.DEFAULT:
-            # Type checker now knows sem_conv_opt_in_mode is a Literal[_StabilityMode.DEFAULT]
-            method_wrappers = MethodWrappers(
-                tracer,
-                logger,
-                is_content_enabled(sem_conv_opt_in_mode),
-                sem_conv_opt_in_mode,
-                completion_hook,
-            )
-        elif sem_conv_opt_in_mode == _StabilityMode.GEN_AI_LATEST_EXPERIMENTAL:
-            # Type checker now knows it's the other literal
-            method_wrappers = MethodWrappers(
-                tracer,
-                logger,
-                is_content_enabled(sem_conv_opt_in_mode),
-                sem_conv_opt_in_mode,
-                completion_hook,
-            )
-        else:
-            raise RuntimeError(f"{sem_conv_opt_in_mode} mode not supported")
-        for client_class, method_name, wrapper in _methods_to_wrap(
-            method_wrappers
+        from google.cloud.aiplatform_v1beta1.services.prediction_service import (  # noqa: PLC0415
+            async_client as async_client_v1beta1,
+        )
+        from google.cloud.aiplatform_v1beta1.services.prediction_service import (  # noqa: PLC0415
+            client as client_v1beta1,
+        )
+
+        sync_wrapper = generate_content(capture_content, handler)
+        async_wrapper = agenerate_content(capture_content, handler)
+
+        for client_class in (
+            client.PredictionServiceClient,
+            client_v1beta1.PredictionServiceClient,
         ):
+            method_name = client_class.generate_content.__name__  # type: ignore[reportUnknownMemberType]
             wrap_function_wrapper(
                 client_class,
                 name=method_name,
-                wrapper=wrapper,
+                wrapper=sync_wrapper,
+            )
+            self._methods_to_unwrap.append((client_class, method_name))
+
+        for client_class in (
+            async_client.PredictionServiceAsyncClient,
+            async_client_v1beta1.PredictionServiceAsyncClient,
+        ):
+            method_name = client_class.generate_content.__name__  # type: ignore[reportUnknownMemberType]
+            wrap_function_wrapper(
+                client_class,
+                name=method_name,
+                wrapper=async_wrapper,
             )
             self._methods_to_unwrap.append((client_class, method_name))
 
