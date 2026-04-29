@@ -418,72 +418,6 @@ class MetricsEmitter(EmitterMeta):
             duration, attributes=metric_attrs, context=context
         )
 
-        # Additionally record MCP session duration if this is an MCP session
-        if agent.system == "mcp" and agent.agent_type in (
-            "mcp_client",
-            "mcp_server",
-        ):
-            self._record_mcp_session_metrics(agent, error=error)
-
-    def _record_mcp_session_metrics(
-        self, agent: AgentInvocation, error: Optional[Error] = None
-    ) -> None:
-        """Record mcp.client.session.duration or mcp.server.session.duration.
-
-        Per OTel semconv: https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp
-
-        Attributes (from agent.attributes):
-        - error.type (conditionally required, if error)
-        - network.transport (recommended)
-        - mcp.protocol.version (recommended)
-        - server.address (recommended)
-        - server.port (recommended)
-        """
-        if agent.end_time is None:
-            return
-        duration = agent.end_time - agent.start_time
-
-        # Build attributes per semconv
-        mcp_attrs: dict[str, Any] = {}
-
-        # Conditionally required: error.type
-        error_type = agent.attributes.get("error.type")
-        if error_type:
-            mcp_attrs["error.type"] = error_type
-        elif error is not None and getattr(error, "type", None) is not None:
-            mcp_attrs["error.type"] = error.type.__qualname__
-
-        # Recommended attributes
-        for attr_key in (
-            "network.transport",
-            "mcp.protocol.version",
-            "network.protocol.name",
-            "network.protocol.version",
-            "server.address",
-            "server.port",
-        ):
-            val = agent.attributes.get(attr_key)
-            if val is not None:
-                mcp_attrs[attr_key] = val
-
-        # Get span context for metric correlation
-        context = None
-        span = getattr(agent, "span", None)
-        if span is not None:
-            try:
-                context = trace.set_span_in_context(span)
-            except (ValueError, RuntimeError):  # pragma: no cover - defensive
-                context = None
-
-        # Choose client or server histogram
-        is_client = agent.agent_type == "mcp_client"
-        histogram = (
-            self._mcp_client_session_duration
-            if is_client
-            else self._mcp_server_session_duration
-        )
-        histogram.record(duration, attributes=mcp_attrs, context=context)
-
     def _record_retrieval_metrics(
         self, retrieval: RetrievalInvocation, error: Optional[Error] = None
     ) -> None:
@@ -550,6 +484,7 @@ class MetricsEmitter(EmitterMeta):
 
         Metrics:
         - mcp.client.operation.duration / mcp.server.operation.duration
+        - mcp.client.session.duration / mcp.server.session.duration (for initialize only)
         - mcp.tool.output.size (custom: tracks output bytes for LLM context)
         """
         if not op.mcp_method_name:
@@ -602,3 +537,66 @@ class MetricsEmitter(EmitterMeta):
             self._mcp_tool_output_size.record(
                 op.output_size_bytes, attributes=mcp_attrs, context=context
             )
+
+        # Session duration metric is recorded for initialize operations, which
+        # span the full session lifetime in the FastMCP instrumentation.
+        if op.mcp_method_name == "initialize":
+            self._record_mcp_session_metrics_from_op(op)
+
+    def _record_mcp_session_metrics_from_op(self, op: MCPOperation) -> None:
+        """Record mcp.client.session.duration or mcp.server.session.duration.
+
+        Per OTel semconv (v1.40.0):
+        https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/
+
+        Called when an MCPOperation with mcp_method_name="initialize" ends,
+        because the initialize span spans the full session lifetime.
+
+        Attributes (per semconv):
+        - error.type (conditionally required if session ends with error)
+        - mcp.protocol.version (recommended)
+        - network.transport (recommended)
+        - network.protocol.name / network.protocol.version (recommended)
+        - server.address / server.port (recommended, client only)
+        """
+        if op.end_time is None:
+            return
+        duration = op.end_time - op.start_time
+
+        session_attrs: dict[str, Any] = {}
+
+        if op.is_error:
+            if op.mcp_error_type:
+                session_attrs["error.type"] = op.mcp_error_type
+            else:
+                session_attrs["error.type"] = "operation_error"
+
+        if op.mcp_protocol_version:
+            session_attrs["mcp.protocol.version"] = op.mcp_protocol_version
+        if op.network_transport:
+            session_attrs["network.transport"] = op.network_transport
+
+        for attr_key in (
+            "network.protocol.name",
+            "network.protocol.version",
+            "server.address",
+            "server.port",
+        ):
+            val = op.attributes.get(attr_key)
+            if val is not None:
+                session_attrs[attr_key] = val
+
+        context = None
+        span = getattr(op, "span", None)
+        if span is not None:
+            try:
+                context = trace.set_span_in_context(span)
+            except (ValueError, RuntimeError):
+                context = None
+
+        histogram = (
+            self._mcp_client_session_duration
+            if op.is_client
+            else self._mcp_server_session_duration
+        )
+        histogram.record(duration, attributes=session_attrs, context=context)
