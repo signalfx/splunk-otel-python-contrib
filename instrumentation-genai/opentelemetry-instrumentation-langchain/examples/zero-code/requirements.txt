@@ -1,7 +1,11 @@
-langchain>=1.0.0
-langchain-openai>=1.0.0
-langgraph>=1.0.0
-python-dotenv>=1.0.0
-deepeval
-opentelemetry-distro
-opentelemetry-exporter-otlp
+# Pinned 2026-04-28 from project venv (Python 3.11)
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
+
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.6
+python-dotenv==1.2.2
+deepeval==3.3.9
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp==1.38.0

@@ -1,5 +1,9 @@
-google-cloud-aiplatform>=1.64
+# Pinned 2026-04-28 from latest PyPI
+# Run `pip install -r requirements.txt` and verify with `pip freeze`
+# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
 
-opentelemetry-sdk~=1.29.0
-opentelemetry-exporter-otlp-proto-grpc~=1.29.0
-opentelemetry-instrumentation-vertexai~=2.0b0
+google-cloud-aiplatform==1.149.0
+
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation-vertexai==0.60.0

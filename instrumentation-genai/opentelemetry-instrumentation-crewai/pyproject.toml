@@ -33,11 +33,11 @@ dependencies = [
 
 [project.optional-dependencies]
 instruments = [
-  "crewai >= 0.70.0",
+  "crewai >= 0.70.0, < 1",
 ]
 test = [
-  "crewai >= 0.70.0",
-  "crewai-tools >= 0.12.0",
+  "crewai >= 0.70.0, < 1",
+  "crewai-tools >= 0.12.0, < 1",
   "pytest >= 7.0.0",
   "pytest-cov >= 4.0.0",
 ]
