@@ -1,0 +1,23 @@
+# OpenTelemetry core packages
+opentelemetry-api>=1.38.0
+opentelemetry-sdk>=1.38.0
+opentelemetry-instrumentation>=0.59b0
+opentelemetry-semantic-conventions>=0.59b0
+
+# OpenTelemetry exporters
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0
+
+# Splunk GenAI utilities (required by the instrumentation)
+splunk-otel-util-genai>=0.1.9
+
+# Wrapt for monkey-patching
+wrapt>=1.14.0,<2.0.0
+
+# AWS SDK (optional, for credential checks)
+boto3>=1.34.0
+
+# Bedrock AgentCore SDK (required)
+bedrock-agentcore>=1.0.0
+
+# Bedrock AgentCore instrumentation (install from local package)
+# Run from repo root: pip install -e instrumentation-genai/opentelemetry-instrumentation-bedrock-agentcore[instruments]
