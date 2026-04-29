@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.1.3 - 2026-04-29
+- Fixed namespace package conflicts between translator packages.
+- Added CI tests.
+
 ## Version 0.1.2 - 2026-04-10
 - Updated requests version and python version.
 

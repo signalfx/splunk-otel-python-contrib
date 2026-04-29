@@ -51,14 +51,14 @@ done
 [[ -f ~/.corporate-certs/env.sh ]] && source ~/.corporate-certs/env.sh
 
 # ── OTel / SDOT configuration ──────────────────────────────────
-export OTEL_SERVICE_NAME="crm-app"
+export OTEL_SERVICE_NAME="crm-demo"
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
 export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
 export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="grpc"
 export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE="DELTA"
 export OTEL_LOGS_EXPORTER="otlp"
 export OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED="true"
-export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=crm-demo"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=o11y-for-ai"
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="true"
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE="SPAN_AND_EVENT"
 export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric_event,splunk"

@@ -22,7 +22,7 @@ class TestContentNormalizer:
 
     def test_normalize_openai_choices_format(self):
         """Test normalizing OpenAI choices format."""
-        from opentelemetry.util.genai.processor.content_normalizer import (
+        from opentelemetry.util.genai.processor.langsmith_content_normalizer import (
             normalize_langsmith_content,
         )
 
@@ -46,7 +46,7 @@ class TestContentNormalizer:
 
     def test_normalize_langchain_serialized_messages(self):
         """Test normalizing LangChain serialized message format."""
-        from opentelemetry.util.genai.processor.content_normalizer import (
+        from opentelemetry.util.genai.processor.langsmith_content_normalizer import (
             normalize_langsmith_content,
         )
 
@@ -72,7 +72,7 @@ class TestContentNormalizer:
 
     def test_normalize_direct_lc_array(self):
         """Test normalizing direct array of LangChain lc messages."""
-        from opentelemetry.util.genai.processor.content_normalizer import (
+        from opentelemetry.util.genai.processor.langsmith_content_normalizer import (
             normalize_langsmith_content,
         )
 
@@ -117,7 +117,7 @@ class TestContentNormalizer:
 
     def test_normalize_string_content(self):
         """Test normalizing simple string content."""
-        from opentelemetry.util.genai.processor.content_normalizer import (
+        from opentelemetry.util.genai.processor.langsmith_content_normalizer import (
             normalize_langsmith_content,
         )
 
@@ -133,7 +133,7 @@ class TestContentNormalizer:
 
     def test_normalize_empty_content(self):
         """Test handling empty content."""
-        from opentelemetry.util.genai.processor.content_normalizer import (
+        from opentelemetry.util.genai.processor.langsmith_content_normalizer import (
             normalize_langsmith_content,
         )
 
@@ -148,7 +148,7 @@ class TestMessageReconstructor:
 
     def test_reconstruct_simple_messages(self):
         """Test reconstructing simple messages."""
-        from opentelemetry.util.genai.processor.message_reconstructor import (
+        from opentelemetry.util.genai.processor.langsmith_message_reconstructor import (
             reconstruct_messages_from_langsmith,
         )
 
@@ -166,7 +166,7 @@ class TestMessageReconstructor:
 
     def test_reconstruct_with_tool_calls(self):
         """Test reconstructing messages with tool calls."""
-        from opentelemetry.util.genai.processor.message_reconstructor import (
+        from opentelemetry.util.genai.processor.langsmith_message_reconstructor import (
             reconstruct_messages_from_langsmith,
         )
 
