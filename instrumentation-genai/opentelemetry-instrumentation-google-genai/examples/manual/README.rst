@@ -11,7 +11,8 @@ response, providing a comprehensive view of the performance and behavior of
 your GenAI SDK requests. Metrics include aggregate statistics such as the aggregate
 token usage as well as the latency distribution of the GenAI operations.
 
-Note: `.env <.env>`_ file configures additional environment variables:
+Note: `.env.example <.env.example>`_ contains sample configuration for
+additional environment variables:
 
 - `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`
 
@@ -31,6 +32,7 @@ Next, set up a virtual environment like this:
     source .venv/bin/activate
     pip install "python-dotenv[cli]"
     pip install -r requirements.txt
+    cp .env.example .env
 
 Run
 ---
@@ -41,4 +43,3 @@ Run the example like this:
 
     export PROMPT="Your prompt here"
     dotenv run -- python main.py
-

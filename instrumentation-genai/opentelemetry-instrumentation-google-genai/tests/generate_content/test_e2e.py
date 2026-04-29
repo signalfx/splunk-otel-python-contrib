@@ -360,7 +360,10 @@ def fixture_otel_mocker():
 @pytest.fixture(
     name="setup_content_recording",
     autouse=True,
-    params=["logcontent", "excludecontent"],
+    params=[
+        pytest.param("logcontent", id="content"),
+        pytest.param("excludecontent", id="nocontent"),
+    ],
 )
 def fixture_setup_content_recording(request, semconv_version):
     enabled = request.param == "logcontent"
@@ -472,7 +475,9 @@ def fixture_vertex_client_factory(
     return _factory
 
 
-@pytest.fixture(name="genai_sdk_backend", params=["vertexaiapi"])
+@pytest.fixture(
+    name="genai_sdk_backend", params=[pytest.param("vertexaiapi", id="vertex")]
+)
 def fixture_genai_sdk_backend(request):
     return request.param
 
@@ -498,7 +503,9 @@ def fixture_is_async(request):
     return request.param == "async"
 
 
-@pytest.fixture(name="model", params=["gemini-2.5-flash"])
+@pytest.fixture(
+    name="model", params=[pytest.param("gemini-2.5-flash", id="g25flash")]
+)
 def fixture_model(request):
     return request.param
 
@@ -571,7 +578,9 @@ def test_streaming(generate_content_stream, model, otel_mocker):
 
 @pytest.mark.parametrize("semconv_version", ["experimental"], indirect=True)
 @pytest.mark.parametrize(
-    "enable_completion_hook", ["enable_completion_hook"], indirect=True
+    "enable_completion_hook",
+    [pytest.param("enable_completion_hook", id="hook")],
+    indirect=True,
 )
 @pytest.mark.vcr
 def test_upload_hook_non_streaming(
