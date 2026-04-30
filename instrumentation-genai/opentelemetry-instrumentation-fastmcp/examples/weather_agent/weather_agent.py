@@ -171,6 +171,8 @@ async def run_agent(
     from fastmcp import Client
     from openai import OpenAI
 
+    # Prefer generic OPENAI_BASE_URL / OPENAI_API_KEY env vars (Azure or any
+    # OpenAI-compatible endpoint), falling back to NVIDIA.
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("NVIDIA_API_KEY")
     if not api_key:
         raise RuntimeError(

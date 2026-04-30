@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1]
+
+### Changed (Breaking)
+
+- **`initialize` MCPOperation replaces `AgentInvocation` as root span** — Both client and server now use `MCPOperation(mcp_method_name="initialize")` as the session-spanning root span instead of `AgentInvocation`. Traces will show `initialize` as the root span for standalone FastMCP apps, and correctly nest under outer GenAI spans (e.g. LangChain, OpenAI) when FastMCP is used as a sub-component.
+
+### Changed
+
+- **MCP session duration metrics via `initialize` span** — `mcp.client.session.duration` and `mcp.server.session.duration` are now emitted when the `initialize` MCPOperation ends, replacing the previous `AgentInvocation`-based `_record_mcp_session_metrics` path in `util-genai`. Session metrics now carry the same semconv attributes as the `initialize` span.
+- **Client `initialize` span enrichment** — After a successful connect the `initialize` span is enriched with `mcp.protocol.version` (from `initialize_result.protocolVersion`) and `sdot.mcp.server_name` (from `initialize_result.serverInfo.name`).
+- **`_active_sessions` dict type** — `ClientInstrumentor._active_sessions` is now `dict[int, MCPOperation]` (was `dict[int, AgentInvocation]`).
+
+### Removed
+
+- `AgentInvocation` import and usage from `client_instrumentor.py` and `server_instrumentor.py`.
+- `Workflow` import from `server_instrumentor.py` (was unused after the root-span refactor).
+
 ## [0.2.0]
 
 ### Added
