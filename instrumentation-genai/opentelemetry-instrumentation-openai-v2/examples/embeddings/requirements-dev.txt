@@ -1,0 +1,3 @@
+# For local development, install from source instead:
+#   pip install -e ../../../
+splunk-otel-instrumentation-openai

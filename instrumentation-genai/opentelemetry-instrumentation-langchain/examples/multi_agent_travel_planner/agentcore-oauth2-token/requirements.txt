@@ -25,14 +25,8 @@ opentelemetry-semantic-conventions==0.59b0
 # OpenTelemetry instrumentations for LLM providers
 opentelemetry-instrumentation-openai==0.60.0
 
-# Splunk GenAI utilities and emitters
-splunk-otel-util-genai
-splunk-otel-genai-emitters-splunk
-splunk-otel-util-genai-evals
-# OAuth2/LiteLLM support for custom eval providers (v0.1.8+ adds DEEPEVAL_LLM_EXTRA_HEADERS)
-splunk-otel-genai-evals-deepeval
+# OAuth2/LiteLLM support for custom eval providers
 litellm==1.83.8
-splunk-otel-instrumentation-langchain
 
 # DeepEval for evaluations
 deepeval==3.3.9

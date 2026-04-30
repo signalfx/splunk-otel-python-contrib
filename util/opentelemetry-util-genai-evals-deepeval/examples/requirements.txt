@@ -6,12 +6,5 @@
 openai==2.32.0
 litellm==1.83.8
 
-# Splunk GenAI utilities and emitters
-splunk-otel-instrumentation-crewai
-splunk-otel-util-genai
-splunk-otel-genai-emitters-splunk
-splunk-otel-util-genai-evals
-splunk-otel-genai-evals-deepeval
-
 # DeepEval for evaluations
 deepeval==3.3.9

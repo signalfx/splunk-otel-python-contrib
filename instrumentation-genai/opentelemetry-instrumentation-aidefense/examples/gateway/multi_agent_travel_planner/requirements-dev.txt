@@ -1,0 +1,8 @@
+# Splunk GenAI instrumentation packages (latest published)
+# For local development, install from source instead:
+#   pip install -e ../../../util/opentelemetry-util-genai
+#   pip install -e ../../../instrumentation-genai/opentelemetry-instrumentation-aidefense
+#   pip install -e ../../../instrumentation-genai/opentelemetry-instrumentation-langchain
+splunk-otel-util-genai
+splunk-otel-instrumentation-aidefense
+splunk-otel-instrumentation-langchain

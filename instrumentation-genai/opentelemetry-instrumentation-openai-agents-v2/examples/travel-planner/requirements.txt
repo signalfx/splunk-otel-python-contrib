@@ -16,10 +16,3 @@ opentelemetry-sdk==1.38.0
 opentelemetry-exporter-otlp-proto-grpc==1.38.0
 opentelemetry-instrumentation==0.59b0
 opentelemetry-semantic-conventions==0.59b0
-
-# Splunk OpenTelemetry GenAI packages
-splunk-otel-util-genai
-splunk-otel-util-genai-evals
-splunk-otel-genai-evals-deepeval
-splunk-otel-genai-emitters-splunk
-splunk-otel-instrumentation-openai-agents

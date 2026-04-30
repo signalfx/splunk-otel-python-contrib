@@ -20,13 +20,6 @@ opentelemetry-semantic-conventions==0.59b0
 # OpenTelemetry Distro (for zero-code instrumentation)
 opentelemetry-distro==0.59b0
 
-# Splunk GenAI utilities and emitters
-splunk-otel-instrumentation-crewai
-splunk-otel-util-genai
-splunk-otel-genai-emitters-splunk
-splunk-otel-util-genai-evals
-splunk-otel-genai-evals-deepeval
-
 # DeepEval for evaluations
 deepeval==3.3.9
 
