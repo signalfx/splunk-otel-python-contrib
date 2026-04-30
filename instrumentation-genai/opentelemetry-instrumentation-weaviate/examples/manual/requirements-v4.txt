@@ -1,7 +1,4 @@
-# Pinned 2026-04-28 from latest PyPI
-# Run `pip install -r requirements-v4.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
+# Weaviate v4 Manual Example — application dependencies
 weaviate-client==4.21.0
 opentelemetry-sdk==1.38.0
 opentelemetry-exporter-otlp-proto-grpc==1.38.0

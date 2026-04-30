@@ -1,4 +1,4 @@
-# OpenAI Agents Zero-Code Example — application dependencies
+# OpenAI Agents Travel Planner — application dependencies
 openai-agents==0.3.3
 openai==2.32.0
 python-dotenv==1.2.2

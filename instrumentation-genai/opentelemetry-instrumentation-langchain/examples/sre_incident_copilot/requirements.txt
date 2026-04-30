@@ -1,7 +1,4 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
+# SRE Incident Copilot — application dependencies
 langchain==1.2.15
 langchain-openai==1.1.13
 langgraph==1.1.10
@@ -13,3 +10,5 @@ chromadb==1.5.7
 langchain-community==0.4.1
 pydantic==2.12.5
 nest-asyncio==1.6.0
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp==1.38.0

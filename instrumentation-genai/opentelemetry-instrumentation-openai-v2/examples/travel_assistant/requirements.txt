@@ -1,12 +1,7 @@
-# Core dependencies
+# OpenAI Travel Assistant — application dependencies
 openai==2.33.0
 requests==2.32.5
 python-dotenv==1.2.2
-
-# OpenTelemetry
 opentelemetry-api==1.38.0
 opentelemetry-sdk==1.38.0
 opentelemetry-exporter-otlp-proto-grpc==1.38.0
-
-# Local instrumentation (install from repo root)
-# pip install -e ../../

@@ -1,7 +1,4 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
+# LlamaIndex Travel Planner K8s — application dependencies
 llama-index-core==0.14.20
 llama-index-llms-openai==0.7.5
 requests==2.32.5

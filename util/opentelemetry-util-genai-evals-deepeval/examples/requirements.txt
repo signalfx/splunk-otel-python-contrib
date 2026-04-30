@@ -1,6 +1,5 @@
-openai==2.32.0
-litellm==1.83.8
-deepeval==3.3.9
+# Deepeval Evals Example — production dependencies (PyPI packages)
+-r requirements-app.txt
 splunk-otel-instrumentation-crewai
 splunk-otel-util-genai
 splunk-otel-genai-emitters-splunk

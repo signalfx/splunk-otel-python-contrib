@@ -1,10 +1,6 @@
-langchain==1.2.15
-langchain-openai==1.1.13
-langgraph==1.1.10
-python-dotenv==1.2.2
-deepeval==3.3.9
-litellm==1.83.8
--e ../../
+# Multi-Agent Travel Planner — development dependencies (editable local installs)
+-r requirements-app.txt
+-e ../../[instruments]
 -e ../../../../util/opentelemetry-util-genai
 -e ../../../../util/opentelemetry-util-genai-evals
 -e ../../../../util/opentelemetry-util-genai-evals-deepeval

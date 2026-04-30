@@ -1,7 +1,4 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
+# LangChain Zero-Code Example — application dependencies
 langchain==1.2.15
 langchain-openai==1.1.13
 langgraph==1.1.10

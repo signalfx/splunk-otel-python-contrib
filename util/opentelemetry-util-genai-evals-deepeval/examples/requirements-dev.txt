@@ -1,6 +1,5 @@
-openai==2.32.0
-litellm==1.83.8
-deepeval==3.3.9
+# Deepeval Evals Example — development dependencies (editable local installs)
+-r requirements-app.txt
 -e ../
 -e ../../../util/opentelemetry-util-genai
 -e ../../../util/opentelemetry-util-genai-evals

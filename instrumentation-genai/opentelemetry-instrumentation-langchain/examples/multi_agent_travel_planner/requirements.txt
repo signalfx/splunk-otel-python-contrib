@@ -1,9 +1,5 @@
-langchain==1.2.15
-langchain-openai==1.1.13
-langgraph==1.1.10
-python-dotenv==1.2.2
-deepeval==3.3.9
-litellm==1.83.8
+# Multi-Agent Travel Planner — production dependencies (PyPI packages)
+-r requirements-app.txt
 splunk-otel-util-genai
 splunk-otel-util-genai-evals
 splunk-otel-genai-evals-deepeval

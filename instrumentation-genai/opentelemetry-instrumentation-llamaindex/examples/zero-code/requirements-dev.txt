@@ -1,8 +1,5 @@
-llama-index==0.14.21
-python-dotenv==1.2.2
-requests==2.32.5
-opentelemetry-distro==0.59b0
-opentelemetry-exporter-otlp==1.38.0
+# LlamaIndex Zero-Code Example — development dependencies (editable local installs)
+-r requirements-app.txt
 -e ../../
 -e ../../../../util/opentelemetry-util-genai
 -e ../../../../util/opentelemetry-util-genai-evals
