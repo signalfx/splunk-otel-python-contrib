@@ -867,19 +867,24 @@ class Command:
         return f"Command(goto={self.goto!r})"
 
 
-@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
-def test_handoff_tool_sets_to_and_from_agent(handler_with_stub):
-    """A tool returning Command(goto=...) should set handoff attributes."""
-    handler, stub = handler_with_stub
-
+def _make_agent(handler, stub, agent_name="sales_agent"):
+    """Helper: start an agent chain and return its run_id."""
     agent_run_id = uuid4()
     handler.on_chain_start(
         serialized={"name": "AgentExecutor"},
         inputs={},
         run_id=agent_run_id,
         tags=["agent"],
-        metadata={"agent_name": "sales_agent"},
+        metadata={"agent_name": agent_name},
     )
+    return agent_run_id
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_handoff_tool_sets_to_and_from_agent(handler_with_stub):
+    """Command(goto=str) sets handoff attributes and marks is_handoff=True."""
+    handler, stub = handler_with_stub
+    agent_run_id = _make_agent(handler, stub)
 
     tool_run_id = uuid4()
     handler.on_tool_start(
@@ -888,7 +893,6 @@ def test_handoff_tool_sets_to_and_from_agent(handler_with_stub):
         run_id=tool_run_id,
         parent_run_id=agent_run_id,
     )
-
     handler.on_tool_end(
         output=Command(goto="billing_agent"),
         run_id=tool_run_id,
@@ -896,23 +900,92 @@ def test_handoff_tool_sets_to_and_from_agent(handler_with_stub):
     )
 
     tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is True
     assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "billing_agent"
     assert tool.attributes.get(GEN_AI_HANDOFF_FROM_AGENT) == "sales_agent"
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
-def test_handoff_tool_no_goto_does_not_set_attributes(handler_with_stub):
-    """A Command without goto should not set handoff attributes."""
+def test_handoff_list_goto_joined(handler_with_stub):
+    """Command(goto=[str, str]) joins target names as comma-separated string."""
     handler, stub = handler_with_stub
+    agent_run_id = _make_agent(handler, stub)
 
-    agent_run_id = uuid4()
-    handler.on_chain_start(
-        serialized={"name": "AgentExecutor"},
-        inputs={},
-        run_id=agent_run_id,
-        tags=["agent"],
-        metadata={"agent_name": "sales_agent"},
+    tool_run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "fan_out"},
+        input_str="",
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
     )
+    handler.on_tool_end(
+        output=Command(goto=["agent_a", "agent_b"]),
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+    )
+
+    tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is True
+    assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "agent_a, agent_b"
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_handoff_state_machine_no_goto(handler_with_stub):
+    """Command with no goto but a recognised routing key in update is a handoff."""
+    handler, stub = handler_with_stub
+    agent_run_id = _make_agent(handler, stub)
+
+    tool_run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "record_warranty_status"},
+        input_str="",
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+    )
+    handler.on_tool_end(
+        output=Command(
+            update={"current_step": "specialist", "warranty_status": "in_warranty"}
+        ),
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+    )
+
+    tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is True
+    assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "specialist"
+    assert tool.attributes.get(GEN_AI_HANDOFF_FROM_AGENT) == "sales_agent"
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_handoff_command_no_goto_no_routing_key_still_marked(handler_with_stub):
+    """A Command with an update dict but no known routing key is still a handoff."""
+    handler, stub = handler_with_stub
+    agent_run_id = _make_agent(handler, stub)
+
+    tool_run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "some_state_tool"},
+        input_str="",
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+    )
+    handler.on_tool_end(
+        output=Command(update={"foo": "bar"}),
+        run_id=tool_run_id,
+        parent_run_id=agent_run_id,
+    )
+
+    tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is True
+    # No resolvable target — attribute absent
+    assert GEN_AI_HANDOFF_TO_AGENT not in tool.attributes
+
+
+@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
+def test_handoff_empty_command_not_marked(handler_with_stub):
+    """A bare Command() with no goto and no update is NOT treated as a handoff."""
+    handler, stub = handler_with_stub
+    agent_run_id = _make_agent(handler, stub)
 
     tool_run_id = uuid4()
     handler.on_tool_start(
@@ -921,31 +994,23 @@ def test_handoff_tool_no_goto_does_not_set_attributes(handler_with_stub):
         run_id=tool_run_id,
         parent_run_id=agent_run_id,
     )
-
     handler.on_tool_end(
-        output=Command(goto=None),
+        output=Command(goto=None, update=None),
         run_id=tool_run_id,
         parent_run_id=agent_run_id,
     )
 
     tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is False
     assert GEN_AI_HANDOFF_TO_AGENT not in tool.attributes
     assert GEN_AI_HANDOFF_FROM_AGENT not in tool.attributes
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 def test_handoff_regular_tool_output_unaffected(handler_with_stub):
-    """A regular tool (non-Command output) should not have handoff attributes."""
+    """A regular tool (non-Command output) is not a handoff."""
     handler, stub = handler_with_stub
-
-    agent_run_id = uuid4()
-    handler.on_chain_start(
-        serialized={"name": "AgentExecutor"},
-        inputs={},
-        run_id=agent_run_id,
-        tags=["agent"],
-        metadata={"agent_name": "sales_agent"},
-    )
+    agent_run_id = _make_agent(handler, stub)
 
     tool_run_id = uuid4()
     handler.on_tool_start(
@@ -954,7 +1019,6 @@ def test_handoff_regular_tool_output_unaffected(handler_with_stub):
         run_id=tool_run_id,
         parent_run_id=agent_run_id,
     )
-
     handler.on_tool_end(
         output="some search result",
         run_id=tool_run_id,
@@ -962,6 +1026,7 @@ def test_handoff_regular_tool_output_unaffected(handler_with_stub):
     )
 
     tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is False
     assert GEN_AI_HANDOFF_TO_AGENT not in tool.attributes
     assert GEN_AI_HANDOFF_FROM_AGENT not in tool.attributes
     assert tool.attributes.get("tool.response") == '"some search result"'
@@ -969,7 +1034,7 @@ def test_handoff_regular_tool_output_unaffected(handler_with_stub):
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 def test_handoff_without_parent_agent_sets_only_to_agent(handler_with_stub):
-    """When there's no parent agent context, only to_agent should be set."""
+    """When there's no parent agent context, only to_agent is set."""
     handler, stub = handler_with_stub
 
     tool_run_id = uuid4()
@@ -979,7 +1044,6 @@ def test_handoff_without_parent_agent_sets_only_to_agent(handler_with_stub):
         run_id=tool_run_id,
         parent_run_id=None,
     )
-
     handler.on_tool_end(
         output=Command(goto="support_agent"),
         run_id=tool_run_id,
@@ -987,5 +1051,6 @@ def test_handoff_without_parent_agent_sets_only_to_agent(handler_with_stub):
     )
 
     tool = stub.stopped_tools[-1]
+    assert tool.is_handoff is True
     assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "support_agent"
     assert GEN_AI_HANDOFF_FROM_AGENT not in tool.attributes

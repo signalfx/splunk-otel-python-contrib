@@ -199,6 +199,9 @@ class ToolCall(GenAI):
         default=None,
         metadata={"semconv": "error.type"},
     )
+    # Set to True when this tool call is a handoff (agent-to-agent control transfer).
+    # Causes the span emitter to use "agent_handoff" as the operation name.
+    is_handoff: bool = field(default=False, metadata={})
 
 
 @dataclass()

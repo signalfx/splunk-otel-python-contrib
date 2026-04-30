@@ -889,10 +889,21 @@ class SpanEmitter(EmitterMeta):
     def _start_tool_call(self, tool: ToolCall) -> None:
         """Start a tool call span per execute_tool semantic conventions.
 
-        Span name: execute_tool {gen_ai.tool.name}
-        Span kind: INTERNAL
+        For handoff tool calls (tool.is_handoff=True) the operation name is
+        "agent_handoff" and the span name is "agent_handoff {to_agent}".
+        Otherwise: "execute_tool {tool.name}".
         """
-        span_name = f"execute_tool {tool.name}"
+        is_handoff = getattr(tool, "is_handoff", False)
+        if is_handoff:
+            to_agent = (
+                getattr(tool, "attributes", {}).get("gen_ai.handoff.to_agent")
+                or tool.name
+            )
+            span_name = f"agent_handoff {to_agent}"
+            operation_name = "agent_handoff"
+        else:
+            span_name = f"execute_tool {tool.name}"
+            operation_name = GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value
         parent_span = getattr(tool, "parent_span", None)
         parent_ctx = (
             trace.set_span_in_context(parent_span)
@@ -906,10 +917,7 @@ class SpanEmitter(EmitterMeta):
         )
         self._add_span_to_invocation(tool, span)
 
-        span.set_attribute(
-            GenAI.GEN_AI_OPERATION_NAME,
-            GenAI.GenAiOperationNameValues.EXECUTE_TOOL.value,
-        )
+        span.set_attribute(GenAI.GEN_AI_OPERATION_NAME, operation_name)
         _apply_tool_semconv_attributes(span, tool, self._capture_content)
         _apply_custom_attributes(span, getattr(tool, "attributes", None))
 
