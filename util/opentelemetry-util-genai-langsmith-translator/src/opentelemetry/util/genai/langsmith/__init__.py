@@ -99,6 +99,7 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "langsmith.usage.completion_tokens": "gen_ai.usage.output_tokens",
         "langsmith.usage.total_tokens": "gen_ai.usage.total_tokens",
         # --- 5. Tool & Function Calling ---
+        "langsmith.tool.name": "gen_ai.tool.call.name",
         "langsmith.session_id": "gen_ai.conversation.id",
         "langsmith.thread_id": "gen_ai.conversation.id",
         "langsmith.run_id": "gen_ai.run.id",
@@ -349,8 +350,16 @@ def _install_deferred_registration() -> None:
     trace.set_tracer_provider = wrapped_set_tracer_provider
 
 
-# Auto-enable on import (unless disabled)
-_auto_enable()
+# Auto-enable on import (unless disabled).
+# Wrapped in try/except because this runs via .pth file on every Python
+# startup, including during pip installs where namespace packages may not
+# be fully resolved yet.
+try:
+    _auto_enable()
+except ImportError:
+    _LOGGER.debug(
+        "Langsmith translator deferred: processor module not yet available"
+    )
 
 
 __all__ = [

@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.3 - 2026-04-29
+- Fixed namespace package conflicts between translator packages.
+- Enhanced content normalizer for LangChain message formats.
+- Added CI tests.
+
 ## Version 0.1.2 - 2026-02-06
 - Resolved issue with missing Agent evaluations.
 - Removed redundant calls which was causing duplicate metrics & evaluations.

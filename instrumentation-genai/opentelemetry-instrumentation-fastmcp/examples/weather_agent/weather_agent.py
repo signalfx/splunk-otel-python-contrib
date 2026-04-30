@@ -135,10 +135,19 @@ async def run_agent(user_query: str, manual: bool = True):
     from fastmcp.client.transports import StdioTransport
     from openai import OpenAI
 
-    openai = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=os.environ["NVIDIA_API_KEY"],
+    # Prefer generic OPENAI_BASE_URL / OPENAI_API_KEY env vars (Azure or any
+    # OpenAI-compatible endpoint), falling back to NVIDIA.
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "Set OPENAI_API_KEY (Azure / OpenAI) or NVIDIA_API_KEY before running."
+        )
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL") or "https://integrate.api.nvidia.com/v1"
     )
+    model = os.environ.get("OPENAI_MODEL") or "nvidia/llama-3.3-nemotron-super-49b-v1"
+
+    openai = OpenAI(base_url=base_url, api_key=api_key)
     server_script = str(Path(__file__).parent / "weather_server.py")
 
     print(f"\n{'=' * 60}")
@@ -216,7 +225,7 @@ async def run_agent(user_query: str, manual: bool = True):
         # --- Agentic loop: LLM calls until it produces a final text response ---
         while True:
             response = openai.chat.completions.create(
-                model="nvidia/llama-3.3-nemotron-super-49b-v1",
+                model=model,
                 messages=messages,
                 tools=openai_tools,
                 tool_choice="auto",

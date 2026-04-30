@@ -23,11 +23,9 @@ from wrapt import register_post_import_hook, wrap_function_wrapper
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
-    AgentInvocation,
     Error,
     MCPOperation,
     MCPToolCall,
-    Workflow,
 )
 from opentelemetry.instrumentation.fastmcp._mcp_context import (
     get_mcp_request_context,
@@ -73,7 +71,6 @@ class ServerInstrumentor:
     def __init__(self, telemetry_handler: TelemetryHandler):
         self._handler = telemetry_handler
         self._server_name: Optional[str] = None
-        self._server_workflow: Optional[Workflow] = None
 
     def instrument(self):
         """Apply FastMCP server-side instrumentation."""
@@ -158,35 +155,40 @@ class ServerInstrumentor:
         return traced_init
 
     def _server_run_wrapper(self):
-        """Wrapper for mcp.server.lowlevel.Server.run to track server session.
+        """Wrapper for mcp.server.lowlevel.Server.run — creates an ``initialize`` root span.
 
-        Creates an AgentInvocation(agent_type="mcp_server") that spans the
-        entire Server.run() lifetime, enabling mcp.server.session.duration
-        metric recording via MetricsEmitter.
+        The span spans the entire Server.run() lifetime so that all server-side
+        MCP operations (tools/call, resources/read, prompts/get) are children.
+        This mirrors the client's session-spanning ``initialize`` span and
+        ensures ``mcp.server.session.duration`` is recorded.
+
         """
         instrumentor = self
         handler = self._handler
 
         async def traced_server_run(wrapped, instance, args, kwargs):
             server_name = instrumentor._server_name or "mcp_server"
-            session = AgentInvocation(
-                name=f"mcp.server.{server_name}",
-                agent_type="mcp_server",
+
+            init_op = MCPOperation(
+                target="",
+                mcp_method_name="initialize",
+                network_transport="pipe",
+                sdot_mcp_server_name=server_name,
+                is_client=False,
                 framework="fastmcp",
                 system="mcp",
             )
-            session.attributes["gen_ai.operation.name"] = "mcp.server_session"
-            session.attributes["network.transport"] = "pipe"  # stdio = pipe
 
-            handler.start_agent(session)
+            handler.start_mcp_operation(init_op)
             try:
                 result = await wrapped(*args, **kwargs)
-                handler.stop_agent(session)
+                handler.stop_mcp_operation(init_op)
                 return result
             except Exception as e:
-                session.attributes["error.type"] = type(e).__qualname__
-                handler.fail_agent(
-                    session,
+                init_op.is_error = True
+                init_op.mcp_error_type = type(e).__qualname__
+                handler.fail_mcp_operation(
+                    init_op,
                     Error(type=type(e), message=str(e)),
                 )
                 raise

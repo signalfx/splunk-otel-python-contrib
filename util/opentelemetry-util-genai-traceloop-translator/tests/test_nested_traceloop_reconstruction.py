@@ -8,10 +8,10 @@ import json
 
 import pytest
 
-from opentelemetry.util.genai.processor.content_normalizer import (
+from opentelemetry.util.genai.processor.traceloop_content_normalizer import (
     normalize_traceloop_content,
 )
-from opentelemetry.util.genai.processor.message_reconstructor import (
+from opentelemetry.util.genai.processor.traceloop_message_reconstructor import (
     reconstruct_messages_from_traceloop,
 )
 
