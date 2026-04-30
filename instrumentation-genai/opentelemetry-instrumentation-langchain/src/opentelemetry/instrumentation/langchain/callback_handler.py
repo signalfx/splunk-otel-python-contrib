@@ -35,6 +35,8 @@ from opentelemetry.util.genai.types import (
 from opentelemetry.util.genai.attributes import (
     GEN_AI_COMMAND,
     GEN_AI_FINISH_REASON,
+    GEN_AI_HANDOFF_FROM_AGENT,
+    GEN_AI_HANDOFF_TO_AGENT,
     FINISH_REASON_INTERRUPTED,
 )
 from opentelemetry.util.genai.utils import (
@@ -1017,6 +1019,20 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         tool = self._invocation_manager.get(run_id)
         if not isinstance(tool, ToolCall):
             return
+        # Detect LangGraph handoff: a tool that returns a Command with goto.
+        # Uses type-name matching to avoid importing LangGraph at instrumentation time.
+        if type(output).__name__ == "Command":
+            goto = getattr(output, "goto", None)
+            if goto and isinstance(goto, str):
+                tool.attributes[GEN_AI_HANDOFF_TO_AGENT] = goto
+                if parent_run_id is not None:
+                    context_agent = self._find_nearest_agent(parent_run_id)
+                    if context_agent is not None:
+                        from_name = context_agent.agent_name or context_agent.name
+                        if from_name:
+                            tool.attributes[GEN_AI_HANDOFF_FROM_AGENT] = _safe_str(
+                                from_name
+                            )
         serialized = _serialize(output)
         if serialized is not None:
             tool.attributes.setdefault("tool.response", serialized)
