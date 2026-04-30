@@ -98,7 +98,8 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "langsmith.usage.prompt_tokens": "gen_ai.usage.input_tokens",
         "langsmith.usage.completion_tokens": "gen_ai.usage.output_tokens",
         "langsmith.usage.total_tokens": "gen_ai.usage.total_tokens",
-        # --- 5. Tool & Function Calling ---
+        # --- 5. Conversation & Run Tracking ---
+        "langsmith.trace.session_id": "gen_ai.conversation.id",
         "langsmith.tool.name": "gen_ai.tool.call.name",
         "langsmith.session_id": "gen_ai.conversation.id",
         "langsmith.thread_id": "gen_ai.conversation.id",
@@ -111,7 +112,9 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "langsmith.agent.description": "gen_ai.agent.description",
         "langsmith.workflow.name": "gen_ai.workflow.name",
         "langsmith.chain.name": "gen_ai.workflow.name",
-        # --- 8. Error & Status Handling ---
+        # --- 8. Streaming ---
+        "langsmith.request.streaming": "gen_ai.request.stream",
+        # --- 9. Error & Status Handling ---
         "langsmith.error": "gen_ai.error.message",
         "langsmith.error.type": "gen_ai.error.type",
         "langsmith.status": "gen_ai.response.status",

@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import timeit as _timeit_mod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -49,6 +50,7 @@ from opentelemetry.util.genai.types import (
     LLMInvocation,
     OutputMessage,
     Text,
+    ToolCall,
     Workflow,
 )
 
@@ -256,11 +258,14 @@ class LangsmithSpanProcessor(SpanProcessor):
         self._synthetic_span_ids: set[int] = set()
         # Mapping from original span_id to translated INVOCATION (not span) for parent-child relationship preservation
         self._original_to_translated_invocation: Dict[int, Any] = {}
-        # Buffer spans to process them in the correct order (parents before children)
-        self._span_buffer: List[ReadableSpan] = []
+        # Buffer non-LLM spans per trace, keyed by trace_id.
+        # Flushed parent-first when the root span arrives.
+        self._trace_buffers: Dict[int, List[ReadableSpan]] = {}
         self._processing_buffer = False
         # Cache reconstructed messages to avoid double reconstruction
         self._message_cache: Dict[int, tuple] = {}
+        # Track agent spans for parent→child name propagation: span_id → (name, hex_id)
+        self._agent_spans: Dict[int, tuple] = {}
 
     def _default_span_filter(self, span: ReadableSpan) -> bool:
         """Default filter: Transform spans that look like LLM/AI calls.
@@ -605,12 +610,23 @@ class LangsmithSpanProcessor(SpanProcessor):
                     invocation.trace_id = trace_id
                     invocation.span_id = span_id_val
 
-                    # Set timing info (use span's timing if available)
-                    # ReadableSpan has start_time and end_time in nanoseconds
-                    if hasattr(span, "_start_time") and span._start_time:  # type: ignore[attr-defined]
+                    # GenAI types default start_time to timeit.default_timer() at
+                    # creation, and handler.finish() sets end_time the same way.
+                    # Since both happen near-simultaneously here (post-hoc processing),
+                    # that would yield ~0 duration. We back-date start_time by the
+                    # span's real duration so the metric reflects actual latency.
+                    if (
+                        hasattr(span, "_start_time")
+                        and hasattr(span, "_end_time")
+                        and span._start_time
+                        and span._end_time
+                    ):
+                        span_duration_s = (
+                            span._end_time - span._start_time
+                        ) / 1e9
                         invocation.start_time = (
-                            span._start_time / 1e9
-                        )  # Convert ns to seconds  # type: ignore[attr-defined]
+                            _timeit_mod.default_timer() - span_duration_s
+                        )
 
                     # Use handler.finish() for full functionality
                     # This will:
@@ -628,7 +644,6 @@ class LangsmithSpanProcessor(SpanProcessor):
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
-
                     except Exception as stop_err:
                         _logger.warning(
                             "[LANGSMITH_PROCESSOR] handler.finish failed: %s",
@@ -639,55 +654,149 @@ class LangsmithSpanProcessor(SpanProcessor):
                         "[LANGSMITH_PROCESSOR] Skipped evaluations (no invocation created): %s",
                         span.name,
                     )
+
+                # After LLM processing, check if this is a root span
+                # (no parent or parent not in this trace). If so, flush
+                # the non-LLM buffer for this trace — by now, agent spans
+                # have populated _agent_spans so children can resolve them.
+                span_context = getattr(span, "context", None)
+                trace_id = getattr(span_context, "trace_id", None)
+                is_root = span.parent is None
+                if is_root and trace_id and trace_id in self._trace_buffers:
+                    self._flush_trace_buffer(trace_id)
+
             else:
-                # Non-LLM spans (tasks, workflows, tools) - buffer for optional batch processing
-                _logger.debug(
-                    "[LANGSMITH_PROCESSOR] Non-LLM span buffered: %s (buffer_size=%d)",
-                    span.name,
-                    len(self._span_buffer) + 1,
-                )
-                self._span_buffer.append(span)
-
-                # Process buffer when root span arrives (optional, for synthetic spans of workflows)
-                if span.parent is None and not self._processing_buffer:
+                # Non-LLM spans (tools, workflows) — buffer until the root
+                # span arrives so agent name propagation works correctly.
+                span_context = getattr(span, "context", None)
+                trace_id = getattr(span_context, "trace_id", None)
+                if trace_id is not None:
+                    self._trace_buffers.setdefault(trace_id, []).append(span)
                     _logger.debug(
-                        "[LANGSMITH_PROCESSOR] Root span detected, processing buffered spans (count=%d)",
-                        len(self._span_buffer),
+                        "[LANGSMITH_PROCESSOR] Buffered non-LLM span: %s (trace=%s, buffer_size=%d)",
+                        span.name,
+                        trace_id,
+                        len(self._trace_buffers[trace_id]),
                     )
-                    self._processing_buffer = True
-                    try:
-                        spans_to_process = self._sort_spans_by_hierarchy(
-                            self._span_buffer
-                        )
+                else:
+                    # No trace_id — process immediately (shouldn't happen in practice)
+                    self._process_non_llm_span(span)
 
-                        for buffered_span in spans_to_process:
-                            # Skip spans that should not be processed
-                            buffered_span_id = getattr(
-                                getattr(buffered_span, "context", None),
-                                "span_id",
-                                None,
-                            )
-                            if self._should_skip_span(
-                                buffered_span, buffered_span_id
-                            ):
-                                continue
-
-                            # Non-LLM spans (workflows, tasks, tools) don't need synthetic spans
-                            # They're already mutated and will be exported as-is
-                            _logger.debug(
-                                "[LANGSMITH_PROCESSOR] Buffered span processed (mutation only): %s",
-                                buffered_span.name,
-                            )
-
-                        self._span_buffer.clear()
-                        self._original_to_translated_invocation.clear()
-                    finally:
-                        self._processing_buffer = False
+                # If this non-LLM span is itself a root, flush immediately
+                if (
+                    span.parent is None
+                    and trace_id
+                    and trace_id in self._trace_buffers
+                ):
+                    self._flush_trace_buffer(trace_id)
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
             logging.warning(
                 "[LANGSMITH_PROCESSOR] Span transformation failed: %s", e
+            )
+
+    def _flush_trace_buffer(self, trace_id: int) -> None:
+        """Flush buffered non-LLM spans for a trace, processing parent-first.
+
+        Called when the root span of a trace arrives, meaning all agent spans
+        (LLM path) have already been processed and _agent_spans is populated.
+        """
+        _logger = logging.getLogger(__name__)
+        spans = self._trace_buffers.pop(trace_id, [])
+        if not spans:
+            return
+
+        sorted_spans = self._sort_spans_by_hierarchy(spans)
+        _logger.debug(
+            "[LANGSMITH_PROCESSOR] Flushing trace buffer: trace=%s, spans=%d",
+            trace_id,
+            len(sorted_spans),
+        )
+
+        # Collect agent span_ids that belong to this trace for cleanup
+        agent_ids_to_remove = set()
+        for buffered_span in sorted_spans:
+            # Inject agent name/id from _agent_spans before building invocation
+            self._inject_agent_context(buffered_span)
+            self._process_non_llm_span(buffered_span)
+            # Track which parent agents were used (for cleanup)
+            parent_ctx = getattr(buffered_span, "parent", None)
+            if parent_ctx:
+                parent_id = getattr(parent_ctx, "span_id", None)
+                if parent_id and parent_id in self._agent_spans:
+                    agent_ids_to_remove.add(parent_id)
+
+        # Clean up agent entries that were consumed by this trace
+        for aid in agent_ids_to_remove:
+            self._agent_spans.pop(aid, None)
+
+    def _inject_agent_context(self, span: ReadableSpan) -> None:
+        """Set gen_ai.agent.name/id on a span from its parent agent if known."""
+        parent_ctx = getattr(span, "parent", None)
+        if not parent_ctx:
+            return
+        parent_id = getattr(parent_ctx, "span_id", None)
+        if parent_id and parent_id in self._agent_spans:
+            agent_name, agent_id = self._agent_spans[parent_id]
+            if hasattr(span, "_attributes") and span._attributes is not None:
+                if "gen_ai.agent.name" not in span._attributes:
+                    span._attributes["gen_ai.agent.name"] = agent_name  # type: ignore[index]
+                if "gen_ai.agent.id" not in span._attributes:
+                    span._attributes["gen_ai.agent.id"] = agent_id  # type: ignore[index]
+
+    def _process_non_llm_span(self, span: ReadableSpan) -> None:
+        """Build invocation and call handler.finish() for a non-LLM span."""
+        _logger = logging.getLogger(__name__)
+
+        invocation = self._build_invocation(
+            span,
+            attribute_transformations=self.attribute_transformations,
+            name_transformations=self.name_transformations,
+            langsmith_attributes=self.langsmith_attributes,
+        )
+
+        if not invocation:
+            _logger.debug(
+                "[LANGSMITH_PROCESSOR] No invocation created for non-LLM span: %s",
+                span.name,
+            )
+            return
+
+        invocation.span = span
+        handler = self.telemetry_handler or get_telemetry_handler()
+
+        span_context = getattr(span, "context", None)
+        trace_id = getattr(span_context, "trace_id", None)
+        span_id_val = getattr(span_context, "span_id", None)
+
+        invocation.trace_id = trace_id
+        invocation.span_id = span_id_val
+
+        # Back-date start_time by the span's actual duration so the metric
+        # reflects real latency (see on_end LLM path for full explanation).
+        if (
+            hasattr(span, "_start_time")
+            and hasattr(span, "_end_time")
+            and span._start_time
+            and span._end_time
+        ):
+            span_duration_s = (span._end_time - span._start_time) / 1e9
+            invocation.start_time = (
+                _timeit_mod.default_timer() - span_duration_s
+            )
+
+        try:
+            handler.finish(invocation)
+            _logger.debug(
+                "[LANGSMITH_PROCESSOR] finish completed for non-LLM span: %s, type=%s",
+                span.name,
+                type(invocation).__name__,
+            )
+        except Exception as stop_err:
+            _logger.warning(
+                "[LANGSMITH_PROCESSOR] handler.finish failed for non-LLM span: %s",
+                stop_err,
             )
 
     def _sort_spans_by_hierarchy(
@@ -728,10 +837,15 @@ class LangsmithSpanProcessor(SpanProcessor):
 
     def shutdown(self) -> None:
         """Called when the tracer provider is shutdown."""
-        pass
+        # Flush any remaining buffered spans
+        for trace_id in list(self._trace_buffers.keys()):
+            self._flush_trace_buffer(trace_id)
+        self._agent_spans.clear()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force flush any buffered spans."""
+        for trace_id in list(self._trace_buffers.keys()):
+            self._flush_trace_buffer(trace_id)
         return True
 
     # ------------------------------------------------------------------
@@ -1151,6 +1265,44 @@ class LangsmithSpanProcessor(SpanProcessor):
                     # Check span_kind from both transformed and original attributes (fallback for safety)
                     span_kind = mutated.get("gen_ai.span.kind", "")
 
+                    # Reclassify "chain" operations as "invoke_agent" when
+                    # the span is an agent root (has no parent, or has agent
+                    # metadata, or its name matches agent patterns).
+                    if operation_name == "chain":
+                        _is_agent = (
+                            span.parent is None
+                            or mutated.get("gen_ai.agent.name")
+                            or any(
+                                p in (span.name or "").lower()
+                                for p in (
+                                    "agent",
+                                    "executor",
+                                )
+                            )
+                        )
+                        if _is_agent:
+                            operation_name = "invoke_agent"
+                            mutated["gen_ai.operation.name"] = operation_name
+                            _logger.debug(
+                                "[LANGSMITH_PROCESSOR] Reclassified chain → invoke_agent: span=%s",
+                                span.name,
+                            )
+
+                    # Track agent spans for parent→child name propagation.
+                    # Agent spans (invoke_agent) go through the LLM path in
+                    # on_end and are processed immediately. Non-LLM children
+                    # are buffered and get agent context injected during flush.
+                    if operation_name == "invoke_agent":
+                        agent_name = (
+                            mutated.get("gen_ai.agent.name") or span.name
+                        )
+                        span_ctx = getattr(span, "context", None)
+                        if span_ctx and hasattr(span_ctx, "span_id"):
+                            self._agent_spans[span_ctx.span_id] = (
+                                agent_name,
+                                f"{span_ctx.span_id:016x}",
+                            )
+
                     # Fallback: infer from span name if operation name not set
                     if not operation_name and span.name:
                         span_name_lower = span.name.lower()
@@ -1192,10 +1344,16 @@ class LangsmithSpanProcessor(SpanProcessor):
                         op in str(span_kind).lower() for op in ["task"]
                     )
 
+                    is_tool_operation = (
+                        operation_name == "execute_tool"
+                        or "tool" in str(span_kind).lower()
+                    )
+
                     if (
                         is_llm_operation
                         or is_agent_operation
                         or is_task_operation
+                        or is_tool_operation
                     ):
                         # This is an LLM span - reconstruct messages once and cache them
                         span_id = getattr(
@@ -1663,34 +1821,9 @@ class LangsmithSpanProcessor(SpanProcessor):
                 attributes=base_attrs,
             )
             if input_messages:
-                invocation.initial_input = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.initial_input:
-                invocation.initial_input = (
-                    base_attrs.get("initial_input")
-                    or base_attrs.get("input")
-                    or base_attrs.get("input_context")
-                    or base_attrs.get("query")
-                )
-
+                invocation.input_messages = input_messages
             if output_messages:
-                invocation.final_output = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.final_output:
-                invocation.final_output = (
-                    base_attrs.get("final_output")
-                    or base_attrs.get("output")
-                    or base_attrs.get("output_result")
-                    or base_attrs.get("response")
-                )
+                invocation.output_messages = output_messages
             return invocation
 
         elif operation_name == "create_agent":
@@ -1717,18 +1850,28 @@ class LangsmithSpanProcessor(SpanProcessor):
                 base_attrs.get("gen_ai.system.instructions") or None
             )
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                invocation.input_context = (
-                    base_attrs.get("input_context")
-                    or base_attrs.get("input")
-                    or base_attrs.get("initial_input")
-                )
+                invocation.input_messages = input_messages
+            return invocation
+
+        elif operation_name == "execute_tool":
+            # Create ToolCall invocation
+            tool_name = (
+                base_attrs.get("gen_ai.tool.name") or existing_span.name
+            )
+            invocation = ToolCall(
+                name=tool_name,
+                id=base_attrs.get("gen_ai.tool.call.id"),
+                tool_type=base_attrs.get("gen_ai.tool.type"),
+                tool_description=base_attrs.get("gen_ai.tool.description"),
+                arguments=base_attrs.get("gen_ai.tool.call.arguments"),
+                tool_result=base_attrs.get("gen_ai.tool.call.result"),
+            )
+            if base_attrs.get("gen_ai.framework"):
+                invocation.framework = base_attrs.get("gen_ai.framework")
+            if base_attrs.get("gen_ai.agent.name"):
+                invocation.agent_name = base_attrs.get("gen_ai.agent.name")
+            if base_attrs.get("gen_ai.agent.id"):
+                invocation.agent_id = base_attrs.get("gen_ai.agent.id")
             return invocation
 
         elif operation_name == "invoke_agent":
@@ -1756,45 +1899,9 @@ class LangsmithSpanProcessor(SpanProcessor):
             )
 
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                invocation.input_context = (
-                    base_attrs.get("input_context")
-                    or base_attrs.get("input")
-                    or base_attrs.get("initial_input")
-                    or base_attrs.get("prompt")
-                    or base_attrs.get("query")
-                )
-
+                invocation.input_messages = input_messages
             if output_messages:
-                invocation.output_result = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.output_result:
-                invocation.output_result = (
-                    base_attrs.get("output_result")
-                    or base_attrs.get("output")
-                    or base_attrs.get("final_output")
-                    or base_attrs.get("response")
-                    or base_attrs.get("answer")
-                )
-
-            if not invocation.input_context and not invocation.output_result:
-                _logger.warning(
-                    "[LANGSMITH_PROCESSOR] Skipping AgentInvocation - no input/output available! "
-                    "span=%s, span_id=%s",
-                    existing_span.name,
-                    span_id,
-                )
-                return None
+                invocation.output_messages = output_messages
             return invocation
         else:
             # Create LLMInvocation (default for chat, completion, embedding)
