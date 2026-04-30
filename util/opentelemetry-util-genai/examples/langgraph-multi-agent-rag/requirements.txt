@@ -8,7 +8,7 @@ langchain-openai==1.1.13
 langchain-community==0.4.1
 
 # LangGraph
-langgraph==1.1.6
+langgraph==1.1.10
 
 # Vector Database - using version compatible with protobuf 5.x
 weaviate-client==4.4.4

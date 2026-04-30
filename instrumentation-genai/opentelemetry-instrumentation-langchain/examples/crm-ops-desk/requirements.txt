@@ -2,7 +2,7 @@
 # Pinned 2026-04-28 from project venv (Python 3.11)
 # HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
 
-langgraph==1.1.6
+langgraph==1.1.10
 langchain-core==1.2.29
 langchain-openai==1.1.13
 faiss-cpu==1.13.2

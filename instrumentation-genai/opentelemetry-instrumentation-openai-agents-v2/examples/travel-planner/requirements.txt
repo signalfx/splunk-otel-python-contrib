@@ -18,8 +18,8 @@ opentelemetry-instrumentation==0.59b0
 opentelemetry-semantic-conventions==0.59b0
 
 # Splunk OpenTelemetry GenAI packages
-splunk-otel-util-genai==0.1.9
-splunk-otel-util-genai-evals==0.1.7
-splunk-otel-genai-evals-deepeval==0.1.12
-splunk-otel-genai-emitters-splunk==0.1.6
-splunk-otel-instrumentation-openai-agents==0.1.2
+splunk-otel-util-genai
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
+splunk-otel-genai-emitters-splunk
+splunk-otel-instrumentation-openai-agents

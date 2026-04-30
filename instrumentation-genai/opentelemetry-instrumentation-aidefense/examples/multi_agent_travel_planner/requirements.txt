@@ -29,7 +29,7 @@ cisco-aidefense-sdk==2.1.1
 # LangChain / LangGraph
 langchain==1.2.15
 langchain-openai==1.1.13
-langgraph==1.1.6
+langgraph==1.1.10
 
 # HTTP client
 requests==2.32.5

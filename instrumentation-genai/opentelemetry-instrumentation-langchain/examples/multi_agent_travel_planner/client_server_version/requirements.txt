@@ -4,7 +4,7 @@
 
 langchain==1.2.15
 langchain-openai==1.1.13
-langgraph==1.1.6
+langgraph==1.1.10
 python-dotenv==1.2.2
 deepeval==3.3.9
 flask==3.1.3

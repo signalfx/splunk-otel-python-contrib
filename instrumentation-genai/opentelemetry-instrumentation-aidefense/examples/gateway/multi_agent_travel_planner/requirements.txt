@@ -12,20 +12,20 @@ opentelemetry-exporter-otlp-proto-grpc==1.38.0
 # Splunk GenAI packages
 # Install from local path or PyPI when available
 # pip install -e ../../../util/opentelemetry-util-genai
-splunk-otel-util-genai==0.1.11
+splunk-otel-util-genai
 
 # AI Defense instrumentation (Gateway Mode support in v0.2.0+)
 # pip install -e ../../../instrumentation-genai/opentelemetry-instrumentation-aidefense
-splunk-otel-instrumentation-aidefense==0.2.1
+splunk-otel-instrumentation-aidefense
 
 # LangChain instrumentation
 # pip install -e ../../../instrumentation-genai/opentelemetry-instrumentation-langchain
-splunk-otel-instrumentation-langchain==0.1.9
+splunk-otel-instrumentation-langchain
 
 # LangChain / LangGraph
 langchain==1.2.15
 langchain-openai==1.1.13
-langgraph==1.1.6
+langgraph==1.1.10
 
 # OpenAI SDK (required for Gateway Mode - uses httpx internally)
 openai==2.32.0

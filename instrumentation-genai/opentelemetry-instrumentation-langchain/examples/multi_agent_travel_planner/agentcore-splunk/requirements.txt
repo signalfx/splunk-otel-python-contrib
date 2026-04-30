@@ -9,7 +9,7 @@ bedrock-agentcore-starter-toolkit==0.3.6
 # Core langchain dependencies
 langchain==1.2.15
 langchain-openai==1.1.13
-langgraph==1.1.6
+langgraph==1.1.10
 
 # OpenAI
 openai==2.32.0
@@ -26,11 +26,11 @@ opentelemetry-semantic-conventions==0.59b0
 opentelemetry-instrumentation-openai==0.60.0
 
 # Splunk GenAI utilities and emitters
-splunk-otel-util-genai==0.1.11
-splunk-otel-genai-emitters-splunk==0.1.8
-splunk-otel-util-genai-evals==0.1.8
-splunk-otel-genai-evals-deepeval==0.1.14
-splunk-otel-instrumentation-langchain==0.1.9
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
+splunk-otel-instrumentation-langchain
 
 # DeepEval for evaluations
 deepeval==3.3.9
