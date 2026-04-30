@@ -258,8 +258,9 @@ class LangsmithSpanProcessor(SpanProcessor):
         self._synthetic_span_ids: set[int] = set()
         # Mapping from original span_id to translated INVOCATION (not span) for parent-child relationship preservation
         self._original_to_translated_invocation: Dict[int, Any] = {}
-        # Buffer spans to process them in the correct order (parents before children)
-        self._span_buffer: List[ReadableSpan] = []
+        # Buffer non-LLM spans per trace, keyed by trace_id.
+        # Flushed parent-first when the root span arrives.
+        self._trace_buffers: Dict[int, List[ReadableSpan]] = {}
         self._processing_buffer = False
         # Cache reconstructed messages to avoid double reconstruction
         self._message_cache: Dict[int, tuple] = {}
@@ -609,9 +610,11 @@ class LangsmithSpanProcessor(SpanProcessor):
                     invocation.trace_id = trace_id
                     invocation.span_id = span_id_val
 
-                    # Set start_time relative to current monotonic clock so that
-                    # handler.finish() (which sets end_time=timeit.default_timer())
-                    # produces the correct duration.
+                    # GenAI types default start_time to timeit.default_timer() at
+                    # creation, and handler.finish() sets end_time the same way.
+                    # Since both happen near-simultaneously here (post-hoc processing),
+                    # that would yield ~0 duration. We back-date start_time by the
+                    # span's real duration so the metric reflects actual latency.
                     if (
                         hasattr(span, "_start_time")
                         and hasattr(span, "_end_time")
@@ -641,7 +644,6 @@ class LangsmithSpanProcessor(SpanProcessor):
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
-
                     except Exception as stop_err:
                         _logger.warning(
                             "[LANGSMITH_PROCESSOR] handler.finish failed: %s",
@@ -652,73 +654,149 @@ class LangsmithSpanProcessor(SpanProcessor):
                         "[LANGSMITH_PROCESSOR] Skipped evaluations (no invocation created): %s",
                         span.name,
                     )
+
+                # After LLM processing, check if this is a root span
+                # (no parent or parent not in this trace). If so, flush
+                # the non-LLM buffer for this trace — by now, agent spans
+                # have populated _agent_spans so children can resolve them.
+                span_context = getattr(span, "context", None)
+                trace_id = getattr(span_context, "trace_id", None)
+                is_root = span.parent is None
+                if is_root and trace_id and trace_id in self._trace_buffers:
+                    self._flush_trace_buffer(trace_id)
+
             else:
-                # Non-LLM spans (agents, workflows, tools) - build invocation and emit metrics
-                _logger.debug(
-                    "[LANGSMITH_PROCESSOR] Non-LLM span processing: %s (operation=%s)",
-                    span.name,
-                    span.attributes.get("gen_ai.operation.name")
-                    if span.attributes
-                    else None,
-                )
-
-                invocation = self._build_invocation(
-                    span,
-                    attribute_transformations=self.attribute_transformations,
-                    name_transformations=self.name_transformations,
-                    langsmith_attributes=self.langsmith_attributes,
-                )
-
-                if invocation:
-                    invocation.span = span
-
-                    handler = self.telemetry_handler or get_telemetry_handler()
-
-                    span_context = getattr(span, "context", None)
-                    trace_id = getattr(span_context, "trace_id", None)
-                    span_id_val = getattr(span_context, "span_id", None)
-
-                    invocation.trace_id = trace_id
-                    invocation.span_id = span_id_val
-
-                    # Set start_time relative to current monotonic clock so that
-                    # handler.finish() (which sets end_time=timeit.default_timer())
-                    # produces the correct duration.
-                    if (
-                        hasattr(span, "_start_time")
-                        and hasattr(span, "_end_time")
-                        and span._start_time
-                        and span._end_time
-                    ):
-                        span_duration_s = (
-                            span._end_time - span._start_time
-                        ) / 1e9
-                        invocation.start_time = (
-                            _timeit_mod.default_timer() - span_duration_s
-                        )
-
-                    try:
-                        handler.finish(invocation)
-                        _logger.debug(
-                            "[LANGSMITH_PROCESSOR] finish completed for non-LLM span: %s, type=%s",
-                            span.name,
-                            type(invocation).__name__,
-                        )
-                    except Exception as stop_err:
-                        _logger.warning(
-                            "[LANGSMITH_PROCESSOR] handler.finish failed for non-LLM span: %s",
-                            stop_err,
-                        )
-                else:
+                # Non-LLM spans (tools, workflows) — buffer until the root
+                # span arrives so agent name propagation works correctly.
+                span_context = getattr(span, "context", None)
+                trace_id = getattr(span_context, "trace_id", None)
+                if trace_id is not None:
+                    self._trace_buffers.setdefault(trace_id, []).append(span)
                     _logger.debug(
-                        "[LANGSMITH_PROCESSOR] No invocation created for non-LLM span: %s",
+                        "[LANGSMITH_PROCESSOR] Buffered non-LLM span: %s (trace=%s, buffer_size=%d)",
                         span.name,
+                        trace_id,
+                        len(self._trace_buffers[trace_id]),
                     )
+                else:
+                    # No trace_id — process immediately (shouldn't happen in practice)
+                    self._process_non_llm_span(span)
+
+                # If this non-LLM span is itself a root, flush immediately
+                if (
+                    span.parent is None
+                    and trace_id
+                    and trace_id in self._trace_buffers
+                ):
+                    self._flush_trace_buffer(trace_id)
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
             logging.warning(
                 "[LANGSMITH_PROCESSOR] Span transformation failed: %s", e
+            )
+
+    def _flush_trace_buffer(self, trace_id: int) -> None:
+        """Flush buffered non-LLM spans for a trace, processing parent-first.
+
+        Called when the root span of a trace arrives, meaning all agent spans
+        (LLM path) have already been processed and _agent_spans is populated.
+        """
+        _logger = logging.getLogger(__name__)
+        spans = self._trace_buffers.pop(trace_id, [])
+        if not spans:
+            return
+
+        sorted_spans = self._sort_spans_by_hierarchy(spans)
+        _logger.debug(
+            "[LANGSMITH_PROCESSOR] Flushing trace buffer: trace=%s, spans=%d",
+            trace_id,
+            len(sorted_spans),
+        )
+
+        # Collect agent span_ids that belong to this trace for cleanup
+        agent_ids_to_remove = set()
+        for buffered_span in sorted_spans:
+            # Inject agent name/id from _agent_spans before building invocation
+            self._inject_agent_context(buffered_span)
+            self._process_non_llm_span(buffered_span)
+            # Track which parent agents were used (for cleanup)
+            parent_ctx = getattr(buffered_span, "parent", None)
+            if parent_ctx:
+                parent_id = getattr(parent_ctx, "span_id", None)
+                if parent_id and parent_id in self._agent_spans:
+                    agent_ids_to_remove.add(parent_id)
+
+        # Clean up agent entries that were consumed by this trace
+        for aid in agent_ids_to_remove:
+            self._agent_spans.pop(aid, None)
+
+    def _inject_agent_context(self, span: ReadableSpan) -> None:
+        """Set gen_ai.agent.name/id on a span from its parent agent if known."""
+        parent_ctx = getattr(span, "parent", None)
+        if not parent_ctx:
+            return
+        parent_id = getattr(parent_ctx, "span_id", None)
+        if parent_id and parent_id in self._agent_spans:
+            agent_name, agent_id = self._agent_spans[parent_id]
+            if hasattr(span, "_attributes") and span._attributes is not None:
+                if "gen_ai.agent.name" not in span._attributes:
+                    span._attributes["gen_ai.agent.name"] = agent_name  # type: ignore[index]
+                if "gen_ai.agent.id" not in span._attributes:
+                    span._attributes["gen_ai.agent.id"] = agent_id  # type: ignore[index]
+
+    def _process_non_llm_span(self, span: ReadableSpan) -> None:
+        """Build invocation and call handler.finish() for a non-LLM span."""
+        _logger = logging.getLogger(__name__)
+
+        invocation = self._build_invocation(
+            span,
+            attribute_transformations=self.attribute_transformations,
+            name_transformations=self.name_transformations,
+            langsmith_attributes=self.langsmith_attributes,
+        )
+
+        if not invocation:
+            _logger.debug(
+                "[LANGSMITH_PROCESSOR] No invocation created for non-LLM span: %s",
+                span.name,
+            )
+            return
+
+        invocation.span = span
+        handler = self.telemetry_handler or get_telemetry_handler()
+
+        span_context = getattr(span, "context", None)
+        trace_id = getattr(span_context, "trace_id", None)
+        span_id_val = getattr(span_context, "span_id", None)
+
+        invocation.trace_id = trace_id
+        invocation.span_id = span_id_val
+
+        # Back-date start_time by the span's actual duration so the metric
+        # reflects real latency (see on_end LLM path for full explanation).
+        if (
+            hasattr(span, "_start_time")
+            and hasattr(span, "_end_time")
+            and span._start_time
+            and span._end_time
+        ):
+            span_duration_s = (span._end_time - span._start_time) / 1e9
+            invocation.start_time = (
+                _timeit_mod.default_timer() - span_duration_s
+            )
+
+        try:
+            handler.finish(invocation)
+            _logger.debug(
+                "[LANGSMITH_PROCESSOR] finish completed for non-LLM span: %s, type=%s",
+                span.name,
+                type(invocation).__name__,
+            )
+        except Exception as stop_err:
+            _logger.warning(
+                "[LANGSMITH_PROCESSOR] handler.finish failed for non-LLM span: %s",
+                stop_err,
             )
 
     def _sort_spans_by_hierarchy(
@@ -759,10 +837,15 @@ class LangsmithSpanProcessor(SpanProcessor):
 
     def shutdown(self) -> None:
         """Called when the tracer provider is shutdown."""
-        pass
+        # Flush any remaining buffered spans
+        for trace_id in list(self._trace_buffers.keys()):
+            self._flush_trace_buffer(trace_id)
+        self._agent_spans.clear()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force flush any buffered spans."""
+        for trace_id in list(self._trace_buffers.keys()):
+            self._flush_trace_buffer(trace_id)
         return True
 
     # ------------------------------------------------------------------
@@ -1205,7 +1288,10 @@ class LangsmithSpanProcessor(SpanProcessor):
                                 span.name,
                             )
 
-                    # Track agent spans for parent→child name propagation
+                    # Track agent spans for parent→child name propagation.
+                    # Agent spans (invoke_agent) go through the LLM path in
+                    # on_end and are processed immediately. Non-LLM children
+                    # are buffered and get agent context injected during flush.
                     if operation_name == "invoke_agent":
                         agent_name = (
                             mutated.get("gen_ai.agent.name") or span.name
@@ -1216,22 +1302,6 @@ class LangsmithSpanProcessor(SpanProcessor):
                                 agent_name,
                                 f"{span_ctx.span_id:016x}",
                             )
-
-                    # Propagate agent name/id from parent agent to child spans
-                    if operation_name != "invoke_agent":
-                        parent_ctx = getattr(span, "parent", None)
-                        if parent_ctx:
-                            parent_id = getattr(parent_ctx, "span_id", None)
-                            if parent_id and parent_id in self._agent_spans:
-                                parent_agent_name, parent_agent_id = (
-                                    self._agent_spans[parent_id]
-                                )
-                                mutated.setdefault(
-                                    "gen_ai.agent.name", parent_agent_name
-                                )
-                                mutated.setdefault(
-                                    "gen_ai.agent.id", parent_agent_id
-                                )
 
                     # Fallback: infer from span name if operation name not set
                     if not operation_name and span.name:
