@@ -1,8 +1,14 @@
-# Splunk GenAI instrumentation packages (latest published)
-# For local development, install from source instead:
-#   pip install -e ../../../util/opentelemetry-util-genai
-#   pip install -e ../../../instrumentation-genai/opentelemetry-instrumentation-aidefense
-#   pip install -e ../../../instrumentation-genai/opentelemetry-instrumentation-langchain
-splunk-otel-util-genai
-splunk-otel-instrumentation-aidefense
-splunk-otel-instrumentation-langchain
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.10
+openai==2.32.0
+httpx==0.28.1
+requests==2.32.5
+-e ../../../../../util/opentelemetry-util-genai
+-e ../../..
+-e ../../../../opentelemetry-instrumentation-langchain

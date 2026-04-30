@@ -1,24 +1,14 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
-# OpenTelemetry core
 opentelemetry-api==1.38.0
 opentelemetry-sdk==1.38.0
 opentelemetry-instrumentation==0.59b0
 opentelemetry-semantic-conventions==0.59b0
 opentelemetry-exporter-otlp-proto-grpc==1.38.0
-
-# LangChain / LangGraph
 langchain==1.2.15
 langchain-openai==1.1.13
 langgraph==1.1.10
-
-# OpenAI SDK (required for Gateway Mode - uses httpx internally)
 openai==2.32.0
-
-# HTTP client (httpx is required for Gateway Mode to work)
 httpx==0.28.1
-
-# HTTP client (for OAuth2 token manager)
 requests==2.32.5
+splunk-otel-util-genai
+splunk-otel-instrumentation-aidefense
+splunk-otel-instrumentation-langchain

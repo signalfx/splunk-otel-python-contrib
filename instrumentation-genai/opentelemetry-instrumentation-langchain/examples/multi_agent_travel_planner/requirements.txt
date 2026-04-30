@@ -1,10 +1,11 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
 langchain==1.2.15
 langchain-openai==1.1.13
 langgraph==1.1.10
 python-dotenv==1.2.2
 deepeval==3.3.9
 litellm==1.83.8
+splunk-otel-util-genai
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
+splunk-otel-genai-emitters-splunk
+splunk-otel-instrumentation-langchain

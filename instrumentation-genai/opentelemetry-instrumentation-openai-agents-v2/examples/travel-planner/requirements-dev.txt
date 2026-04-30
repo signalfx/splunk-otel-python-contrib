@@ -1,12 +1,14 @@
-# Splunk GenAI instrumentation packages (latest published)
-# For local development, install from source instead:
-#   pip install -e ../../../
-#   pip install -e ../../../../util/opentelemetry-util-genai
-#   pip install -e ../../../../util/opentelemetry-util-genai-evals
-#   pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval
-#   pip install -e ../../../../util/opentelemetry-util-genai-emitters-splunk
-splunk-otel-util-genai
-splunk-otel-util-genai-evals
-splunk-otel-genai-evals-deepeval
-splunk-otel-genai-emitters-splunk
-splunk-otel-instrumentation-openai-agents
+openai-agents==0.3.3
+openai==2.32.0
+python-dotenv==1.2.2
+requests==2.32.5
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+-e ../../
+-e ../../../../util/opentelemetry-util-genai
+-e ../../../../util/opentelemetry-util-genai-evals
+-e ../../../../util/opentelemetry-util-genai-evals-deepeval
+-e ../../../../util/opentelemetry-util-genai-emitters-splunk

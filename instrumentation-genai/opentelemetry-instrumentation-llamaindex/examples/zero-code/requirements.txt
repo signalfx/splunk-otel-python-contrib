@@ -1,9 +1,10 @@
-# Pinned 2026-04-28 from project venv (Python 3.11) + latest PyPI
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
 llama-index==0.14.21
 python-dotenv==1.2.2
 requests==2.32.5
 opentelemetry-distro==0.59b0
 opentelemetry-exporter-otlp==1.38.0
+splunk-otel-instrumentation-llamaindex
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval

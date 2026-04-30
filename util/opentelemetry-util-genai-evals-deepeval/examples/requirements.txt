@@ -1,10 +1,8 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
-# OpenAI and LiteLLM
 openai==2.32.0
 litellm==1.83.8
-
-# DeepEval for evaluations
 deepeval==3.3.9
+splunk-otel-instrumentation-crewai
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval

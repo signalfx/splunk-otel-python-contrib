@@ -1,29 +1,19 @@
-# Pinned 2026-04-28 from project venv (Python 3.11)
-# Run `pip install -r requirements.txt` and verify with `pip freeze`
-# HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
-
-# Core CrewAI dependencies
 crewai==0.11.2
 crewai-tools==0.0.1
-
-# OpenAI and LiteLLM
 openai==2.32.0
 litellm==1.83.8
-
-# OpenTelemetry core packages
 opentelemetry-api==1.38.0
 opentelemetry-sdk==1.38.0
 opentelemetry-exporter-otlp-proto-grpc==1.38.0
 opentelemetry-instrumentation==0.59b0
 opentelemetry-semantic-conventions==0.59b0
-
-# OpenTelemetry Distro (for zero-code instrumentation)
 opentelemetry-distro==0.59b0
-
-# DeepEval for evaluations
 deepeval==3.3.9
-
-# Other dependencies
 pydantic==2.12.5
 python-dotenv==1.2.2
 requests==2.32.5
+splunk-otel-instrumentation-crewai
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
