@@ -1,0 +1,18 @@
+# Weather Agent example dependencies
+# Install from repo root with the venv activated:
+#   pip install -r instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/weather_agent/requirements.txt
+
+fastmcp>=3.2.4
+openai
+
+# SDOT instrumentation packages (install in editable mode from repo root)
+# pip install -e ./util/opentelemetry-util-genai
+# pip install -e "./instrumentation-genai/opentelemetry-instrumentation-fastmcp[instruments]"
+# pip install -e "./instrumentation-genai/opentelemetry-instrumentation-openai-v2[instruments]"
+
+# OTel SDK + OTLP exporters
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
+
+# Zero-code support
+opentelemetry-distro

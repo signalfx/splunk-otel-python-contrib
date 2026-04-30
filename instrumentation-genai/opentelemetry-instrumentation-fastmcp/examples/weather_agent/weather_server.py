@@ -3,21 +3,36 @@
 Weather MCP Server
 
 Provides weather and travel packing tools via the Model Context Protocol.
-Designed to be spawned as a subprocess by the weather agent.
+Supports both stdio (subprocess) and HTTP (streamable-http) transports.
 
 Usage:
-    # --- Manual instrumentation (agent passes --manual) ---
-    python weather_server.py --manual
+    # Load env vars
+    source .env
 
-    # --- Zero-code instrumentation ---
-    opentelemetry-instrument python weather_server.py
+    # --- stdio mode (spawned as subprocess by weather_agent.py) ---
+    source .env
+    OTEL_SERVICE_NAME=weather-mcp-server python weather_server.py
 
-Telemetry setup reads OTEL env vars (OTEL_EXPORTER_OTLP_ENDPOINT, etc.)
-propagated by the client process so both sides export to the same collector.
+    # --- HTTP mode (standalone server, client connects over HTTP) ---
+    source .env
+    OTEL_SERVICE_NAME=weather-mcp-server python weather_server.py --transport http
+    OTEL_SERVICE_NAME=weather-mcp-server python weather_server.py --transport http --port 8001
+
+    # --- Zero-code instrumentation (explicit) ---
+    OTEL_SERVICE_NAME=weather-mcp-server opentelemetry-instrument python weather_server.py --transport http
+
+Telemetry is set up automatically when OTEL_EXPORTER_OTLP_ENDPOINT is in the environment
+(loaded from .env). Pass --manual to force in-process setup regardless.
+OTEL_SERVICE_NAME defaults to 'weather-mcp-server'.
 """
 
 import os
 import sys
+
+from _otel_helpers import load_dotenv as _load_dotenv
+from _otel_helpers import providers_already_configured as _providers_already_configured
+
+_load_dotenv()
 
 
 def setup_server_telemetry():
@@ -27,9 +42,8 @@ def setup_server_telemetry():
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.resources import Resource
 
-    resource = Resource.create(
-        {"service.name": os.environ.get("OTEL_SERVICE_NAME", "weather-mcp-server")}
-    )
+    service_name = os.environ.get("OTEL_SERVICE_NAME", "weather-mcp-server")
+    resource = Resource.create({"service.name": service_name})
 
     trace_provider = TracerProvider(resource=resource)
     metric_readers = []
@@ -48,8 +62,14 @@ def setup_server_telemetry():
 
             trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
             metric_readers.append(PeriodicExportingMetricReader(OTLPMetricExporter()))
+            print(f"🔭 OTLP exporters enabled → {otlp_endpoint}", file=sys.stderr)
         except ImportError:
-            print("OTLP exporters not available in server", file=sys.stderr)
+            print("⚠️  OTLP exporters not available in server", file=sys.stderr)
+    else:
+        print(
+            "⚠️  OTEL_EXPORTER_OTLP_ENDPOINT not set — server traces will NOT reach Splunk.",
+            file=sys.stderr,
+        )
 
     if os.environ.get("OTEL_SERVER_CONSOLE_EXPORT"):
         from opentelemetry.sdk.trace.export import (
@@ -58,6 +78,12 @@ def setup_server_telemetry():
         )
 
         trace_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+
+    emitters = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span")
+    print(
+        f"🔭 service.name={service_name}  emitters={emitters}",
+        file=sys.stderr,
+    )
 
     trace.set_tracer_provider(trace_provider)
     if metric_readers:
@@ -70,11 +96,33 @@ def setup_server_telemetry():
     FastMCPInstrumentor().instrument()
 
 
-# Apply manual telemetry only when explicitly requested.
-# Zero-code mode (opentelemetry-instrument) sets up providers automatically.
-if "--manual" in sys.argv:
+# Set up telemetry before FastMCP is imported/instantiated so that
+# instrumentation is applied to the server object.
+#
+# Priority order:
+#   1. --manual flag  → explicit in-process setup
+#   2. OTEL_EXPORTER_OTLP_ENDPOINT in env (from .env) + no existing providers
+#      → auto in-process setup (same as --manual, no flag required)
+#   3. opentelemetry-instrument wrapping this process
+#      → providers already configured; just instrument FastMCP
+#   4. Nothing configured → server runs without telemetry (warn)
+_manual = "--manual" in sys.argv
+if _manual:
     sys.argv.remove("--manual")
+
+if _providers_already_configured():
+    # opentelemetry-instrument set up providers; only need to instrument FastMCP.
+    from opentelemetry.instrumentation.fastmcp import FastMCPInstrumentor  # noqa: E402
+
+    FastMCPInstrumentor().instrument()
+elif _manual or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
     setup_server_telemetry()
+else:
+    print(
+        "⚠️  No OTel providers configured for server. "
+        "Set OTEL_EXPORTER_OTLP_ENDPOINT in .env or use opentelemetry-instrument.",
+        file=sys.stderr,
+    )
 
 
 from fastmcp import FastMCP  # noqa: E402
@@ -184,7 +232,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Weather MCP Server")
     parser.add_argument(
         "--transport",
-        choices=["stdio", "http", "streamable-http", "sse"],
+        choices=["stdio", "http", "streamable-http"],
         default="stdio",
         help="Transport protocol (default: stdio)",
     )
@@ -196,7 +244,12 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    emitters = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span")
+    otlp = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "not set")
+    print(f"🔭 emitters={emitters}  otlp={otlp}", file=sys.stderr)
+
     if args.transport in ("http", "streamable-http"):
+        print(f"🌐 HTTP server → http://{args.host}:{args.port}/mcp", file=sys.stderr)
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         mcp.run(transport=args.transport)

@@ -2,32 +2,35 @@
 """
 Instrumented MCP Calculator Server
 
-A standalone MCP server with OpenTelemetry instrumentation enabled.
-Run this in one terminal, then use client.py in another terminal.
+A standalone MCP server with OpenTelemetry instrumentation built-in.
+Supports stdio (subprocess) and Streamable-HTTP transports.
 
 Usage:
-    # Terminal 1: Start the instrumented server (SSE mode for external clients)
-    export OTEL_SERVICE_NAME="mcp-calculator-server"
-    export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
-    python server_instrumented.py --sse --port 8000
+    # Load env vars (OTLP, emitters, etc.)
+    source .env
 
-    # Terminal 2: Run the client connecting to the server
-    export OTEL_SERVICE_NAME="mcp-calculator-client"
-    export OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric"
-    python client.py --server-url http://localhost:8000/sse --console
-
-    # Alternative: Run in stdio mode (for subprocess spawning)
+    # stdio mode — for subprocess spawning (default)
     python server_instrumented.py
 
-For OTLP export to a backend:
-    export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-    export OTEL_SERVICE_NAME="mcp-calculator-server"
-    python server_instrumented.py --sse
+    # HTTP mode — standalone server, clients connect over Streamable-HTTP
+    OTEL_SERVICE_NAME=mcp-calculator-server python server_instrumented.py --http --port 8000
+
+    # Then in another terminal:
+    python client.py --server-url http://localhost:8000/mcp --wait 5
+
+For OTLP export to Splunk (via local collector):
+    source .env
+    OTEL_SERVICE_NAME=mcp-calculator-server python server_instrumented.py --http
 """
 
 import argparse
 import os
 import sys
+
+
+from _otel_helpers import load_dotenv as _load_dotenv
+
+_load_dotenv()
 
 
 def setup_telemetry():
@@ -216,21 +219,21 @@ if __name__ == "__main__":
         description="MCP Calculator Server with OpenTelemetry Instrumentation"
     )
     parser.add_argument(
-        "--sse",
+        "--http",
         action="store_true",
-        help="Run in SSE mode for external client connections (default: stdio)",
+        help="Run in Streamable-HTTP mode for external clients (default: stdio)",
     )
     parser.add_argument(
         "--host",
         type=str,
         default="localhost",
-        help="Host to bind to in SSE mode (default: localhost)",
+        help="Host to bind to in HTTP mode (default: localhost)",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8000,
-        help="Port to listen on in SSE mode (default: 8000)",
+        help="Port to listen on in HTTP mode (default: 8000)",
     )
     args = parser.parse_args()
 
@@ -238,21 +241,24 @@ if __name__ == "__main__":
     print("MCP Calculator Server with OpenTelemetry Instrumentation", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
 
-    if args.sse:
+    emitters = os.environ.get("OTEL_INSTRUMENTATION_GENAI_EMITTERS", "span")
+    print(f"   Emitters: {emitters}", file=sys.stderr)
+
+    if args.http:
         print(
-            f"\n🌐 Starting SSE server at http://{args.host}:{args.port}/sse",
+            f"\n🌐 Starting Streamable-HTTP server at http://{args.host}:{args.port}/mcp",
             file=sys.stderr,
         )
         print(
             "   Connect with: python client.py --server-url "
-            + f"http://{args.host}:{args.port}/sse --console",
+            + f"http://{args.host}:{args.port}/mcp --wait 5",
             file=sys.stderr,
         )
         print("\nPress Ctrl+C to stop.\n", file=sys.stderr)
-        mcp.run(transport="sse", host=args.host, port=args.port)
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         print("\n📡 Running in stdio mode (for subprocess spawning)", file=sys.stderr)
-        print("   Use --sse flag for external client connections", file=sys.stderr)
+        print("   Use --http flag for external client connections", file=sys.stderr)
         print("\nServer is ready. Waiting for client connections...", file=sys.stderr)
         print("Press Ctrl+C to stop.\n", file=sys.stderr)
         mcp.run()

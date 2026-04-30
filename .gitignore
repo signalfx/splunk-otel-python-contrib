@@ -64,3 +64,8 @@ target
 
 # Local working files (PR descriptions, notes, drafts)
 .local/
+
+# Local .env files (may contain secrets)
+.env
+*.env
+!*.env.example
