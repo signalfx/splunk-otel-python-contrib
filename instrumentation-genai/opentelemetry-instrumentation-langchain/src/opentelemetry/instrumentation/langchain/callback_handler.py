@@ -143,40 +143,16 @@ def _extract_handoff_target(command: Any) -> Optional[str]:
     return _safe_str(node) if node else _safe_str(goto)
 
 
-# State-machine pattern: keys in Command.update that signal a step/routing
-# transition even when goto is absent (single-agent middleware pattern).
-_STATE_MACHINE_STEP_KEYS = frozenset(
-    {"current_step", "active_agent", "next_agent", "next_step", "step"}
-)
-
-
-def _extract_state_machine_target(command: Any) -> Optional[str]:
-    """Return the target step/agent from Command.update for state-machine handoffs.
-
-    In the single-agent middleware pattern, handoff tools update a routing key
-    (e.g. current_step, active_agent) rather than setting goto. We surface the
-    value of that key as the handoff target so the span is still meaningful.
-    """
-    update = getattr(command, "update", None)
-    if not isinstance(update, dict):
-        return None
-    for key in _STATE_MACHINE_STEP_KEYS:
-        value = update.get(key)
-        if value and isinstance(value, str):
-            return value
-    return None
-
 
 def _is_handoff_command(command: Any) -> bool:
-    """Return True if the Command looks like a handoff even with no resolvable target.
+    """Return True if the Command has a goto that could not be resolved to a name.
 
-    A Command that has neither goto nor a recognised state-machine key is still
-    a handoff if it has a non-empty update dict (it's changing agent state).
-    We use this as a last-resort marker so the operation name is correct.
+    A Command with only an update dict (no goto) is a plain state write, not a
+    handoff — e.g. Command(update={"messages": [result]}) is common for writing
+    tool output back into graph state.
     """
-    update = getattr(command, "update", None)
     goto = getattr(command, "goto", None)
-    return bool(goto or (isinstance(update, dict) and update))
+    return bool(goto)
 
 
 def _make_command_input_message(command: Any) -> list[InputMessage]:
@@ -1087,10 +1063,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         # Uses type-name matching to avoid importing LangGraph at instrumentation time.
         if type(output).__name__ == "Command":
             to_agent = _extract_handoff_target(output)
-            if to_agent is None:
-                # State-machine pattern: no goto, but Command.update contains a
-                # step/routing key — still a handoff, target is unknown.
-                to_agent = _extract_state_machine_target(output)
             if to_agent is not None:
                 tool.is_handoff = True
                 tool.attributes[GEN_AI_HANDOFF_TO_AGENT] = to_agent

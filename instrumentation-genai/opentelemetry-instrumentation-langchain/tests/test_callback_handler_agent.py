@@ -929,36 +929,14 @@ def test_handoff_list_goto_joined(handler_with_stub):
     assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "agent_a, agent_b"
 
 
-@pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
-def test_handoff_state_machine_no_goto(handler_with_stub):
-    """Command with no goto but a recognised routing key in update is a handoff."""
-    handler, stub = handler_with_stub
-    agent_run_id = _make_agent(handler, stub)
-
-    tool_run_id = uuid4()
-    handler.on_tool_start(
-        serialized={"name": "record_warranty_status"},
-        input_str="",
-        run_id=tool_run_id,
-        parent_run_id=agent_run_id,
-    )
-    handler.on_tool_end(
-        output=Command(
-            update={"current_step": "specialist", "warranty_status": "in_warranty"}
-        ),
-        run_id=tool_run_id,
-        parent_run_id=agent_run_id,
-    )
-
-    tool = stub.stopped_tools[-1]
-    assert tool.is_handoff is True
-    assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "specialist"
-    assert tool.attributes.get(GEN_AI_HANDOFF_FROM_AGENT) == "sales_agent"
-
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
-def test_handoff_command_no_goto_no_routing_key_still_marked(handler_with_stub):
-    """A Command with an update dict but no known routing key is still a handoff."""
+def test_handoff_command_update_only_not_a_handoff(handler_with_stub):
+    """A Command with only an update dict (no goto, no routing key) is NOT a handoff.
+
+    e.g. Command(update={"messages": [result]}) is a plain state write — common
+    in LangGraph tools that write output back into graph state without routing.
+    """
     handler, stub = handler_with_stub
     agent_run_id = _make_agent(handler, stub)
 
@@ -976,8 +954,7 @@ def test_handoff_command_no_goto_no_routing_key_still_marked(handler_with_stub):
     )
 
     tool = stub.stopped_tools[-1]
-    assert tool.is_handoff is True
-    # No resolvable target — attribute absent
+    assert tool.is_handoff is False
     assert GEN_AI_HANDOFF_TO_AGENT not in tool.attributes
 
 
