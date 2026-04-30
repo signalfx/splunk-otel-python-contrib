@@ -265,7 +265,7 @@ class ClientInstrumentor:
                 arguments=tool_args,
                 id=str(uuid.uuid4()),
                 framework=FASTMCP_FRAMEWORK,
-                provider=MCP_SYSTEM,
+                system=MCP_SYSTEM,
                 tool_type="extension",
                 mcp_method_name="tools/call",
                 network_transport=transport,

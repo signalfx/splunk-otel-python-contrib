@@ -90,19 +90,19 @@ def _enrich_from_request_context(op: MCPOperation) -> None:
     ctx = get_mcp_request_context()
     if ctx is None:
         return
-    if ctx.jsonrpc_request_id and op.jsonrpc_request_id is None:
+    if ctx.jsonrpc_request_id is not None and op.jsonrpc_request_id is None:
         op.jsonrpc_request_id = ctx.jsonrpc_request_id
-    if ctx.network_transport and op.network_transport is None:
+    if ctx.network_transport is not None and op.network_transport is None:
         op.network_transport = ctx.network_transport
-    if ctx.network_protocol_name and op.network_protocol_name is None:
+    if ctx.network_protocol_name is not None and op.network_protocol_name is None:
         op.network_protocol_name = ctx.network_protocol_name
-    if ctx.network_protocol_version and op.network_protocol_version is None:
+    if ctx.network_protocol_version is not None and op.network_protocol_version is None:
         op.network_protocol_version = ctx.network_protocol_version
-    if ctx.client_address and op.client_address is None:
+    if ctx.client_address is not None and op.client_address is None:
         op.client_address = ctx.client_address
-    if ctx.client_port and op.client_port is None:
+    if ctx.client_port is not None and op.client_port is None:
         op.client_port = ctx.client_port
-    if ctx.mcp_session_id and op.mcp_session_id is None:
+    if ctx.mcp_session_id is not None and op.mcp_session_id is None:
         op.mcp_session_id = ctx.mcp_session_id
 
 

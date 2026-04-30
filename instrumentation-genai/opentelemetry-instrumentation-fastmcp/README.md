@@ -326,10 +326,10 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 | Span | Attributes |
 |------|-----------|
 | `initialize` (client) | `mcp.session.id`, `server.address`, `server.port`, `mcp.protocol.version` |
-| `initialize` (server) | `mcp.server.name`, `network.transport`, `network.protocol.name` |
-| `{tool}.tool` | `mcp.tool.name`, `mcp.tool.result.size`, `error.type` (on failure) |
+| `initialize` (server) | `sdot.mcp.server_name`, `network.transport`, `network.protocol.name` |
+| `{tool}.tool` | `mcp.tool.name`, `mcp.tool.output.size`, `error.type` (on failure) |
 | `resources/read` | `mcp.resource.uri`, `network.transport`, `client.address` |
-| `prompts/get` | `mcp.prompt.name`, `network.transport` |
+| `prompts/get` | `gen_ai.prompt.name`, `network.transport` |
 
 ### Metrics
 
@@ -469,7 +469,7 @@ Key span attributes:
 |-----------|-------|
 | `gen_ai.system` | `mcp` |
 | `network.transport` | `pipe` (stdio) |
-| `mcp.server.name` | `dev-assistant` |
+| `sdot.mcp.server_name` | `dev-assistant` |
 | `mcp.protocol.version` | `2025-11-25` |
 
 > **Note:** Cursor and Claude Desktop host processes do not yet emit their own client `initialize` span — the server-side root span carries the full context.  Client-side spans for hosts using the raw MCP SDK (not `fastmcp.Client`) are tracked as a follow-up.
