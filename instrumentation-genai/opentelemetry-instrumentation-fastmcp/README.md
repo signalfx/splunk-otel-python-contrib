@@ -21,6 +21,7 @@ Produces spans, metrics, and optional events that follow the [OpenTelemetry GenA
 - [What Is Instrumented](#what-is-instrumented)
 - [Telemetry Reference](#telemetry-reference)
 - [Examples](#examples)
+  - [Dev Assistant as a Cursor / Claude Desktop MCP server](#dev-assistant-as-a-cursor--claude-desktop-mcp-server)
   - [Dev Assistant (stdio + HTTP)](#dev-assistant-stdio--http)
   - [Weather Agent (stdio + HTTP)](#weather-agent-stdio--http)
   - [End-to-End (e2e)](#end-to-end-e2e)
@@ -332,11 +333,16 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 
 ### Metrics
 
-| Metric | Description |
-|--------|-------------|
-| `gen_ai.mcp.tool.duration` | Histogram — tool call latency |
-| `gen_ai.mcp.operation.duration` | Histogram — any MCP operation latency |
-| `gen_ai.mcp.server.session.duration` | Histogram — entire server session duration |
+| Metric | Unit | Description |
+|--------|------|-------------|
+| `mcp.client.operation.duration` | `s` | Histogram — client-side MCP operation latency (tools/call, tools/list, etc.) |
+| `mcp.server.operation.duration` | `s` | Histogram — server-side MCP operation latency |
+| `mcp.client.session.duration` | `s` | Histogram — full MCP session duration as seen by the client |
+| `mcp.server.session.duration` | `s` | Histogram — full MCP session duration as seen by the server |
+| `mcp.tool.output.size` | `{byte}` | Histogram — size of tool call output (impacts LLM token usage when used as context) |
+
+All histograms carry `mcp.method.name`, `network.transport`, and `gen_ai.tool.name` (for tool metrics) as dimensions.
+Histogram data points include **exemplars** (Trace ID + Span ID) for trace-metric correlation in Splunk APM.
 
 ### Events (when content capture is enabled)
 
@@ -350,6 +356,125 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 ## Examples
 
 All examples look for a `.env` file in their directory.  Copy `.env.example` to `.env` and fill in your Splunk token / endpoint.
+
+---
+
+### Dev Assistant as a Cursor / Claude Desktop MCP server
+
+The `dev_assistant_server.py` ships as a fully observable **stdio MCP server** that you can wire directly into Cursor or Claude Desktop.  Because it runs in stdio mode, the host application (Cursor/Claude Desktop) spawns it as a sub-process — no separate terminal needed.
+
+#### What tools it exposes
+
+| Tool | Description |
+|------|-------------|
+| `list_files` | List files in a directory |
+| `read_file` | Read a file's contents |
+| `write_file` | Write or overwrite a file |
+| `run_command` | Execute a shell command |
+| `git_status` | Get `git status` for a repo |
+| `search_code` | Search for a pattern in files |
+| `get_system_info` | Return OS/Python/memory info |
+
+#### Prerequisites
+
+```bash
+# 1. Install the package and its dependencies
+pip install 'splunk-otel-instrumentation-fastmcp[instruments]'
+pip install 'opentelemetry-sdk' 'opentelemetry-exporter-otlp'
+
+# 2. (optional) Install zero-code bootstrap
+pip install 'opentelemetry-distro'
+opentelemetry-bootstrap -a install
+```
+
+#### Cursor IDE setup (`.cursor/mcp.json`)
+
+Create or edit `.cursor/mcp.json` at the root of your workspace:
+
+```json
+{
+  "mcpServers": {
+    "dev-assistant": {
+      "command": "/path/to/.venv/bin/python",
+      "args": [
+        "/path/to/splunk-otel-python-contrib/instrumentation-genai/opentelemetry-instrumentation-fastmcp/examples/dev_assistant_server.py"
+      ],
+      "env": {
+        "OTEL_SERVICE_NAME": "dev-assistant-mcp",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+        "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "DELTA",
+        "OTEL_INSTRUMENTATION_GENAI_EMITTERS": "span_metric",
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true"
+      }
+    }
+  }
+}
+```
+
+After saving, **reload the Cursor window** (`Cmd+Shift+P` → *Reload Window*).  Cursor will start the server automatically.
+
+> **Tip:** Use `opentelemetry-instrument` as the command for zero-code instrumentation:
+> ```json
+> {
+>   "command": "/path/to/.venv/bin/opentelemetry-instrument",
+>   "args": [
+>     "python",
+>     "/path/to/.../dev_assistant_server.py"
+>   ],
+>   "env": { ... }
+> }
+> ```
+
+#### Claude Desktop setup (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "dev-assistant": {
+      "command": "/path/to/.venv/bin/python",
+      "args": [
+        "/path/to/.../dev_assistant_server.py"
+      ],
+      "env": {
+        "OTEL_SERVICE_NAME": "dev-assistant-mcp",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+        "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "DELTA",
+        "OTEL_INSTRUMENTATION_GENAI_EMITTERS": "span_metric"
+      }
+    }
+  }
+}
+```
+
+#### Expected telemetry in Splunk Observability Cloud
+
+Each tool call from the AI assistant appears as an MCP span:
+
+```
+Cursor / Claude Desktop (host process)
+  └── initialize                [CLIENT]  ← session root, network.transport=pipe
+        ├── tools/list          [CLIENT]
+        ├── tools/call list_files  [CLIENT]
+        │     └── tools/call list_files  [SERVER]  ← dev-assistant-mcp service
+        ├── tools/call read_file   [CLIENT]
+        │     └── tools/call read_file   [SERVER]
+        └── ...
+```
+
+Key span attributes:
+
+| Attribute | Value |
+|-----------|-------|
+| `gen_ai.system` | `mcp` |
+| `network.transport` | `pipe` (stdio) |
+| `mcp.server.name` | `dev-assistant` |
+| `mcp.protocol.version` | `2025-11-25` |
+
+> **Note:** Cursor and Claude Desktop host processes do not yet emit their own client `initialize` span — the server-side root span carries the full context.  Client-side spans for hosts using the raw MCP SDK (not `fastmcp.Client`) are tracked as a follow-up.
+
+---
 
 ### Dev Assistant (stdio + HTTP)
 

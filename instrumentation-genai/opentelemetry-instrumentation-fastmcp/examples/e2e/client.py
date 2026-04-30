@@ -6,19 +6,20 @@ Connects to the calculator server and demonstrates tool calls
 with OpenTelemetry instrumentation capturing traces and metrics.
 
 Usage:
-    # Load env vars
-    source .env
-
-    # Option 1: Spawn server as subprocess (single terminal, stdio)
+    # Option 1: Spawn server as subprocess (single terminal)
     python client.py --console
 
-    # Option 2: Connect to HTTP server (Streamable-HTTP — separate terminals)
-    # Terminal 1: OTEL_SERVICE_NAME=mcp-calculator-server python server_instrumented.py --http
+    # Option 2: Connect to external server (separate terminals)
+    # Terminal 1: python server_instrumented.py --sse --port 8000
     # Terminal 2:
-    python client.py --server-url http://localhost:8000/mcp --wait 5
+    python client.py --server-url http://localhost:8000/sse --console
 
-    # OTLP export to Splunk (via local collector configured in .env)
-    source .env && python client.py --server-url http://localhost:8000/mcp --wait 5
+    # With metrics enabled
+    OTEL_INSTRUMENTATION_GENAI_EMITTERS="span_metric" python client.py --console
+
+    # OTLP export
+    export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+    python client.py --wait 30
 """
 
 import argparse
@@ -26,27 +27,6 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-
-
-def _load_dotenv():
-    """Load .env from the same directory as this script (if present)."""
-    env_file = Path(__file__).parent / ".env"
-    if not env_file.exists():
-        return
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv(env_file, override=False)
-    except ImportError:
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                key = key.strip()
-                if key and key not in os.environ:
-                    os.environ[key] = value.strip()
 
 
 def setup_telemetry(console_output: bool = False):
@@ -245,8 +225,6 @@ async def main(
 
 
 if __name__ == "__main__":
-    _load_dotenv()
-
     parser = argparse.ArgumentParser(
         description="MCP Calculator Client with OpenTelemetry"
     )
