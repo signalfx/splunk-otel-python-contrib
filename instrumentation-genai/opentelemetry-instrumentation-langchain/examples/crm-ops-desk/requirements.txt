@@ -3,7 +3,7 @@
 # HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
 
 langgraph==1.1.10
-langchain-core==1.2.29
+langchain-core==1.3.2
 langchain-openai==1.1.13
 faiss-cpu==1.13.2
 numpy==2.4.4
