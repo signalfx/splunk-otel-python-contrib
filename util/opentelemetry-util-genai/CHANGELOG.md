@@ -4,6 +4,13 @@ All notable changes to this repository are documented in this file.
 
 ## [Unreleased]
 
+## Version 0.1.14
+
+### Added
+- **`is_handoff` field on `ToolCall`** — Boolean flag that signals the span emitter to use `operation.name = "agent_handoff"` instead of `execute_tool`, enabling framework instrumentations to classify handoff tools without emitter changes.
+- **`GEN_AI_HANDOFF_FROM_AGENT` / `GEN_AI_HANDOFF_TO_AGENT` attribute constants** — Added to `attributes.py` for consistent handoff attribute naming across all framework instrumentations (mirrors OpenAI Agents v2 conventions).
+- **SpanEmitter `agent_handoff` operation** — When `tool.is_handoff` is `True`, span name becomes `agent_handoff {target}` and `gen_ai.operation.name` is set to `"agent_handoff"`.
+
 ### Fixed
 - **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
 - **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.

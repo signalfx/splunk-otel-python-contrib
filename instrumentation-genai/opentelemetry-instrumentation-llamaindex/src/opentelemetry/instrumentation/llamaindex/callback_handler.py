@@ -910,6 +910,21 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
             if workflow_name:
                 tool_call.attributes["gen_ai.workflow.name"] = workflow_name
 
+        # Detect LlamaIndex built-in handoff tool
+        if tool_name == "handoff":
+            tool_call.is_handoff = True
+            to_agent = (
+                arguments.get("to_agent") if isinstance(arguments, dict) else None
+            )
+            if to_agent:
+                tool_call.attributes["gen_ai.handoff.to_agent"] = str(to_agent)
+            if context_agent:
+                from_name = getattr(context_agent, "agent_name", None) or getattr(
+                    context_agent, "name", None
+                )
+                if from_name:
+                    tool_call.attributes["gen_ai.handoff.from_agent"] = str(from_name)
+
         # Get parent span before starting the tool call
         parent_span = self._get_parent_span(parent_id)
         if parent_span:

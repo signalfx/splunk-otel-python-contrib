@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Added
+- **LlamaIndex handoff support** — Detects the built-in `handoff` tool (auto-injected by `MultiAgentWorkflow`) and emits `agent_handoff` spans with `gen_ai.handoff.to_agent` (from `to_agent` argument) and `gen_ai.handoff.from_agent` (from the nearest parent agent in the callback hierarchy).
+
 ### Added
 - Streaming TTFC (Time To First Chunk) support for LLM spans:
   - `gen_ai.response.time_to_first_chunk` attribute measuring latency to first streaming token
