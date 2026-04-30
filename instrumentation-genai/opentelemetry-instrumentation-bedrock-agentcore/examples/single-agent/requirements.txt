@@ -8,3 +8,4 @@ opentelemetry-instrumentation-bedrock-agentcore
 
 python-dotenv
 requests
+splunk-otel-genai-evals-deepeval>=0.1.8

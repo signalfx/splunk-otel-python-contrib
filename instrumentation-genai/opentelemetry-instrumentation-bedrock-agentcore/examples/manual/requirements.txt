@@ -9,6 +9,7 @@ opentelemetry-exporter-otlp-proto-grpc>=1.38.0
 
 # Splunk GenAI utilities (required by the instrumentation)
 splunk-otel-util-genai>=0.1.9
+splunk-otel-util-genai-evals>=0.1.4
 
 # Wrapt for monkey-patching
 wrapt>=1.14.0,<2.0.0
