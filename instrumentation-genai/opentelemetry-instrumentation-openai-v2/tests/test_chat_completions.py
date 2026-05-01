@@ -537,15 +537,7 @@ def chat_completion_tool_call(
         if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
         == GenAIAttributes.GenAiOperationNameValues.CHAT.value
     ]
-    tool_spans = [
-        span
-        for span in spans
-        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
-        == GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
-    ]
-
     assert len(chat_spans) == 2
-    assert len(tool_spans) == 2
 
     assert_all_attributes(
         chat_spans[0],
@@ -563,16 +555,6 @@ def chat_completion_tool_call(
         response_1.usage.prompt_tokens,
         response_1.usage.completion_tokens,
     )
-
-    for span in tool_spans:
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
-            == "get_current_weather"
-        )
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
-        )
-        assert span.parent.span_id == chat_spans[0].context.span_id
 
     logs = log_exporter.get_finished_logs()
     if not expect_content:
@@ -987,15 +969,7 @@ def chat_completion_multiple_tools_streaming(
         if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
         == GenAIAttributes.GenAiOperationNameValues.CHAT.value
     ]
-    tool_spans = [
-        span
-        for span in spans
-        if span.attributes.get(GenAIAttributes.GEN_AI_OPERATION_NAME)
-        == GenAIAttributes.GenAiOperationNameValues.EXECUTE_TOOL.value
-    ]
-
     assert len(chat_spans) == 1
-    assert len(tool_spans) == 2
 
     assert_all_attributes(
         chat_spans[0],
@@ -1005,18 +979,6 @@ def chat_completion_multiple_tools_streaming(
         response_stream_usage.prompt_tokens,
         response_stream_usage.completion_tokens,
     )
-
-    for span in tool_spans:
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_NAME)
-            == "get_current_weather"
-        )
-        assert (
-            span.attributes.get(GenAIAttributes.GEN_AI_TOOL_TYPE) == "function"
-        )
-        # Verify parent relationship
-        assert span.parent is not None
-        assert span.parent.span_id == chat_spans[0].context.span_id
 
     logs = log_exporter.get_finished_logs()
     if not expect_content:

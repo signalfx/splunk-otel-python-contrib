@@ -28,6 +28,10 @@ Compatibility Matrix
      - >= 3.0.0, < 4
      - >= 0.1.12
      - Wraps ``FastMCP.call_tool``, ``read_resource``, ``render_prompt``. Breaking change from 0.1.x.
+   * - 0.2.1
+     - >= 3.0.0, < 4
+     - >= 0.1.13
+     - ``initialize`` MCPOperation replaces ``AgentInvocation`` as session root span on both client and server. MCP session duration metrics now emitted from the ``initialize`` span.
 
 Installation
 ------------
@@ -78,6 +82,23 @@ The following environment variables control the instrumentation behavior:
 What is Instrumented
 --------------------
 
+Server-side (v0.2.1 — FastMCP 3.x):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Session lifecycle** — ``Server.run`` is wrapped with an ``initialize`` MCPOperation span that spans the full session and acts as the root span for all server-side operations.
+- Tool execution via ``FastMCP.call_tool``
+- Resource reads via ``FastMCP.read_resource``
+- Prompt rendering via ``FastMCP.render_prompt``
+
+Client-side (v0.2.1):
+~~~~~~~~~~~~~~~~~~~~~~
+
+- **Session lifecycle** — ``Client.__aenter__`` / ``__aexit__`` are wrapped with an ``initialize`` MCPOperation span. After a successful connect the span is enriched with ``mcp.protocol.version`` and ``sdot.mcp.server_name`` from the server handshake.
+- Tool calls via ``Client.call_tool``
+- Tool listings via ``Client.list_tools``
+- Resource reads via ``Client.read_resource``
+- Prompt rendering via ``Client.get_prompt``
+
 Server-side (v0.2.0 — FastMCP 3.x):
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -91,12 +112,6 @@ Server-side (v0.1.x — FastMCP 2.x):
 
 - FastMCP server initialization
 - Tool execution via ``ToolManager.call_tool``
-
-Client-side:
-~~~~~~~~~~~~
-
-- FastMCP client session lifecycle
-- Tool calls and listings
 
 Transport-level:
 ~~~~~~~~~~~~~~~~
@@ -178,22 +193,27 @@ Telemetry
 Spans:
 ~~~~~~
 
-- ``mcp.server`` - Parent span for server operations
-- ``{tool_name}.tool`` - Child span for each tool execution
-- ``mcp.client`` - Parent span for client session
+- ``initialize`` (client + server) — Session root span. Spans the full client/server session lifetime. All MCP operation spans are children.
+- ``tools/call {tool_name}`` — Child span for each tool execution. ``SpanKind.CLIENT`` on client side, ``SpanKind.SERVER`` on server side.
+- ``tools/list`` — Child span for tool listing.
+- ``resources/read {uri}`` — Child span for resource reads.
+- ``prompts/get {name}`` — Child span for prompt rendering.
 
 Metrics:
 ~~~~~~~~
 
-- ``gen_ai.mcp.tool.duration`` - Duration of tool executions (histogram)
+- ``mcp.client.operation.duration`` — Duration of client-side MCP operations (histogram).
+- ``mcp.server.operation.duration`` — Duration of server-side MCP operations (histogram).
+- ``mcp.client.session.duration`` — Client session duration, emitted when the ``initialize`` span ends (histogram).
+- ``mcp.server.session.duration`` — Server session duration, emitted when the ``initialize`` span ends (histogram).
+- ``mcp.tool.output.size`` — Size of tool output in bytes (histogram, custom SDOT attribute).
 
 Events:
 ~~~~~~~
 
-When content capture is enabled:
+When content capture is enabled (``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true``):
 
-- ``mcp.tool.input`` - Tool arguments
-- ``mcp.tool.output`` - Tool results
+- ``gen_ai.tool.message`` — Tool input arguments and output results.
 
 
 References

@@ -1,0 +1,5 @@
+# AI Defense Gateway Travel Planner — development dependencies (editable local installs)
+-r requirements-app.txt
+-e ../../../../../util/opentelemetry-util-genai
+-e ../../..
+-e ../../../../opentelemetry-instrumentation-langchain[instruments]

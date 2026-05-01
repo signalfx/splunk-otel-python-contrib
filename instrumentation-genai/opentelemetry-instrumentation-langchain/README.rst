@@ -94,6 +94,14 @@ The instrumentation automatically detects LangGraph interrupt/resume patterns:
 
 See the ``examples/multi_agent_travel_planner`` demo for interrupt/resume in action.
 
+Known LangGraph Compatibility Issue
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``langgraph==1.1.7`` introduced a breaking change that silently drops non-``GraphCallbackHandler``
+callback handlers. This prevents the instrumentation from receiving any callbacks.
+The issue was fixed in `langgraph 1.1.8 <https://github.com/langchain-ai/langgraph/releases/tag/1.1.8>`_.
+This package excludes ``langgraph==1.1.7`` via ``!= 1.1.7`` in its dependency specifier.
+
 Testing
 -------
 Run the package tests (from repository root or this directory)::

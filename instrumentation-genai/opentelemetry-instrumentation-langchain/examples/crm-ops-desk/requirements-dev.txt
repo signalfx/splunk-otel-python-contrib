@@ -1,0 +1,5 @@
+# CRM Ops Desk — development dependencies (editable local installs)
+-r requirements-app.txt
+-e ../../../../util/opentelemetry-util-genai
+-e ../../../../util/opentelemetry-util-genai-emitters-splunk
+-e ../../[instruments]

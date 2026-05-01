@@ -1,4 +1,5 @@
-weaviate-client>=4.0.0
-python-dotenv>=1.0.0
-opentelemetry-distro~=0.59b0
-opentelemetry-exporter-otlp~=1.38.0
+# Weaviate Zero-Code Example — application dependencies
+weaviate-client==4.21.0
+python-dotenv==1.2.2
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp==1.38.0

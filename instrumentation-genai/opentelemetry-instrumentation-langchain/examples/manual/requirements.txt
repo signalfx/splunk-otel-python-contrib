@@ -1,15 +1,11 @@
-deepeval
+# LangChain Manual Example — application dependencies
+deepeval==3.3.9
 langchain==1.0.2
-#langchain-classic==1.0.0
-langchain-core==1.0.1
+langchain-core==1.2.28
 langchain-openai==1.0.1
 langchain-text-splitters==1.0.0
 langgraph==1.0.1
-#langgraph-api==0.4.46
 langgraph-checkpoint==3.0.0
-#langgraph-cli==0.4.4
 langgraph-prebuilt==1.0.1
-langgraph-runtime-inmem==0.14.1
-#langgraph-sdk==0.2.9
-#langsmith==0.4.38
-requests
+langgraph-runtime-inmem==0.28.0
+requests==2.32.5

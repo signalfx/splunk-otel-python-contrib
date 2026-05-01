@@ -130,11 +130,11 @@ def truncate_if_needed(value: str, max_length: Optional[int] = None) -> str:
 
 
 def should_capture_content() -> bool:
-    """Check if content capture is enabled via environment variables."""
-    env_value = os.getenv(
-        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
-    ).lower()
-    return env_value in ("true", "1", "yes", "on")
+    """Check if content capture is enabled via GenAI util capture mode."""
+    from opentelemetry.util.genai.types import ContentCapturingMode
+    from opentelemetry.util.genai.utils import get_content_capturing_mode
+
+    return get_content_capturing_mode() != ContentCapturingMode.NO_CONTENT
 
 
 def is_instrumentation_enabled() -> bool:

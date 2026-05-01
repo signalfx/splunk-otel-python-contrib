@@ -1,0 +1,19 @@
+# AgentCore OAuth2 Token — application dependencies
+bedrock-agentcore==1.7.0
+bedrock-agentcore-starter-toolkit==0.3.6
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.10
+openai==2.32.0
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-http==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-instrumentation-openai==0.60.0
+litellm==1.83.8
+deepeval==3.3.9
+pydantic==2.12.5
+python-dotenv==1.2.2
+requests==2.32.5

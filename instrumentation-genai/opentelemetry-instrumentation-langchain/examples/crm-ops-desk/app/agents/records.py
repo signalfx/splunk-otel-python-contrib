@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from colorama import Fore, Style
 
-from app.rag.store import embed, get_db
+from app.llm import embed
+from app.rag.store import get_db
 
 
 async def records_node(state: dict) -> dict:

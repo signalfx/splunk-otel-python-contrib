@@ -126,8 +126,25 @@ Evaluation metrics appear on agent/model spans allowing correlation with injecte
 cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/multi_agent_travel_planner
 python3 -m venv .venv
 source .venv/bin/activate
+```
+
+**Production mode** (installs SDOT packages from PyPI):
+
+```bash
 pip install -r requirements.txt
 ```
+
+**Development mode** (installs SDOT packages from local source):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+| File | Purpose |
+|------|---------|
+| `requirements-app.txt` | Pinned application dependencies only |
+| `requirements.txt` | App deps + SDOT instrumentation from PyPI |
+| `requirements-dev.txt` | App deps + SDOT instrumentation from local source |
 
 copy and modify `.env.example` to `.env`, change there or export your `OPENAI_API_KEY`. Run the app
 
@@ -258,7 +275,9 @@ Higher scores often correlate with injected poison snippets.
 | `main.py` | Workflow, poisoning, optional manual instrumentation setup |
 | `Dockerfile` | Container build (editable installs + example requirements) |
 | `k8s-cronjob.yaml` | Example CronJob manifest (modify for two flavors) |
-| `requirements.txt` | Python dependencies for the sample |
+| `requirements-app.txt` | Pinned application dependencies |
+| `requirements.txt` | Production deps (app + SDOT from PyPI) |
+| `requirements-dev.txt` | Development deps (app + SDOT from local source) |
 
 ## 11. Disclaimer
 

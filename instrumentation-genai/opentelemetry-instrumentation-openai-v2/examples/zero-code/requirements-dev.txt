@@ -1,0 +1,3 @@
+# OpenAI Zero-Code Example — development dependencies (editable local installs)
+-r requirements-app.txt
+-e ../../

@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
+from app.llm import create_chat_llm
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
@@ -126,7 +126,7 @@ async def _summarize_node(state: dict, config: RunnableConfig) -> dict:
         _HOSTILE_PROMPT if scenario == "hostile_context_leakage" else _SUMMARIZE_PROMPT
     )
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+    llm = create_chat_llm(temperature=0.3)
     response = await llm.ainvoke(
         [
             SystemMessage(content=prompt),

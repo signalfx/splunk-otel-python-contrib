@@ -1,0 +1,6 @@
+# LlamaIndex Zero-Code Example — application dependencies
+llama-index==0.14.21
+python-dotenv==1.2.2
+requests==2.32.5
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp==1.38.0

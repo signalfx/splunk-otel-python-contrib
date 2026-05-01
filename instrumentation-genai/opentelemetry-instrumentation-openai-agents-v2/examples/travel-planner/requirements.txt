@@ -1,21 +1,7 @@
-# OpenAI Agents SDK
-openai-agents~=0.3.3
-openai>=1.0.0
-
-# Environment and utilities
-python-dotenv~=1.0.0
-requests>=2.25.0
-
-# OpenTelemetry core and exporters
-opentelemetry-api>=1.38.0
-opentelemetry-sdk>=1.38.0
-opentelemetry-exporter-otlp-proto-grpc>=1.38.0
-opentelemetry-instrumentation>=0.59b0
-opentelemetry-semantic-conventions>=0.59b0
-
-# Splunk OpenTelemetry GenAI packages
-splunk-otel-util-genai==0.1.9
-splunk-otel-util-genai-evals==0.1.7
-splunk-otel-genai-evals-deepeval==0.1.12
-splunk-otel-genai-emitters-splunk==0.1.6
-splunk-otel-instrumentation-openai-agents==0.1.2
+# OpenAI Agents Travel Planner — production dependencies (PyPI packages)
+-r requirements-app.txt
+splunk-otel-util-genai
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
+splunk-otel-genai-emitters-splunk
+splunk-otel-instrumentation-openai-agents

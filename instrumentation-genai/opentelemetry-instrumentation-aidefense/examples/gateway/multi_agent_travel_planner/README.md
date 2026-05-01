@@ -74,6 +74,26 @@ POST /travel/plan
 
 *Either `LLM_API_KEY`/`OPENAI_API_KEY` or OAuth2 credentials (`LLM_CLIENT_ID` + `LLM_CLIENT_SECRET`) is required.
 
+### Install Dependencies
+
+**Production mode** (installs SDOT packages from PyPI):
+
+```bash
+pip install -r requirements.txt
+```
+
+**Development mode** (installs SDOT packages from local source):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+| File | Purpose |
+|------|---------|
+| `requirements-app.txt` | Pinned application dependencies only |
+| `requirements.txt` | App deps + SDOT instrumentation from PyPI |
+| `requirements-dev.txt` | App deps + SDOT instrumentation from local source |
+
 ### Running the Example
 
 ```bash

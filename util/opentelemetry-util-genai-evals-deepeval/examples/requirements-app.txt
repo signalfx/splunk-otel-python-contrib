@@ -1,0 +1,4 @@
+# Deepeval Evals Example — application dependencies
+openai==2.32.0
+litellm==1.83.8
+deepeval==3.3.9

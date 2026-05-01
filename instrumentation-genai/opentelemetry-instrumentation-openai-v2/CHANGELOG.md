@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `gen_ai.request.stream` attribute for streaming requests
 - Add `gen_ai.response.time_to_first_chunk` attribute and metric for streaming requests
 
+### Changed
+
+- **Always populate messages and tool arguments on Python objects** — `input_messages`, `output_messages`, and tool call `arguments` are now always set on `LLMInvocation`/`ToolCall` regardless of `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. The emitter layer controls what reaches telemetry, enabling evaluators to access full content even in `NO_CONTENT` mode.
+
 ## Version 0.1.0 (2026-02-05)
 
 Initial release of `splunk-otel-instrumentation-openai` package.
