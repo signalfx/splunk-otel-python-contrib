@@ -4,7 +4,7 @@
 
 # Core dependencies
 langchain-core==1.2.29
-langchain-openai==1.1.13
+langchain-openai==1.1.14
 langchain-community==0.4.1
 
 # LangGraph
