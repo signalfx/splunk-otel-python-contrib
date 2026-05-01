@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 from opentelemetry.instrumentation.fastmcp.server_instrumentor import (
     ServerInstrumentor,
+    _traced_server_mcp_op,
 )
 from opentelemetry.util.genai.types import MCPOperation, MCPToolCall
 
@@ -263,3 +264,73 @@ class TestServerInstrumentor:
 
         assert mock_telemetry_handler.start_mcp_operation.called
         assert mock_telemetry_handler.fail_mcp_operation.called
+
+
+class TestTracedServerMcpOp:
+    """Direct unit tests for the _traced_server_mcp_op DRY helper."""
+
+    @pytest.mark.asyncio
+    async def test_success_calls_start_and_stop(self, mock_telemetry_handler):
+        """Happy path: start_mcp_operation then stop_mcp_operation."""
+
+        def build_op(_args, _kwargs):
+            return MCPOperation(
+                target="system://info",
+                mcp_method_name="resources/read",
+                is_client=False,
+            )
+
+        wrapper = _traced_server_mcp_op(mock_telemetry_handler, build_op)
+        mock_wrapped = AsyncMock(return_value="content")
+
+        result = await wrapper(mock_wrapped, MagicMock(), ("system://info",), {})
+
+        assert result == "content"
+        assert mock_telemetry_handler.start_mcp_operation.called
+        assert mock_telemetry_handler.stop_mcp_operation.called
+        assert not mock_telemetry_handler.fail_mcp_operation.called
+
+    @pytest.mark.asyncio
+    async def test_failure_sets_is_error_and_calls_fail(self, mock_telemetry_handler):
+        """When wrapped() raises, fail_mcp_operation is called with is_error=True
+        and the correct error_type; stop_mcp_operation is NOT called."""
+
+        def build_op(_args, _kwargs):
+            return MCPOperation(
+                target="system://missing",
+                mcp_method_name="resources/read",
+                is_client=False,
+            )
+
+        wrapper = _traced_server_mcp_op(mock_telemetry_handler, build_op)
+        mock_wrapped = AsyncMock(side_effect=RuntimeError("disk full"))
+
+        with pytest.raises(RuntimeError, match="disk full"):
+            await wrapper(mock_wrapped, MagicMock(), ("system://missing",), {})
+
+        assert mock_telemetry_handler.start_mcp_operation.called
+        assert not mock_telemetry_handler.stop_mcp_operation.called
+        assert mock_telemetry_handler.fail_mcp_operation.called
+
+        failed_op = mock_telemetry_handler.fail_mcp_operation.call_args[0][0]
+        assert isinstance(failed_op, MCPOperation)
+        assert failed_op.is_error is True
+        assert failed_op.error_type == "RuntimeError"
+
+    @pytest.mark.asyncio
+    async def test_failure_reraises_original_exception(self, mock_telemetry_handler):
+        """The original exception must propagate unchanged so callers can catch it."""
+
+        def build_op(_args, _kwargs):
+            return MCPOperation(
+                target="x", mcp_method_name="resources/read", is_client=False
+            )
+
+        wrapper = _traced_server_mcp_op(mock_telemetry_handler, build_op)
+        sentinel = ValueError("sentinel error")
+        mock_wrapped = AsyncMock(side_effect=sentinel)
+
+        with pytest.raises(ValueError) as exc_info:
+            await wrapper(mock_wrapped, MagicMock(), (), {})
+
+        assert exc_info.value is sentinel

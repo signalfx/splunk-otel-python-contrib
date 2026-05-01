@@ -40,6 +40,9 @@ class TestClientInstrumentor:
 
         mock_instance = MagicMock()
         mock_instance.initialize_result = None
+        mock_instance.session = None
+        mock_instance._session = None
+        mock_instance.transport = None
         mock_wrapped = AsyncMock(return_value="session_result")
 
         result = await wrapper(mock_wrapped, mock_instance, (), {})
@@ -78,6 +81,38 @@ class TestClientInstrumentor:
 
         init_op = instrumentor._active_sessions[id(mock_instance)]
         assert init_op.mcp_protocol_version == "2025-06-18"
+
+    @pytest.mark.asyncio
+    async def test_client_enter_wrapper_failure(self, mock_telemetry_handler):
+        """Test enter wrapper calls fail_mcp_operation with is_error=True when connect raises."""
+        instrumentor = ClientInstrumentor(mock_telemetry_handler)
+        wrapper = instrumentor._client_enter_wrapper()
+
+        mock_instance = MagicMock()
+        mock_instance.initialize_result = None
+        mock_instance.session = None
+        mock_instance._session = None
+        mock_instance.transport = None
+        mock_wrapped = AsyncMock(side_effect=ConnectionError("server unreachable"))
+
+        with pytest.raises(ConnectionError, match="server unreachable"):
+            await wrapper(mock_wrapped, mock_instance, (), {})
+
+        # start_mcp_operation must have been called (span was opened)
+        assert mock_telemetry_handler.start_mcp_operation.called
+
+        # fail_mcp_operation must be called — not stop
+        assert mock_telemetry_handler.fail_mcp_operation.called
+        assert not mock_telemetry_handler.stop_mcp_operation.called
+
+        # The MCPOperation passed to fail_mcp_operation must have is_error=True
+        failed_op = mock_telemetry_handler.fail_mcp_operation.call_args[0][0]
+        assert isinstance(failed_op, MCPOperation)
+        assert failed_op.is_error is True
+        assert failed_op.error_type == "ConnectionError"
+
+        # Session must NOT be stored on failure
+        assert id(mock_instance) not in instrumentor._active_sessions
 
     @pytest.mark.asyncio
     async def test_client_exit_wrapper_success(self, mock_telemetry_handler):
