@@ -22,6 +22,14 @@ instrumentation via BedrockAgentCoreInstrumentor.
 The agent answers weather questions by calling a real weather tool backed by
 the Open-Meteo API (no API key required).
 
+AgentCore components instrumented:
+  - BedrockAgentCoreApp (@app.entrypoint) → Workflow span
+  - MemoryClient.list_memories           → ToolCall span
+  - MemoryClient.retrieve_memories       → RetrievalInvocation span
+  - MemoryClient.create_event            → ToolCall span
+  - CodeInterpreter.start/execute/stop   → ToolCall spans
+  - BrowserClient.start/stop            → ToolCall spans
+
 Run modes:
 1. Default (no CLI args): queries "What is the weather in San Francisco?" and exits.
 2. CLI mode: python main.py --city "Paris"
@@ -182,6 +190,8 @@ _SYSTEM_PROMPT = [
 
 _MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0")
 
+_MEMORY_NAME = "weather-agent-memory"
+
 
 # ---------------------------------------------------------------------------
 # Agent loop
@@ -247,21 +257,128 @@ def run_agent(query: str) -> str:
 # ---------------------------------------------------------------------------
 
 from bedrock_agentcore import BedrockAgentCoreApp  # noqa: E402
+from bedrock_agentcore.memory.client import MemoryClient  # noqa: E402
+from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter  # noqa: E402
+from bedrock_agentcore.tools.browser_client import BrowserClient  # noqa: E402
 
 app = BedrockAgentCoreApp()
+
+
+def _get_or_create_memory_id(memory_client: MemoryClient) -> str | None:
+    """Get an existing memory by name prefix or create one. Returns the memory ID or None.
+
+    create_or_get_memory has a bug where ValidationException("already exists") propagates
+    as a plain Exception, so we check list_memories first (matching the manual example).
+    """
+    try:
+        memories = memory_client.list_memories()
+        existing = next(
+            (m for m in memories if m.get("id", "").startswith(_MEMORY_NAME)), None
+        )
+        if existing:
+            return existing.get("id") or existing.get("memoryId")
+        result = memory_client.create_or_get_memory(name=_MEMORY_NAME)
+        return (result or {}).get("id") or (result or {}).get("memoryId")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [memory] setup skipped: {exc}")
+        return None
+
+
+def _try_retrieve_memories(
+    memory_client: MemoryClient, memory_id: str, query: str
+) -> None:
+    """Retrieve past weather queries from memory (non-fatal if unavailable).
+
+    Creates a RetrievalInvocation span via BedrockAgentCoreInstrumentor.
+    """
+    try:
+        memory_client.retrieve_memories(
+            memory_id=memory_id,
+            namespace="weather-agent",
+            query=query,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [memory] retrieve skipped: {exc}")
+
+
+def _try_save_memory(
+    memory_client: MemoryClient, memory_id: str, query: str, answer: str
+) -> None:
+    """Save the query/answer exchange to memory (non-fatal if unavailable).
+
+    Creates a ToolCall span via BedrockAgentCoreInstrumentor.
+    """
+    try:
+        memory_client.create_event(
+            memory_id=memory_id,
+            actor_id="weather-agent",
+            session_id="single-agent-demo",
+            messages=[(query, "USER"), (answer, "ASSISTANT")],
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [memory] save skipped: {exc}")
+
+
+def _try_code_interpreter(region: str, temp_celsius: float) -> None:
+    """Run a temperature unit conversion via CodeInterpreter (non-fatal if unavailable).
+
+    Creates start, execute_code, and stop ToolCall spans via BedrockAgentCoreInstrumentor.
+    """
+    code_interpreter = CodeInterpreter(region=region)
+    try:
+        code_interpreter.start()
+        code_interpreter.execute_code(
+            code=f"celsius = {temp_celsius}\nfahrenheit = celsius * 9/5 + 32\nprint(f'{{celsius}}°C = {{fahrenheit:.1f}}°F')"
+        )
+        code_interpreter.stop()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [code_interpreter] skipped: {exc}")
+
+
+def _try_browser(region: str) -> None:
+    """Start a browser session to check the extended forecast (non-fatal if unavailable).
+
+    Creates start and stop ToolCall spans via BedrockAgentCoreInstrumentor.
+    """
+    browser_client = BrowserClient(region=region)
+    try:
+        browser_client.start()
+        browser_client.stop()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [browser] skipped: {exc}")
 
 
 @app.entrypoint
 def agent_handler(event):
     """Handle an invocation event.
 
-    The @app.entrypoint decorator creates a Workflow span. The Converse API
-    calls inside run_agent produce child LLM spans (via opentelemetry-instrumentation-bedrock
-    if installed). Any AgentCore tool usage (MemoryClient, CodeInterpreter, BrowserClient)
-    automatically creates child ToolCall spans via BedrockAgentCoreInstrumentor.
+    Span hierarchy produced by BedrockAgentCoreInstrumentor:
+      Workflow
+        ├── RetrievalInvocation  (retrieve_memories, if BEDROCK_MEMORY_ID set)
+        ├── ToolCall             (create_event, if BEDROCK_MEMORY_ID set)
+        ├── ToolCall             (code_interpreter.start)
+        ├── ToolCall             (code_interpreter.execute_code)
+        ├── ToolCall             (code_interpreter.stop)
+        ├── ToolCall             (browser.start)
+        └── ToolCall             (browser.stop)
     """
     query = event.get("query", "What is the weather in San Francisco?")
+    region = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+
+    memory_client = MemoryClient(region_name=region)
+    memory_id = _get_or_create_memory_id(memory_client)
+
+    if memory_id:
+        _try_retrieve_memories(memory_client, memory_id, query)
+
     answer = run_agent(query)
+
+    if memory_id:
+        _try_save_memory(memory_client, memory_id, query, answer)
+
+    _try_code_interpreter(region, temp_celsius=22.0)
+    _try_browser(region)
+
     return {"answer": answer}
 
 
