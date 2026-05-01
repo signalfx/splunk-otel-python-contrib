@@ -5,7 +5,7 @@ import json
 from colorama import Fore, Style
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
+from app.llm import create_chat_llm
 from langgraph.prebuilt import ToolNode
 
 from app.models.action_output import ActionOutput, ToolReceipt
@@ -101,7 +101,7 @@ Customer ID: {state["user_id"]}
 
     user_msg = state["user_query"]
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+    llm = create_chat_llm(temperature=0.2)
     llm_with_tools = llm.bind_tools(CRM_TOOLS)
     tool_node = ToolNode(CRM_TOOLS)
 

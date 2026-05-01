@@ -2,7 +2,7 @@
 
 import pytest
 
-from opentelemetry.util.genai.processor.content_normalizer import (
+from opentelemetry.util.genai.processor.traceloop_content_normalizer import (
     normalize_traceloop_content,
 )
 

@@ -5,7 +5,8 @@ from datetime import datetime
 
 from colorama import Fore, Style
 
-from app.rag.store import embed, get_db
+from app.llm import embed
+from app.rag.store import get_db
 
 
 async def policy_node(state: dict) -> dict:

@@ -427,9 +427,7 @@ def chat_completions_create(capture_content: bool, handler):
                 )
 
             if span and span.is_recording():
-                _set_response_attributes(
-                    span, parsed_result, capture_content, handler
-                )
+                _set_response_attributes(span, parsed_result)
 
             _apply_chat_response_to_invocation(
                 invocation,
@@ -482,9 +480,7 @@ def async_chat_completions_create(capture_content: bool, handler):
                 )
 
             if span and span.is_recording():
-                _set_response_attributes(
-                    span, parsed_result, capture_content, handler
-                )
+                _set_response_attributes(span, parsed_result)
 
             _apply_chat_response_to_invocation(
                 invocation,
@@ -597,9 +593,7 @@ def async_embeddings_create(capture_content: bool, handler):
     return traced_method
 
 
-def _set_response_attributes(
-    span, result, capture_content: bool, handler=None
-):
+def _set_response_attributes(span, result):
     if getattr(result, "model", None):
         set_span_attribute(
             span, GenAIAttributes.GEN_AI_RESPONSE_MODEL, result.model
@@ -639,36 +633,6 @@ def _set_response_attributes(
             result.usage.completion_tokens,
         )
 
-    if handler:
-        _emit_tool_calls_from_response(handler, span, result, capture_content)
-
-
-def _emit_tool_calls_from_response(
-    handler,
-    parent_span: Span,
-    result: Any,
-    capture_content: bool,
-) -> None:
-    for choice in getattr(result, "choices", []):
-        message = getattr(choice, "message", None)
-
-        tool_calls = None
-        if isinstance(message, dict):
-            tool_calls = message.get("tool_calls")
-        elif message is not None:
-            tool_calls = getattr(message, "tool_calls", None)
-
-        if not tool_calls:
-            continue
-
-        for tool_call in tool_calls:
-            genai_tool_call, _ = _build_tool_call_invocation(
-                tool_call,
-            )
-            genai_tool_call.parent_span = parent_span
-            handler.start_tool_call(genai_tool_call)
-            handler.stop_tool_call(genai_tool_call)
-
 
 def _set_embeddings_response_attributes(
     span: Span,
@@ -701,6 +665,13 @@ def _set_embeddings_response_attributes(
 
 
 class ToolCallBuffer:
+    """Accumulates streaming tool call chunks without creating spans.
+
+    Tool call spans (execute_tool) should be created by user code or higher-level
+    frameworks (e.g., LangChain) that can observe actual tool execution, not during
+    response parsing.
+    """
+
     def __init__(
         self,
         index: int,
@@ -713,10 +684,7 @@ class ToolCallBuffer:
         self.tool_call = tool_call
         self.tool_type = tool_type
         self._argument_chunks: list[str] = []
-        self.handler = handler
-        self.tool_call.parent_span = parent_span
-        self.handler.start_tool_call(self.tool_call)
-        self._ended = False
+        self._finalized = False
 
     def append_arguments(self, arguments):
         if arguments is None:
@@ -724,15 +692,13 @@ class ToolCallBuffer:
         self._argument_chunks.append(arguments)
 
     def finalize(self) -> tuple[GenAIToolCall, str]:
-        if self._ended:
+        if self._finalized:
             return self.tool_call, self.tool_type
 
         if self._argument_chunks:
             self.tool_call.arguments = "".join(self._argument_chunks)
 
-        self.handler.stop_tool_call(self.tool_call)
-        self._ended = True
-
+        self._finalized = True
         return self.tool_call, self.tool_type
 
 

@@ -1,5 +1,5 @@
 # CRM Ops Desk — LangGraph multi-agent demo
-langgraph>=1.0.1
+langgraph>=1.0.0,!=1.1.7
 langchain-core>=1.0.1
 langchain-openai>=1.0.1
 faiss-cpu>=1.7.4
@@ -7,3 +7,7 @@ numpy>=1.24.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 colorama>=0.4.6
+
+# OTel zero-code instrumentation (required for opentelemetry-instrument CLI)
+opentelemetry-distro>=0.59b0
+opentelemetry-exporter-otlp-proto-grpc>=1.38.0

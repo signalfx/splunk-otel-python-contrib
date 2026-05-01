@@ -156,9 +156,7 @@ async def test_async_embeddings_token_metrics(
 
     metric_data = metrics[0].scope_metrics[0].metrics
 
-    # NOTE: util MetricsEmitter currently does NOT emit token usage metrics for
-    # embeddings (even when prompt_tokens are available). If util adds embedding
-    # token metrics in the future, update this test to expect GEN_AI_CLIENT_TOKEN_USAGE.
+    # Token usage metric is now emitted for embeddings
     token_metric = next(
         (
             m
@@ -167,7 +165,13 @@ async def test_async_embeddings_token_metrics(
         ),
         None,
     )
-    assert token_metric is None
+    assert token_metric is not None
+    # Verify token metric has input token data point
+    assert len(token_metric.data.data_points) == 1
+    dp = token_metric.data.data_points[0]
+    assert dp.attributes["gen_ai.token.type"] == "input"
+    assert dp.attributes["gen_ai.operation.name"] == "embeddings"
+    assert dp.sum == response.usage.prompt_tokens
 
 
 @pytest.mark.asyncio
