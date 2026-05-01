@@ -4,6 +4,15 @@ All notable changes to this repository are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT` env var** — Explicit override for content event emission (`true`/`false`). When unset, defaults are derived from `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` mode.
+
+### Changed
+
+- **`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` now accepts mode values directly** — Accepts `NO_CONTENT`, `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT` in addition to legacy `true`/`false`. Aligns with upstream OpenTelemetry GenAI conventions.
+- **Removed experimental mode gating** — Content capture no longer requires an experimental stability flag.
+
 ### Fixed
 - **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
 - **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.

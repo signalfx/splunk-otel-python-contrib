@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Always populate messages on Python objects** — `_build_content_payload()` now always captures messages on `LLMInvocation` regardless of `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. The emitter layer controls what reaches telemetry, enabling evaluators to access full content even in `NO_CONTENT` mode.
+
 ### Added
 - Populate LLMInvocation semantic convention fields from span_data:
   - `gen_ai.request.temperature` from model_config

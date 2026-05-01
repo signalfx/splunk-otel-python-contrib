@@ -222,10 +222,6 @@ class ClientInstrumentor:
                 is_client=True,
             )
 
-            if parent_session:
-                tool_call.agent_name = parent_session.name
-                tool_call.agent_id = parent_session.agent_id
-
             if tool_args:
                 try:
                     serialized = safe_serialize(tool_args)

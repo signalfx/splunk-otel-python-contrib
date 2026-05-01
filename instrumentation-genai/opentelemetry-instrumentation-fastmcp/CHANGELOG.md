@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Always populate tool arguments and tool result on Python objects** — `tool_call.arguments` and `tool_call.tool_result` are now always set regardless of `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. The emitter layer controls what reaches telemetry, enabling evaluators to access full content even in `NO_CONTENT` mode.
+
 ## [0.2.1]
 
 ### Changed (Breaking)
