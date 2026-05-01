@@ -1061,24 +1061,24 @@ class GenAISemanticProcessor(TracingProcessor):
         return messages
 
     def _build_content_payload(self, span: Span[Any]) -> ContentPayload:
-        """Normalize content from span data for attribute/event capture."""
+        """Normalize content from span data for attribute/event capture.
+
+        Always populates messages in the payload so that downstream consumers
+        (e.g. evaluators) have access to message data via the invocation
+        objects regardless of the telemetry capture mode.  The emitter layer
+        controls what actually gets written to spans/events.
+        """
         payload = ContentPayload()
         span_data = getattr(span, "span_data", None)
         if span_data is None or not self.include_sensitive_data:
             return payload
 
-        capture_messages = self._capture_messages and (
-            self._content_mode.capture_in_span
-            or self._content_mode.capture_in_event
-        )
-        capture_system = self._capture_system_instructions and (
-            self._content_mode.capture_in_span
-            or self._content_mode.capture_in_event
-        )
-        capture_tools = self._content_mode.capture_in_span or (
-            self._content_mode.capture_in_event
-            and _is_instance_of(span_data, FunctionSpanData)
-        )
+        # Always capture messages for invocation population (evals need them).
+        # The telemetry capture mode only controls span/event emission, not
+        # what goes on the Python objects.
+        capture_messages = True
+        capture_system = self._capture_system_instructions
+        capture_tools = True
 
         if _is_instance_of(span_data, GenerationSpanData):
             span_input = getattr(span_data, "input", None)

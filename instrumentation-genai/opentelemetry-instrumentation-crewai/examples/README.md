@@ -99,27 +99,23 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 3. **Install the dependencies:**
 
+**Production mode** (installs SDOT packages from PyPI):
+
 ```bash
 pip install -r requirements.txt
 ```
 
-> **Note:** The `requirements.txt` already includes all necessary packages from PyPI:
-> - `splunk-otel-instrumentation-crewai` - CrewAI instrumentation
-> - `splunk-otel-util-genai` - Core GenAI utilities
-> - `splunk-otel-genai-emitters-splunk` - Splunk-specific emitters
-> - `splunk-otel-util-genai-evals` - Evaluation framework
-> - `splunk-otel-genai-evals-deepeval` - DeepEval integration
-
-**For local development** (if you want to test unreleased changes):
+**Development mode** (installs SDOT packages from local source):
 
 ```bash
-# Install from local source instead
-pip install -e ../../../util/opentelemetry-util-genai
-pip install -e ../../../util/opentelemetry-util-genai-evals
-pip install -e ../../../util/opentelemetry-util-genai-evals-deepeval
-pip install -e ../../../util/opentelemetry-util-genai-emitters-splunk
-pip install -e ../[instruments]
+pip install -r requirements-dev.txt
 ```
+
+| File | Purpose |
+|------|---------|
+| `requirements-app.txt` | Pinned application dependencies only |
+| `requirements.txt` | App deps + SDOT instrumentation from PyPI |
+| `requirements-dev.txt` | App deps + SDOT instrumentation from local source |
 
 4. **Create environment variable configuration:**
 
@@ -351,7 +347,9 @@ kubectl create job --from=cronjob/customer-support-crew-v2 customer-support-test
 ```
 examples/
 ├── customer_support.py          # Customer support crew (manual & zero-code)
-├── requirements.txt             # Python dependencies
+├── requirements-app.txt         # Pinned application dependencies
+├── requirements.txt             # Production deps (app + SDOT from PyPI)
+├── requirements-dev.txt         # Development deps (app + SDOT from local source)
 ├── env.example                  # Environment variable template
 ├── Dockerfile.customer-support  # Docker build for customer_support
 ├── cronjob-customer-support.yaml # K8s CronJob for customer_support

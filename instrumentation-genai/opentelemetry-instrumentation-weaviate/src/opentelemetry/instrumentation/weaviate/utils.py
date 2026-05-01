@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-from os import environ
 from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -30,16 +29,11 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = (
 
 
 def is_content_enabled() -> bool:
-    """Check if content capture is enabled via environment variable.
+    """Check if content capture is enabled via GenAI util capture mode."""
+    from opentelemetry.util.genai.types import ContentCapturingMode
+    from opentelemetry.util.genai.utils import get_content_capturing_mode
 
-    Returns:
-        True if OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT is set to 'true',
-        False otherwise.
-    """
-    capture_content = environ.get(
-        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, "false"
-    )
-    return capture_content.lower() == "true"
+    return get_content_capturing_mode() != ContentCapturingMode.NO_CONTENT
 
 
 def parse_url_to_host_port(url: str) -> Tuple[Optional[str], Optional[int]]:

@@ -18,10 +18,16 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = (
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
 
-Enable capture of GenAI message content. When set to a truthy value (``true``,
-``1``, ``yes``, ``on``) the emitter pipeline records prompt and completion
-content according to :envvar:`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE`.
-Unset or falsey values disable content capture entirely.
+Controls whether and how GenAI message content is captured. Must be one of the
+``ContentCapturingMode`` names (case-insensitive): ``NO_CONTENT`` (default when
+unset), ``SPAN_ONLY``, ``EVENT_ONLY``, ``SPAN_AND_EVENT``.
+
+For backward compatibility, ``true`` / ``1`` / ``yes`` / ``on`` are treated as
+``SPAN_AND_EVENT`` (with optional deprecated
+``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE``), and common falsey
+strings disable capture.
+
+See also :envvar:`OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT`.
 """
 
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS = (
@@ -37,18 +43,15 @@ schemas passed to the model are recorded as a span attribute.  Defaults to
 ``false`` because the payload can be large.
 """
 
-OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE = (
-    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"
-)
+OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT = "OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT"
 """
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT
 
-Controls where captured message content is emitted. Accepted case-insensitive values:
-
-``SPAN_ONLY`` – emit content on spans only.
-``EVENT_ONLY`` – emit content as log events only.
-``SPAN_AND_EVENT`` (default) – emit content on spans and as log events.
-``NONE`` – disable content emission (equivalent to disabling capture entirely).
+Controls whether to emit GenAI content log events (e.g.
+``gen_ai.client.inference.operation.details``). Must be ``true`` or ``false``
+(case-insensitive). When unset, defaults from capture mode: ``true`` for
+``EVENT_ONLY`` and ``SPAN_AND_EVENT``, ``false`` for ``NO_CONTENT`` and
+``SPAN_ONLY``.
 """
 
 
@@ -374,8 +377,8 @@ Examples::
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
-    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE",
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS",
+    "OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT",
     "OTEL_INSTRUMENTATION_GENAI_UPLOAD_HOOK",
     "OTEL_INSTRUMENTATION_GENAI_UPLOAD_BASE_PATH",
     # evaluation

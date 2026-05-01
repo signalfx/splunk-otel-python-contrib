@@ -1,0 +1,12 @@
+# AI Defense Gateway Travel Planner — application dependencies
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.10
+openai==2.32.0
+httpx==0.28.1
+requests==2.32.5

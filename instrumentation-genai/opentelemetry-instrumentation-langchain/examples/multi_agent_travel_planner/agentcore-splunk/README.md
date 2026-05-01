@@ -270,7 +270,9 @@ The screenshot above shows:
 ```
 agentcore-splunk/
 ├── main.py              # LangChain travel planner with AgentCore entrypoint
-├── requirements.txt     # Python dependencies
+├── requirements-app.txt # Pinned application dependencies
+├── requirements.txt     # Production deps (app + SDOT from PyPI)
+├── requirements-dev.txt # Development deps (app + SDOT from local source)
 ├── images/
 │   └── image.png        # Screenshot of Splunk APM with evaluations
 └── README.md            # This file

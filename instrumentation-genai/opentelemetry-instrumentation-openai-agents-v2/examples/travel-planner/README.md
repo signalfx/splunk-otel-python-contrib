@@ -64,17 +64,23 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 3. **Install the dependencies:**
 
+**Production mode** (installs SDOT packages from PyPI):
+
 ```bash
 pip install -r requirements.txt
 ```
 
-**For local development** (if you want to test unreleased changes):
+**Development mode** (installs SDOT packages from local source):
 
 ```bash
-pip install splunk-otel-util-genai
-pip install splunk-otel-genai-emitters-splunk
-pip install splunk-otel-instrumentation-openai-agents-v2
+pip install -r requirements-dev.txt
 ```
+
+| File | Purpose |
+|------|---------|
+| `requirements-app.txt` | Pinned application dependencies only |
+| `requirements.txt` | App deps + SDOT instrumentation from PyPI |
+| `requirements-dev.txt` | App deps + SDOT instrumentation from local source |
 
 4. **Create environment variable configuration:**
 
@@ -200,7 +206,9 @@ travel-planner/
 ├── util/
 │   ├── __init__.py
 │   └── oauth2_token_manager.py  # OAuth2 token management
-├── requirements.txt             # Python dependencies
+├── requirements-app.txt         # Pinned application dependencies
+├── requirements.txt             # Production deps (app + SDOT from PyPI)
+├── requirements-dev.txt         # Development deps (app + SDOT from local source)
 ├── .env.example                 # Environment variable template
 ├── Dockerfile                   # Container build
 ├── cronjob.yaml                 # Kubernetes CronJob spec

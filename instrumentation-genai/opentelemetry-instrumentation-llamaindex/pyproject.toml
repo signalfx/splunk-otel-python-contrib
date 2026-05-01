@@ -28,11 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-instruments = ["llama-index-core >= 0.14.0"]
+instruments = ["llama-index-core >= 0.14.0, < 1"]
 test = [
-    "llama-index-core >= 0.14.0",
-    "llama-index-llms-openai >= 0.6.0",
-    "llama-index-embeddings-openai >= 0.4.0",
+    "llama-index-core >= 0.14.0, < 1",
+    "llama-index-llms-openai >= 0.6.0, < 1",
+    "llama-index-embeddings-openai >= 0.4.0, < 1",
     "pytest >= 7.0.0",
 ]
 

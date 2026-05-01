@@ -1,0 +1,7 @@
+# Deepeval Evals Example — development dependencies (editable local installs)
+-r requirements-app.txt
+-e ../
+-e ../../../util/opentelemetry-util-genai
+-e ../../../util/opentelemetry-util-genai-evals
+-e ../../../instrumentation-genai/opentelemetry-instrumentation-crewai
+-e ../../../util/opentelemetry-util-genai-emitters-splunk

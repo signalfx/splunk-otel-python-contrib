@@ -929,7 +929,6 @@ def test_handoff_list_goto_joined(handler_with_stub):
     assert tool.attributes.get(GEN_AI_HANDOFF_TO_AGENT) == "agent_a, agent_b"
 
 
-
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
 def test_handoff_command_update_only_not_a_handoff(handler_with_stub):
     """A Command with only an update dict (no goto, no routing key) is NOT a handoff.

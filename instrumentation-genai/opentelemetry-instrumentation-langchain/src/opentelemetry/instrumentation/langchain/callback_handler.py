@@ -143,7 +143,6 @@ def _extract_handoff_target(command: Any) -> Optional[str]:
     return _safe_str(node) if node else _safe_str(goto)
 
 
-
 def _is_handoff_command(command: Any) -> bool:
     """Return True if the Command has a goto that could not be resolved to a name.
 
