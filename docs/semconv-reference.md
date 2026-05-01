@@ -16,6 +16,7 @@ This document describes the semantic conventions used in the Splunk Distribution
 | [emitters/content_events.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/emitters/content_events.py) | Content events emitter |
 | [instruments.py](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/instruments.py) | Metric instrument definitions |
 | [semconv_ai.py](../instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/instrumentation/langchain/semconv_ai.py) | Legacy LangChain attribute constants (OpenLLMetry-derived) |
+| [bedrock/wrappers.py](../instrumentation-genai/opentelemetry-instrumentation-bedrock/src/opentelemetry/instrumentation/bedrock/wrappers.py) | AWS Bedrock Runtime request/response mapping |
 
 ### Upstream OTel Semantic Conventions
 
@@ -411,6 +412,12 @@ Note: Including high-cardinality values into metrics association-properties may 
 | `gen_ai.openai.response.service_tier` | string | Actual OpenAI service tier used | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md) |
 | `gen_ai.openai.response.system_fingerprint` | string | OpenAI system fingerprint | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/openai.md) |
 
+### AWS Bedrock Runtime Attributes
+
+| Attribute | Type | Description | OTel Semconv |
+|---|---|---|---|
+| `custom_aws_bedrock.operation` | string | Bedrock Runtime API operation (`Converse`, `ConverseStream`, `InvokeModel`, or `InvokeModelWithResponseStream`) | **SDOT extension** |
+
 ### Finish Reason (Agentic AI)
 
 > Source: [attributes.py `GEN_AI_FINISH_REASON*`](../util/opentelemetry-util-genai/src/opentelemetry/util/genai/attributes.py)
@@ -584,6 +591,7 @@ These attributes are defined by SDOT and are not yet part of the upstream OTel s
 | **Embedding extended** | `gen_ai.embeddings.input.texts` | Input text capture for embeddings |
 | **Reasoning** | `gen_ai.usage.reasoning_tokens`, `gen_ai.request.reasoning_effort`, `gen_ai.request.reasoning_summary`, `gen_ai.response.reasoning_effort` | Reasoning model support (o1, etc.) |
 | **Structured output** | `gen_ai.request.structured_output_schema` | JSON schema for structured output |
+| **AWS Bedrock Runtime** | `custom_aws_bedrock.operation` | Bedrock Runtime API operation captured on LLM spans |
 | **Finish reason** | `gen_ai.finish_reason`, `gen_ai.finish_reason_description` | Agentic completion reasons (interrupted, cancelled) |
 | **Evaluation extended** | `gen_ai.evaluation.sampled`, `gen_ai.evaluation.attributes.<key>` | Evaluation sampling and custom evaluator attributes |
 | **Security** | `gen_ai.security.event_id` | Cisco AI Defense integration |
@@ -632,6 +640,7 @@ SDOT provides auto-instrumentation for the following AI frameworks:
 | **Vertex AI** | `opentelemetry-instrumentation-vertexai` | Gemini, PaLM, embeddings |
 | **Weaviate** | `opentelemetry-instrumentation-weaviate` | Vector database operations |
 | **FastMCP** | `opentelemetry-instrumentation-fastmcp` | MCP tool execution |
+| **AWS Bedrock Runtime** | `opentelemetry-instrumentation-bedrock` | boto3/botocore `bedrock-runtime` LLM calls |
 | **AI Defense** | `opentelemetry-instrumentation-aidefense` | Cisco AI Defense security scanning |
 
 ---

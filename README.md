@@ -415,6 +415,7 @@ pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
 pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
 pip install -e util/opentelemetry-util-genai-traceloop-translator --no-deps
 pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
+pip install -e "instrumentation-genai/opentelemetry-instrumentation-bedrock[instruments,test]"
 pip install -r dev-genai-requirements.txt
 pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/requirements.txt
 
@@ -424,6 +425,18 @@ export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT
 export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="Deepeval(LLMInvocation(bias,toxicity))"
 export OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true
 ```
+
+Bedrock Runtime applications using boto3 can enable LLM spans with:
+
+```python
+from opentelemetry.instrumentation.bedrock import BedrockInstrumentor
+
+BedrockInstrumentor().instrument()
+```
+
+When used inside AgentCore workflows, enable both instrumentors so AgentCore
+provides workflow/tool spans and Bedrock Runtime provides child LLM spans for
+evaluations.
 
 Sudo-code to create LLMInvocation for your in-code llm code
 

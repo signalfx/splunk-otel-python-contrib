@@ -218,6 +218,21 @@ instrumentation-genai/opentelemetry-instrumentation-langchain/src/opentelemetry/
 
 ---
 
+## Bedrock Runtime Instrumentation Package: `opentelemetry-instrumentation-bedrock`
+
+Purpose: Instrument AWS Bedrock Runtime model calls made through boto3/botocore.
+It emits `LLMInvocation` spans for `bedrock-runtime` `Converse`,
+`ConverseStream`, `InvokeModel`, and `InvokeModelWithResponseStream` calls.
+These LLM spans compose with AgentCore or framework workflow spans through the
+shared `TelemetryHandler` context and can trigger asynchronous evaluations.
+
+```text
+instrumentation-genai/opentelemetry-instrumentation-bedrock/src/opentelemetry/instrumentation/bedrock
+  BedrockInstrumentor                    # wraps botocore BaseClient._make_api_call
+```
+
+---
+
 ## Invocation Lifecycle (ASCII – LLM + async evaluations)
 
 ```text

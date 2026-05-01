@@ -1,0 +1,827 @@
+# Copyright Splunk Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Botocore wrappers for Bedrock Runtime GenAI instrumentation."""
+
+from __future__ import annotations
+
+import timeit
+from typing import Any, Callable, Optional
+from urllib.parse import urlparse
+
+from opentelemetry import context as context_api
+from opentelemetry.util.genai.attributes import (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
+from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.types import (
+    Error,
+    InputMessage,
+    LLMInvocation,
+    OutputMessage,
+    Text,
+    ToolCall,
+    ToolCallResponse,
+)
+from opentelemetry.util.genai.utils import should_capture_tool_definitions
+
+from .utils import (
+    maybe_parse_json,
+    parse_json_body,
+    safe_json_dumps,
+    safe_str,
+    truncate_error,
+)
+
+_BEDROCK_RUNTIME_SERVICE = "bedrock-runtime"
+_SUPPORTED_OPERATIONS = {
+    "Converse",
+    "ConverseStream",
+    "InvokeModel",
+    "InvokeModelWithResponseStream",
+}
+_STREAMING_OPERATIONS = {"ConverseStream", "InvokeModelWithResponseStream"}
+_PROFILE_PREFIXES = {"us", "eu", "apac"}
+_STREAM_BUFFER_LIMIT = 64 * 1024
+
+
+def bedrock_runtime_api_call_wrapper(
+    capture_content: bool, handler: TelemetryHandler
+) -> Callable[..., Any]:
+    """Wrap ``botocore.client.BaseClient._make_api_call``."""
+
+    def traced_method(wrapped: Any, instance: Any, args: tuple, kwargs: dict) -> Any:
+        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+            return wrapped(*args, **kwargs)
+
+        operation_name, api_params = _extract_api_call_args(args, kwargs)
+        if (
+            not _is_bedrock_runtime_client(instance)
+            or operation_name not in _SUPPORTED_OPERATIONS
+        ):
+            return wrapped(*args, **kwargs)
+
+        try:
+            invocation = _build_invocation(
+                instance, operation_name, api_params, capture_content
+            )
+            handler.start_llm(invocation)
+        except Exception:
+            return wrapped(*args, **kwargs)
+
+        try:
+            result = wrapped(*args, **kwargs)
+        except Exception as error:
+            handler.fail_llm(
+                invocation,
+                Error(type=type(error), message=truncate_error(error)),
+            )
+            raise
+
+        try:
+            if operation_name in _STREAMING_OPERATIONS:
+                return _wrap_streaming_result(
+                    result,
+                    invocation,
+                    operation_name,
+                    capture_content,
+                    handler,
+                )
+            _apply_response(invocation, operation_name, result, capture_content)
+            handler.stop_llm(invocation)
+        except Exception:
+            _stop_safely(handler, invocation)
+
+        return result
+
+    return traced_method
+
+
+def _extract_api_call_args(args: tuple, kwargs: dict) -> tuple[Optional[str], dict]:
+    operation_name = args[0] if args else kwargs.get("operation_name")
+    api_params = args[1] if len(args) > 1 else kwargs.get("api_params")
+    return operation_name, api_params if isinstance(api_params, dict) else {}
+
+
+def _is_bedrock_runtime_client(instance: Any) -> bool:
+    meta = getattr(instance, "meta", None)
+    service_model = getattr(meta, "service_model", None)
+    service_name = getattr(service_model, "service_name", None)
+    if service_name is None:
+        service_name = getattr(service_model, "service_id", None)
+    normalized = safe_str(service_name).lower().replace(" ", "-")
+    return normalized == _BEDROCK_RUNTIME_SERVICE
+
+
+def _build_invocation(
+    instance: Any,
+    operation_name: str,
+    api_params: dict,
+    capture_content: bool,
+) -> LLMInvocation:
+    if operation_name in {"Converse", "ConverseStream"}:
+        invocation = _build_converse_invocation(
+            instance, operation_name, api_params, capture_content
+        )
+    else:
+        invocation = _build_invoke_model_invocation(
+            instance, operation_name, api_params, capture_content
+        )
+    if operation_name in _STREAMING_OPERATIONS:
+        invocation.request_stream = True
+        invocation._start_time = timeit.default_timer()  # type: ignore[attr-defined]
+    invocation.attributes["custom_aws_bedrock.operation"] = operation_name
+    return invocation
+
+
+def _base_invocation(
+    instance: Any,
+    model_id: str,
+    operation_name: str,
+) -> LLMInvocation:
+    server_address, server_port = _server_from_client(instance)
+    return LLMInvocation(
+        request_model=model_id,
+        provider=_infer_provider(model_id),
+        framework="boto3",
+        system="aws.bedrock",
+        server_address=server_address,
+        server_port=server_port,
+        attributes={"custom_aws_bedrock.operation": operation_name},
+    )
+
+
+def _build_converse_invocation(
+    instance: Any,
+    operation_name: str,
+    api_params: dict,
+    capture_content: bool,
+) -> LLMInvocation:
+    model_id = safe_str(api_params.get("modelId") or "")
+    invocation = _base_invocation(instance, model_id, operation_name)
+
+    inference_config = api_params.get("inferenceConfig") or {}
+    if isinstance(inference_config, dict):
+        invocation.request_max_tokens = inference_config.get("maxTokens")
+        invocation.request_temperature = inference_config.get("temperature")
+        invocation.request_top_p = inference_config.get("topP")
+        stop_sequences = inference_config.get("stopSequences")
+        if isinstance(stop_sequences, list):
+            invocation.request_stop_sequences = [safe_str(s) for s in stop_sequences]
+
+    tool_config = api_params.get("toolConfig") or {}
+    tools = tool_config.get("tools") if isinstance(tool_config, dict) else None
+    invocation.request_functions = _request_functions_from_bedrock_tools(tools)
+    if capture_content and tools and should_capture_tool_definitions():
+        invocation.tool_definitions = safe_json_dumps(tools)
+
+    if capture_content:
+        invocation.input_messages = _input_messages_from_converse_request(
+            api_params, invocation.provider
+        )
+
+    return invocation
+
+
+def _build_invoke_model_invocation(
+    instance: Any,
+    operation_name: str,
+    api_params: dict,
+    capture_content: bool,
+) -> LLMInvocation:
+    model_id = safe_str(api_params.get("modelId") or "")
+    invocation = _base_invocation(instance, model_id, operation_name)
+    body = parse_json_body(api_params.get("body")) or {}
+
+    invocation.request_max_tokens = _first_present(
+        body, "max_tokens", "maxTokens", "max_tokens_to_sample"
+    )
+    invocation.request_temperature = _first_present(body, "temperature")
+    invocation.request_top_p = _first_present(body, "top_p", "topP")
+    invocation.request_top_k = _first_present(body, "top_k", "topK")
+    stop_sequences = _first_present(body, "stop_sequences", "stopSequences")
+    if isinstance(stop_sequences, list):
+        invocation.request_stop_sequences = [safe_str(s) for s in stop_sequences]
+
+    tools = body.get("tools")
+    invocation.request_functions = _request_functions_from_invoke_tools(tools)
+    if capture_content and tools and should_capture_tool_definitions():
+        invocation.tool_definitions = safe_json_dumps(tools)
+
+    if capture_content:
+        invocation.input_messages = _input_messages_from_invoke_body(
+            body, invocation.provider
+        )
+
+    return invocation
+
+
+def _apply_response(
+    invocation: LLMInvocation,
+    operation_name: str,
+    result: Any,
+    capture_content: bool,
+) -> None:
+    if not isinstance(result, dict):
+        return
+    invocation.response_id = (
+        result.get("ResponseMetadata", {}).get("RequestId") or invocation.response_id
+    )
+    if operation_name == "Converse":
+        _apply_converse_response(invocation, result, capture_content)
+    elif operation_name == "InvokeModel":
+        _apply_invoke_model_response(invocation, result, capture_content)
+
+
+def _apply_converse_response(
+    invocation: LLMInvocation, result: dict, capture_content: bool
+) -> None:
+    usage = result.get("usage") or {}
+    if isinstance(usage, dict):
+        invocation.input_tokens = usage.get("inputTokens")
+        invocation.output_tokens = usage.get("outputTokens")
+
+    stop_reason = result.get("stopReason")
+    if stop_reason:
+        invocation.response_finish_reasons = [_map_stop_reason(stop_reason)]
+
+    if capture_content:
+        message = (result.get("output") or {}).get("message")
+        if isinstance(message, dict):
+            invocation.output_messages = [
+                _message_from_converse_message(
+                    message,
+                    invocation.provider,
+                    finish_reason=_map_stop_reason(stop_reason),
+                )
+            ]
+
+
+def _apply_invoke_model_response(
+    invocation: LLMInvocation, result: dict, capture_content: bool
+) -> None:
+    body = parse_json_body(result.get("body")) or {}
+    if not body:
+        _apply_token_headers(invocation, result)
+        return
+
+    invocation.response_id = body.get("id") or invocation.response_id
+    invocation.response_model_name = body.get("model") or body.get("modelId")
+
+    usage = body.get("usage") or {}
+    if isinstance(usage, dict):
+        invocation.input_tokens = _first_present(
+            usage, "input_tokens", "inputTokens", "prompt_tokens"
+        )
+        invocation.output_tokens = _first_present(
+            usage, "output_tokens", "outputTokens", "completion_tokens"
+        )
+    _apply_token_headers(invocation, result)
+
+    stop_reason = _first_present(
+        body, "stop_reason", "stopReason", "finish_reason", "finishReason"
+    )
+    if stop_reason:
+        invocation.response_finish_reasons = [_map_stop_reason(stop_reason)]
+
+    if capture_content:
+        output = _extract_invoke_output_text(body)
+        if output is not None:
+            invocation.output_messages = [
+                OutputMessage(
+                    role="assistant",
+                    parts=[Text(content=output)],
+                    finish_reason=_map_stop_reason(stop_reason),
+                )
+            ]
+
+
+def _wrap_streaming_result(
+    result: Any,
+    invocation: LLMInvocation,
+    operation_name: str,
+    capture_content: bool,
+    handler: TelemetryHandler,
+) -> Any:
+    if not isinstance(result, dict):
+        _stop_safely(handler, invocation)
+        return result
+
+    invocation.response_id = (
+        result.get("ResponseMetadata", {}).get("RequestId") or invocation.response_id
+    )
+
+    stream_key = "stream" if operation_name == "ConverseStream" else "body"
+    stream = result.get(stream_key)
+    if stream is None:
+        _stop_safely(handler, invocation)
+        return result
+
+    result[stream_key] = _BedrockStreamWrapper(
+        stream=stream,
+        invocation=invocation,
+        operation_name=operation_name,
+        capture_content=capture_content,
+        handler=handler,
+    )
+    return result
+
+
+class _BedrockStreamWrapper:
+    """Iterator wrapper that finalizes Bedrock streaming LLM telemetry."""
+
+    def __init__(
+        self,
+        stream: Any,
+        invocation: LLMInvocation,
+        operation_name: str,
+        capture_content: bool,
+        handler: TelemetryHandler,
+    ) -> None:
+        self._stream = stream
+        self._invocation = invocation
+        self._operation_name = operation_name
+        self._capture_content = capture_content
+        self._handler = handler
+        self._stopped = False
+        self._first_chunk_processed = False
+        self._role = "assistant"
+        self._content_blocks: dict[int, dict[str, Any]] = {}
+        self._finish_reason: Optional[str] = None
+        self._invoke_body = bytearray()
+
+    def __iter__(self) -> "_BedrockStreamWrapper":
+        return self
+
+    def __next__(self) -> Any:
+        try:
+            event = next(self._stream)
+            self._process_event(event)
+            return event
+        except StopIteration:
+            self._finish()
+            raise
+        except Exception as error:
+            self._fail(error)
+            raise
+
+    def close(self) -> None:
+        try:
+            close = getattr(self._stream, "close", None)
+            if close is not None:
+                close()
+        finally:
+            self._finish()
+
+    def _process_event(self, event: Any) -> None:
+        self._record_ttfc()
+        if not isinstance(event, dict):
+            return
+        if self._operation_name == "ConverseStream":
+            self._process_converse_stream_event(event)
+        else:
+            self._process_invoke_model_stream_event(event)
+
+    def _record_ttfc(self) -> None:
+        if self._first_chunk_processed:
+            return
+        self._first_chunk_processed = True
+        start_time = getattr(self._invocation, "_start_time", None)
+        if start_time is not None:
+            self._invocation.attributes["gen_ai.response.time_to_first_chunk"] = (
+                timeit.default_timer() - start_time
+            )
+
+    def _process_converse_stream_event(self, event: dict) -> None:
+        if "messageStart" in event:
+            role = event["messageStart"].get("role")
+            if role:
+                self._role = safe_str(role)
+            return
+
+        if "contentBlockStart" in event:
+            data = event["contentBlockStart"]
+            index = data.get("contentBlockIndex", 0)
+            start = data.get("start") or {}
+            tool_use = start.get("toolUse") if isinstance(start, dict) else None
+            if isinstance(tool_use, dict):
+                self._content_blocks[index] = {
+                    "type": "toolUse",
+                    "toolUseId": tool_use.get("toolUseId"),
+                    "name": tool_use.get("name"),
+                    "input": "",
+                }
+            return
+
+        if "contentBlockDelta" in event:
+            data = event["contentBlockDelta"]
+            index = data.get("contentBlockIndex", 0)
+            delta = data.get("delta") or {}
+            if "text" in delta:
+                block = self._content_blocks.setdefault(
+                    index, {"type": "text", "text": ""}
+                )
+                block["text"] = safe_str(block.get("text", "")) + safe_str(
+                    delta.get("text", "")
+                )
+            elif "toolUse" in delta:
+                block = self._content_blocks.setdefault(
+                    index, {"type": "toolUse", "input": ""}
+                )
+                tool_delta = delta.get("toolUse") or {}
+                block["input"] = safe_str(block.get("input", "")) + safe_str(
+                    tool_delta.get("input", "")
+                )
+            return
+
+        if "messageStop" in event:
+            self._finish_reason = _map_stop_reason(
+                event["messageStop"].get("stopReason")
+            )
+            if self._finish_reason:
+                self._invocation.response_finish_reasons = [self._finish_reason]
+            return
+
+        if "metadata" in event:
+            usage = event["metadata"].get("usage") or {}
+            if isinstance(usage, dict):
+                self._invocation.input_tokens = usage.get("inputTokens")
+                self._invocation.output_tokens = usage.get("outputTokens")
+
+    def _process_invoke_model_stream_event(self, event: dict) -> None:
+        chunk = event.get("chunk") or {}
+        chunk_bytes = chunk.get("bytes") if isinstance(chunk, dict) else None
+        if (
+            self._capture_content
+            and isinstance(chunk_bytes, (bytes, bytearray))
+            and len(self._invoke_body) < _STREAM_BUFFER_LIMIT
+        ):
+            remaining = _STREAM_BUFFER_LIMIT - len(self._invoke_body)
+            self._invoke_body.extend(bytes(chunk_bytes)[:remaining])
+
+    def _finish(self) -> None:
+        if self._stopped:
+            return
+        try:
+            if self._operation_name == "ConverseStream" and self._capture_content:
+                parts = _parts_from_stream_blocks(
+                    self._content_blocks, self._invocation.provider
+                )
+                if parts:
+                    self._invocation.output_messages = [
+                        OutputMessage(
+                            role=self._role,
+                            parts=parts,
+                            finish_reason=self._finish_reason,
+                        )
+                    ]
+            elif (
+                self._operation_name == "InvokeModelWithResponseStream"
+                and self._capture_content
+                and self._invoke_body
+            ):
+                body = parse_json_body(bytes(self._invoke_body)) or {}
+                output = _extract_invoke_output_text(body)
+                if output:
+                    self._invocation.output_messages = [
+                        OutputMessage(
+                            role="assistant",
+                            parts=[Text(content=output)],
+                            finish_reason=None,
+                        )
+                    ]
+            self._handler.stop_llm(self._invocation)
+        finally:
+            self._stopped = True
+
+    def _fail(self, error: Exception) -> None:
+        if self._stopped:
+            return
+        self._handler.fail_llm(
+            self._invocation,
+            Error(type=type(error), message=truncate_error(error)),
+        )
+        self._stopped = True
+
+
+def _input_messages_from_converse_request(
+    api_params: dict, provider: Optional[str]
+) -> list[InputMessage]:
+    messages: list[InputMessage] = []
+    system_blocks = api_params.get("system")
+    if isinstance(system_blocks, list) and system_blocks:
+        messages.append(
+            InputMessage(
+                role="system",
+                parts=_parts_from_content_blocks(system_blocks, provider),
+            )
+        )
+    for message in api_params.get("messages") or []:
+        if isinstance(message, dict):
+            messages.append(_message_from_converse_message(message, provider))
+    return messages
+
+
+def _message_from_converse_message(
+    message: dict,
+    provider: Optional[str],
+    finish_reason: Optional[str] = None,
+) -> InputMessage | OutputMessage:
+    role = safe_str(message.get("role") or "user")
+    parts = _parts_from_content_blocks(message.get("content") or [], provider)
+    if not parts:
+        parts = [Text(content="")]
+    if finish_reason is not None or role == "assistant":
+        return OutputMessage(role=role, parts=parts, finish_reason=finish_reason)
+    return InputMessage(role=role, parts=parts)
+
+
+def _parts_from_content_blocks(
+    content_blocks: Any, provider: Optional[str]
+) -> list[Any]:
+    parts: list[Any] = []
+    if not isinstance(content_blocks, list):
+        return parts
+    for block in content_blocks:
+        if not isinstance(block, dict):
+            parts.append(Text(content=safe_str(block)))
+            continue
+        if "text" in block:
+            parts.append(Text(content=safe_str(block.get("text", ""))))
+        elif "toolUse" in block and isinstance(block["toolUse"], dict):
+            tool_use = block["toolUse"]
+            parts.append(
+                ToolCall(
+                    name=safe_str(tool_use.get("name") or "unknown_tool"),
+                    id=tool_use.get("toolUseId"),
+                    arguments=tool_use.get("input"),
+                    provider=provider,
+                    system="aws.bedrock",
+                    tool_type="function",
+                )
+            )
+        elif "toolResult" in block and isinstance(block["toolResult"], dict):
+            tool_result = block["toolResult"]
+            parts.append(
+                ToolCallResponse(
+                    id=tool_result.get("toolUseId"),
+                    response=_tool_result_content(tool_result.get("content")),
+                )
+            )
+        else:
+            parts.append(Text(content=safe_json_dumps(block)))
+    return parts
+
+
+def _tool_result_content(content: Any) -> Any:
+    if not isinstance(content, list):
+        return content
+    values: list[Any] = []
+    for item in content:
+        if not isinstance(item, dict):
+            values.append(item)
+        elif "text" in item:
+            values.append(item.get("text"))
+        elif "json" in item:
+            values.append(item.get("json"))
+        else:
+            values.append(item)
+    if len(values) == 1:
+        return values[0]
+    return values
+
+
+def _parts_from_stream_blocks(
+    content_blocks: dict[int, dict[str, Any]], provider: Optional[str]
+) -> list[Any]:
+    parts: list[Any] = []
+    for index in sorted(content_blocks):
+        block = content_blocks[index]
+        if block.get("type") == "toolUse":
+            parts.append(
+                ToolCall(
+                    name=safe_str(block.get("name") or "unknown_tool"),
+                    id=block.get("toolUseId"),
+                    arguments=maybe_parse_json(block.get("input", "")),
+                    provider=provider,
+                    system="aws.bedrock",
+                    tool_type="function",
+                )
+            )
+        else:
+            parts.append(Text(content=safe_str(block.get("text", ""))))
+    return parts
+
+
+def _input_messages_from_invoke_body(
+    body: dict, provider: Optional[str]
+) -> list[InputMessage]:
+    if isinstance(body.get("messages"), list):
+        messages: list[InputMessage] = []
+        system = body.get("system")
+        if isinstance(system, str) and system:
+            messages.append(InputMessage(role="system", parts=[Text(content=system)]))
+        for message in body["messages"]:
+            if not isinstance(message, dict):
+                continue
+            role = safe_str(message.get("role") or "user")
+            content = message.get("content")
+            if isinstance(content, list):
+                parts = _parts_from_invoke_content(content, provider)
+            else:
+                parts = [Text(content=safe_str(content or ""))]
+            messages.append(InputMessage(role=role, parts=parts))
+        return messages
+
+    prompt = body.get("prompt") or body.get("inputText")
+    if prompt is not None:
+        return [InputMessage(role="user", parts=[Text(content=safe_str(prompt))])]
+    return []
+
+
+def _parts_from_invoke_content(content: list, provider: Optional[str]) -> list[Any]:
+    parts: list[Any] = []
+    for item in content:
+        if isinstance(item, dict):
+            if item.get("type") == "text" and "text" in item:
+                parts.append(Text(content=safe_str(item.get("text", ""))))
+            elif item.get("type") == "tool_use":
+                parts.append(
+                    ToolCall(
+                        name=safe_str(item.get("name") or "unknown_tool"),
+                        id=item.get("id"),
+                        arguments=item.get("input"),
+                        provider=provider,
+                        system="aws.bedrock",
+                        tool_type="function",
+                    )
+                )
+            elif item.get("type") == "tool_result":
+                parts.append(
+                    ToolCallResponse(
+                        id=item.get("tool_use_id"),
+                        response=item.get("content"),
+                    )
+                )
+            else:
+                parts.append(Text(content=safe_json_dumps(item)))
+        else:
+            parts.append(Text(content=safe_str(item)))
+    return parts
+
+
+def _request_functions_from_bedrock_tools(tools: Any) -> list[dict[str, Any]]:
+    if not isinstance(tools, list):
+        return []
+    functions: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        spec = tool.get("toolSpec")
+        if not isinstance(spec, dict):
+            continue
+        schema = spec.get("inputSchema") or {}
+        parameters = schema.get("json") if isinstance(schema, dict) else None
+        functions.append(
+            {
+                "name": spec.get("name"),
+                "description": spec.get("description"),
+                "parameters": parameters,
+            }
+        )
+    return functions
+
+
+def _request_functions_from_invoke_tools(tools: Any) -> list[dict[str, Any]]:
+    if not isinstance(tools, list):
+        return []
+    functions: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        functions.append(
+            {
+                "name": tool.get("name"),
+                "description": tool.get("description"),
+                "parameters": tool.get("input_schema") or tool.get("parameters"),
+            }
+        )
+    return functions
+
+
+def _extract_invoke_output_text(body: dict) -> Optional[str]:
+    if "outputText" in body:
+        return safe_str(body.get("outputText"))
+    if "completion" in body:
+        return safe_str(body.get("completion"))
+    content = body.get("content")
+    if isinstance(content, list):
+        text_parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text_parts.append(safe_str(item.get("text", "")))
+        if text_parts:
+            return "".join(text_parts)
+    output = body.get("output")
+    if isinstance(output, dict):
+        message = output.get("message")
+        if isinstance(message, dict):
+            parts = _parts_from_content_blocks(message.get("content"), None)
+            text_parts = [part.content for part in parts if isinstance(part, Text)]
+            if text_parts:
+                return "".join(text_parts)
+    return None
+
+
+def _apply_token_headers(invocation: LLMInvocation, result: dict) -> None:
+    headers = result.get("ResponseMetadata", {}).get("HTTPHeaders", {})
+    if not isinstance(headers, dict):
+        return
+    input_tokens = _first_present(
+        headers,
+        "x-amzn-bedrock-input-token-count",
+        "x-amzn-bedrock-invocation-input-token-count",
+    )
+    output_tokens = _first_present(
+        headers,
+        "x-amzn-bedrock-output-token-count",
+        "x-amzn-bedrock-invocation-output-token-count",
+    )
+    input_tokens = _coerce_int(input_tokens)
+    output_tokens = _coerce_int(output_tokens)
+    if invocation.input_tokens is None and input_tokens is not None:
+        invocation.input_tokens = input_tokens
+    if invocation.output_tokens is None and output_tokens is not None:
+        invocation.output_tokens = output_tokens
+
+
+def _infer_provider(model_id: str) -> str:
+    if not model_id:
+        return "aws.bedrock"
+    model = model_id.split("/")[-1]
+    parts = model.split(".")
+    if len(parts) > 1 and parts[0] in _PROFILE_PREFIXES:
+        return parts[1]
+    if len(parts) > 1:
+        return parts[0]
+    return "aws.bedrock"
+
+
+def _server_from_client(instance: Any) -> tuple[Optional[str], Optional[int]]:
+    endpoint_url = getattr(getattr(instance, "meta", None), "endpoint_url", None)
+    if not endpoint_url:
+        return None, None
+    try:
+        parsed = urlparse(endpoint_url)
+        return parsed.hostname, parsed.port
+    except Exception:
+        return None, None
+
+
+def _map_stop_reason(stop_reason: Any) -> Optional[str]:
+    if stop_reason is None:
+        return None
+    value = safe_str(stop_reason)
+    mapping = {
+        "end_turn": "stop",
+        "stop_sequence": "stop",
+        "tool_use": "tool_calls",
+        "max_tokens": "length",
+        "content_filtered": "content_filter",
+        "guardrail_intervened": "content_filter",
+    }
+    return mapping.get(value, value)
+
+
+def _first_present(source: dict, *keys: str) -> Any:
+    for key in keys:
+        if key in source and source[key] is not None:
+            return source[key]
+    return None
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stop_safely(handler: TelemetryHandler, invocation: LLMInvocation) -> None:
+    try:
+        handler.stop_llm(invocation)
+    except Exception:
+        pass
