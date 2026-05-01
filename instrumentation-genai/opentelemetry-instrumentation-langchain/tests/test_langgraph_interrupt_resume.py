@@ -72,8 +72,7 @@ def instrumented_graph():
     import opentelemetry.util.genai.handler as _handler_mod
 
     # Enable content capture so gen_ai.input/output.messages are populated.
-    os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
-    os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE"] = "SPAN_ONLY"
+    os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "SPAN_ONLY"
 
     # Reset the singleton TelemetryHandler so a fresh one is created
     # with our test TracerProvider.

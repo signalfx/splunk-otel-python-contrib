@@ -1,0 +1,10 @@
+# OpenAI Agents Travel Planner — application dependencies
+openai-agents==0.3.3
+openai==2.32.0
+python-dotenv==1.2.2
+requests==2.32.5
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0

@@ -4,6 +4,15 @@ All notable changes to this repository are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT` env var** — Explicit override for content event emission (`true`/`false`). When unset, defaults are derived from `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` mode.
+
+### Changed
+
+- **`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` now accepts mode values directly** — Accepts `NO_CONTENT`, `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT` in addition to legacy `true`/`false`. Aligns with upstream OpenTelemetry GenAI conventions.
+- **Removed experimental mode gating** — Content capture no longer requires an experimental stability flag.
+
 ### Fixed
 - **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
 - **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
@@ -14,22 +23,21 @@ All notable changes to this repository are documented in this file.
 - **OTel context now attached in async contexts** — Removed the `_is_async_context()` guard from `_push_current_span`. Context is now always attached via `context_api.attach()` regardless of sync/async, enabling downstream instrumentations (HTTP, DB, MCP transport) to see the correct parent span. `_pop_current_span` handles detach failures gracefully for cross-task / `copy_context` scenarios.
 
 ### Added
-- **`MCPOperation` type** — New dataclass for non-tool-call MCP operations (`tools/list`, `resources/read`, `prompts/get`, etc.). Produces spans with `{mcp.method.name} {target}` naming and CLIENT/SERVER SpanKind.
+- **`MCPOperation` type** — New dataclass for non-tool-call MCP operations (`tools/list`, `resources/read`, `prompts/get`, `initialize`, etc.). Produces spans with `{mcp.method.name} {target}` naming and CLIENT/SERVER SpanKind.
 - **New MCP semconv attributes** — `jsonrpc.request.id`, `rpc.response.status_code`, `mcp.resource.uri`, `gen_ai.prompt.name`, `network.protocol.name`, `network.protocol.version`, `server.address`, `server.port`, `client.address`, `client.port` on both `MCPOperation` and `MCPToolCall`.
 - **`MCPRequestContext` ContextVar bridge** — Passes transport-layer metadata (jsonrpc ID, network transport) from the transport instrumentor to the server instrumentor.
 - **TelemetryHandler MCPOperation lifecycle** — `start_mcp_operation`, `stop_mcp_operation`, `fail_mcp_operation` methods.
 - **SpanEmitter MCPOperation dispatch** — Unified `_start_mcp_operation`/`_finish_mcp_operation`/`_error_mcp_operation` handles both `MCPToolCall` and `MCPOperation`.
 - **MetricsEmitter MCPOperation dispatch** — MCP duration metrics now emitted for all MCP operations (not just tool calls), including on the error path.
+- **`_record_mcp_session_metrics_from_op`** — `MetricsEmitter` now records `mcp.client.session.duration` / `mcp.server.session.duration` when an `MCPOperation` with `mcp_method_name="initialize"` ends. The `initialize` span spans the full session lifetime in the FastMCP instrumentation, so session duration is accurate. Semconv attributes (`error.type`, `mcp.protocol.version`, `network.transport`) are read directly from the `MCPOperation` fields.
 - Added `explicit_bucket_boundaries_advisory` to `gen_ai.evaluation.client.usage.cost` histogram with cost-appropriate bucket boundaries.
 
 ### Changed
 - **`MCPToolCall` now inherits from `MCPOperation`** — MRO: `MCPToolCall → MCPOperation → ToolCall → GenAI`. All MCP transport/protocol attributes are defined on `MCPOperation` and inherited by `MCPToolCall`.
 - **Renamed `mcp_server_name` → `sdot_mcp_server_name`** — SDOT-custom attribute now uses `sdot.mcp.server_name` to distinguish from OTel semconv attributes. **Breaking**: callers using `mcp_server_name=` must update.
 - **Renamed `_record_mcp_tool_metrics` → `_record_mcp_operation_metrics`** — Generalized to handle all MCP operation types.
+- **Removed `_record_mcp_session_metrics` from agent path** — The previous `AgentInvocation`-based MCP session metrics helper is removed. Session duration is now captured via `_record_mcp_session_metrics_from_op` on the `MCPOperation` path (see Added above).
 - Trimmed `EvaluationMonitoringEmitter` docstring to only list metrics managed by the emitter (duration and cost).
-
-### Fixed
-- **MCP session duration metrics now recorded** — `mcp.client.session.duration` and `mcp.server.session.duration` histogram instruments were declared in `instruments.py` but never `.record()`ed. Added `_record_mcp_session_metrics()` to `MetricsEmitter` that detects MCP sessions (`system="mcp"`, `agent_type` in `{"mcp_client", "mcp_server"}`) within `_record_agent_metrics()` and records the appropriate histogram with semconv attributes (`network.transport`, `mcp.protocol.version`, `server.address`, `server.port`, `error.type`).
 
 ## Version 0.1.12
 

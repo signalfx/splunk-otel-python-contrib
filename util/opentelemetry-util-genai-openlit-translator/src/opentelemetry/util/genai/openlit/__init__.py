@@ -35,6 +35,9 @@ _WRAPPER_MARKER = "_openlit_translator_wrapper"
 #
 _DEFAULT_ATTR_TRANSFORMATIONS = {
     "rename": {
+        # OpenLit span/entity kind -> OTel semconv
+        "openlit.span.kind": "gen_ai.span.kind",
+        "openlit.entity.name": "gen_ai.agent.name",
         # OpenLit uses indexed content format, OTel uses structured messages
         "gen_ai.prompt": "gen_ai.input.messages",
         "gen_ai.completion": "gen_ai.output.messages",
@@ -266,8 +269,16 @@ def _install_deferred_registration() -> None:
     trace.set_tracer_provider = wrapped_set_tracer_provider
 
 
-# Auto-enable on import (unless disabled)
-_auto_enable()
+# Auto-enable on import (unless disabled).
+# Wrapped in try/except because this runs via .pth file on every Python
+# startup, including during pip installs where namespace packages may not
+# be fully resolved yet.
+try:
+    _auto_enable()
+except ImportError:
+    _LOGGER.debug(
+        "OpenLit translator deferred: processor module not yet available"
+    )
 
 
 __all__ = [

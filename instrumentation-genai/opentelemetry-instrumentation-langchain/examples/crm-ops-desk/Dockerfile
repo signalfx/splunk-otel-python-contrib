@@ -23,8 +23,8 @@ RUN pip install --no-cache-dir "/build/instrumentation-genai/opentelemetry-instr
 RUN pip install --no-cache-dir opentelemetry-exporter-otlp-proto-grpc
 
 # ── Install CRM app dependencies ──────────────────────────
-COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/crm-ops-desk/requirements.txt /build/requirements.txt
-RUN pip install --no-cache-dir -r /build/requirements.txt
+COPY instrumentation-genai/opentelemetry-instrumentation-langchain/examples/crm-ops-desk/requirements-app.txt /build/requirements-app.txt
+RUN pip install --no-cache-dir -r /build/requirements-app.txt
 
 # ── Copy application code ─────────────────────────────────
 WORKDIR /app

@@ -106,6 +106,7 @@ from opentelemetry.util.genai.utils import (
     is_truthy_env,
     load_completion_callbacks,
     parse_callback_filter,
+    should_emit_event,
 )
 from opentelemetry.util.genai.version import __version__
 
@@ -547,6 +548,7 @@ class TelemetryHandler:
     ):  # re-evaluate env each start in case singleton created before patching
         try:
             mode = get_content_capturing_mode()
+            emit_events = should_emit_event()
             emitters = list(
                 self._emitter.iter_emitters(("span", "content_events"))
             )
@@ -566,7 +568,7 @@ class TelemetryHandler:
             ):
                 span_capture_allowed = True
             # Respect the content capture mode for all generator kinds
-            new_value_events = mode in (
+            new_value_events = emit_events and mode in (
                 ContentCapturingMode.EVENT_ONLY,
                 ContentCapturingMode.SPAN_AND_EVENT,
             )

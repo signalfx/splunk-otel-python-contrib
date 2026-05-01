@@ -20,7 +20,6 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
-    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
     OTEL_INSTRUMENTATION_GENAI_EMITTERS,
 )
 from opentelemetry.util.genai.handler import (
@@ -33,6 +32,7 @@ from opentelemetry.util.genai.types import (
     Error,
     InputMessage,
     LLMInvocation,
+    MCPOperation,
     OutputMessage,
     Text,
 )
@@ -77,13 +77,14 @@ class TestMetricsEmission(unittest.TestCase):
         }
         if capture_mode is not None:
             upper_mode = capture_mode.upper()
-            capture_enabled = upper_mode != "NONE"
-            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
-                "true" if capture_enabled else "false"
-            )
-            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE] = (
-                upper_mode
-            )
+            if upper_mode == "NONE":
+                env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
+                    "NO_CONTENT"
+                )
+            else:
+                env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
+                    upper_mode
+                )
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
             _OpenTelemetrySemanticConventionStability._initialize()
@@ -336,8 +337,7 @@ class TestMetricsEmission(unittest.TestCase):
         env = {
             **STABILITY_EXPERIMENTAL,
             OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_ONLY",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_ONLY",
         }
         with patch.dict(os.environ, env, clear=False):
             TelemetryHandler._reset_for_testing()
@@ -443,12 +443,8 @@ class TestMetricsEmission(unittest.TestCase):
         }
         if capture_mode is not None:
             upper_mode = capture_mode.upper()
-            capture_enabled = upper_mode != "NONE"
             env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT] = (
-                "true" if capture_enabled else "false"
-            )
-            env[OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE] = (
-                upper_mode
+                upper_mode if upper_mode != "NONE" else "NO_CONTENT"
             )
         with patch.dict(os.environ, env, clear=False):
             _OpenTelemetrySemanticConventionStability._initialized = False
@@ -632,8 +628,7 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
     def _get_handler(self):
         env = {
             OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true",
-            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN",
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "SPAN_ONLY",
         }
         with patch.dict(os.environ, env, clear=False):
             TelemetryHandler._reset_for_testing()
@@ -646,17 +641,18 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         """mcp.client.session.duration is recorded when a client MCP session closes normally."""
         handler = self._get_handler()
 
-        session = AgentInvocation(
-            name="mcp.client",
-            agent_type="mcp_client",
+        session = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            network_transport="pipe",
+            is_client=True,
+            framework="fastmcp",
             system="mcp",
         )
-        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
-        session.attributes["network.transport"] = "pipe"
 
-        handler.start_agent(session)
+        handler.start_mcp_operation(session)
         time.sleep(0.01)
-        handler.stop_agent(session)
+        handler.stop_mcp_operation(session)
 
         try:
             self.meter_provider.force_flush()
@@ -688,18 +684,18 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         """mcp.client.session.duration includes error.type when session fails."""
         handler = self._get_handler()
 
-        session = AgentInvocation(
-            name="mcp.client",
-            agent_type="mcp_client",
+        session = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            network_transport="pipe",
+            is_client=True,
+            framework="fastmcp",
             system="mcp",
         )
-        session.attributes["gen_ai.operation.name"] = "mcp.client_session"
-        session.attributes["network.transport"] = "pipe"
-        session.attributes["error.type"] = "ConnectionError"
 
-        handler.start_agent(session)
+        handler.start_mcp_operation(session)
         time.sleep(0.01)
-        handler.fail_agent(
+        handler.fail_mcp_operation(
             session, Error(type=ConnectionError, message="connection lost")
         )
 
@@ -732,17 +728,18 @@ class TestMCPSessionDurationMetrics(unittest.TestCase):
         """mcp.server.session.duration is recorded for server-side MCP sessions."""
         handler = self._get_handler()
 
-        session = AgentInvocation(
-            name="mcp.server",
-            agent_type="mcp_server",
+        session = MCPOperation(
+            target="",
+            mcp_method_name="initialize",
+            network_transport="tcp",
+            is_client=False,
+            framework="fastmcp",
             system="mcp",
         )
-        session.attributes["gen_ai.operation.name"] = "mcp.server_session"
-        session.attributes["network.transport"] = "tcp"
 
-        handler.start_agent(session)
+        handler.start_mcp_operation(session)
         time.sleep(0.01)
-        handler.stop_agent(session)
+        handler.stop_mcp_operation(session)
 
         try:
             self.meter_provider.force_flush()

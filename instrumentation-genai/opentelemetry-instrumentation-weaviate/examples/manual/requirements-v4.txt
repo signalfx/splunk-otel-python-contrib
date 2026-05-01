@@ -1,4 +1,5 @@
-weaviate-client>=4.0
-opentelemetry-sdk~=1.36.0
-opentelemetry-exporter-otlp-proto-grpc~=1.36.0
-opentelemetry-distro~=0.57b0
+# Weaviate v4 Manual Example — application dependencies
+weaviate-client==4.21.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-distro==0.59b0
