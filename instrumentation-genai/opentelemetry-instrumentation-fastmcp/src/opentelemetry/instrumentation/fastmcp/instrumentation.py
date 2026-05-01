@@ -32,7 +32,6 @@ from opentelemetry.instrumentation.fastmcp.client_instrumentor import (
 from opentelemetry.instrumentation.fastmcp.transport_instrumentor import (
     TransportInstrumentor,
 )
-from opentelemetry.instrumentation.fastmcp.utils import is_instrumentation_enabled
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +55,6 @@ class FastMCPInstrumentor(BaseInstrumentor):
         FastMCPInstrumentor().instrument()
 
     Environment Variables:
-        OTEL_INSTRUMENTATION_GENAI_ENABLE: Enable/disable instrumentation (default: true)
         OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: Capture tool I/O (default: false)
         OTEL_INSTRUMENTATION_GENAI_EMITTERS: Select emitters (default: span)
     """
@@ -87,10 +85,6 @@ class FastMCPInstrumentor(BaseInstrumentor):
                 - meter_provider: Optional meter provider
                 - logger_provider: Optional logger provider
         """
-        if not is_instrumentation_enabled():
-            _LOGGER.debug("FastMCP instrumentation is disabled")
-            return
-
         tracer_provider = kwargs.get("tracer_provider")
         meter_provider = kwargs.get("meter_provider")
         logger_provider = kwargs.get("logger_provider")

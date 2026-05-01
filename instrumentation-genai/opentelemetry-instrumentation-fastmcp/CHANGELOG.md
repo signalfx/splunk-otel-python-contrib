@@ -72,7 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event generation for tool inputs and outputs when content capture is enabled
 - Integration with `splunk-otel-util-genai` for standardized GenAI telemetry
 - Environment variable configuration support:
-  - `OTEL_INSTRUMENTATION_GENAI_ENABLE` - Enable/disable instrumentation
   - `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` - Capture tool arguments and results
   - `OTEL_INSTRUMENTATION_GENAI_EMITTERS` - Select emitters (span, metric, event)
 - Programmatic and auto-instrumentation support

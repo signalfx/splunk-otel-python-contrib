@@ -74,7 +74,6 @@ Environment Variables
 
 The following environment variables control the instrumentation behavior:
 
-- ``OTEL_INSTRUMENTATION_GENAI_ENABLE``: Enable/disable instrumentation (default: ``true``)
 - ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT``: Capture tool arguments and results (default: ``false``)
 - ``OTEL_INSTRUMENTATION_GENAI_EMITTERS``: Select emitters - span, metric, event (default: ``span``)
 

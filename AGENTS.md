@@ -103,7 +103,6 @@ my_evaluator = "my_package:register"
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `OTEL_INSTRUMENTATION_GENAI_ENABLE` | Enable/disable instrumentation | `true` |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Capture message content | `false` |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN`, `EVENT`, `SPAN_AND_EVENT` | `SPAN` |
 | `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Emitter selection | `span` |

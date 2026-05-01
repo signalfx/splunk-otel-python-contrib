@@ -256,7 +256,6 @@ In **HTTP mode** each process sets its own `OTEL_SERVICE_NAME` independently.
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` or `http/protobuf` | `grpc` |
 | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `DELTA` recommended for Splunk | *(not set)* |
 | `OTEL_LOGS_EXPORTER` | `otlp` to export log-based events | *(not set)* |
-| `OTEL_INSTRUMENTATION_GENAI_ENABLE` | Enable/disable instrumentation | `true` |
 | `OTEL_INSTRUMENTATION_GENAI_EMITTERS` | Telemetry flavors (see below) | `span` |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Capture tool args/results | `false` |
 | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` | `SPAN`, `EVENT`, `SPAN_AND_EVENT` | `SPAN` |

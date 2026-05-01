@@ -157,12 +157,6 @@ def should_capture_content() -> bool:
     return get_content_capturing_mode() != ContentCapturingMode.NO_CONTENT
 
 
-def is_instrumentation_enabled() -> bool:
-    """Check if GenAI instrumentation is enabled."""
-    env_value = os.getenv("OTEL_INSTRUMENTATION_GENAI_ENABLE", "true").lower()
-    return env_value in ("true", "1", "yes", "on")
-
-
 def detect_transport(instance: object) -> str:
     """Best-effort transport detection from a FastMCP Client or MCP Server.
 
