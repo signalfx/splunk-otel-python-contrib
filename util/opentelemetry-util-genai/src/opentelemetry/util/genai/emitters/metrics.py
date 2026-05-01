@@ -552,6 +552,11 @@ class MetricsEmitter(EmitterMeta):
                 op.output_size_bytes, attributes=mcp_attrs, context=context
             )
 
+        # Session duration metric is recorded for initialize operations, which
+        # span the full session lifetime in the FastMCP instrumentation.
+        if op.mcp_method_name == "initialize":
+            self._record_mcp_session_metrics_from_op(op)
+
     def _record_invocation_metrics(
         self, obj: GenAIInvocation, error: Optional[Error] = None
     ) -> None:
@@ -593,11 +598,6 @@ class MetricsEmitter(EmitterMeta):
         self._duration_histogram.record(
             duration, attributes=metric_attrs, context=context
         )
-
-        # Session duration metric is recorded for initialize operations, which
-        # span the full session lifetime in the FastMCP instrumentation.
-        if op.mcp_method_name == "initialize":
-            self._record_mcp_session_metrics_from_op(op)
 
     def _record_mcp_session_metrics_from_op(self, op: MCPOperation) -> None:
         """Record mcp.client.session.duration or mcp.server.session.duration.
