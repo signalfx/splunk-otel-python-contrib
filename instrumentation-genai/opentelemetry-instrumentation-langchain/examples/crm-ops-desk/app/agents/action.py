@@ -68,12 +68,17 @@ async def action_node(state: dict, config: RunnableConfig) -> dict:
         "\n\n".join(context_parts) if context_parts else "No prior records found."
     )
 
+    intent_summary = state.get("records", {}).get("intent_summary", "")
+    policy_guidance = state.get("policy_guidance", "")
+
     system_prompt = f"""You are the Action Agent in a CRM Operations Desk.
 Your job is to decide what actions to take for a customer request and execute
 the appropriate tools. You MUST follow the policies and use the records
 provided below — do not invent data or ignore the context.
 
 Customer ID: {state["user_id"]}
+{f"Customer intent (from Records Agent): {intent_summary}" if intent_summary else ""}
+{f"Policy guidance (from Policy Agent): {policy_guidance}" if policy_guidance else ""}
 
 == Context from Records & Policy agents ==
 {context_block}

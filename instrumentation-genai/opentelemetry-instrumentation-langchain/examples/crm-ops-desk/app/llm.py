@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings, ChatOpenAI, OpenAIEmbeddings
 
 
 def _is_azure() -> bool:
@@ -67,28 +67,36 @@ def create_chat_llm(*, temperature: float = 0.3) -> ChatOpenAI | AzureChatOpenAI
     )
 
 
-def embed(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings via OpenAI or Azure OpenAI."""
-    import openai
+def create_embeddings() -> OpenAIEmbeddings | AzureOpenAIEmbeddings:
+    """Create a LangChain embeddings client from environment variables.
 
+    Using LangChain wrappers ensures embedding calls are captured by the
+    LangChain instrumentor (OpenAIEmbeddings.embed_query / embed_documents).
+    """
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if base_url:
+        return OpenAIEmbeddings(
+            model=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+            api_key=os.environ.get("OPENAI_API_KEY", ""),
+            base_url=base_url,
+        )
     if _is_azure():
-        client = openai.AzureOpenAI(
+        return AzureOpenAIEmbeddings(
             azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
             api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),
             api_version=os.environ.get(
                 "AZURE_OPENAI_API_VERSION", "2024-12-01-preview"
             ),
+            azure_deployment=os.environ.get(
+                "AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"
+            ),
+            dimensions=int(os.environ.get("AZURE_EMBEDDING_DIMENSIONS", "1536")),
         )
-        deployment = os.environ.get(
-            "AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"
-        )
-        dimensions = int(os.environ.get("AZURE_EMBEDDING_DIMENSIONS", "1536"))
-        resp = client.embeddings.create(
-            input=texts, model=deployment, dimensions=dimensions
-        )
-    else:
-        client = openai.OpenAI()
-        model = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-        resp = client.embeddings.create(input=texts, model=model)
+    return OpenAIEmbeddings(
+        model=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+    )
 
-    return [d.embedding for d in resp.data]
+
+def embed(texts: list[str]) -> list[list[float]]:
+    """Generate embeddings via LangChain OpenAI wrapper (instrumented)."""
+    return create_embeddings().embed_documents(texts)
