@@ -144,7 +144,7 @@ async def run_scenario(
                 invoke_input,
                 config={
                     "metadata": {
-                        "workflow_name": "CRM Ops Desk",
+                        "agent_name": "CRM Ops Desk",
                     }
                 },
             )
@@ -158,7 +158,7 @@ async def run_scenario(
             invoke_input,
             config={
                 "metadata": {
-                    "workflow_name": "CRM Ops Desk",
+                    "agent_name": "CRM Ops Desk",
                 }
             },
         )
