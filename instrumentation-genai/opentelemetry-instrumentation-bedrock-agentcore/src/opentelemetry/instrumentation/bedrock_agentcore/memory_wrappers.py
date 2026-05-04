@@ -20,9 +20,47 @@ from typing import Any
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import Error, RetrievalInvocation, ToolCall
 
-from .utils import safe_json_dumps, safe_str, truncate_error
+from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_error
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _record_tool_call_error(
+    handler: TelemetryHandler, tool_call: ToolCall, error: Exception
+) -> None:
+    try:
+        handler.fail_tool_call(
+            tool_call, Error(type=type(error), message=truncate_error(error))
+        )
+    except Exception:
+        _LOGGER.debug("Failed to record memory tool call error.", exc_info=True)
+
+
+def _record_retrieval_error(
+    handler: TelemetryHandler, invocation: RetrievalInvocation, error: Exception
+) -> None:
+    try:
+        handler.fail_retrieval(
+            invocation, Error(type=type(error), message=truncate_error(error))
+        )
+    except Exception:
+        _LOGGER.debug("Failed to record memory retrieval error.", exc_info=True)
+
+
+def _finish_tool_call(handler: TelemetryHandler, tool_call: ToolCall) -> None:
+    try:
+        handler.stop_tool_call(tool_call)
+    except Exception:
+        _LOGGER.debug("Failed to finish memory tool call.", exc_info=True)
+
+
+def _finish_retrieval(
+    handler: TelemetryHandler, invocation: RetrievalInvocation
+) -> None:
+    try:
+        handler.stop_retrieval(invocation)
+    except Exception:
+        _LOGGER.debug("Failed to finish memory retrieval.", exc_info=True)
 
 
 def wrap_memory_retrieve(
@@ -47,46 +85,35 @@ def wrap_memory_retrieve(
         Result of original retrieve_memories
     """
     try:
-        # Signature: retrieve_memories(memory_id, namespace, query, actor_id=None, top_k=3)
-        query = (
-            kwargs["query"] if "query" in kwargs else (args[2] if len(args) > 2 else "")
-        )
-        top_k = (
-            kwargs["top_k"]
-            if "top_k" in kwargs
-            else (args[4] if len(args) > 4 else None)
-        )
-
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        query = call_arguments.get("query", "")
+        top_k = call_arguments.get("top_k", 3)
         invocation = RetrievalInvocation(
             retriever_type="bedrock-agentcore-memory",
             query=safe_str(query) if capture_content else "",
-            top_k=top_k if capture_content else None,
+            top_k=top_k,
         )
-
         handler.start_retrieval(invocation)
-
-        try:
-            result = wrapped(*args, **kwargs)
-
-            # Count retrieved records
-            if capture_content and result and isinstance(result, (list, dict)):
-                records = (
-                    result
-                    if isinstance(result, list)
-                    else result.get("memoryRecords", [])
-                )
-                invocation.documents_retrieved = len(records)
-
-            handler.stop_retrieval(invocation)
-
-            return result
-        except Exception as e:
-            handler.fail_retrieval(
-                invocation, Error(type=type(e).__name__, message=truncate_error(e))
-            )
-            raise
     except Exception:
         return wrapped(*args, **kwargs)
+
+    try:
+        result = wrapped(*args, **kwargs)
+    except Exception as e:
+        _record_retrieval_error(handler, invocation, e)
+        raise
+
+    try:
+        if isinstance(result, (list, dict)):
+            records = (
+                result if isinstance(result, list) else result.get("memoryRecords", [])
+            )
+            invocation.documents_retrieved = len(records)
+    except Exception:
+        _LOGGER.debug("Failed to enrich memory retrieval.", exc_info=True)
+
+    _finish_retrieval(handler, invocation)
+    return result
 
 
 def wrap_memory_create_event(
@@ -111,22 +138,10 @@ def wrap_memory_create_event(
         Result of original create_event
     """
     try:
-        memory_id = (
-            kwargs["memory_id"]
-            if "memory_id" in kwargs
-            else (args[0] if args else None)
-        )
-        actor_id = (
-            kwargs["actor_id"]
-            if "actor_id" in kwargs
-            else (args[1] if len(args) > 1 else None)
-        )
-        session_id = (
-            kwargs["session_id"]
-            if "session_id" in kwargs
-            else (args[2] if len(args) > 2 else None)
-        )
-
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        memory_id = call_arguments.get("memory_id")
+        actor_id = call_arguments.get("actor_id")
+        session_id = call_arguments.get("session_id")
         invocation = ToolCall(
             name="memory.create_event",
             arguments=safe_json_dumps(
@@ -142,25 +157,25 @@ def wrap_memory_create_event(
         )
 
         handler.start_tool_call(invocation)
-
-        try:
-            result = wrapped(*args, **kwargs)
-
-            if capture_content and result is not None:
-                invocation.tool_result = (
-                    safe_json_dumps(result) if not isinstance(result, str) else result
-                )
-
-            handler.stop_tool_call(invocation)
-
-            return result
-        except Exception as e:
-            handler.fail_tool_call(
-                invocation, Error(type=type(e).__name__, message=truncate_error(e))
-            )
-            raise
     except Exception:
         return wrapped(*args, **kwargs)
+
+    try:
+        result = wrapped(*args, **kwargs)
+    except Exception as e:
+        _record_tool_call_error(handler, invocation, e)
+        raise
+
+    try:
+        if capture_content and result is not None:
+            invocation.tool_result = (
+                safe_json_dumps(result) if not isinstance(result, str) else result
+            )
+    except Exception:
+        _LOGGER.debug("Failed to enrich memory create_event tool call.", exc_info=True)
+
+    _finish_tool_call(handler, invocation)
+    return result
 
 
 def wrap_memory_create_blob_event(
@@ -185,22 +200,10 @@ def wrap_memory_create_blob_event(
         Result of original create_blob_event
     """
     try:
-        memory_id = (
-            kwargs["memory_id"]
-            if "memory_id" in kwargs
-            else (args[0] if args else None)
-        )
-        actor_id = (
-            kwargs["actor_id"]
-            if "actor_id" in kwargs
-            else (args[1] if len(args) > 1 else None)
-        )
-        session_id = (
-            kwargs["session_id"]
-            if "session_id" in kwargs
-            else (args[2] if len(args) > 2 else None)
-        )
-
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        memory_id = call_arguments.get("memory_id")
+        actor_id = call_arguments.get("actor_id")
+        session_id = call_arguments.get("session_id")
         invocation = ToolCall(
             name="memory.create_blob_event",
             arguments=safe_json_dumps(
@@ -216,25 +219,27 @@ def wrap_memory_create_blob_event(
         )
 
         handler.start_tool_call(invocation)
-
-        try:
-            result = wrapped(*args, **kwargs)
-
-            if capture_content and result is not None:
-                invocation.tool_result = (
-                    safe_json_dumps(result) if not isinstance(result, str) else result
-                )
-
-            handler.stop_tool_call(invocation)
-
-            return result
-        except Exception as e:
-            handler.fail_tool_call(
-                invocation, Error(type=type(e).__name__, message=truncate_error(e))
-            )
-            raise
     except Exception:
         return wrapped(*args, **kwargs)
+
+    try:
+        result = wrapped(*args, **kwargs)
+    except Exception as e:
+        _record_tool_call_error(handler, invocation, e)
+        raise
+
+    try:
+        if capture_content and result is not None:
+            invocation.tool_result = (
+                safe_json_dumps(result) if not isinstance(result, str) else result
+            )
+    except Exception:
+        _LOGGER.debug(
+            "Failed to enrich memory create_blob_event tool call.", exc_info=True
+        )
+
+    _finish_tool_call(handler, invocation)
+    return result
 
 
 def wrap_memory_list_events(
@@ -259,12 +264,8 @@ def wrap_memory_list_events(
         Result of original list_events
     """
     try:
-        memory_id = (
-            kwargs["memory_id"]
-            if "memory_id" in kwargs
-            else (args[0] if args else None)
-        )
-
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        memory_id = call_arguments.get("memory_id")
         invocation = ToolCall(
             name="memory.list_events",
             arguments=safe_json_dumps({"memory_id": safe_str(memory_id)})
@@ -274,25 +275,25 @@ def wrap_memory_list_events(
         )
 
         handler.start_tool_call(invocation)
-
-        try:
-            result = wrapped(*args, **kwargs)
-
-            if capture_content and result is not None:
-                invocation.tool_result = (
-                    safe_json_dumps(result) if not isinstance(result, str) else result
-                )
-
-            handler.stop_tool_call(invocation)
-
-            return result
-        except Exception as e:
-            handler.fail_tool_call(
-                invocation, Error(type=type(e).__name__, message=truncate_error(e))
-            )
-            raise
     except Exception:
         return wrapped(*args, **kwargs)
+
+    try:
+        result = wrapped(*args, **kwargs)
+    except Exception as e:
+        _record_tool_call_error(handler, invocation, e)
+        raise
+
+    try:
+        if capture_content and result is not None:
+            invocation.tool_result = (
+                safe_json_dumps(result) if not isinstance(result, str) else result
+            )
+    except Exception:
+        _LOGGER.debug("Failed to enrich memory list_events tool call.", exc_info=True)
+
+    _finish_tool_call(handler, invocation)
+    return result
 
 
 def wrap_memory_operation(
@@ -323,28 +324,29 @@ def wrap_memory_operation(
                 else None,
                 system="bedrock-agentcore",
             )
-
             handler.start_tool_call(invocation)
-
-            try:
-                result = wrapped(*args, **kwargs)
-
-                if capture_content and result is not None:
-                    invocation.tool_result = (
-                        safe_json_dumps(result)
-                        if not isinstance(result, str)
-                        else result
-                    )
-
-                handler.stop_tool_call(invocation)
-
-                return result
-            except Exception as e:
-                handler.fail_tool_call(
-                    invocation, Error(type=type(e).__name__, message=truncate_error(e))
-                )
-                raise
         except Exception:
             return wrapped(*args, **kwargs)
+
+        try:
+            result = wrapped(*args, **kwargs)
+        except Exception as e:
+            _record_tool_call_error(handler, invocation, e)
+            raise
+
+        try:
+            if capture_content and result is not None:
+                invocation.tool_result = (
+                    safe_json_dumps(result) if not isinstance(result, str) else result
+                )
+        except Exception:
+            _LOGGER.debug(
+                "Failed to enrich memory %s tool call.",
+                operation_name,
+                exc_info=True,
+            )
+
+        _finish_tool_call(handler, invocation)
+        return result
 
     return wrapper

@@ -21,6 +21,18 @@ from opentelemetry.instrumentation.bedrock_agentcore.entrypoint_wrappers import 
 )
 
 
+def _capture_start_input_messages(stub_handler):
+    started_input_messages = []
+    original_start_workflow = stub_handler.start_workflow
+
+    def start_workflow(workflow):
+        started_input_messages.append(list(workflow.input_messages))
+        return original_start_workflow(workflow)
+
+    stub_handler.start_workflow = start_workflow
+    return started_input_messages
+
+
 def test_bedrock_agentcore_app_wrapper_sync(stub_handler):
     """wrap_bedrock_agentcore_app_entrypoint should create a Workflow span for sync functions."""
 
@@ -31,6 +43,7 @@ def test_bedrock_agentcore_app_wrapper_sync(stub_handler):
             return func  # simple passthrough decorator
 
     app = MockApp()
+    started_input_messages = _capture_start_input_messages(stub_handler)
 
     def my_handler(payload):
         return {"status": "success"}
@@ -45,7 +58,35 @@ def test_bedrock_agentcore_app_wrapper_sync(stub_handler):
     workflow = stub_handler.started_workflows[0]
     assert workflow.name == "test_app"
     assert workflow.system == "bedrock-agentcore"
+    assert len(started_input_messages) == 1
+    assert started_input_messages[0][0].role == "user"
+    assert '"input": "test"' in started_input_messages[0][0].parts[0].content
     assert result == {"status": "success"}
+
+
+def test_bedrock_agentcore_app_wrapper_sync_keyword_event(stub_handler):
+    """entrypoint input capture binds keyword arguments before span start."""
+
+    class MockApp:
+        name = "test_app"
+
+        def entrypoint(self, func):
+            return func
+
+    app = MockApp()
+    started_input_messages = _capture_start_input_messages(stub_handler)
+
+    def my_handler(event):
+        return {"status": "success", "event": event}
+
+    wrapped = wrap_bedrock_agentcore_app_entrypoint(
+        app.entrypoint, app, (my_handler,), {}, stub_handler
+    )
+    result = wrapped(event={"input": "kw-test"})
+
+    assert len(started_input_messages) == 1
+    assert '"input": "kw-test"' in started_input_messages[0][0].parts[0].content
+    assert result == {"status": "success", "event": {"input": "kw-test"}}
 
 
 def test_bedrock_agentcore_app_wrapper_sync_exception(stub_handler):
@@ -58,8 +99,11 @@ def test_bedrock_agentcore_app_wrapper_sync_exception(stub_handler):
             return func
 
     app = MockApp()
+    call_count = 0
 
     def failing_handler(payload):
+        nonlocal call_count
+        call_count += 1
         raise ConnectionError("Service unavailable")
 
     wrapped = wrap_bedrock_agentcore_app_entrypoint(
@@ -70,8 +114,9 @@ def test_bedrock_agentcore_app_wrapper_sync_exception(stub_handler):
         wrapped({})
 
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
     _workflow, error = stub_handler.failed_entities[0]
-    assert error.type == "ConnectionError"
+    assert error.type is ConnectionError
 
 
 @pytest.mark.asyncio
@@ -85,6 +130,7 @@ async def test_bedrock_agentcore_app_wrapper_async(stub_handler):
             return func
 
     app = MockApp()
+    started_input_messages = _capture_start_input_messages(stub_handler)
 
     async def async_handler(payload):
         return {"status": "async_success"}
@@ -96,4 +142,7 @@ async def test_bedrock_agentcore_app_wrapper_async(stub_handler):
 
     assert len(stub_handler.started_workflows) == 1
     assert len(stub_handler.stopped_workflows) == 1
+    assert len(started_input_messages) == 1
+    assert started_input_messages[0][0].role == "user"
+    assert '"input": "test"' in started_input_messages[0][0].parts[0].content
     assert result == {"status": "async_success"}

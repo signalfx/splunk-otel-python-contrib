@@ -14,6 +14,7 @@
 
 """Utility functions for Bedrock AgentCore instrumentation."""
 
+import inspect
 import json
 from os import environ
 from typing import Any
@@ -64,6 +65,57 @@ def safe_str(value: Any) -> str:
         return str(value)
     except Exception:
         return repr(value)
+
+
+def bind_call_arguments(
+    wrapped: Any, instance: Any, args: tuple, kwargs: dict
+) -> dict[str, Any]:
+    """Bind call arguments to a callable signature.
+
+    Args:
+        wrapped: Callable being wrapped.
+        instance: Bound instance supplied by wrapt, if any.
+        args: Positional call arguments.
+        kwargs: Keyword call arguments.
+
+    Returns:
+        Mapping from parameter names to values, including defaults.
+
+    Raises:
+        TypeError: If the arguments do not match the callable signature.
+        ValueError: If the callable does not expose an inspectable signature.
+    """
+    call_signature = inspect.signature(wrapped)
+    parameters = list(call_signature.parameters.values())
+    bind_args = args
+
+    if (
+        instance is not None
+        and parameters
+        and parameters[0].name in {"self", "cls"}
+        and parameters[0].kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+        and parameters[0].name not in kwargs
+    ):
+        bind_args = (instance, *args)
+
+    bound = call_signature.bind(*bind_args, **kwargs)
+    bound.apply_defaults()
+
+    arguments = dict(bound.arguments)
+    for parameter in parameters:
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            extra_kwargs = arguments.pop(parameter.name, {})
+            if isinstance(extra_kwargs, dict):
+                for key, value in extra_kwargs.items():
+                    arguments.setdefault(key, value)
+
+    arguments.pop("self", None)
+    arguments.pop("cls", None)
+    return arguments
 
 
 _ERROR_MAX_LEN = 256

@@ -306,6 +306,30 @@ def test_code_interpreter_upload_file_no_content_by_default(stub_handler):
     assert tool_call.tool_result is None
 
 
+def test_code_interpreter_upload_file_binds_path_parameter(stub_handler):
+    """wrap_code_interpreter_upload_file supports SDKs using path instead of filename."""
+    interpreter = MockCodeInterpreter()
+
+    def upload_path(path, content, description=None):
+        return {"fileId": "file-123", "filename": path}
+
+    wrap_code_interpreter_upload_file(
+        upload_path,
+        interpreter,
+        (),
+        {"path": "path-data.csv", "content": b"test", "description": "Test data"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert (
+        tool_call.attributes["bedrock.agentcore.code_interpreter.filename"]
+        == "path-data.csv"
+    )
+    assert "path-data.csv" in tool_call.arguments
+
+
 # ---------------------------------------------------------------------------
 # wrap_code_interpreter_operation (generic factory)
 # ---------------------------------------------------------------------------
@@ -370,8 +394,11 @@ def test_code_interpreter_operation_no_content_by_default(stub_handler):
 
 def test_code_interpreter_operation_exception_fails_tool_call(stub_handler):
     """wrap_code_interpreter_operation fails the tool call on exception."""
+    call_count = 0
 
     def failing_op(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise RuntimeError("Code execution failed")
 
     wrapper = wrap_code_interpreter_operation("invoke")
@@ -380,8 +407,9 @@ def test_code_interpreter_operation_exception_fails_tool_call(stub_handler):
         wrapper(failing_op, None, (), {}, stub_handler)
 
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
     _tool_call, error = stub_handler.failed_entities[0]
-    assert error.type == "RuntimeError"
+    assert error.type is RuntimeError
 
 
 # ---------------------------------------------------------------------------
@@ -392,8 +420,11 @@ def test_code_interpreter_operation_exception_fails_tool_call(stub_handler):
 def test_code_interpreter_exception_fails_tool_call(stub_handler):
     """Exceptions in code interpreter operations fail the tool call."""
     interpreter = MockCodeInterpreter()
+    call_count = 0
 
     def failing_execute(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise RuntimeError("Code execution failed")
 
     with pytest.raises(RuntimeError, match="Code execution failed"):
@@ -407,7 +438,8 @@ def test_code_interpreter_exception_fails_tool_call(stub_handler):
 
     assert len(stub_handler.started_tool_calls) == 1
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
 
     tool_call, error = stub_handler.failed_entities[0]
-    assert error.type == "RuntimeError"
+    assert error.type is RuntimeError
     assert "Code execution failed" in error.message

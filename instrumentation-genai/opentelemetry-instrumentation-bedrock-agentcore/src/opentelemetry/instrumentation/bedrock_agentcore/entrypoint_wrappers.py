@@ -27,7 +27,18 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 
-from .utils import safe_json_dumps, safe_str
+from .utils import bind_call_arguments, safe_json_dumps, safe_str
+
+
+def _record_workflow_error(
+    handler: TelemetryHandler, workflow: Workflow, error: Exception
+) -> None:
+    try:
+        handler.fail_workflow(
+            workflow, Error(type=type(error), message=safe_str(error))
+        )
+    except Exception:
+        return None
 
 
 def _make_input_message(event: Any) -> InputMessage:
@@ -48,6 +59,19 @@ def _make_output_message(result: Any) -> OutputMessage:
     return OutputMessage(
         role="assistant", parts=[Text(content=content)], finish_reason="stop"
     )
+
+
+def _set_workflow_input_messages(
+    workflow: Workflow, wrapped: Any, args: tuple, kwargs: dict
+) -> None:
+    try:
+        call_arguments = bind_call_arguments(wrapped, None, args, kwargs)
+    except Exception:
+        return
+
+    for value in call_arguments.values():
+        workflow.input_messages = [_make_input_message(value)]
+        return
 
 
 def wrap_bedrock_agentcore_app_entrypoint(
@@ -74,53 +98,20 @@ def wrap_bedrock_agentcore_app_entrypoint(
     Returns:
         Decorated function that creates a Workflow span on each call
     """
-    try:
-        # Call original entrypoint decorator to get the decorated function
-        decorated_func = wrapped(*args, **kwargs)
+    decorated_func = wrapped(*args, **kwargs)
+    workflow_name = getattr(instance, "name", None) or "BedrockAgentCore"
 
-        workflow_name = getattr(instance, "name", None) or "BedrockAgentCore"
-
-        if asyncio.iscoroutinefunction(decorated_func):
-
-            @functools.wraps(decorated_func)
-            async def async_workflow_wrapper(*call_args, **call_kwargs):
-                workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
-                handler.start_workflow(workflow)
-                try:
-                    if call_args:
-                        try:
-                            workflow.input_messages = [
-                                _make_input_message(call_args[0])
-                            ]
-                        except Exception:
-                            pass
-                    result = await decorated_func(*call_args, **call_kwargs)
-                    if result is not None:
-                        try:
-                            workflow.output_messages = [_make_output_message(result)]
-                        except Exception:
-                            pass
-                    handler.stop_workflow(workflow)
-                    return result
-                except Exception as e:
-                    handler.fail_workflow(
-                        workflow, Error(type=type(e).__name__, message=safe_str(e))
-                    )
-                    raise
-
-            return async_workflow_wrapper
+    if asyncio.iscoroutinefunction(decorated_func):
 
         @functools.wraps(decorated_func)
-        def workflow_wrapper(*call_args, **call_kwargs):
+        async def async_workflow_wrapper(*call_args, **call_kwargs):
             workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
+            _set_workflow_input_messages(
+                workflow, decorated_func, call_args, call_kwargs
+            )
             handler.start_workflow(workflow)
             try:
-                if call_args:
-                    try:
-                        workflow.input_messages = [_make_input_message(call_args[0])]
-                    except Exception:
-                        pass
-                result = decorated_func(*call_args, **call_kwargs)
+                result = await decorated_func(*call_args, **call_kwargs)
                 if result is not None:
                     try:
                         workflow.output_messages = [_make_output_message(result)]
@@ -129,11 +120,27 @@ def wrap_bedrock_agentcore_app_entrypoint(
                 handler.stop_workflow(workflow)
                 return result
             except Exception as e:
-                handler.fail_workflow(
-                    workflow, Error(type=type(e).__name__, message=safe_str(e))
-                )
+                _record_workflow_error(handler, workflow, e)
                 raise
 
-        return workflow_wrapper
-    except Exception:
-        return wrapped(*args, **kwargs)
+        return async_workflow_wrapper
+
+    @functools.wraps(decorated_func)
+    def workflow_wrapper(*call_args, **call_kwargs):
+        workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
+        _set_workflow_input_messages(workflow, decorated_func, call_args, call_kwargs)
+        handler.start_workflow(workflow)
+        try:
+            result = decorated_func(*call_args, **call_kwargs)
+            if result is not None:
+                try:
+                    workflow.output_messages = [_make_output_message(result)]
+                except Exception:
+                    pass
+            handler.stop_workflow(workflow)
+            return result
+        except Exception as e:
+            _record_workflow_error(handler, workflow, e)
+            raise
+
+    return workflow_wrapper

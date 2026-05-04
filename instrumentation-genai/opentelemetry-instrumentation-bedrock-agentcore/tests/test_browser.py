@@ -75,6 +75,16 @@ def test_browser_start_creates_tool_call(stub_handler):
     assert tool_call.attributes["bedrock.agentcore.browser.id"] == "browser-123"
 
 
+def test_browser_start_binds_positional_browser_id(stub_handler):
+    """wrap_browser_start extracts browser_id via the method signature."""
+    browser = MockBrowserClient()
+
+    wrap_browser_start(browser.start, browser, ("browser-pos",), {}, stub_handler)
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.attributes["bedrock.agentcore.browser.id"] == "browser-pos"
+
+
 # ---------------------------------------------------------------------------
 # wrap_browser_stop
 # ---------------------------------------------------------------------------
@@ -262,8 +272,11 @@ def test_browser_operation_no_content_by_default(stub_handler):
 
 def test_browser_operation_exception_fails_tool_call(stub_handler):
     """wrap_browser_operation fails the tool call on exception."""
+    call_count = 0
 
     def failing_op(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise ConnectionError("Browser connection failed")
 
     wrapper = wrap_browser_operation("create_browser")
@@ -272,8 +285,9 @@ def test_browser_operation_exception_fails_tool_call(stub_handler):
         wrapper(failing_op, None, (), {}, stub_handler)
 
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
     _tool_call, error = stub_handler.failed_entities[0]
-    assert error.type == "ConnectionError"
+    assert error.type is ConnectionError
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +298,11 @@ def test_browser_operation_exception_fails_tool_call(stub_handler):
 def test_browser_exception_fails_tool_call(stub_handler):
     """Exceptions in browser operations fail the tool call."""
     browser = MockBrowserClient()
+    call_count = 0
 
     def failing_start(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise ConnectionError("Browser connection failed")
 
     with pytest.raises(ConnectionError, match="Browser connection failed"):
@@ -293,7 +310,8 @@ def test_browser_exception_fails_tool_call(stub_handler):
 
     assert len(stub_handler.started_tool_calls) == 1
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
 
     tool_call, error = stub_handler.failed_entities[0]
-    assert error.type == "ConnectionError"
+    assert error.type is ConnectionError
     assert "Browser connection failed" in error.message

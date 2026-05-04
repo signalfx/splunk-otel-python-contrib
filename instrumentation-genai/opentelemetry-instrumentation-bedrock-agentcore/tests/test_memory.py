@@ -74,11 +74,12 @@ def test_memory_retrieve_creates_retrieval_invocation(stub_handler):
     invocation = stub_handler.started_retrievals[0]
     assert invocation.query == "test query"
     assert invocation.retriever_type == "bedrock-agentcore-memory"
+    assert invocation.top_k == 3
     assert invocation.documents_retrieved == 2
 
 
 def test_memory_retrieve_top_k_from_args(stub_handler):
-    """wrap_memory_retrieve captures top_k from positional args when content enabled."""
+    """wrap_memory_retrieve captures top_k from positional args."""
     client = MockMemoryClient()
 
     wrap_memory_retrieve(
@@ -87,7 +88,6 @@ def test_memory_retrieve_top_k_from_args(stub_handler):
         ("mem-123", "ns/", "query", None, 5),
         {},
         stub_handler,
-        capture_content=True,
     )
 
     invocation = stub_handler.started_retrievals[0]
@@ -97,13 +97,13 @@ def test_memory_retrieve_top_k_from_args(stub_handler):
 def test_memory_retrieve_top_k_from_kwargs(stub_handler):
     """wrap_memory_retrieve prefers kwargs over positional args for top_k."""
 
-    def mock_retrieve(*args, **kwargs):
+    def mock_retrieve(memory_id, namespace, query, actor_id=None, top_k=3):
         return []
 
     wrap_memory_retrieve(
         mock_retrieve,
         None,
-        ("mem-123", "ns/", "query", None, 3),
+        ("mem-123", "ns/", "query", None),
         {"top_k": 7},
         stub_handler,
         capture_content=True,
@@ -113,8 +113,33 @@ def test_memory_retrieve_top_k_from_kwargs(stub_handler):
     assert invocation.top_k == 7
 
 
-def test_memory_retrieve_no_content_by_default(stub_handler):
-    """wrap_memory_retrieve suppresses query and document count when capture_content=False."""
+def test_memory_retrieve_binds_kwargs_and_defaults(stub_handler):
+    """wrap_memory_retrieve binds keyword args and applies SDK defaults."""
+    client = MockMemoryClient()
+
+    wrap_memory_retrieve(
+        client.retrieve_memories,
+        client,
+        (),
+        {
+            "memory_id": "mem-123",
+            "namespace": "ns/",
+            "query": "keyword query",
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    invocation = stub_handler.started_retrievals[0]
+    assert invocation.query == "keyword query"
+    assert invocation.top_k == 3
+    assert invocation.documents_retrieved == 2
+
+
+def test_memory_retrieve_no_content_by_default_preserves_non_content_attributes(
+    stub_handler,
+):
+    """wrap_memory_retrieve suppresses query only when capture_content=False."""
     client = MockMemoryClient()
 
     wrap_memory_retrieve(
@@ -128,14 +153,17 @@ def test_memory_retrieve_no_content_by_default(stub_handler):
     assert len(stub_handler.started_retrievals) == 1
     invocation = stub_handler.started_retrievals[0]
     assert invocation.query == ""
-    assert invocation.top_k is None
-    assert invocation.documents_retrieved is None
+    assert invocation.top_k == 3
+    assert invocation.documents_retrieved == 2
 
 
 def test_memory_retrieve_exception_fails_invocation(stub_handler):
     """wrap_memory_retrieve fails the invocation on exception."""
+    call_count = 0
 
     def failing_retrieve(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise ValueError("Memory retrieval failed")
 
     client = MockMemoryClient()
@@ -151,8 +179,9 @@ def test_memory_retrieve_exception_fails_invocation(stub_handler):
 
     assert len(stub_handler.started_retrievals) == 1
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
     _invocation, error = stub_handler.failed_entities[0]
-    assert error.type == "ValueError"
+    assert error.type is ValueError
     assert "Memory retrieval failed" in error.message
 
 
@@ -240,8 +269,11 @@ def test_memory_create_event_kwargs_preferred_over_args(stub_handler):
 
 def test_memory_create_event_exception_fails_tool_call(stub_handler):
     """wrap_memory_create_event fails the tool call on exception."""
+    call_count = 0
 
     def failing_create(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise ConnectionError("Service unavailable")
 
     client = MockMemoryClient()
@@ -256,8 +288,9 @@ def test_memory_create_event_exception_fails_tool_call(stub_handler):
         )
 
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
     _tool_call, error = stub_handler.failed_entities[0]
-    assert error.type == "ConnectionError"
+    assert error.type is ConnectionError
 
 
 # ---------------------------------------------------------------------------
@@ -432,8 +465,11 @@ def test_memory_operation_no_content_by_default(stub_handler):
 
 def test_memory_operation_exception_fails_tool_call(stub_handler):
     """wrap_memory_operation fails the tool call on exception."""
+    call_count = 0
 
     def failing_op(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
         raise RuntimeError("Memory operation failed")
 
     wrapper = wrap_memory_operation("delete_memory")
@@ -442,5 +478,6 @@ def test_memory_operation_exception_fails_tool_call(stub_handler):
         wrapper(failing_op, None, (), {}, stub_handler)
 
     assert len(stub_handler.failed_entities) == 1
+    assert call_count == 1
     _tool_call, error = stub_handler.failed_entities[0]
-    assert error.type == "RuntimeError"
+    assert error.type is RuntimeError
