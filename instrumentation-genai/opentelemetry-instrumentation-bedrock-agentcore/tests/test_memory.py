@@ -463,6 +463,19 @@ def test_memory_operation_no_content_by_default(stub_handler):
     assert tool_call.tool_result is None
 
 
+def test_memory_operation_captures_positional_args(stub_handler):
+    """wrap_memory_operation includes positional arguments when content enabled."""
+
+    def create_memory(memory_name, description=None):
+        return {"memoryId": "mem-new"}
+
+    wrapper = wrap_memory_operation("create_memory")
+    wrapper(create_memory, None, ("my-memory",), {}, stub_handler, capture_content=True)
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "my-memory" in tool_call.arguments
+
+
 def test_memory_operation_exception_fails_tool_call(stub_handler):
     """wrap_memory_operation fails the tool call on exception."""
     call_count = 0

@@ -270,6 +270,30 @@ def test_browser_operation_no_content_by_default(stub_handler):
     assert tool_call.tool_result is None
 
 
+def test_browser_operation_captures_positional_args(stub_handler):
+    """wrap_browser_operation includes positional arguments when content enabled."""
+
+    def list_sessions(browser_id, status=None):
+        return [{"sessionId": "s1"}]
+
+    wrapper = wrap_browser_operation("list_sessions")
+    wrapper(list_sessions, None, ("browser-123",), {}, stub_handler, capture_content=True)
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "browser-123" in tool_call.arguments
+
+
+def test_browser_start_no_content_suppresses_arguments_and_result(stub_handler):
+    """wrap_browser_start suppresses arguments and tool_result when capture_content=False."""
+    browser = MockBrowserClient()
+
+    wrap_browser_start(browser.start, browser, (), {"browser_id": "browser-123"}, stub_handler)
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.arguments is None
+    assert tool_call.tool_result is None
+
+
 def test_browser_operation_exception_fails_tool_call(stub_handler):
     """wrap_browser_operation fails the tool call on exception."""
     call_count = 0

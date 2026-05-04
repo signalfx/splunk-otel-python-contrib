@@ -26,7 +26,7 @@ from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 from wrapt import wrap_function_wrapper
 
-from .utils import is_content_enabled
+from .utils import is_content_enabled, is_instrumentation_enabled
 from .browser_wrappers import (
     wrap_browser_get_session,
     wrap_browser_operation,
@@ -57,9 +57,6 @@ from .version import __version__
 __all__ = ["BedrockAgentCoreInstrumentor", "__version__"]
 
 _LOGGER = logging.getLogger(__name__)
-
-# Global handler instance (singleton)
-_handler: Optional[TelemetryHandler] = None
 
 _AGENTCORE_MODULE = "bedrock_agentcore"
 _MEMORY_MODULE = "bedrock_agentcore.memory.client"
@@ -249,47 +246,38 @@ def _iter_wrap_targets() -> Iterator[tuple[str, str]]:
 
 
 class BedrockAgentCoreInstrumentor(BaseInstrumentor):
-    """
-    OpenTelemetry instrumentation for AWS Bedrock AgentCore components.
-
-    This instrumentor provides standardized telemetry for:
-    - BedrockAgentCoreApp entrypoint → Workflow spans
-    - Memory operations (MemoryClient) → RetrievalInvocation/ToolCall spans
-    - Code Interpreter (CodeInterpreter) → ToolCall spans
-    - Browser automation (BrowserClient) → ToolCall spans
-
-    All spans are properly nested with correct parent-child relationships and include
-    rich attributes about the operation.
-    """
+    def __init__(self) -> None:
+        super().__init__()
+        self._handler: Optional[TelemetryHandler] = None
 
     def instrumentation_dependencies(self) -> Collection[str]:
         return _instruments
 
     def _instrument(self, **kwargs: Any) -> None:
-        """Apply instrumentation to Bedrock AgentCore components."""
-        global _handler
+        if not is_instrumentation_enabled():
+            _LOGGER.debug("Bedrock AgentCore instrumentation is disabled")
+            return
 
-        # Initialize TelemetryHandler with tracer provider
         tracer_provider = kwargs.get("tracer_provider")
         if not tracer_provider:
             from opentelemetry import trace
-
             tracer_provider = trace.get_tracer_provider()
 
         meter_provider = kwargs.get("meter_provider")
         if not meter_provider:
             from opentelemetry import metrics
-
             meter_provider = metrics.get_meter_provider()
 
-        handler = get_telemetry_handler(
-            tracer_provider=tracer_provider, meter_provider=meter_provider
+        logger_provider = kwargs.get("logger_provider")
+
+        self._handler = get_telemetry_handler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            logger_provider=logger_provider,
         )
-        _handler = handler
 
         capture_content = is_content_enabled()
 
-        # Wrapper helper function
         def _safe_wrap(module: str, name: str, wrapper: Any) -> None:
             try:
                 wrap_function_wrapper(module, name, wrapper)
@@ -308,15 +296,12 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
                     exc_info=True,
                 )
 
-        for module, name, wrapper in _iter_wrap_specs(handler, capture_content):
+        for module, name, wrapper in _iter_wrap_specs(self._handler, capture_content):
             _safe_wrap(module, name, wrapper)
 
     def _uninstrument(self, **kwargs: Any) -> None:
-        """Remove instrumentation from Bedrock AgentCore components."""
-        global _handler
-        _handler = None
+        self._handler = None
 
-        # Unwrap helper function
         def _safe_unwrap(module: str, name: str) -> None:
             try:
                 unwrap(module, name)

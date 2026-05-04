@@ -158,6 +158,7 @@ Instrumentation Options
     BedrockAgentCoreInstrumentor().instrument(
         tracer_provider=my_tracer_provider,
         meter_provider=my_meter_provider,
+        logger_provider=my_logger_provider,
     )
 
     # Uninstrumentation

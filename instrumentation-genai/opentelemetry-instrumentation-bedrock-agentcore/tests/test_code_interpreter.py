@@ -392,6 +392,29 @@ def test_code_interpreter_operation_no_content_by_default(stub_handler):
     assert tool_call.tool_result is None
 
 
+def test_code_interpreter_operation_captures_positional_args(stub_handler):
+    """wrap_code_interpreter_operation includes positional arguments when content enabled."""
+
+    def get_session(session_id, include_logs=False):
+        return {"sessionId": session_id, "status": "ACTIVE"}
+
+    wrapper = wrap_code_interpreter_operation("get_session")
+    wrapper(get_session, None, ("sess-pos",), {}, stub_handler, capture_content=True)
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "sess-pos" in tool_call.arguments
+
+
+def test_code_interpreter_start_no_content_suppresses_result(stub_handler):
+    """wrap_code_interpreter_start suppresses tool_result when capture_content=False."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_start(interpreter.start, interpreter, (), {}, stub_handler)
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.tool_result is None
+
+
 def test_code_interpreter_operation_exception_fails_tool_call(stub_handler):
     """wrap_code_interpreter_operation fails the tool call on exception."""
     call_count = 0

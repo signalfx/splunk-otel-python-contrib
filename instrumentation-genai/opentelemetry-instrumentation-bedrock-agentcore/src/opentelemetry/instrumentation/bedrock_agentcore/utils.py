@@ -17,20 +17,21 @@
 import inspect
 import json
 from os import environ
-from typing import Any
+from typing import Any, Callable, Optional
+
+from opentelemetry.util.genai.types import Error, ToolCall
 
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = (
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 )
+OTEL_INSTRUMENTATION_GENAI_ENABLE = "OTEL_INSTRUMENTATION_GENAI_ENABLE"
+
+
+def is_instrumentation_enabled() -> bool:
+    return environ.get(OTEL_INSTRUMENTATION_GENAI_ENABLE, "true").lower() == "true"
 
 
 def is_content_enabled() -> bool:
-    """Check if content capture is enabled via environment variable.
-
-    Returns:
-        True if OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT is set to 'true',
-        False otherwise.
-    """
     return (
         environ.get(OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, "false").lower()
         == "true"
@@ -116,6 +117,29 @@ def bind_call_arguments(
     arguments.pop("self", None)
     arguments.pop("cls", None)
     return arguments
+
+
+def invoke_tool_call(
+    handler: Any,
+    tool_call: ToolCall,
+    wrapped: Any,
+    args: tuple,
+    kwargs: dict,
+    capture_content: bool,
+    enrich_result: Optional[Callable[[ToolCall, Any], None]] = None,
+) -> Any:
+    handler.start_tool_call(tool_call)
+    try:
+        result = wrapped(*args, **kwargs)
+    except Exception as e:
+        handler.fail_tool_call(tool_call, Error(type=type(e), message=truncate_error(e)))
+        raise
+    if capture_content and result is not None:
+        tool_call.tool_result = safe_json_dumps(result) if not isinstance(result, str) else result
+    if enrich_result is not None:
+        enrich_result(tool_call, result)
+    handler.stop_tool_call(tool_call)
+    return result
 
 
 _ERROR_MAX_LEN = 256

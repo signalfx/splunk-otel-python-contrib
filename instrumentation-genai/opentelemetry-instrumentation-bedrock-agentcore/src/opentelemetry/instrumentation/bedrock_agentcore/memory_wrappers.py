@@ -14,15 +14,12 @@
 
 """Wrapt wrappers for Bedrock AgentCore Memory instrumentation."""
 
-import logging
 from typing import Any
 
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import Error, RetrievalInvocation, ToolCall
 
-from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_error
-
-_LOGGER = logging.getLogger(__name__)
+from .utils import bind_call_arguments, invoke_tool_call, safe_json_dumps, safe_str, truncate_error
 
 
 def wrap_memory_retrieve(
@@ -33,19 +30,6 @@ def wrap_memory_retrieve(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap MemoryClient.retrieve_memories to create a RetrievalInvocation span.
-
-    Args:
-        wrapped: Original retrieve_memories method
-        instance: MemoryClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-        capture_content: Whether to capture query/result content in spans
-
-    Returns:
-        Result of original retrieve_memories
-    """
     try:
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         query = call_arguments.get("query", "")
@@ -62,19 +46,12 @@ def wrap_memory_retrieve(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        handler.fail_retrieval(
-            invocation, Error(type=type(e), message=truncate_error(e))
-        )
+        handler.fail_retrieval(invocation, Error(type=type(e), message=truncate_error(e)))
         raise
 
-    try:
-        if isinstance(result, (list, dict)):
-            records = (
-                result if isinstance(result, list) else result.get("memoryRecords", [])
-            )
-            invocation.documents_retrieved = len(records)
-    except Exception:
-        _LOGGER.debug("Failed to enrich memory retrieval.", exc_info=True)
+    if isinstance(result, (list, dict)):
+        records = result if isinstance(result, list) else result.get("memoryRecords", [])
+        invocation.documents_retrieved = len(records)
 
     handler.stop_retrieval(invocation)
     return result
@@ -88,60 +65,21 @@ def wrap_memory_create_event(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap MemoryClient.create_event to create a ToolCall span.
-
-    Args:
-        wrapped: Original create_event method
-        instance: MemoryClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-        capture_content: Whether to capture arguments/result content in spans
-
-    Returns:
-        Result of original create_event
-    """
     try:
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
-        memory_id = call_arguments.get("memory_id")
-        actor_id = call_arguments.get("actor_id")
-        session_id = call_arguments.get("session_id")
         invocation = ToolCall(
             name="memory.create_event",
-            arguments=safe_json_dumps(
-                {
-                    "memory_id": safe_str(memory_id),
-                    "actor_id": safe_str(actor_id),
-                    "session_id": safe_str(session_id),
-                }
-            )
-            if capture_content
-            else None,
+            arguments=safe_json_dumps({
+                "memory_id": safe_str(call_arguments.get("memory_id")),
+                "actor_id": safe_str(call_arguments.get("actor_id")),
+                "session_id": safe_str(call_arguments.get("session_id")),
+            }) if capture_content else None,
             system="bedrock-agentcore",
         )
-
-        handler.start_tool_call(invocation)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            invocation, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    try:
-        if capture_content and result is not None:
-            invocation.tool_result = (
-                safe_json_dumps(result) if not isinstance(result, str) else result
-            )
-    except Exception:
-        _LOGGER.debug("Failed to enrich memory create_event tool call.", exc_info=True)
-
-    handler.stop_tool_call(invocation)
-    return result
+    return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
 
 
 def wrap_memory_create_blob_event(
@@ -152,62 +90,21 @@ def wrap_memory_create_blob_event(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap MemoryClient.create_blob_event to create a ToolCall span.
-
-    Args:
-        wrapped: Original create_blob_event method
-        instance: MemoryClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-        capture_content: Whether to capture arguments/result content in spans
-
-    Returns:
-        Result of original create_blob_event
-    """
     try:
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
-        memory_id = call_arguments.get("memory_id")
-        actor_id = call_arguments.get("actor_id")
-        session_id = call_arguments.get("session_id")
         invocation = ToolCall(
             name="memory.create_blob_event",
-            arguments=safe_json_dumps(
-                {
-                    "memory_id": safe_str(memory_id),
-                    "actor_id": safe_str(actor_id),
-                    "session_id": safe_str(session_id),
-                }
-            )
-            if capture_content
-            else None,
+            arguments=safe_json_dumps({
+                "memory_id": safe_str(call_arguments.get("memory_id")),
+                "actor_id": safe_str(call_arguments.get("actor_id")),
+                "session_id": safe_str(call_arguments.get("session_id")),
+            }) if capture_content else None,
             system="bedrock-agentcore",
         )
-
-        handler.start_tool_call(invocation)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            invocation, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    try:
-        if capture_content and result is not None:
-            invocation.tool_result = (
-                safe_json_dumps(result) if not isinstance(result, str) else result
-            )
-    except Exception:
-        _LOGGER.debug(
-            "Failed to enrich memory create_blob_event tool call.", exc_info=True
-        )
-
-    handler.stop_tool_call(invocation)
-    return result
+    return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
 
 
 def wrap_memory_list_events(
@@ -218,66 +115,21 @@ def wrap_memory_list_events(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap MemoryClient.list_events to create a ToolCall span.
-
-    Args:
-        wrapped: Original list_events method
-        instance: MemoryClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-        capture_content: Whether to capture arguments/result content in spans
-
-    Returns:
-        Result of original list_events
-    """
     try:
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
-        memory_id = call_arguments.get("memory_id")
         invocation = ToolCall(
             name="memory.list_events",
-            arguments=safe_json_dumps({"memory_id": safe_str(memory_id)})
-            if capture_content
-            else None,
+            arguments=safe_json_dumps({"memory_id": safe_str(call_arguments.get("memory_id"))})
+            if capture_content else None,
             system="bedrock-agentcore",
         )
-
-        handler.start_tool_call(invocation)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            invocation, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    try:
-        if capture_content and result is not None:
-            invocation.tool_result = (
-                safe_json_dumps(result) if not isinstance(result, str) else result
-            )
-    except Exception:
-        _LOGGER.debug("Failed to enrich memory list_events tool call.", exc_info=True)
-
-    handler.stop_tool_call(invocation)
-    return result
+    return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
 
 
-def wrap_memory_operation(
-    operation_name: str,
-) -> Any:
-    """Generic wrapper factory for MemoryClient operations that creates ToolCall spans.
-
-    Args:
-        operation_name: Name of the operation (e.g., "create_memory", "delete_memory")
-
-    Returns:
-        Wrapper function
-    """
-
+def wrap_memory_operation(operation_name: str) -> Any:
     def wrapper(
         wrapped: Any,
         instance: Any,
@@ -287,38 +139,15 @@ def wrap_memory_operation(
         capture_content: bool = False,
     ) -> Any:
         try:
+            call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
             invocation = ToolCall(
                 name=f"memory.{operation_name}",
-                arguments=safe_json_dumps(kwargs)
-                if capture_content and kwargs
-                else None,
+                arguments=safe_json_dumps(call_arguments) if capture_content else None,
                 system="bedrock-agentcore",
             )
-            handler.start_tool_call(invocation)
         except Exception:
             return wrapped(*args, **kwargs)
 
-        try:
-            result = wrapped(*args, **kwargs)
-        except Exception as e:
-            handler.fail_tool_call(
-                invocation, Error(type=type(e), message=truncate_error(e))
-            )
-            raise
-
-        try:
-            if capture_content and result is not None:
-                invocation.tool_result = (
-                    safe_json_dumps(result) if not isinstance(result, str) else result
-                )
-        except Exception:
-            _LOGGER.debug(
-                "Failed to enrich memory %s tool call.",
-                operation_name,
-                exc_info=True,
-            )
-
-        handler.stop_tool_call(invocation)
-        return result
+        return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
 
     return wrapper

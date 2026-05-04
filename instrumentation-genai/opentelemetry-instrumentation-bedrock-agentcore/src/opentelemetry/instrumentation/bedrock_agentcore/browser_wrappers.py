@@ -14,15 +14,12 @@
 
 """Wrapt wrappers for Bedrock AgentCore Browser instrumentation."""
 
-import logging
 from typing import Any
 
 from opentelemetry.util.genai.handler import TelemetryHandler
-from opentelemetry.util.genai.types import Error, ToolCall
+from opentelemetry.util.genai.types import ToolCall
 
-from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_error
-
-_LOGGER = logging.getLogger(__name__)
+from .utils import bind_call_arguments, invoke_tool_call, safe_json_dumps, safe_str
 
 
 def wrap_browser_start(
@@ -33,58 +30,28 @@ def wrap_browser_start(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap BrowserClient.start to create ToolCall span.
-
-    Args:
-        wrapped: Original start method
-        instance: BrowserClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-
-    Returns:
-        Result of original start
-    """
     try:
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         browser_id = call_arguments.get("browser_id")
         tool_call = ToolCall(
             name="browser.start",
             arguments=safe_json_dumps({"browser_id": browser_id})
-            if browser_id
-            else None,
+            if capture_content and browser_id else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
-
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "start_session"
         if browser_id:
             tool_call.attributes["bedrock.agentcore.browser.id"] = safe_str(browser_id)
-
-        handler.start_tool_call(tool_call)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    try:
+    def enrich(tc: ToolCall, _result: Any) -> None:
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
-                instance.session_id
-            )
-            tool_call.tool_result = safe_json_dumps({"session_id": instance.session_id})
-    except Exception:
-        _LOGGER.debug("Failed to enrich browser start tool call.", exc_info=True)
+            tc.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
 
-    handler.stop_tool_call(tool_call)
-    return result
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content, enrich)
 
 
 def wrap_browser_stop(
@@ -95,52 +62,20 @@ def wrap_browser_stop(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap BrowserClient.stop to create ToolCall span.
-
-    Args:
-        wrapped: Original stop method
-        instance: BrowserClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-
-    Returns:
-        Result of original stop
-    """
     try:
         tool_call = ToolCall(
             name="browser.stop",
             system="bedrock-agentcore",
             tool_type="extension",
         )
-
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "stop_session"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
-                instance.session_id
-            )
-
-        handler.start_tool_call(tool_call)
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    try:
-        if capture_content:
-            tool_call.tool_result = safe_json_dumps({"success": result})
-    except Exception:
-        _LOGGER.debug("Failed to enrich browser stop tool call.", exc_info=True)
-
-    handler.stop_tool_call(tool_call)
-    return result
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content)
 
 
 def wrap_browser_take_control(
@@ -151,46 +86,20 @@ def wrap_browser_take_control(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap BrowserClient.take_control to create ToolCall span.
-
-    Args:
-        wrapped: Original take_control method
-        instance: BrowserClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-
-    Returns:
-        Result of original take_control
-    """
     try:
         tool_call = ToolCall(
             name="browser.take_control",
             system="bedrock-agentcore",
             tool_type="extension",
         )
-
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "take_control"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
-                instance.session_id
-            )
-
-        handler.start_tool_call(tool_call)
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    handler.stop_tool_call(tool_call)
-    return result
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content)
 
 
 def wrap_browser_release_control(
@@ -201,46 +110,20 @@ def wrap_browser_release_control(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap BrowserClient.release_control to create ToolCall span.
-
-    Args:
-        wrapped: Original release_control method
-        instance: BrowserClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-
-    Returns:
-        Result of original release_control
-    """
     try:
         tool_call = ToolCall(
             name="browser.release_control",
             system="bedrock-agentcore",
             tool_type="extension",
         )
-
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "release_control"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
-                instance.session_id
-            )
-
-        handler.start_tool_call(tool_call)
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    handler.stop_tool_call(tool_call)
-    return result
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content)
 
 
 def wrap_browser_get_session(
@@ -251,77 +134,32 @@ def wrap_browser_get_session(
     handler: TelemetryHandler,
     capture_content: bool = False,
 ) -> Any:
-    """Wrap BrowserClient.get_session to create ToolCall span.
-
-    Args:
-        wrapped: Original get_session method
-        instance: BrowserClient instance
-        args: Positional arguments
-        kwargs: Keyword arguments
-        handler: TelemetryHandler instance
-
-    Returns:
-        Result of original get_session
-    """
     try:
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
-        browser_id = call_arguments.get("browser_id")
-        session_id = call_arguments.get("session_id")
         tool_call = ToolCall(
             name="browser.get_session",
-            arguments=safe_json_dumps(
-                {
-                    "browser_id": browser_id,
-                    "session_id": session_id,
-                }
-            )
-            if capture_content
-            else None,
+            arguments=safe_json_dumps({
+                "browser_id": call_arguments.get("browser_id"),
+                "session_id": call_arguments.get("session_id"),
+            }) if capture_content else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
-
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "get_session"
-
-        handler.start_tool_call(tool_call)
     except Exception:
         return wrapped(*args, **kwargs)
 
-    try:
-        result = wrapped(*args, **kwargs)
-    except Exception as e:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(e), message=truncate_error(e))
-        )
-        raise
-
-    try:
+    def enrich(tc: ToolCall, result: Any) -> None:
         if result and isinstance(result, dict):
             session_status = result.get("sessionStatus")
             if session_status:
-                tool_call.attributes["bedrock.agentcore.browser.session_status"] = (
-                    safe_str(session_status)
-                )
-    except Exception:
-        _LOGGER.debug("Failed to enrich browser get_session tool call.", exc_info=True)
+                tc.attributes["bedrock.agentcore.browser.session_status"] = safe_str(session_status)
 
-    handler.stop_tool_call(tool_call)
-    return result
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content, enrich)
 
 
-def wrap_browser_operation(
-    operation_name: str,
-) -> Any:
-    """Generic wrapper factory for BrowserClient operations that creates ToolCall spans.
-
-    Args:
-        operation_name: Name of the operation (e.g., "list_sessions", "create_browser")
-
-    Returns:
-        Wrapper function
-    """
-
+def wrap_browser_operation(operation_name: str) -> Any:
     def wrapper(
         wrapped: Any,
         instance: Any,
@@ -331,38 +169,15 @@ def wrap_browser_operation(
         capture_content: bool = False,
     ) -> Any:
         try:
+            call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
             invocation = ToolCall(
                 name=f"browser.{operation_name}",
-                arguments=safe_json_dumps(kwargs)
-                if capture_content and kwargs
-                else None,
+                arguments=safe_json_dumps(call_arguments) if capture_content else None,
                 system="bedrock-agentcore",
             )
-            handler.start_tool_call(invocation)
         except Exception:
             return wrapped(*args, **kwargs)
 
-        try:
-            result = wrapped(*args, **kwargs)
-        except Exception as e:
-            handler.fail_tool_call(
-                invocation, Error(type=type(e), message=truncate_error(e))
-            )
-            raise
-
-        try:
-            if capture_content and result is not None:
-                invocation.tool_result = (
-                    safe_json_dumps(result) if not isinstance(result, str) else result
-                )
-        except Exception:
-            _LOGGER.debug(
-                "Failed to enrich browser %s tool call.",
-                operation_name,
-                exc_info=True,
-            )
-
-        handler.stop_tool_call(invocation)
-        return result
+        return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
 
     return wrapper

@@ -16,6 +16,7 @@
 
 import os
 
+import opentelemetry.instrumentation.bedrock_agentcore as agentcore_module
 from opentelemetry.instrumentation.bedrock_agentcore import (
     BedrockAgentCoreInstrumentor,
     _iter_wrap_specs,
@@ -69,6 +70,43 @@ def test_wrap_specs_match_unwrap_targets():
         "bedrock_agentcore.tools.code_interpreter_client",
         "CodeInterpreter.upload_file",
     ) in unwrap_targets
+
+
+def test_instrument_passes_logger_provider(
+    monkeypatch, tracer_provider, meter_provider
+):
+    """Instrumentor passes logger_provider through to the util-genai handler."""
+    calls = []
+    logger_provider = object()
+
+    def fake_get_telemetry_handler(**kwargs):
+        calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        agentcore_module, "get_telemetry_handler", fake_get_telemetry_handler
+    )
+    monkeypatch.setattr(
+        agentcore_module,
+        "wrap_function_wrapper",
+        lambda module, name, wrapper: None,
+    )
+
+    instrumentor = BedrockAgentCoreInstrumentor()
+    instrumentor.instrument(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+        logger_provider=logger_provider,
+    )
+    instrumentor.uninstrument()
+
+    assert calls == [
+        {
+            "tracer_provider": tracer_provider,
+            "meter_provider": meter_provider,
+            "logger_provider": logger_provider,
+        }
+    ]
 
 
 # ---------------------------------------------------------------------------
