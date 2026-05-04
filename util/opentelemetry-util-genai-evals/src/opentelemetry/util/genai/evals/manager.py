@@ -231,6 +231,18 @@ class Manager(CompletionCallback):
                 offer = False
 
             if offer:
+                _LOGGER.debug(
+                    "on_completion: queuing %s for evaluation — "
+                    "agent_name=%r agent_id=%r trace_id=%r span_id=%r model=%r; "
+                    "metrics will be attributed to agent_name (None → 'unknown')",
+                    type(invocation).__name__,
+                    getattr(invocation, "agent_name", None),
+                    getattr(invocation, "agent_id", None),
+                    getattr(invocation, "trace_id", None),
+                    getattr(invocation, "span_id", None),
+                    getattr(invocation, "request_model", None)
+                    or getattr(invocation, "model", None),
+                )
                 self.offer(invocation)
 
     # Public API ---------------------------------------------------------

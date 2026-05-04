@@ -515,6 +515,11 @@ class TelemetryHandler:
         # Active agent identity stack (name, id) for implicit propagation to nested operations
         # agent_id may be None if not provided by instrumentation
         self._agent_context_stack: list[tuple[str, Optional[str]]] = []
+        # Active workflow identity stack — used as fallback when no agent is on the stack.
+        # Ensures LLM calls outside named sub-agents (e.g. a summarize node in a LangGraph
+        # workflow) inherit the root workflow's identity so their metrics are attributed to
+        # the root span rather than appearing as "unknown" agent.
+        self._workflow_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
         self._initialized = True
 
@@ -664,15 +669,29 @@ class TelemetryHandler:
         genai_debug_log("handler.start_llm.begin", invocation)
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        # Implicit agent inheritance
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        # Implicit agent inheritance: prefer active agent, fall back to active workflow
+        if not invocation.agent_name or not invocation.agent_id:
+            context_stack = (
+                self._agent_context_stack
+                if self._agent_context_stack
+                else self._workflow_context_stack
+            )
+            if context_stack:
+                top_name, top_id = context_stack[-1]
+                if not invocation.agent_name:
+                    invocation.agent_name = top_name
+                if not invocation.agent_id:
+                    invocation.agent_id = top_id
+        if not invocation.agent_name:
+            _LOGGER.debug(
+                "start_llm: LLMInvocation has no agent_name after inheritance "
+                "(agent_context_stack=%r, workflow_context_stack=%r, model=%r) — "
+                "evaluation metrics for this call will be unattributed "
+                "(shown as 'unknown' agent)",
+                [name for name, _ in self._agent_context_stack],
+                [name for name, _ in self._workflow_context_stack],
+                getattr(invocation, "request_model", None),
+            )
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -778,14 +797,18 @@ class TelemetryHandler:
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        if not invocation.agent_name or not invocation.agent_id:
+            context_stack = (
+                self._agent_context_stack
+                if self._agent_context_stack
+                else self._workflow_context_stack
+            )
+            if context_stack:
+                top_name, top_id = context_stack[-1]
+                if not invocation.agent_name:
+                    invocation.agent_name = top_name
+                if not invocation.agent_id:
+                    invocation.agent_id = top_id
         invocation.start_time = timeit.default_timer()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
@@ -841,14 +864,18 @@ class TelemetryHandler:
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        if not invocation.agent_name or not invocation.agent_id:
+            context_stack = (
+                self._agent_context_stack
+                if self._agent_context_stack
+                else self._workflow_context_stack
+            )
+            if context_stack:
+                top_name, top_id = context_stack[-1]
+                if not invocation.agent_name:
+                    invocation.agent_name = top_name
+                if not invocation.agent_id:
+                    invocation.agent_id = top_id
         invocation.start_time = timeit.default_timer()
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
@@ -901,14 +928,18 @@ class TelemetryHandler:
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not invocation.agent_name:
-                invocation.agent_name = top_name
-            if not invocation.agent_id:
-                invocation.agent_id = top_id
+        if not invocation.agent_name or not invocation.agent_id:
+            context_stack = (
+                self._agent_context_stack
+                if self._agent_context_stack
+                else self._workflow_context_stack
+            )
+            if context_stack:
+                top_name, top_id = context_stack[-1]
+                if not invocation.agent_name:
+                    invocation.agent_name = top_name
+                if not invocation.agent_id:
+                    invocation.agent_id = top_id
         self._inherit_parent_span(invocation)
         self._emitter.on_start(invocation)
         self._push_current_span(invocation)
@@ -939,14 +970,18 @@ class TelemetryHandler:
     def start_mcp_operation(self, op: MCPOperation) -> MCPOperation:
         """Start a non-tool-call MCP operation (list, read, get, etc.)."""
         _apply_genai_context(op)
-        if (
-            not op.agent_name or not op.agent_id
-        ) and self._agent_context_stack:
-            top_name, top_id = self._agent_context_stack[-1]
-            if not op.agent_name:
-                op.agent_name = top_name
-            if not op.agent_id:
-                op.agent_id = top_id
+        if not op.agent_name or not op.agent_id:
+            context_stack = (
+                self._agent_context_stack
+                if self._agent_context_stack
+                else self._workflow_context_stack
+            )
+            if context_stack:
+                top_name, top_id = context_stack[-1]
+                if not op.agent_name:
+                    op.agent_name = top_name
+                if not op.agent_id:
+                    op.agent_id = top_id
         self._inherit_parent_span(op)
         self._emitter.on_start(op)
         self._push_current_span(op)
@@ -1102,6 +1137,13 @@ class TelemetryHandler:
         self._maybe_mark_conversation_root(workflow)
         self._emitter.on_start(workflow)
         self._push_current_span(workflow)
+        try:
+            if workflow.name:
+                self._workflow_context_stack.append(
+                    (workflow.name, getattr(workflow, "agent_id", None))
+                )
+        except Exception:  # pragma: no cover - defensive
+            pass
         return workflow
 
     def _handle_evaluation_results(
@@ -1221,6 +1263,15 @@ class TelemetryHandler:
                 self._evaluation_manager = manager
             self.register_completion_callback(callback)
 
+    def _pop_workflow_context(self, workflow: Workflow) -> None:
+        try:
+            if self._workflow_context_stack and workflow.name:
+                top_name, _ = self._workflow_context_stack[-1]
+                if top_name == workflow.name:
+                    self._workflow_context_stack.pop()
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     def stop_workflow(self, workflow: Workflow) -> Workflow:
         """Finalize a workflow successfully and end its span."""
         workflow.end_time = timeit.default_timer()
@@ -1232,6 +1283,7 @@ class TelemetryHandler:
         self._notify_completion(workflow)
         self._emitter.on_end(workflow)
         self._pop_current_span(workflow)
+        self._pop_workflow_context(workflow)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
@@ -1248,6 +1300,7 @@ class TelemetryHandler:
         self._emitter.on_error(error, workflow)
         self._notify_completion(workflow)
         self._pop_current_span(workflow)
+        self._pop_workflow_context(workflow)
         if (
             hasattr(self, "_meter_provider")
             and self._meter_provider is not None
