@@ -164,6 +164,40 @@ ORDERS: list[dict[str, Any]] = [
         "shipping_address": {"country": "US", "state": "AZ", "city": "Phoenix"},
         "embedding": _rand_vec(112),
     },
+    # --- Luna metric demo users ---
+    {
+        "_id": "ord_013",
+        "user_id": "user_013",
+        "product_name": "4K Webcam Pro",
+        "unit_price": 89.99,
+        "quantity": 1,
+        "status": "delivered",
+        "order_date": (_now - timedelta(days=6)).isoformat(),
+        "shipping_address": {"country": "US", "state": "CA", "city": "San Francisco"},
+        "embedding": _rand_vec(113),
+    },
+    {
+        "_id": "ord_014",
+        "user_id": "user_014",
+        "product_name": "Mechanical Keyboard TKL",
+        "unit_price": 119.99,
+        "quantity": 1,
+        "status": "delivered",
+        "order_date": (_now - timedelta(days=9)).isoformat(),
+        "shipping_address": {"country": "US", "state": "GA", "city": "Atlanta"},
+        "embedding": _rand_vec(114),
+    },
+    {
+        "_id": "ord_015",
+        "user_id": "user_015",
+        "product_name": "Portable SSD 1TB",
+        "unit_price": 99.99,
+        "quantity": 1,
+        "status": "delivered",
+        "order_date": (_now - timedelta(days=4)).isoformat(),
+        "shipping_address": {"country": "US", "state": "NC", "city": "Charlotte"},
+        "embedding": _rand_vec(115),
+    },
 ]
 
 REFUND_REQUESTS: list[dict[str, Any]] = [
@@ -184,6 +218,16 @@ REFUND_REQUESTS: list[dict[str, Any]] = [
         "status": "refund in progress",
         "description": "Dryer returned — repeated complaints",
         "created_at": (_now - timedelta(days=5)).isoformat(),
+    },
+    # user_015: already has an open refund — efficiency scenario should only explain it
+    {
+        "_id": "rr_015",
+        "user_id": "user_015",
+        "amount": 99.99,
+        "currency": "USD",
+        "status": "investigation",
+        "description": "Portable SSD arrived with corrupted firmware",
+        "created_at": (_now - timedelta(days=1)).isoformat(),
     },
 ]
 

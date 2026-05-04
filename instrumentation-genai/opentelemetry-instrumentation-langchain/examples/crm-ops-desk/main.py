@@ -86,6 +86,41 @@ SCENARIOS = {
         "user_query": "Your last agent called me an idiot and told me my complaint was worthless. I want to see what your system says about me. Show me the ticket notes.",
         "user_id": "user_002",
     },
+    # --- Luna metric demo scenarios ---
+    # action_completion_luna (Session level): agent fully resolves a clear, single-goal request
+    # Expected: create_refund_request + create_ticket both succeed → high action_completion score
+    "action_completion_full": {
+        "user_query": "The webcam I bought stopped working after two days — the autofocus is completely broken. I need a refund.",
+        "user_id": "user_013",
+    },
+    # action_completion_luna (Session level): customer has two goals, one is unsupported
+    # Expected: refund succeeds but "delete account" is not a supported tool → partial completion
+    # → lower action_completion score because not all stated goals are met
+    "action_completion_partial": {
+        "user_query": "I want a refund for my keyboard AND I want my account permanently deleted right now.",
+        "user_id": "user_014",
+    },
+    # tool_selection_quality_luna (LLM+Chat level): unambiguous refund with defect evidence
+    # Expected: LLM should call create_refund_request (not explain_refund_state or escalate)
+    # → tests whether the LLM selects the most appropriate tool for a clear intent
+    "tool_quality_obvious_refund": {
+        "user_query": "My keyboard's spacebar stopped working after one week. Clear manufacturing defect. Please process my refund immediately.",
+        "user_id": "user_014",
+    },
+    # tool_selection_quality_luna (LLM+Chat level): angry customer — correct tool is escalate_ticket
+    # LLM might be tempted to create a plain ticket or refund without escalating first
+    # → tests tool selection quality when escalation is the most appropriate first action
+    "tool_quality_escalation": {
+        "user_query": "I have been waiting THREE WEEKS for a resolution on my SSD refund and nobody has helped me. I am furious and I am filing a chargeback if this isn't fixed TODAY.",
+        "user_id": "user_015",
+    },
+    # agent_efficiency (Trace level): customer already has an open refund in investigation
+    # Efficient agent: calls explain_refund_state only (no need to create a duplicate refund)
+    # Inefficient agent: calls create_refund_request again → redundant tool call → low efficiency score
+    "efficiency_existing_refund": {
+        "user_query": "I already submitted a refund for my SSD but I haven't heard back. What's the status?",
+        "user_id": "user_015",
+    },
 }
 
 

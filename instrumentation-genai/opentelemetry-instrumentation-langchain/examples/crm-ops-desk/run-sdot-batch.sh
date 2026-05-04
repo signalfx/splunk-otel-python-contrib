@@ -74,7 +74,7 @@ if [[ -f .venv/bin/activate ]]; then
 fi
 
 # ── Build run plan ──────────────────────────────────────────────
-# 14 scenarios (indices 0-13):
+# 19 scenarios (indices 0-18):
 #   0-5  normal refund scenarios → baseline (high scores)
 #   1    angry user              → input_toxicity, input_tone
 #   6    hallucination           → context_adherence failure
@@ -85,13 +85,20 @@ fi
 #   11   tool failures           → tool_error_rate, action_advancement
 #   12   vague/rambling          → agent_efficiency, tool_selection_quality
 #   13   hostile context leakage → output_tone, output_toxicity
+#   --- Luna metric demo scenarios ---
+#   14   action_completion_full     → action_completion_luna HIGH (full goal met)
+#   15   action_completion_partial  → action_completion_luna LOW (unsupported goal)
+#   16   tool_quality_obvious_refund → tool_selection_quality_luna HIGH (obvious choice)
+#   17   tool_quality_escalation    → tool_selection_quality_luna (escalation test)
+#   18   efficiency_existing_refund → agent_efficiency HIGH (explain only, no duplicate)
 #
 # Strategy per 10-run cycle:
 #   3 baseline, 1 PII, 1 injection, 1 toxic, 1 incomplete/failure,
 #   1 efficiency, 1 hallucination, 1 drift
 
 NORMAL_SCENARIOS=(0 2 3 4 5)
-METRIC_SCENARIOS=(7 8 9 10 11 12 13)  # new metric-triggering scenarios
+METRIC_SCENARIOS=(7 8 9 10 11 12 13)  # existing metric-triggering scenarios
+LUNA_SCENARIOS=(14 15 16 17 18)        # luna metric demo scenarios
 
 declare -a PLAN_INDEX
 declare -a PLAN_DRIFT
@@ -99,7 +106,7 @@ declare -a PLAN_DRIFT
 build_plan() {
     local i=0
     while (( i < NUM_RUNS )); do
-        local bucket=$(( i % 10 ))
+        local bucket=$(( i % 14 ))
         case $bucket in
             0|1|2)
                 # Normal baseline
@@ -139,9 +146,31 @@ build_plan() {
                 PLAN_DRIFT[$i]=false
                 ;;
             9)
+                # Luna: action_completion_luna — full vs partial
+                local choices=(14 15)
+                PLAN_INDEX[$i]=${choices[$((RANDOM % 2))]}
+                PLAN_DRIFT[$i]=false
+                ;;
+            10)
+                # Luna: tool_selection_quality_luna — obvious refund vs escalation needed
+                local choices=(16 17)
+                PLAN_INDEX[$i]=${choices[$((RANDOM % 2))]}
+                PLAN_DRIFT[$i]=false
+                ;;
+            11)
+                # Luna: agent_efficiency — existing refund (should not re-create)
+                PLAN_INDEX[$i]=18
+                PLAN_DRIFT[$i]=false
+                ;;
+            12)
+                # Normal baseline
+                PLAN_INDEX[$i]=${NORMAL_SCENARIOS[$((RANDOM % ${#NORMAL_SCENARIOS[@]}))]}
+                PLAN_DRIFT[$i]=false
+                ;;
+            13)
                 # Drift — expired policy
                 if $INCLUDE_DRIFT; then
-                    PLAN_INDEX[$i]=$((RANDOM % 14))
+                    PLAN_INDEX[$i]=$((RANDOM % 19))
                     PLAN_DRIFT[$i]=true
                 else
                     PLAN_INDEX[$i]=${NORMAL_SCENARIOS[$((RANDOM % ${#NORMAL_SCENARIOS[@]}))]}
@@ -159,7 +188,9 @@ build_plan
 DRIFT_COUNT=0
 for d in "${PLAN_DRIFT[@]}"; do $d && ((DRIFT_COUNT++)) || true; done
 METRIC_COUNT=0
-for idx in "${PLAN_INDEX[@]}"; do [[ $idx -ge 7 ]] && ((METRIC_COUNT++)) || true; done
+for idx in "${PLAN_INDEX[@]}"; do [[ $idx -ge 7 && $idx -le 13 ]] && ((METRIC_COUNT++)) || true; done
+LUNA_COUNT=0
+for idx in "${PLAN_INDEX[@]}"; do [[ $idx -ge 14 ]] && ((LUNA_COUNT++)) || true; done
 
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  SDOT Batch Runner — CRM Ops Desk                      ║"
@@ -171,9 +202,10 @@ echo "║  HTTP root:     $HTTP_ROOT"
 echo "║  Delay:         ${DELAY}s max (~$((DELAY/2))-${DELAY}s random)"
 echo "╠══════════════════════════════════════════════════════════╣"
 echo "║  Plan breakdown:"
-echo "║    Baseline (0-5):       $((NUM_RUNS - METRIC_COUNT - DRIFT_COUNT))"
-echo "║    Metric triggers (7+): $METRIC_COUNT"
-echo "║    Drift (expired):      $DRIFT_COUNT"
+echo "║    Baseline (0-5):       $((NUM_RUNS - METRIC_COUNT - LUNA_COUNT - DRIFT_COUNT))"
+echo "║    Metric triggers (7-13): $METRIC_COUNT"
+echo "║    Luna metric demos (14+): $LUNA_COUNT"
+echo "║    Drift (expired):        $DRIFT_COUNT"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -209,6 +241,12 @@ SCENARIO_NAMES=(
     "tool_failure_scenario"
     "vague_rambling_query"
     "hostile_context_leakage"
+    # Luna metric demo scenarios
+    "action_completion_full"
+    "action_completion_partial"
+    "tool_quality_obvious_refund"
+    "tool_quality_escalation"
+    "efficiency_existing_refund"
 )
 
 # ── Execute ─────────────────────────────────────────────────────
@@ -240,6 +278,11 @@ for (( i=0; i<NUM_RUNS; i++ )); do
         11) TAGS="${TAGS}[tool_failure] " ;;
         12) TAGS="${TAGS}[efficiency] " ;;
         13) TAGS="${TAGS}[hostile_output] " ;;
+        14) TAGS="${TAGS}[luna:action_completion_HIGH] " ;;
+        15) TAGS="${TAGS}[luna:action_completion_LOW] " ;;
+        16) TAGS="${TAGS}[luna:tool_selection_HIGH] " ;;
+        17) TAGS="${TAGS}[luna:tool_selection_escalation] " ;;
+        18) TAGS="${TAGS}[luna:agent_efficiency_HIGH] " ;;
     esac
     if [[ -z "$TAGS" ]]; then TAGS="[baseline] "; fi
 
