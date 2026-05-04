@@ -25,26 +25,6 @@ from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_erro
 _LOGGER = logging.getLogger(__name__)
 
 
-def _record_tool_call_error(
-    handler: TelemetryHandler, tool_call: ToolCall, error: Exception
-) -> None:
-    try:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(error), message=truncate_error(error))
-        )
-    except Exception:
-        _LOGGER.debug(
-            "Failed to record code interpreter tool call error.", exc_info=True
-        )
-
-
-def _finish_tool_call(handler: TelemetryHandler, tool_call: ToolCall) -> None:
-    try:
-        handler.stop_tool_call(tool_call)
-    except Exception:
-        _LOGGER.debug("Failed to finish code interpreter tool call.", exc_info=True)
-
-
 def wrap_code_interpreter_execute(
     wrapped: Any,
     instance: Any,
@@ -91,7 +71,9 @@ def wrap_code_interpreter_execute(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -120,7 +102,7 @@ def wrap_code_interpreter_execute(
             "Failed to enrich code interpreter execute tool call.", exc_info=True
         )
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -173,7 +155,9 @@ def wrap_code_interpreter_install_packages(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -185,7 +169,7 @@ def wrap_code_interpreter_install_packages(
             exc_info=True,
         )
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -244,7 +228,9 @@ def wrap_code_interpreter_upload_file(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -256,7 +242,7 @@ def wrap_code_interpreter_upload_file(
             exc_info=True,
         )
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -299,7 +285,9 @@ def wrap_code_interpreter_start(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -313,7 +301,7 @@ def wrap_code_interpreter_start(
             "Failed to enrich code interpreter start tool call.", exc_info=True
         )
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -360,10 +348,12 @@ def wrap_code_interpreter_stop(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -402,7 +392,9 @@ def wrap_code_interpreter_operation(
         try:
             result = wrapped(*args, **kwargs)
         except Exception as e:
-            _record_tool_call_error(handler, invocation, e)
+            handler.fail_tool_call(
+                invocation, Error(type=type(e), message=truncate_error(e))
+            )
             raise
 
         try:
@@ -417,7 +409,7 @@ def wrap_code_interpreter_operation(
                 exc_info=True,
             )
 
-        _finish_tool_call(handler, invocation)
+        handler.stop_tool_call(invocation)
         return result
 
     return wrapper

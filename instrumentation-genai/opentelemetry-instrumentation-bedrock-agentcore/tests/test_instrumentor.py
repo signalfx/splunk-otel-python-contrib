@@ -16,7 +16,11 @@
 
 import os
 
-from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
+from opentelemetry.instrumentation.bedrock_agentcore import (
+    BedrockAgentCoreInstrumentor,
+    _iter_wrap_specs,
+    _iter_wrap_targets,
+)
 from opentelemetry.instrumentation.bedrock_agentcore.utils import is_content_enabled
 
 
@@ -50,6 +54,21 @@ def test_instrumentation_dependencies():
     instrumentor = BedrockAgentCoreInstrumentor()
     deps = instrumentor.instrumentation_dependencies()
     assert "bedrock-agentcore" in str(deps)
+
+
+def test_wrap_specs_match_unwrap_targets():
+    """Wrap and unwrap should use the same Bedrock AgentCore target inventory."""
+    wrap_targets = [
+        (module, name) for module, name, _wrapper in _iter_wrap_specs(object(), False)
+    ]
+    unwrap_targets = list(_iter_wrap_targets())
+
+    assert wrap_targets == unwrap_targets
+    assert len(unwrap_targets) == len(set(unwrap_targets))
+    assert (
+        "bedrock_agentcore.tools.code_interpreter_client",
+        "CodeInterpreter.upload_file",
+    ) in unwrap_targets
 
 
 # ---------------------------------------------------------------------------

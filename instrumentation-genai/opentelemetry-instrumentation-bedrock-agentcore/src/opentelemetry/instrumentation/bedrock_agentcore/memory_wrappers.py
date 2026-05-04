@@ -25,44 +25,6 @@ from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_erro
 _LOGGER = logging.getLogger(__name__)
 
 
-def _record_tool_call_error(
-    handler: TelemetryHandler, tool_call: ToolCall, error: Exception
-) -> None:
-    try:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(error), message=truncate_error(error))
-        )
-    except Exception:
-        _LOGGER.debug("Failed to record memory tool call error.", exc_info=True)
-
-
-def _record_retrieval_error(
-    handler: TelemetryHandler, invocation: RetrievalInvocation, error: Exception
-) -> None:
-    try:
-        handler.fail_retrieval(
-            invocation, Error(type=type(error), message=truncate_error(error))
-        )
-    except Exception:
-        _LOGGER.debug("Failed to record memory retrieval error.", exc_info=True)
-
-
-def _finish_tool_call(handler: TelemetryHandler, tool_call: ToolCall) -> None:
-    try:
-        handler.stop_tool_call(tool_call)
-    except Exception:
-        _LOGGER.debug("Failed to finish memory tool call.", exc_info=True)
-
-
-def _finish_retrieval(
-    handler: TelemetryHandler, invocation: RetrievalInvocation
-) -> None:
-    try:
-        handler.stop_retrieval(invocation)
-    except Exception:
-        _LOGGER.debug("Failed to finish memory retrieval.", exc_info=True)
-
-
 def wrap_memory_retrieve(
     wrapped: Any,
     instance: Any,
@@ -100,7 +62,9 @@ def wrap_memory_retrieve(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_retrieval_error(handler, invocation, e)
+        handler.fail_retrieval(
+            invocation, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -112,7 +76,7 @@ def wrap_memory_retrieve(
     except Exception:
         _LOGGER.debug("Failed to enrich memory retrieval.", exc_info=True)
 
-    _finish_retrieval(handler, invocation)
+    handler.stop_retrieval(invocation)
     return result
 
 
@@ -163,7 +127,9 @@ def wrap_memory_create_event(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, invocation, e)
+        handler.fail_tool_call(
+            invocation, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -174,7 +140,7 @@ def wrap_memory_create_event(
     except Exception:
         _LOGGER.debug("Failed to enrich memory create_event tool call.", exc_info=True)
 
-    _finish_tool_call(handler, invocation)
+    handler.stop_tool_call(invocation)
     return result
 
 
@@ -225,7 +191,9 @@ def wrap_memory_create_blob_event(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, invocation, e)
+        handler.fail_tool_call(
+            invocation, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -238,7 +206,7 @@ def wrap_memory_create_blob_event(
             "Failed to enrich memory create_blob_event tool call.", exc_info=True
         )
 
-    _finish_tool_call(handler, invocation)
+    handler.stop_tool_call(invocation)
     return result
 
 
@@ -281,7 +249,9 @@ def wrap_memory_list_events(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, invocation, e)
+        handler.fail_tool_call(
+            invocation, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -292,7 +262,7 @@ def wrap_memory_list_events(
     except Exception:
         _LOGGER.debug("Failed to enrich memory list_events tool call.", exc_info=True)
 
-    _finish_tool_call(handler, invocation)
+    handler.stop_tool_call(invocation)
     return result
 
 
@@ -331,7 +301,9 @@ def wrap_memory_operation(
         try:
             result = wrapped(*args, **kwargs)
         except Exception as e:
-            _record_tool_call_error(handler, invocation, e)
+            handler.fail_tool_call(
+                invocation, Error(type=type(e), message=truncate_error(e))
+            )
             raise
 
         try:
@@ -346,7 +318,7 @@ def wrap_memory_operation(
                 exc_info=True,
             )
 
-        _finish_tool_call(handler, invocation)
+        handler.stop_tool_call(invocation)
         return result
 
     return wrapper

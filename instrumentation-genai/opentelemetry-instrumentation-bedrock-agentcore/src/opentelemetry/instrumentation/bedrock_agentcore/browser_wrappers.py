@@ -25,24 +25,6 @@ from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_erro
 _LOGGER = logging.getLogger(__name__)
 
 
-def _record_tool_call_error(
-    handler: TelemetryHandler, tool_call: ToolCall, error: Exception
-) -> None:
-    try:
-        handler.fail_tool_call(
-            tool_call, Error(type=type(error), message=truncate_error(error))
-        )
-    except Exception:
-        _LOGGER.debug("Failed to record browser tool call error.", exc_info=True)
-
-
-def _finish_tool_call(handler: TelemetryHandler, tool_call: ToolCall) -> None:
-    try:
-        handler.stop_tool_call(tool_call)
-    except Exception:
-        _LOGGER.debug("Failed to finish browser tool call.", exc_info=True)
-
-
 def wrap_browser_start(
     wrapped: Any,
     instance: Any,
@@ -87,7 +69,9 @@ def wrap_browser_start(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -99,7 +83,7 @@ def wrap_browser_start(
     except Exception:
         _LOGGER.debug("Failed to enrich browser start tool call.", exc_info=True)
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -144,7 +128,9 @@ def wrap_browser_stop(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -153,7 +139,7 @@ def wrap_browser_stop(
     except Exception:
         _LOGGER.debug("Failed to enrich browser stop tool call.", exc_info=True)
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -198,10 +184,12 @@ def wrap_browser_take_control(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -246,10 +234,12 @@ def wrap_browser_release_control(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -301,7 +291,9 @@ def wrap_browser_get_session(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        _record_tool_call_error(handler, tool_call, e)
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     try:
@@ -314,7 +306,7 @@ def wrap_browser_get_session(
     except Exception:
         _LOGGER.debug("Failed to enrich browser get_session tool call.", exc_info=True)
 
-    _finish_tool_call(handler, tool_call)
+    handler.stop_tool_call(tool_call)
     return result
 
 
@@ -353,7 +345,9 @@ def wrap_browser_operation(
         try:
             result = wrapped(*args, **kwargs)
         except Exception as e:
-            _record_tool_call_error(handler, invocation, e)
+            handler.fail_tool_call(
+                invocation, Error(type=type(e), message=truncate_error(e))
+            )
             raise
 
         try:
@@ -368,7 +362,7 @@ def wrap_browser_operation(
                 exc_info=True,
             )
 
-        _finish_tool_call(handler, invocation)
+        handler.stop_tool_call(invocation)
         return result
 
     return wrapper

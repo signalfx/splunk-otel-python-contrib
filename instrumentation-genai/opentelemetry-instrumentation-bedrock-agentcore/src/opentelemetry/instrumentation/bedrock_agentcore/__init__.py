@@ -19,7 +19,7 @@ Wrapper-based instrumentation for AWS Bedrock AgentCore using splunk-otel-util-g
 """
 
 import logging
-from typing import Any, Collection, Optional
+from typing import Any, Callable, Collection, Iterator, Optional
 
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
@@ -61,6 +61,192 @@ _LOGGER = logging.getLogger(__name__)
 # Global handler instance (singleton)
 _handler: Optional[TelemetryHandler] = None
 
+_AGENTCORE_MODULE = "bedrock_agentcore"
+_MEMORY_MODULE = "bedrock_agentcore.memory.client"
+_CODE_INTERPRETER_MODULE = "bedrock_agentcore.tools.code_interpreter_client"
+_BROWSER_MODULE = "bedrock_agentcore.tools.browser_client"
+
+_ENTRYPOINT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
+    (
+        _AGENTCORE_MODULE,
+        "BedrockAgentCoreApp.entrypoint",
+        wrap_bedrock_agentcore_app_entrypoint,
+    ),
+)
+
+_CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
+    (_MEMORY_MODULE, "MemoryClient.retrieve_memories", wrap_memory_retrieve),
+    (_MEMORY_MODULE, "MemoryClient.create_event", wrap_memory_create_event),
+    (
+        _MEMORY_MODULE,
+        "MemoryClient.create_blob_event",
+        wrap_memory_create_blob_event,
+    ),
+    (_MEMORY_MODULE, "MemoryClient.list_events", wrap_memory_list_events),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.start",
+        wrap_code_interpreter_start,
+    ),
+    (_CODE_INTERPRETER_MODULE, "CodeInterpreter.stop", wrap_code_interpreter_stop),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.execute_code",
+        wrap_code_interpreter_execute,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.install_packages",
+        wrap_code_interpreter_install_packages,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.upload_file",
+        wrap_code_interpreter_upload_file,
+    ),
+    (_BROWSER_MODULE, "BrowserClient.start", wrap_browser_start),
+    (_BROWSER_MODULE, "BrowserClient.stop", wrap_browser_stop),
+    (_BROWSER_MODULE, "BrowserClient.take_control", wrap_browser_take_control),
+    (_BROWSER_MODULE, "BrowserClient.release_control", wrap_browser_release_control),
+    (_BROWSER_MODULE, "BrowserClient.get_session", wrap_browser_get_session),
+)
+
+_MEMORY_OPERATION_METHODS = (
+    "create_memory",
+    "create_memory_and_wait",
+    "create_or_get_memory",
+    "delete_memory",
+    "delete_memory_and_wait",
+    "get_memory_status",
+    "list_memories",
+    "wait_for_memories",
+    "save_conversation",
+    "fork_conversation",
+    "get_conversation_tree",
+    "get_last_k_turns",
+    "list_branch_events",
+    "list_branches",
+    "merge_branch_context",
+    "process_turn_with_llm",
+    "add_strategy",
+    "add_episodic_strategy",
+    "add_episodic_strategy_and_wait",
+    "add_semantic_strategy",
+    "add_semantic_strategy_and_wait",
+    "add_summary_strategy",
+    "add_summary_strategy_and_wait",
+    "add_user_preference_strategy",
+    "add_user_preference_strategy_and_wait",
+    "add_custom_episodic_strategy",
+    "add_custom_episodic_strategy_and_wait",
+    "add_custom_semantic_strategy",
+    "add_custom_semantic_strategy_and_wait",
+    "delete_strategy",
+    "modify_strategy",
+    "get_memory_strategies",
+    "update_memory_strategies",
+    "update_memory_strategies_and_wait",
+)
+
+_CODE_INTERPRETER_OPERATION_METHODS = (
+    "download_file",
+    "download_files",
+    "upload_files",
+    "get_session",
+    "list_sessions",
+    "execute_command",
+    "clear_context",
+    "invoke",
+    "create_code_interpreter",
+    "delete_code_interpreter",
+    "get_code_interpreter",
+    "list_code_interpreters",
+)
+
+_BROWSER_OPERATION_METHODS = (
+    "list_sessions",
+    "create_browser",
+    "delete_browser",
+    "get_browser",
+    "list_browsers",
+    "generate_live_view_url",
+    "generate_ws_headers",
+    "update_stream",
+)
+
+_GENERIC_WRAP_TARGETS: tuple[
+    tuple[str, str, tuple[str, ...], Callable[[str], Callable[..., Any]]], ...
+] = (
+    (
+        _MEMORY_MODULE,
+        "MemoryClient",
+        _MEMORY_OPERATION_METHODS,
+        wrap_memory_operation,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter",
+        _CODE_INTERPRETER_OPERATION_METHODS,
+        wrap_code_interpreter_operation,
+    ),
+    (
+        _BROWSER_MODULE,
+        "BrowserClient",
+        _BROWSER_OPERATION_METHODS,
+        wrap_browser_operation,
+    ),
+)
+
+
+def _with_handler(
+    wrapper: Callable[..., Any],
+    handler: TelemetryHandler,
+    capture_content: bool,
+) -> Callable[[Any, Any, tuple, dict], Any]:
+    def _wrapper(wrapped: Any, instance: Any, args: tuple, kwargs: dict) -> Any:
+        return wrapper(wrapped, instance, args, kwargs, handler, capture_content)
+
+    return _wrapper
+
+
+def _with_entrypoint_handler(
+    wrapper: Callable[..., Any], handler: TelemetryHandler
+) -> Callable[[Any, Any, tuple, dict], Any]:
+    def _wrapper(wrapped: Any, instance: Any, args: tuple, kwargs: dict) -> Any:
+        return wrapper(wrapped, instance, args, kwargs, handler)
+
+    return _wrapper
+
+
+def _iter_wrap_specs(
+    handler: TelemetryHandler, capture_content: bool
+) -> Iterator[tuple[str, str, Callable[[Any, Any, tuple, dict], Any]]]:
+    for module, name, wrapper in _ENTRYPOINT_WRAP_TARGETS:
+        yield module, name, _with_entrypoint_handler(wrapper, handler)
+
+    for module, name, wrapper in _CONTENT_WRAP_TARGETS:
+        yield module, name, _with_handler(wrapper, handler, capture_content)
+
+    for module, class_name, methods, operation_wrapper in _GENERIC_WRAP_TARGETS:
+        for method in methods:
+            yield (
+                module,
+                f"{class_name}.{method}",
+                _with_handler(operation_wrapper(method), handler, capture_content),
+            )
+
+
+def _iter_wrap_targets() -> Iterator[tuple[str, str]]:
+    for module, name, _wrapper in _ENTRYPOINT_WRAP_TARGETS:
+        yield module, name
+
+    for module, name, _wrapper in _CONTENT_WRAP_TARGETS:
+        yield module, name
+
+    for module, class_name, methods, _operation_wrapper in _GENERIC_WRAP_TARGETS:
+        for method in methods:
+            yield module, f"{class_name}.{method}"
+
 
 class BedrockAgentCoreInstrumentor(BaseInstrumentor):
     """
@@ -96,9 +282,10 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
 
             meter_provider = metrics.get_meter_provider()
 
-        _handler = get_telemetry_handler(
+        handler = get_telemetry_handler(
             tracer_provider=tracer_provider, meter_provider=meter_provider
         )
+        _handler = handler
 
         capture_content = is_content_enabled()
 
@@ -121,219 +308,8 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
                     exc_info=True,
                 )
 
-        # Wrap BedrockAgentCoreApp.entrypoint
-        _safe_wrap(
-            "bedrock_agentcore",
-            "BedrockAgentCoreApp.entrypoint",
-            lambda wrapped,
-            instance,
-            args,
-            kwargs: wrap_bedrock_agentcore_app_entrypoint(
-                wrapped, instance, args, kwargs, _handler
-            ),
-        )
-
-        # Wrap MemoryClient operations
-        _safe_wrap(
-            "bedrock_agentcore.memory.client",
-            "MemoryClient.retrieve_memories",
-            lambda wrapped, instance, args, kwargs: wrap_memory_retrieve(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.memory.client",
-            "MemoryClient.create_event",
-            lambda wrapped, instance, args, kwargs: wrap_memory_create_event(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.memory.client",
-            "MemoryClient.create_blob_event",
-            lambda wrapped, instance, args, kwargs: wrap_memory_create_blob_event(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.memory.client",
-            "MemoryClient.list_events",
-            lambda wrapped, instance, args, kwargs: wrap_memory_list_events(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-
-        # Wrap CodeInterpreter operations
-        _safe_wrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.start",
-            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_start(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.stop",
-            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_stop(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.execute_code",
-            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_execute(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.install_packages",
-            lambda wrapped,
-            instance,
-            args,
-            kwargs: wrap_code_interpreter_install_packages(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.upload_file",
-            lambda wrapped, instance, args, kwargs: wrap_code_interpreter_upload_file(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-
-        # Wrap BrowserClient operations
-        _safe_wrap(
-            "bedrock_agentcore.tools.browser_client",
-            "BrowserClient.start",
-            lambda wrapped, instance, args, kwargs: wrap_browser_start(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.browser_client",
-            "BrowserClient.stop",
-            lambda wrapped, instance, args, kwargs: wrap_browser_stop(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.browser_client",
-            "BrowserClient.take_control",
-            lambda wrapped, instance, args, kwargs: wrap_browser_take_control(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.browser_client",
-            "BrowserClient.release_control",
-            lambda wrapped, instance, args, kwargs: wrap_browser_release_control(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-        _safe_wrap(
-            "bedrock_agentcore.tools.browser_client",
-            "BrowserClient.get_session",
-            lambda wrapped, instance, args, kwargs: wrap_browser_get_session(
-                wrapped, instance, args, kwargs, _handler, capture_content
-            ),
-        )
-
-        # Additional MemoryClient operations
-        for method in [
-            "create_memory",
-            "create_memory_and_wait",
-            "create_or_get_memory",
-            "delete_memory",
-            "delete_memory_and_wait",
-            "get_memory_status",
-            "list_memories",
-            "wait_for_memories",
-            "save_conversation",
-            "fork_conversation",
-            "get_conversation_tree",
-            "get_last_k_turns",
-            "list_branch_events",
-            "list_branches",
-            "merge_branch_context",
-            "process_turn_with_llm",
-            "add_strategy",
-            "add_episodic_strategy",
-            "add_episodic_strategy_and_wait",
-            "add_semantic_strategy",
-            "add_semantic_strategy_and_wait",
-            "add_summary_strategy",
-            "add_summary_strategy_and_wait",
-            "add_user_preference_strategy",
-            "add_user_preference_strategy_and_wait",
-            "add_custom_episodic_strategy",
-            "add_custom_episodic_strategy_and_wait",
-            "add_custom_semantic_strategy",
-            "add_custom_semantic_strategy_and_wait",
-            "delete_strategy",
-            "modify_strategy",
-            "get_memory_strategies",
-            "update_memory_strategies",
-            "update_memory_strategies_and_wait",
-        ]:
-            _safe_wrap(
-                "bedrock_agentcore.memory.client",
-                f"MemoryClient.{method}",
-                lambda wrapped, instance, args, kwargs, m=method: wrap_memory_operation(
-                    m
-                )(wrapped, instance, args, kwargs, _handler, capture_content),
-            )
-
-        # Additional CodeInterpreter operations
-        for method in [
-            "download_file",
-            "download_files",
-            "upload_files",
-            "get_session",
-            "list_sessions",
-            "execute_command",
-            "clear_context",
-            "invoke",
-            "create_code_interpreter",
-            "delete_code_interpreter",
-            "get_code_interpreter",
-            "list_code_interpreters",
-        ]:
-            _safe_wrap(
-                "bedrock_agentcore.tools.code_interpreter_client",
-                f"CodeInterpreter.{method}",
-                lambda wrapped,
-                instance,
-                args,
-                kwargs,
-                m=method: wrap_code_interpreter_operation(m)(
-                    wrapped, instance, args, kwargs, _handler, capture_content
-                ),
-            )
-
-        # Additional BrowserClient operations
-        for method in [
-            "list_sessions",
-            "create_browser",
-            "delete_browser",
-            "get_browser",
-            "list_browsers",
-            "generate_live_view_url",
-            "generate_ws_headers",
-            "update_stream",
-        ]:
-            _safe_wrap(
-                "bedrock_agentcore.tools.browser_client",
-                f"BrowserClient.{method}",
-                lambda wrapped,
-                instance,
-                args,
-                kwargs,
-                m=method: wrap_browser_operation(m)(
-                    wrapped, instance, args, kwargs, _handler, capture_content
-                ),
-            )
+        for module, name, wrapper in _iter_wrap_specs(handler, capture_content):
+            _safe_wrap(module, name, wrapper)
 
     def _uninstrument(self, **kwargs: Any) -> None:
         """Remove instrumentation from Bedrock AgentCore components."""
@@ -359,123 +335,5 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
                     exc_info=True,
                 )
 
-        # Unwrap all wrapped methods
-        _safe_unwrap("bedrock_agentcore", "BedrockAgentCoreApp.entrypoint")
-
-        # Unwrap MemoryClient methods
-        _safe_unwrap(
-            "bedrock_agentcore.memory.client", "MemoryClient.retrieve_memories"
-        )
-        _safe_unwrap("bedrock_agentcore.memory.client", "MemoryClient.create_event")
-        _safe_unwrap(
-            "bedrock_agentcore.memory.client",
-            "MemoryClient.create_blob_event",
-        )
-        _safe_unwrap("bedrock_agentcore.memory.client", "MemoryClient.list_events")
-
-        # Unwrap CodeInterpreter methods
-        _safe_unwrap(
-            "bedrock_agentcore.tools.code_interpreter_client", "CodeInterpreter.start"
-        )
-        _safe_unwrap(
-            "bedrock_agentcore.tools.code_interpreter_client", "CodeInterpreter.stop"
-        )
-        _safe_unwrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.execute_code",
-        )
-        _safe_unwrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.install_packages",
-        )
-        _safe_unwrap(
-            "bedrock_agentcore.tools.code_interpreter_client",
-            "CodeInterpreter.upload_file",
-        )
-
-        # Unwrap BrowserClient methods
-        _safe_unwrap("bedrock_agentcore.tools.browser_client", "BrowserClient.start")
-        _safe_unwrap("bedrock_agentcore.tools.browser_client", "BrowserClient.stop")
-        _safe_unwrap(
-            "bedrock_agentcore.tools.browser_client", "BrowserClient.take_control"
-        )
-        _safe_unwrap(
-            "bedrock_agentcore.tools.browser_client", "BrowserClient.release_control"
-        )
-        _safe_unwrap(
-            "bedrock_agentcore.tools.browser_client", "BrowserClient.get_session"
-        )
-
-        # Unwrap additional MemoryClient operations
-        for method in [
-            "create_memory",
-            "create_memory_and_wait",
-            "create_or_get_memory",
-            "delete_memory",
-            "delete_memory_and_wait",
-            "get_memory_status",
-            "list_memories",
-            "wait_for_memories",
-            "save_conversation",
-            "fork_conversation",
-            "get_conversation_tree",
-            "get_last_k_turns",
-            "list_branch_events",
-            "list_branches",
-            "merge_branch_context",
-            "process_turn_with_llm",
-            "add_strategy",
-            "add_episodic_strategy",
-            "add_episodic_strategy_and_wait",
-            "add_semantic_strategy",
-            "add_semantic_strategy_and_wait",
-            "add_summary_strategy",
-            "add_summary_strategy_and_wait",
-            "add_user_preference_strategy",
-            "add_user_preference_strategy_and_wait",
-            "add_custom_episodic_strategy",
-            "add_custom_episodic_strategy_and_wait",
-            "add_custom_semantic_strategy",
-            "add_custom_semantic_strategy_and_wait",
-            "delete_strategy",
-            "modify_strategy",
-            "get_memory_strategies",
-            "update_memory_strategies",
-            "update_memory_strategies_and_wait",
-        ]:
-            _safe_unwrap("bedrock_agentcore.memory.client", f"MemoryClient.{method}")
-
-        # Unwrap additional CodeInterpreter operations
-        for method in [
-            "download_file",
-            "download_files",
-            "upload_files",
-            "get_session",
-            "list_sessions",
-            "execute_command",
-            "clear_context",
-            "invoke",
-            "create_code_interpreter",
-            "delete_code_interpreter",
-            "get_code_interpreter",
-            "list_code_interpreters",
-        ]:
-            _safe_unwrap(
-                "bedrock_agentcore.tools.code_interpreter_client",
-                f"CodeInterpreter.{method}",
-            )
-
-        # Unwrap additional BrowserClient operations
-        for method in [
-            "list_sessions",
-            "create_browser",
-            "delete_browser",
-            "get_browser",
-            "list_browsers",
-            "generate_live_view_url",
-            "generate_ws_headers",
-            "update_stream",
-        ]:
-            _safe_unwrap(
-                "bedrock_agentcore.tools.browser_client", f"BrowserClient.{method}"
-            )
+        for module, name in _iter_wrap_targets():
+            _safe_unwrap(module, name)

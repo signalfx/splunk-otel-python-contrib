@@ -30,17 +30,6 @@ from opentelemetry.util.genai.types import (
 from .utils import bind_call_arguments, safe_json_dumps, safe_str
 
 
-def _record_workflow_error(
-    handler: TelemetryHandler, workflow: Workflow, error: Exception
-) -> None:
-    try:
-        handler.fail_workflow(
-            workflow, Error(type=type(error), message=safe_str(error))
-        )
-    except Exception:
-        return None
-
-
 def _make_input_message(event: Any) -> InputMessage:
     """Convert an entrypoint event payload to an InputMessage for eval context."""
     if isinstance(event, str):
@@ -120,7 +109,9 @@ def wrap_bedrock_agentcore_app_entrypoint(
                 handler.stop_workflow(workflow)
                 return result
             except Exception as e:
-                _record_workflow_error(handler, workflow, e)
+                handler.fail_workflow(
+                    workflow, Error(type=type(e), message=safe_str(e))
+                )
                 raise
 
         return async_workflow_wrapper
@@ -140,7 +131,7 @@ def wrap_bedrock_agentcore_app_entrypoint(
             handler.stop_workflow(workflow)
             return result
         except Exception as e:
-            _record_workflow_error(handler, workflow, e)
+            handler.fail_workflow(workflow, Error(type=type(e), message=safe_str(e)))
             raise
 
     return workflow_wrapper

@@ -1,13 +1,20 @@
-OpenTelemetry Bedrock AgentCore Instrumentation
-===============================================
+OpenTelemetry Bedrock AgentCore Instrumentation (Alpha)
+=======================================================
 
 |pypi|
 
 .. |pypi| image:: https://badge.fury.io/py/splunk-otel-instrumentation-bedrock-agentcore.svg
    :target: https://pypi.org/project/splunk-otel-instrumentation-bedrock-agentcore/
 
-This library provides OpenTelemetry instrumentation for `AWS Bedrock AgentCore <https://docs.aws.amazon.com/bedrock/>`_,
-the runtime framework for building autonomous AI agents with AWS Bedrock.
+This package provides OpenTelemetry instrumentation for
+`AWS Bedrock AgentCore <https://docs.aws.amazon.com/bedrock/>`_, the runtime
+framework for building agentic applications with AWS Bedrock. It leverages
+Splunk distribution of ``opentelemetry-util-genai`` for producing telemetry in
+semantic convention. `Core concepts, high-level usage and configuration
+<https://github.com/signalfx/splunk-otel-python-contrib/>`_
+
+Status: Alpha (APIs and produced telemetry are subject to change).
+
 
 Installation
 ------------
@@ -17,153 +24,96 @@ Installation
     pip install splunk-otel-instrumentation-bedrock-agentcore
 
 
-Usage
------
-
 Quick Start
-~~~~~~~~~~~
+-----------
+
+Manual Instrumentation (development/debugging)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
-    from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
     from bedrock_agentcore import BedrockAgentCoreApp
+    from opentelemetry.instrumentation.bedrock_agentcore import (
+        BedrockAgentCoreInstrumentor,
+    )
 
-    # Instrument Bedrock AgentCore
+    # Manual instrumentation, easy to debug in your IDE
     BedrockAgentCoreInstrumentor().instrument()
 
-    # Create your application
     app = BedrockAgentCoreApp()
 
     @app.entrypoint
     def handler(event):
-        # Your agent logic here
-        return {"status": "success"}
+        return {"status": "success", "event": event}
 
 
-Complete Example with Telemetry
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Zero-code Instrumentation
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In zero-code instrumentation mode, ensure you install opentelemetry-distribution
+and run your app with the OpenTelemetry Bedrock AgentCore instrumentor enabled::
+
+.. code-block:: bash
+
+    opentelemetry-instrument python your_bedrock_agentcore_app.py
 
 .. code-block:: python
 
-    """AWS Bedrock AgentCore with OpenTelemetry instrumentation."""
-    import os
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.semconv.resource import ResourceAttributes
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
-
-    # Configure OpenTelemetry
-    resource = Resource(attributes={
-        ResourceAttributes.SERVICE_NAME: "bedrock-agent",
-        ResourceAttributes.SERVICE_VERSION: "1.0.0",
-    })
-
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
-
-    tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
-    )
-    trace.set_tracer_provider(tracer_provider)
-
-    # Instrument Bedrock AgentCore
-    BedrockAgentCoreInstrumentor().instrument(tracer_provider=tracer_provider)
-
-    # Now use Bedrock AgentCore components - they're automatically instrumented
     from bedrock_agentcore import BedrockAgentCoreApp
-    from bedrock_agentcore.memory.client import MemoryClient
-    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-    from bedrock_agentcore.tools.browser_client import BrowserClient
-
-    region = os.getenv("AWS_DEFAULT_REGION", "us-west-2")
-    memory_client = MemoryClient(region_name=region)
-    code_interpreter = CodeInterpreter(region=region)
-    browser_client = BrowserClient(region=region)
 
     app = BedrockAgentCoreApp()
 
     @app.entrypoint
     def handler(event):
-        """Agent entrypoint - creates a Workflow span."""
-        memory_id = event.get("memory_id")
-
-        # Memory retrieval - creates RetrievalInvocation span
-        memories = memory_client.retrieve_memories(
-            memory_id=memory_id,
-            namespace="agent",
-            query=event.get("query", ""),
-        )
-
-        # Code execution - creates ToolCall spans
-        code_interpreter.start()
-        code_interpreter.execute_code("print('Processing...')")
-        code_interpreter.stop()
-
-        # Browser automation - creates ToolCall spans
-        browser_client.start()
-        browser_client.take_control()
-        browser_client.stop()
-
-        return {"status": "success", "memories_found": len(memories) if memories else 0}
-
-    response = handler({"query": "What is AWS Bedrock?", "memory_id": "myMemory-abc123"})
-    tracer_provider.force_flush(timeout_millis=5000)
+        return {"status": "success", "event": event}
 
 
 What Gets Instrumented
------------------------
+----------------------
 
-This instrumentation provides **comprehensive coverage** of all Bedrock AgentCore components:
+This instrumentation captures:
 
-- **BedrockAgentCoreApp** (1 method) → ``Workflow`` spans
-- **MemoryClient** (38 methods) → ``RetrievalInvocation`` + ``ToolCall`` spans
-- **CodeInterpreter** (17 methods) → ``ToolCall`` spans
-- **BrowserClient** (13 methods) → ``ToolCall`` spans
-
-**Total: 69 instrumented methods** providing complete observability for:
-
-- Memory operations (retrieval, events, conversation, strategy management)
-- Code execution (sessions, execution, file operations, packages)
-- Browser automation (sessions, control, streaming, resource management)
-- Workflow orchestration (entrypoint)
+- **BedrockAgentCoreApp** -> Mapped to ``Workflow`` spans
+- **MemoryClient.retrieve_memories** -> Mapped to ``RetrievalInvocation`` spans
+- **MemoryClient operations** -> Mapped to ``ToolCall`` spans
+- **CodeInterpreter operations** -> Mapped to ``ToolCall`` spans
+- **BrowserClient operations** -> Mapped to ``ToolCall`` spans
 
 All spans are properly nested with correct parent-child relationships and include
 rich attributes about the operation.
 
 
-Instrumentation Strategy
--------------------------
-
-This instrumentation uses **wrapt monkey-patching** to wrap BedrockAgentCoreApp
-entrypoint and tool/memory client methods. Each operation creates the appropriate
-GenAI span type (Workflow, ToolCall, or RetrievalInvocation) with full context.
-
-
 Compositional Instrumentation
-------------------------------
+-----------------------------
 
-This instrumentation focuses on Bedrock AgentCore runtime operations. For complete observability:
+This instrumentation focuses on Bedrock AgentCore runtime operations. For
+complete observability, combine it with provider-specific or framework-specific
+instrumentation.
 
-**AgentCore + Bedrock**
+AgentCore + Bedrock
+^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
-    from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
+    from opentelemetry.instrumentation.bedrock_agentcore import (
+        BedrockAgentCoreInstrumentor,
+    )
     from opentelemetry.instrumentation.bedrock import BedrockInstrumentor
 
     BedrockAgentCoreInstrumentor().instrument()
     BedrockInstrumentor().instrument()
 
-Adds Bedrock API call spans with additional AWS-specific metrics.
+Adds Bedrock API call spans with AWS-specific attributes and metrics.
 
-**Full Stack (AgentCore + Bedrock + Strands)**
+
+AgentCore + Bedrock + Strands
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
-    from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
+    from opentelemetry.instrumentation.bedrock_agentcore import (
+        BedrockAgentCoreInstrumentor,
+    )
     from opentelemetry.instrumentation.bedrock import BedrockInstrumentor
     from opentelemetry.instrumentation.strands import StrandsInstrumentor
 
@@ -171,48 +121,44 @@ Adds Bedrock API call spans with additional AWS-specific metrics.
     BedrockInstrumentor().instrument()
     StrandsInstrumentor().instrument()
 
-Complete agent workflow visibility with Strands agent orchestration.
-
-
-Full Working Example
-~~~~~~~~~~~~~~~~~~~~
-
-See ``examples/manual/main.py`` which demonstrates all four components with one
-representative operation per span type and OTLP export.
-
-To run the example:
-
-.. code-block:: bash
-
-    cd examples/manual
-
-    # Install dependencies
-    pip install -r requirements.txt
-    pip install -e ../../[instruments]
-
-    # Run against an OTLP collector (default: http://localhost:4317)
-    export AWS_DEFAULT_REGION=us-west-2
-    python main.py
-
-    # Override the collector endpoint
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://my-collector:4317 python main.py
+Adds agent orchestration, runtime operations, and Bedrock model call telemetry.
 
 
 Configuration
 -------------
 
+Environment Variables
+^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    # Capture request/response content (disabled by default)
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+
+    # Content capture mode
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+
+    # Select GenAI emitters
+    export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event
+
+
 Instrumentation Options
-~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
-    from opentelemetry.instrumentation.bedrock_agentcore import BedrockAgentCoreInstrumentor
+    from opentelemetry.instrumentation.bedrock_agentcore import (
+        BedrockAgentCoreInstrumentor,
+    )
 
     # Basic instrumentation
     BedrockAgentCoreInstrumentor().instrument()
 
-    # With custom tracer provider
-    BedrockAgentCoreInstrumentor().instrument(tracer_provider=my_tracer_provider)
+    # With custom providers
+    BedrockAgentCoreInstrumentor().instrument(
+        tracer_provider=my_tracer_provider,
+        meter_provider=my_meter_provider,
+    )
 
     # Uninstrumentation
     BedrockAgentCoreInstrumentor().uninstrument()
@@ -228,32 +174,58 @@ Requirements
 
 
 Trace Hierarchy Example
-------------------------
+-----------------------
 
 .. code-block::
 
     BedrockAgentCoreApp.entrypoint (Workflow)
-    ├── Memory: retrieve_memories (RetrievalInvocation)
-    ├── CodeInterpreter: execute_code (ToolCall)
-    └── Browser: take_control (ToolCall)
+    +-- Memory: retrieve_memories (RetrievalInvocation)
+    +-- CodeInterpreter: execute_code (ToolCall)
+    +-- Browser: take_control (ToolCall)
 
 
 Each span includes rich attributes:
 
 - ``gen_ai.system`` = "bedrock-agentcore"
 - ``gen_ai.operation.name`` = "workflow" | "tool_call" | "retrieval_invocation"
-- Framework-specific attributes (memory IDs, code snippets, browser session IDs, etc.)
+- Framework-specific attributes, such as memory IDs, code interpreter session
+  IDs, browser session IDs, and operation metadata
+
+
+Examples
+--------
+
+The ``examples/manual`` directory contains a working example that exercises
+BedrockAgentCoreApp, MemoryClient, CodeInterpreter, and BrowserClient
+instrumentation with OTLP export.
+
+.. code-block:: bash
+
+    cd examples/manual
+    pip install -r requirements.txt
+    pip install -e ../../[instruments]
+
+    export AWS_DEFAULT_REGION=us-west-2
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+    python main.py
+
+
+Testing
+-------
+
+Run the package tests from the repository root or this directory:
+
+.. code-block:: bash
+
+    pytest instrumentation-genai/opentelemetry-instrumentation-bedrock-agentcore/tests
 
 
 Contributing
 ------------
 
-Contributions are welcome! Please ensure:
-
-- All tests pass
-- Code follows project style guidelines
-- Instrumentation is defensive (catches exceptions)
-- Documentation is updated
+Issues / PRs welcome in the main splunk-otel-python-contrib repository. This
+module is alpha: feedback on attribute coverage, performance, and Bedrock
+AgentCore surface expansion is especially helpful.
 
 
 Links
