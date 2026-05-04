@@ -36,7 +36,8 @@ def wrap_browser_start(
         tool_call = ToolCall(
             name="browser.start",
             arguments=safe_json_dumps({"browser_id": browser_id})
-            if capture_content and browser_id else None,
+            if capture_content and browser_id
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -49,9 +50,13 @@ def wrap_browser_start(
 
     def enrich(tc: ToolCall, _result: Any) -> None:
         if hasattr(instance, "session_id") and instance.session_id:
-            tc.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
+            tc.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
+                instance.session_id
+            )
 
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content, enrich)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content, enrich
+    )
 
 
 def wrap_browser_stop(
@@ -71,7 +76,9 @@ def wrap_browser_stop(
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "stop_session"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
+                instance.session_id
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -95,7 +102,9 @@ def wrap_browser_take_control(
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "take_control"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
+                instance.session_id
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -119,7 +128,9 @@ def wrap_browser_release_control(
         tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
         tool_call.attributes["bedrock.agentcore.browser.operation"] = "release_control"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
+                instance.session_id
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -138,10 +149,14 @@ def wrap_browser_get_session(
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         tool_call = ToolCall(
             name="browser.get_session",
-            arguments=safe_json_dumps({
-                "browser_id": call_arguments.get("browser_id"),
-                "session_id": call_arguments.get("session_id"),
-            }) if capture_content else None,
+            arguments=safe_json_dumps(
+                {
+                    "browser_id": call_arguments.get("browser_id"),
+                    "session_id": call_arguments.get("session_id"),
+                }
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
@@ -154,9 +169,13 @@ def wrap_browser_get_session(
         if result and isinstance(result, dict):
             session_status = result.get("sessionStatus")
             if session_status:
-                tc.attributes["bedrock.agentcore.browser.session_status"] = safe_str(session_status)
+                tc.attributes["bedrock.agentcore.browser.session_status"] = safe_str(
+                    session_status
+                )
 
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content, enrich)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content, enrich
+    )
 
 
 def wrap_browser_operation(operation_name: str) -> Any:
@@ -178,6 +197,8 @@ def wrap_browser_operation(operation_name: str) -> Any:
         except Exception:
             return wrapped(*args, **kwargs)
 
-        return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
+        return invoke_tool_call(
+            handler, invocation, wrapped, args, kwargs, capture_content
+        )
 
     return wrapper

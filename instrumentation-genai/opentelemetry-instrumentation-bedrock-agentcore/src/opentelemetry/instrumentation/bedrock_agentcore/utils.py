@@ -132,10 +132,14 @@ def invoke_tool_call(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        handler.fail_tool_call(tool_call, Error(type=type(e), message=truncate_error(e)))
+        handler.fail_tool_call(
+            tool_call, Error(type=type(e), message=truncate_error(e))
+        )
         raise
     if capture_content and result is not None:
-        tool_call.tool_result = safe_json_dumps(result) if not isinstance(result, str) else result
+        tool_call.tool_result = (
+            safe_json_dumps(result) if not isinstance(result, str) else result
+        )
     if enrich_result is not None:
         enrich_result(tool_call, result)
     handler.stop_tool_call(tool_call)

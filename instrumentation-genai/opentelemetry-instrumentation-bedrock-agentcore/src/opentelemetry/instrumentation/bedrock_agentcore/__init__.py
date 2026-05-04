@@ -261,11 +261,13 @@ class BedrockAgentCoreInstrumentor(BaseInstrumentor):
         tracer_provider = kwargs.get("tracer_provider")
         if not tracer_provider:
             from opentelemetry import trace
+
             tracer_provider = trace.get_tracer_provider()
 
         meter_provider = kwargs.get("meter_provider")
         if not meter_provider:
             from opentelemetry import metrics
+
             meter_provider = metrics.get_meter_provider()
 
         logger_provider = kwargs.get("logger_provider")

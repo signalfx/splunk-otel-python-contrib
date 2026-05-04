@@ -35,13 +35,17 @@ def wrap_code_interpreter_execute(
         code = call_arguments.get("code", "")
         tool_call = ToolCall(
             name="code_interpreter.execute",
-            arguments=safe_json_dumps({"code": code[:500]}) if capture_content else None,
+            arguments=safe_json_dumps({"code": code[:500]})
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
         tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = (
+                safe_str(instance.session_id)
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -53,13 +57,23 @@ def wrap_code_interpreter_execute(
             tc.attributes["bedrock.agentcore.code_interpreter.has_errors"] = True
         if capture_content:
             output = result.get("output", "")
-            tc.tool_result = safe_json_dumps({
-                "output": output[:1000] if output else "",
-                "has_errors": bool(errors),
-                "error_count": len(errors) if errors else 0,
-            })
+            tc.tool_result = safe_json_dumps(
+                {
+                    "output": output[:1000] if output else "",
+                    "has_errors": bool(errors),
+                    "error_count": len(errors) if errors else 0,
+                }
+            )
 
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False, enrich_result=enrich)
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
 
 
 def wrap_code_interpreter_install_packages(
@@ -75,14 +89,20 @@ def wrap_code_interpreter_install_packages(
         packages = call_arguments.get("packages", [])
         tool_call = ToolCall(
             name="code_interpreter.install_packages",
-            arguments=safe_json_dumps({"packages": packages}) if capture_content else None,
+            arguments=safe_json_dumps({"packages": packages})
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
         tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
-        tool_call.attributes["bedrock.agentcore.code_interpreter.package_count"] = len(packages) if packages else 0
+        tool_call.attributes["bedrock.agentcore.code_interpreter.package_count"] = (
+            len(packages) if packages else 0
+        )
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = (
+                safe_str(instance.session_id)
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -103,15 +123,22 @@ def wrap_code_interpreter_upload_file(
         description = call_arguments.get("description", "")
         tool_call = ToolCall(
             name="code_interpreter.upload_file",
-            arguments=safe_json_dumps({"filename": filename, "description": description})
-            if capture_content else None,
+            arguments=safe_json_dumps(
+                {"filename": filename, "description": description}
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
             tool_type="extension",
         )
         tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
-        tool_call.attributes["bedrock.agentcore.code_interpreter.filename"] = safe_str(filename)
+        tool_call.attributes["bedrock.agentcore.code_interpreter.filename"] = safe_str(
+            filename
+        )
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = (
+                safe_str(instance.session_id)
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -133,15 +160,21 @@ def wrap_code_interpreter_start(
             tool_type="extension",
         )
         tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
-        tool_call.attributes["bedrock.agentcore.code_interpreter.operation"] = "start_session"
+        tool_call.attributes["bedrock.agentcore.code_interpreter.operation"] = (
+            "start_session"
+        )
     except Exception:
         return wrapped(*args, **kwargs)
 
     def enrich(tc: ToolCall, _result: Any) -> None:
         if hasattr(instance, "session_id") and instance.session_id:
-            tc.attributes["bedrock.agentcore.code_interpreter.session_id"] = safe_str(instance.session_id)
+            tc.attributes["bedrock.agentcore.code_interpreter.session_id"] = safe_str(
+                instance.session_id
+            )
 
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content, enrich)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content, enrich
+    )
 
 
 def wrap_code_interpreter_stop(
@@ -159,9 +192,13 @@ def wrap_code_interpreter_stop(
             tool_type="extension",
         )
         tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
-        tool_call.attributes["bedrock.agentcore.code_interpreter.operation"] = "stop_session"
+        tool_call.attributes["bedrock.agentcore.code_interpreter.operation"] = (
+            "stop_session"
+        )
         if hasattr(instance, "session_id") and instance.session_id:
-            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = safe_str(instance.session_id)
+            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = (
+                safe_str(instance.session_id)
+            )
     except Exception:
         return wrapped(*args, **kwargs)
 
@@ -187,6 +224,8 @@ def wrap_code_interpreter_operation(operation_name: str) -> Any:
         except Exception:
             return wrapped(*args, **kwargs)
 
-        return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
+        return invoke_tool_call(
+            handler, invocation, wrapped, args, kwargs, capture_content
+        )
 
     return wrapper

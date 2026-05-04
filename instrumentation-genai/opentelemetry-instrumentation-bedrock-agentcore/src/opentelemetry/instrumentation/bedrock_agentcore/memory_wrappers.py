@@ -19,7 +19,13 @@ from typing import Any
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import Error, RetrievalInvocation, ToolCall
 
-from .utils import bind_call_arguments, invoke_tool_call, safe_json_dumps, safe_str, truncate_error
+from .utils import (
+    bind_call_arguments,
+    invoke_tool_call,
+    safe_json_dumps,
+    safe_str,
+    truncate_error,
+)
 
 
 def wrap_memory_retrieve(
@@ -46,11 +52,15 @@ def wrap_memory_retrieve(
     try:
         result = wrapped(*args, **kwargs)
     except Exception as e:
-        handler.fail_retrieval(invocation, Error(type=type(e), message=truncate_error(e)))
+        handler.fail_retrieval(
+            invocation, Error(type=type(e), message=truncate_error(e))
+        )
         raise
 
     if isinstance(result, (list, dict)):
-        records = result if isinstance(result, list) else result.get("memoryRecords", [])
+        records = (
+            result if isinstance(result, list) else result.get("memoryRecords", [])
+        )
         invocation.documents_retrieved = len(records)
 
     handler.stop_retrieval(invocation)
@@ -69,11 +79,15 @@ def wrap_memory_create_event(
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         invocation = ToolCall(
             name="memory.create_event",
-            arguments=safe_json_dumps({
-                "memory_id": safe_str(call_arguments.get("memory_id")),
-                "actor_id": safe_str(call_arguments.get("actor_id")),
-                "session_id": safe_str(call_arguments.get("session_id")),
-            }) if capture_content else None,
+            arguments=safe_json_dumps(
+                {
+                    "memory_id": safe_str(call_arguments.get("memory_id")),
+                    "actor_id": safe_str(call_arguments.get("actor_id")),
+                    "session_id": safe_str(call_arguments.get("session_id")),
+                }
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
         )
     except Exception:
@@ -94,11 +108,15 @@ def wrap_memory_create_blob_event(
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         invocation = ToolCall(
             name="memory.create_blob_event",
-            arguments=safe_json_dumps({
-                "memory_id": safe_str(call_arguments.get("memory_id")),
-                "actor_id": safe_str(call_arguments.get("actor_id")),
-                "session_id": safe_str(call_arguments.get("session_id")),
-            }) if capture_content else None,
+            arguments=safe_json_dumps(
+                {
+                    "memory_id": safe_str(call_arguments.get("memory_id")),
+                    "actor_id": safe_str(call_arguments.get("actor_id")),
+                    "session_id": safe_str(call_arguments.get("session_id")),
+                }
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
         )
     except Exception:
@@ -119,8 +137,11 @@ def wrap_memory_list_events(
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         invocation = ToolCall(
             name="memory.list_events",
-            arguments=safe_json_dumps({"memory_id": safe_str(call_arguments.get("memory_id"))})
-            if capture_content else None,
+            arguments=safe_json_dumps(
+                {"memory_id": safe_str(call_arguments.get("memory_id"))}
+            )
+            if capture_content
+            else None,
             system="bedrock-agentcore",
         )
     except Exception:
@@ -148,6 +169,8 @@ def wrap_memory_operation(operation_name: str) -> Any:
         except Exception:
             return wrapped(*args, **kwargs)
 
-        return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
+        return invoke_tool_call(
+            handler, invocation, wrapped, args, kwargs, capture_content
+        )
 
     return wrapper

@@ -56,7 +56,6 @@ def meter_provider(metric_reader):
     return provider
 
 
-
 @pytest.fixture(autouse=True)
 def environment():
     """Set up test environment variables."""
