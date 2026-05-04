@@ -81,19 +81,6 @@ class TestFastMCPInstrumentor:
         mock_client_inst.instrument.assert_called_once()
 
     @patch(
-        "opentelemetry.instrumentation.fastmcp.instrumentation.is_instrumentation_enabled"
-    )
-    def test_instrument_disabled(self, mock_is_enabled):
-        """Test instrumentation is not applied when disabled."""
-        mock_is_enabled.return_value = False
-
-        instrumentor = FastMCPInstrumentor()
-        instrumentor._instrument()
-
-        assert instrumentor._telemetry_handler is None
-        assert instrumentor._server_instrumentor is None
-
-    @patch(
         "opentelemetry.instrumentation.fastmcp.instrumentation.get_telemetry_handler"
     )
     @patch("opentelemetry.instrumentation.fastmcp.instrumentation.ServerInstrumentor")

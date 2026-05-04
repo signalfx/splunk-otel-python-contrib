@@ -54,10 +54,17 @@ class TestIsContentEnabled:
         with patch.dict(os.environ, {}, clear=True):
             assert is_content_enabled() is False
 
-    def test_content_disabled_invalid_value(self):
-        """Test content capture is disabled when env var has invalid value."""
+    def test_content_enabled_truthy_value(self):
+        """Test content capture is enabled when env var has truthy value like 'yes'."""
         with patch.dict(
             os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "yes"}
+        ):
+            assert is_content_enabled() is True
+
+    def test_content_disabled_invalid_value(self):
+        """Test content capture is disabled when env var has unrecognized value."""
+        with patch.dict(
+            os.environ, {OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "banana"}
         ):
             assert is_content_enabled() is False
 

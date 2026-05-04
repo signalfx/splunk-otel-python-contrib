@@ -1,0 +1,15 @@
+# CrewAI — application dependencies
+crewai==0.11.2
+crewai-tools==0.0.1
+openai==2.32.0
+litellm==1.83.8
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-distro==0.59b0
+deepeval==3.3.9
+pydantic==2.12.5
+python-dotenv==1.2.2
+requests==2.32.5

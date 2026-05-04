@@ -362,7 +362,9 @@ The screenshot above shows:
 ```
 agentcore-oauth2-token/
 ├── main.py                  # LangChain travel planner with AgentCore entrypoint
-├── requirements.txt         # Python dependencies (includes deepeval v0.1.7+)
+├── requirements-app.txt     # Pinned application dependencies
+├── requirements.txt         # Production deps (app + SDOT from PyPI)
+├── requirements-dev.txt     # Development deps (app + SDOT from local source)
 ├── images/
 │   └── image.png            # Screenshot of Splunk APM with evaluations
 ├── util/
@@ -377,7 +379,9 @@ agentcore-oauth2-token/
 |------|---------|
 | `util/oauth2_token_manager.py` | Generic OAuth2 client credentials flow for LLM authentication |
 | `main.py` | LangChain multi-agent workflow with OTel instrumentation |
-| `requirements.txt` | Includes `splunk-otel-genai-evals-deepeval>=0.1.8` and `litellm` |
+| `requirements-app.txt` | Pinned application dependencies |
+| `requirements.txt` | Production deps (app + SDOT from PyPI) |
+| `requirements-dev.txt` | Development deps (app + SDOT from local source) |
 
 ---
 

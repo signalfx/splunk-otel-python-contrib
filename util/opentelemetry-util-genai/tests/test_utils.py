@@ -26,7 +26,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 )
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
-    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
 )
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
@@ -49,20 +48,18 @@ def patch_capture_mode(value: str | None) -> Callable[[_F], _F]:
         def wrapper(*args: Any, **kwargs: Any):  # type: ignore[override]
             with patch.dict(os.environ, {}, clear=False):
                 if value is None:
-                    os.environ[
-                        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-                    ] = "false"
                     os.environ.pop(
-                        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE,
+                        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
                         None,
                     )
                 else:
                     os.environ[
                         OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-                    ] = "true"
-                    os.environ[
-                        OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
                     ] = value
+                os.environ.pop(
+                    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE",
+                    None,
+                )
                 os.environ.pop(
                     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGES", None
                 )
@@ -89,13 +86,12 @@ class TestVersion(unittest.TestCase):
         )
 
     @patch_capture_mode("INVALID_VALUE")
-    def test_get_content_capturing_mode_raises_exception_on_invalid_envvar(
+    def test_get_content_capturing_mode_invalid_envvar_defaults_to_no_content(
         self,
     ):  # pylint: disable=no-self-use
         with self.assertLogs(level="WARNING") as cm:
             assert (
-                get_content_capturing_mode()
-                == ContentCapturingMode.SPAN_AND_EVENT
+                get_content_capturing_mode() == ContentCapturingMode.NO_CONTENT
             )
         self.assertEqual(len(cm.output), 1)
         self.assertIn("not a valid option", cm.output[0])

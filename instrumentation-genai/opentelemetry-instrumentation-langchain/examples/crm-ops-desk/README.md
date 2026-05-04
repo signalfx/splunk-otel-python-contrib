@@ -170,11 +170,22 @@ Trace ID: a1b2c3d4...
 
 ### Installation
 
+**Production (from PyPI):**
+
 ```bash
 cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/crm-ops-desk
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+**Development (from local source):**
+
+```bash
+cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/crm-ops-desk
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
 ```
 
 ### Configuration
@@ -254,4 +265,6 @@ The `run-sdot.sh` and `run-sdot-batch.sh` scripts configure these environment va
 | `run-sdot.sh` | Single-scenario runner with SDOT configuration |
 | `run-sdot-batch.sh` | Batch runner with mixed scenario plan |
 | `.env.example` | Template for environment variables |
-| `requirements.txt` | Python dependencies |
+| `requirements-app.txt` | Application dependencies (no instrumentation) |
+| `requirements.txt` | Production dependencies (app + SDOT from PyPI) |
+| `requirements-dev.txt` | Development dependencies (app + SDOT from local source) |

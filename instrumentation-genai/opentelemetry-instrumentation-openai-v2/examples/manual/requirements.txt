@@ -1,5 +1,3 @@
-openai~=1.57.3
-
-opentelemetry-sdk>=1.36.0
-opentelemetry-exporter-otlp-proto-grpc>=1.36.0
+# OpenAI Manual Example — production dependencies (PyPI packages)
+-r requirements-app.txt
 splunk-otel-instrumentation-openai

@@ -1,0 +1,7 @@
+# CrewAI — development dependencies (editable local installs)
+-r requirements-app.txt
+-e ../
+-e ../../../util/opentelemetry-util-genai
+-e ../../../util/opentelemetry-util-genai-evals
+-e ../../../util/opentelemetry-util-genai-evals-deepeval
+-e ../../../util/opentelemetry-util-genai-emitters-splunk
