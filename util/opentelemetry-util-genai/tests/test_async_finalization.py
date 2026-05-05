@@ -15,12 +15,13 @@
 """Tests for OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION behavior."""
 
 import threading
-import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
+from opentelemetry.util.genai.handler import (
+    TelemetryHandler,
+    get_telemetry_handler,
+)
 from opentelemetry.util.genai.types import (
     AgentInvocation,
     EmbeddingInvocation,
@@ -183,7 +184,6 @@ class TestAsyncFinalizationEnabled:
 
         inv = _make_llm_invocation()
         async_handler.start_llm(inv)
-        span_before_stop = _current_genai_span.get()
         async_handler.stop_llm(inv)
         span_after_stop = _current_genai_span.get()
 
