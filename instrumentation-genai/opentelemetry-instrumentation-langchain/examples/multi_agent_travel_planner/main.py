@@ -534,7 +534,7 @@ def build_workflow() -> StateGraph:
 def _configure_manual_instrumentation() -> None:
     """Configure tracing/metrics/logging manually once per process so exported data goes to OTLP."""
     from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     from opentelemetry import _events, _logs, metrics, trace
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
@@ -547,36 +547,21 @@ def _configure_manual_instrumentation() -> None:
     from opentelemetry.instrumentation.langchain import LangchainInstrumentor
     from opentelemetry.sdk._events import EventLoggerProvider
     from opentelemetry.sdk._logs import LoggerProvider
-    from opentelemetry.sdk._logs.export import (
-        BatchLogRecordProcessor,
-        ConsoleLogExporter,
-    )
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
     from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import (
-        PeriodicExportingMetricReader,
-        ConsoleMetricExporter,
-    )
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
     trace.set_tracer_provider(TracerProvider())
     trace.get_tracer_provider().add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter())
     )
-    trace.get_tracer_provider().add_span_processor(
-        BatchSpanProcessor(ConsoleSpanExporter())
-    )
 
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-    console_metric_reader = PeriodicExportingMetricReader(ConsoleMetricExporter())
-    metrics.set_meter_provider(
-        MeterProvider(metric_readers=[metric_reader, console_metric_reader])
-    )
+    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
 
     _logs.set_logger_provider(LoggerProvider())
     _logs.get_logger_provider().add_log_record_processor(
         BatchLogRecordProcessor(OTLPLogExporter())
-    )
-    _logs.get_logger_provider().add_log_record_processor(
-        BatchLogRecordProcessor(ConsoleLogExporter())
     )
     _events.set_event_logger_provider(EventLoggerProvider())
 
