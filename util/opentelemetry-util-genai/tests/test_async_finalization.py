@@ -43,15 +43,23 @@ def reset_singleton():
 
 def _make_llm_invocation() -> LLMInvocation:
     inv = LLMInvocation(request_model="test-model")
-    inv.input_messages.append(InputMessage(role="user", parts=[Text(content="hi")]))
+    inv.input_messages.append(
+        InputMessage(role="user", parts=[Text(content="hi")])
+    )
     inv.output_messages.append(
-        OutputMessage(role="assistant", parts=[Text(content="hello")], finish_reason="stop")
+        OutputMessage(
+            role="assistant",
+            parts=[Text(content="hello")],
+            finish_reason="stop",
+        )
     )
     return inv
 
 
 def _make_embedding_invocation() -> EmbeddingInvocation:
-    return EmbeddingInvocation(request_model="embed-model", input_texts=["hello"])
+    return EmbeddingInvocation(
+        request_model="embed-model", input_texts=["hello"]
+    )
 
 
 def _make_workflow() -> Workflow:
@@ -65,6 +73,7 @@ def _make_agent_invocation() -> AgentInvocation:
 # ---------------------------------------------------------------------------
 # Default behavior (flag off) — finalization runs inline
 # ---------------------------------------------------------------------------
+
 
 class TestDefaultInlineBehavior:
     """With flag off (default), stop_* calls must be fully synchronous."""
@@ -98,6 +107,7 @@ class TestDefaultInlineBehavior:
         class _Recorder(CompletionCallback):
             def __init__(self):
                 self.count = 0
+
             def on_completion(self, invocation):
                 self.count += 1
 
@@ -116,6 +126,7 @@ class TestDefaultInlineBehavior:
 # Async path (flag on) — stop_* returns before finalization completes
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def async_handler(monkeypatch):
     """Create a fresh handler with async finalization enabled."""
@@ -124,12 +135,13 @@ def async_handler(monkeypatch):
 
 
 class TestAsyncFinalizationEnabled:
-
     def test_executor_created_when_flag_on(self, async_handler):
         assert async_handler._finalizer_executor is not None
         assert async_handler._finalizer_semaphore is not None
 
-    def test_on_end_runs_inline_completion_callbacks_offloaded(self, async_handler):
+    def test_on_end_runs_inline_completion_callbacks_offloaded(
+        self, async_handler
+    ):
         """on_end (span.end) runs inline; _notify_completion is offloaded to background."""
         from opentelemetry.util.genai.callbacks import CompletionCallback
 
@@ -200,6 +212,7 @@ class TestAsyncFinalizationEnabled:
             def __init__(self):
                 self.count = 0
                 self.event = threading.Event()
+
             def on_completion(self, invocation):
                 self.count += 1
                 self.event.set()
@@ -293,11 +306,13 @@ class TestAsyncFinalizationEnabled:
 # Queue-full fallback — inline execution when semaphore is exhausted
 # ---------------------------------------------------------------------------
 
-class TestQueueFullFallback:
 
+class TestQueueFullFallback:
     def test_falls_back_to_inline_when_queue_full(self, monkeypatch):
         """When the semaphore is exhausted, finalization runs inline."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true"
+        )
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE", "1"
         )
@@ -333,17 +348,21 @@ class TestQueueFullFallback:
 # shutdown() behavior
 # ---------------------------------------------------------------------------
 
-class TestShutdown:
 
+class TestShutdown:
     def test_shutdown_idempotent(self, monkeypatch):
         """Calling shutdown() twice must not raise."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true"
+        )
         handler = get_telemetry_handler()
         handler.shutdown(wait=True)
         handler.shutdown(wait=True)  # should not raise
 
     def test_shutdown_clears_executor(self, monkeypatch):
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true"
+        )
         handler = get_telemetry_handler()
         assert handler._finalizer_executor is not None
         handler.shutdown(wait=True)
@@ -352,7 +371,9 @@ class TestShutdown:
 
     def test_stop_after_shutdown_falls_back_to_inline(self, monkeypatch):
         """After shutdown, stop_llm must still emit telemetry inline."""
-        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true")
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true"
+        )
         handler = get_telemetry_handler()
         handler.shutdown(wait=True)  # executor is now None
 

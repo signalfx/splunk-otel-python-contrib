@@ -537,7 +537,9 @@ class TelemetryHandler:
             except ValueError:
                 queue_size = 128
             self._finalizer_executor: Optional[ThreadPoolExecutor] = (
-                ThreadPoolExecutor(max_workers=4, thread_name_prefix="genai-finalizer")
+                ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="genai-finalizer"
+                )
             )
             self._finalizer_semaphore: Optional[threading.BoundedSemaphore] = (
                 threading.BoundedSemaphore(queue_size)
@@ -570,7 +572,9 @@ class TelemetryHandler:
             return
         try:
             fut = self._finalizer_executor.submit(fn)
-            fut.add_done_callback(lambda _: self._finalizer_semaphore.release())  # type: ignore[union-attr]
+            fut.add_done_callback(
+                lambda _: self._finalizer_semaphore.release()
+            )  # type: ignore[union-attr]
         except RuntimeError:
             # executor already shut down (process exit race)
             self._finalizer_semaphore.release()
