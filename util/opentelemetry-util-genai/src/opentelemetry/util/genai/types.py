@@ -150,8 +150,10 @@ class GenAI(GenAIInvocation):
         self._meter_provider = None
         self._capture_refresh_fn = None
         self._otel_context_token = None
-        self.parent_span = None
-        self.error_type = None
+        if not hasattr(self, "parent_span"):
+            self.parent_span = None
+        if not hasattr(self, "error_type"):
+            self.error_type = None
 
     def stop(self) -> None:
         """Finalize the invocation successfully and end its span.
@@ -278,7 +280,7 @@ class ToolCall(GenAI):
             system=self.system,
             name=self.name,
             arguments=self.arguments,
-            id=self.id,
+            tool_call_id=self.id,
             tool_type=self.tool_type,
             tool_description=self.tool_description,
             tool_result=self.tool_result,

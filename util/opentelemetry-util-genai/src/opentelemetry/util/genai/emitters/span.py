@@ -605,7 +605,7 @@ class SpanEmitter(EmitterMeta):
         )
         span = self._tracer.start_span(
             span_name,
-            kind=SpanKind.CLIENT,
+            kind=SpanKind.INTERNAL,
             context=parent_ctx,
         )
         self._add_span_to_invocation(workflow, span)

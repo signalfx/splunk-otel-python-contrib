@@ -45,7 +45,7 @@ class ToolInvocation(GenAIInvocation):
         system: Optional[str] = None,
         name: str = "",
         arguments: Any = None,
-        tool_id: Optional[str] = None,
+        tool_call_id: Optional[str] = None,
         tool_type: Optional[str] = None,
         tool_description: Optional[str] = None,
         tool_result: Optional[Any] = None,
@@ -67,7 +67,7 @@ class ToolInvocation(GenAIInvocation):
         # Tool-specific fields
         self.name = name
         self.arguments = arguments
-        self.id = tool_id
+        self.id = tool_call_id
         self.type = "tool_call"
         self.tool_type = tool_type
         self.tool_description = tool_description
