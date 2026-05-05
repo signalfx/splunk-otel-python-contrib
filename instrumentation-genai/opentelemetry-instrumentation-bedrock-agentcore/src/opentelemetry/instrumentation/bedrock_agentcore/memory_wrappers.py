@@ -41,9 +41,13 @@ def wrap_memory_retrieve(
         query = call_arguments.get("query", "")
         top_k = call_arguments.get("top_k", 3)
         invocation = RetrievalInvocation(
+            operation_name="retrieval",
+            provider="bedrock-agentcore-memory",
             retriever_type="bedrock-agentcore-memory",
+            data_source_id="memory.retrieve_memories",
             query=safe_str(query) if capture_content else "",
             top_k=top_k,
+            system="bedrock-agentcore",
         )
         handler.start_retrieval(invocation)
     except Exception:

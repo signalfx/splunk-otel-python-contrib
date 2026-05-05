@@ -188,7 +188,9 @@ Trace Hierarchy Example
 Each span includes rich attributes:
 
 - ``gen_ai.system`` = "bedrock-agentcore"
-- ``gen_ai.operation.name`` = "workflow" | "tool_call" | "retrieval_invocation"
+- ``gen_ai.operation.name`` = "invoke_workflow" | "execute_tool" | "retrieval"
+- Retrieval span names include the memory provider, for example
+  ``retrieval bedrock-agentcore-memory``
 - Framework-specific attributes, such as memory IDs, code interpreter session
   IDs, browser session IDs, and operation metadata
 

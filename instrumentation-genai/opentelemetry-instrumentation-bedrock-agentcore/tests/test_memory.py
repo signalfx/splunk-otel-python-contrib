@@ -15,6 +15,10 @@
 """Tests for Memory instrumentation."""
 
 import pytest
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAIAttributes,
+)
+from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 
 from opentelemetry.instrumentation.bedrock_agentcore.memory_wrappers import (
     wrap_memory_create_blob_event,
@@ -72,10 +76,50 @@ def test_memory_retrieve_creates_retrieval_invocation(stub_handler):
     assert len(stub_handler.stopped_retrievals) == 1
 
     invocation = stub_handler.started_retrievals[0]
+    assert invocation.operation_name == "retrieval"
+    assert invocation.provider == "bedrock-agentcore-memory"
     assert invocation.query == "test query"
     assert invocation.retriever_type == "bedrock-agentcore-memory"
+    assert invocation.data_source_id == "memory.retrieve_memories"
+    assert invocation.system == "bedrock-agentcore"
     assert invocation.top_k == 3
     assert invocation.documents_retrieved == 2
+
+
+def test_memory_retrieve_span_name_includes_memory_operation(
+    span_exporter,
+    tracer_provider,
+):
+    """wrap_memory_retrieve exports a named retrieval span for AgentCore memory."""
+    TelemetryHandler._reset_for_testing()
+    handler = get_telemetry_handler(tracer_provider=tracer_provider)
+    client = MockMemoryClient()
+
+    try:
+        wrap_memory_retrieve(
+            client.retrieve_memories,
+            client,
+            ("mem-123", "ns/", "test query"),
+            {},
+            handler,
+            capture_content=True,
+        )
+
+        spans = span_exporter.get_finished_spans()
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.name == "retrieval bedrock-agentcore-memory"
+        assert span.attributes[GenAIAttributes.GEN_AI_OPERATION_NAME] == "retrieval"
+        assert (
+            span.attributes[GenAIAttributes.GEN_AI_PROVIDER_NAME]
+            == "bedrock-agentcore-memory"
+        )
+        assert (
+            span.attributes[GenAIAttributes.GEN_AI_DATA_SOURCE_ID]
+            == "memory.retrieve_memories"
+        )
+    finally:
+        TelemetryHandler._reset_for_testing()
 
 
 def test_memory_retrieve_top_k_from_args(stub_handler):
