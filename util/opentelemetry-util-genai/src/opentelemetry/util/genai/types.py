@@ -315,9 +315,9 @@ class ToolCallRequest:
     and metrics, use ToolCall instead.
     """
 
-    arguments: Any
     name: str
-    id: Optional[str]
+    arguments: Any = None
+    id: Optional[str] = None
     type: Literal["tool_call"] = "tool_call"
 
 
@@ -351,33 +351,33 @@ class Reasoning:
 Modality = Literal["image", "video", "audio"]
 
 
-@dataclass()
+@dataclass(kw_only=True)
 class Blob:
     """Represents blob binary data sent inline to the model."""
 
-    mime_type: Optional[str]
     modality: Union[Modality, str]
     content: bytes
+    mime_type: Optional[str] = None
     type: Literal["blob"] = "blob"
 
 
-@dataclass()
+@dataclass(kw_only=True)
 class File:
     """Represents an external referenced file sent to the model by file id."""
 
-    mime_type: Optional[str]
     modality: Union[Modality, str]
     file_id: str
+    mime_type: Optional[str] = None
     type: Literal["file"] = "file"
 
 
-@dataclass()
+@dataclass(kw_only=True)
 class Uri:
     """Represents an external referenced file sent to the model by URI."""
 
-    mime_type: Optional[str]
     modality: Union[Modality, str]
     uri: str
+    mime_type: Optional[str] = None
     type: Literal["uri"] = "uri"
 
 

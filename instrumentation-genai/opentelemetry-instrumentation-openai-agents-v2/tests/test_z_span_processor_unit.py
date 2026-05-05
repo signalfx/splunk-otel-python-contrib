@@ -1054,7 +1054,9 @@ def _make_processor():
     return sp.GenAISemanticProcessor(handler=handler, system_name="openai")
 
 
-def test_make_output_messages_flag_off_tool_call_stays_dict(monkeypatch):
+def test_make_output_messages_flag_off_tool_call_becomes_empty_text(
+    monkeypatch,
+):
     monkeypatch.delenv(
         "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", raising=False
     )
@@ -1074,9 +1076,9 @@ def test_make_output_messages_flag_off_tool_call_stays_dict(monkeypatch):
     ]
     result = processor._make_output_messages(messages)
     assert len(result) == 1
-    # When flag is off, tool_call parts stay as raw dicts
-    assert isinstance(result[0].parts[0], dict)
-    assert result[0].parts[0]["type"] == "tool_call"
+    # When flag is off, tool_call parts become empty Text (not raw dicts)
+    assert isinstance(result[0].parts[0], Text)
+    assert result[0].parts[0].content == ""
     processor.shutdown()
 
 

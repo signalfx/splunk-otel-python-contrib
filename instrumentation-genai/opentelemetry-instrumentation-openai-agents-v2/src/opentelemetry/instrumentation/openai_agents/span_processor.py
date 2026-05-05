@@ -1438,20 +1438,19 @@ class GenAISemanticProcessor(TracingProcessor):
                 for p in parts_data:
                     if isinstance(p, dict) and p.get("type") == "text":
                         parts.append(Text(content=str(p.get("content", ""))))
-                    elif (
-                        isinstance(p, dict)
-                        and p.get("type") == "tool_call"
-                        and new_types
-                    ):
-                        parts.append(
-                            ToolCallRequest(
-                                id=p.get("tool_call_id") or p.get("id"),
-                                name=p.get("tool_name")
-                                or p.get("name")
-                                or "unnamed_tool_call",
-                                arguments=p.get("arguments"),
+                    elif isinstance(p, dict) and p.get("type") == "tool_call":
+                        if new_types:
+                            parts.append(
+                                ToolCallRequest(
+                                    id=p.get("tool_call_id") or p.get("id"),
+                                    name=p.get("tool_name")
+                                    or p.get("name")
+                                    or "unnamed_tool_call",
+                                    arguments=p.get("arguments"),
+                                )
                             )
-                        )
+                        else:
+                            parts.append(Text(content=""))
                     else:
                         parts.append(p)
                 if parts:
