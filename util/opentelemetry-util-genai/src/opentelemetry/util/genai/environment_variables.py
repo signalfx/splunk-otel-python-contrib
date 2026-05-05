@@ -380,13 +380,13 @@ OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION = (
 """
 .. envvar:: OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION
 
-Offload ``stop_*`` / ``fail_*`` finalization work (span attribute serialization,
-completion callbacks, ``span.end()``) to a background thread pool so the
-caller's thread returns immediately. Default: ``false``.
+Offload ``stop_*`` / ``fail_*`` completion callbacks and metric
+``force_flush`` to a background thread pool so the caller's thread returns
+immediately. Default: ``false``.
 
-``end_time`` and OTel context cleanup (``_pop_current_span``) always run
-inline before the handoff so timing accuracy and span parent/child
-relationships are preserved.
+``end_time``, OTel context cleanup (``_pop_current_span``), and ``span.end()``
+always run inline before the handoff so timing accuracy, span parent/child
+relationships, and framework span-lifecycle expectations are preserved.
 
 If the background queue is full the finalization runs inline as a fallback —
 telemetry is never dropped.
