@@ -128,15 +128,9 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
     }
 }
 
-# Default span name transformation mappings
-_DEFAULT_NAME_TRANSFORMATIONS = {
-    "chat *": "genai.chat",
-    "ChatOpenAI*": "genai.chat",
-    "ChatAnthropic*": "genai.chat",
-    "ChatGoogleGenerativeAI*": "genai.chat",
-    "LLMChain*": "genai.chain",
-    "AgentExecutor*": "genai.agent",
-}
+# Span names are assigned by the processor per GenAI semantic conventions
+# (e.g. "chat {model}", "invoke_agent {agent.name}"). No legacy glob rewrites.
+_DEFAULT_NAME_TRANSFORMATIONS: Dict[str, str] = {}
 
 # Global flag to track if processor has been registered (prevents multiple instances)
 _PROCESSOR_REGISTERED = False

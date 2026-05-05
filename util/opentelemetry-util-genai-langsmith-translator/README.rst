@@ -103,6 +103,21 @@ Session & Run Tracking
 * ``langsmith.thread_id`` → ``gen_ai.conversation.id``
 * ``langsmith.run_id`` → ``gen_ai.run.id``
 
+Known Limitations
+-----------------
+
+* **Agent name not propagated to child LLM spans.** Because the translator
+  operates post-hoc on completed spans, children may end before their parent
+  agent span is seen, so ``gen_ai.agent.name``/``gen_ai.agent.id`` are not yet
+  injected onto child ``chat``/``execute_tool`` spans. Agent-level spans and
+  metrics still carry the correct identity.
+
+* **Root agent/workflow span duplicates the full conversation.** LangSmith
+  serializes the entire ``MessagesState`` accumulator as the root span's
+  output, so ``gen_ai.output.messages`` on the top-level ``invoke_agent`` span
+  contains every turn of the conversation rather than just the final reply.
+  Child ``chat`` and nested agent spans carry the correct per-turn messages.
+
 References
 ----------
 
