@@ -13,3 +13,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Bedrock Runtime message, token, tool definition, streaming, and TTFC extraction.
 - InvokeModel extraction for Amazon Titan, Amazon Nova, Anthropic Claude, Cohere,
   Meta Llama, and Mistral JSON shapes.
+- Example showing Bedrock Runtime instrumentation by itself and composed with
+  AgentCore instrumentation.

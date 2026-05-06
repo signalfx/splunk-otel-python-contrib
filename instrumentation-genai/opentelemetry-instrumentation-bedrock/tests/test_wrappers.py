@@ -15,15 +15,15 @@
 """Tests for Bedrock Runtime botocore wrappers."""
 
 import pytest
+
 from opentelemetry import context as context_api
+from opentelemetry.instrumentation.bedrock.wrappers import (
+    bedrock_runtime_api_call_wrapper,
+)
 from opentelemetry.util.genai.attributes import (
     SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
 )
 from opentelemetry.util.genai.types import Text, ToolCall, ToolCallResponse
-
-from opentelemetry.instrumentation.bedrock.wrappers import (
-    bedrock_runtime_api_call_wrapper,
-)
 
 from .conftest import FakeClient, FakeStream
 
@@ -124,7 +124,9 @@ def _converse_result():
     }
 
 
-def test_converse_happy_path_maps_request_and_response(stub_handler, fake_client):
+def test_converse_happy_path_maps_request_and_response(
+    stub_handler, fake_client
+):
     result = _call_wrapper(
         stub_handler,
         fake_client,
@@ -139,7 +141,9 @@ def test_converse_happy_path_maps_request_and_response(stub_handler, fake_client
     assert len(stub_handler.stopped_llm) == 1
     invocation = stub_handler.stopped_llm[0]
 
-    assert invocation.request_model == "us.anthropic.claude-3-haiku-20240307-v1:0"
+    assert (
+        invocation.request_model == "us.anthropic.claude-3-haiku-20240307-v1:0"
+    )
     assert invocation.provider == "anthropic"
     assert invocation.system == "aws.bedrock"
     assert invocation.framework == "boto3"
@@ -152,14 +156,20 @@ def test_converse_happy_path_maps_request_and_response(stub_handler, fake_client
     assert invocation.output_tokens == 8
     assert invocation.response_id == "request-123"
     assert invocation.response_finish_reasons == ["tool_calls"]
-    assert invocation.server_address == "bedrock-runtime.us-west-2.amazonaws.com"
+    assert (
+        invocation.server_address == "bedrock-runtime.us-west-2.amazonaws.com"
+    )
 
     assert len(invocation.input_messages) == 3
     assert invocation.input_messages[0].role == "system"
     assert isinstance(invocation.input_messages[1].parts[0], Text)
-    assert invocation.input_messages[1].parts[0].content == "What is the weather?"
+    assert (
+        invocation.input_messages[1].parts[0].content == "What is the weather?"
+    )
     assert isinstance(invocation.input_messages[2].parts[0], ToolCallResponse)
-    assert invocation.input_messages[2].parts[0].response == {"temperature": 22}
+    assert invocation.input_messages[2].parts[0].response == {
+        "temperature": 22
+    }
 
     assert len(invocation.output_messages) == 1
     output_parts = invocation.output_messages[0].parts
@@ -170,7 +180,9 @@ def test_converse_happy_path_maps_request_and_response(stub_handler, fake_client
     assert output_parts[1].arguments == {"city": "Paris"}
 
 
-def test_converse_content_capture_off_suppresses_messages(stub_handler, fake_client):
+def test_converse_content_capture_off_suppresses_messages(
+    stub_handler, fake_client
+):
     _call_wrapper(
         stub_handler,
         fake_client,
@@ -246,7 +258,10 @@ def test_converse_stream_finalizes_on_exhaustion(stub_handler, fake_client):
         {"messageStop": {"stopReason": "end_turn"}},
         {"metadata": {"usage": {"inputTokens": 5, "outputTokens": 2}}},
     ]
-    result = {"stream": FakeStream(events), "ResponseMetadata": {"RequestId": "rid"}}
+    result = {
+        "stream": FakeStream(events),
+        "ResponseMetadata": {"RequestId": "rid"},
+    }
 
     wrapped_result = _call_wrapper(
         stub_handler,
@@ -450,8 +465,8 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
             b'{"text":"cohere reply","finish_reason":"COMPLETE"}',
             16,
             0.6,
-            2,
-            2,
+            None,
+            None,
             "cohere reply",
         ),
         (
@@ -471,8 +486,8 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
             b'{"outputs":[{"text":"mistral reply","stop_reason":"stop"}]}',
             24,
             0.9,
-            3,
-            3,
+            None,
+            None,
             "mistral reply",
         ),
     ],
@@ -509,7 +524,9 @@ def test_invoke_model_provider_specific_json_shapes(
     assert invocation.output_messages[0].parts[0].content == expected_output
 
 
-def test_invoke_model_stream_titan_maps_text_and_metrics(stub_handler, fake_client):
+def test_invoke_model_stream_titan_maps_text_and_metrics(
+    stub_handler, fake_client
+):
     events = [
         {"chunk": {"bytes": b'{"outputText":"Hel"}'}},
         {
@@ -522,8 +539,14 @@ def test_invoke_model_stream_titan_maps_text_and_metrics(stub_handler, fake_clie
             }
         },
     ]
-    result = {"body": FakeStream(events), "ResponseMetadata": {"RequestId": "rid"}}
-    params = {"modelId": "amazon.titan-text-express-v1", "body": b'{"inputText":"hi"}'}
+    result = {
+        "body": FakeStream(events),
+        "ResponseMetadata": {"RequestId": "rid"},
+    }
+    params = {
+        "modelId": "amazon.titan-text-express-v1",
+        "body": b'{"inputText":"hi"}',
+    }
 
     wrapped_result = _call_wrapper(
         stub_handler,
@@ -609,7 +632,10 @@ def test_invoke_model_stream_claude_maps_text_tool_and_metrics(
             }
         },
     ]
-    result = {"body": FakeStream(events), "ResponseMetadata": {"RequestId": "rid"}}
+    result = {
+        "body": FakeStream(events),
+        "ResponseMetadata": {"RequestId": "rid"},
+    }
     params = {
         "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
         "body": b'{"messages":[{"role":"user","content":"weather"}]}',
@@ -638,6 +664,124 @@ def test_invoke_model_stream_claude_maps_text_tool_and_metrics(
     assert parts[1].arguments == {"city": "Paris"}
 
 
+def test_converse_stream_close_mid_stream_finalizes_span(
+    stub_handler, fake_client
+):
+    events = [
+        {"messageStart": {"role": "assistant"}},
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 0,
+                "delta": {"text": "partial"},
+            }
+        },
+    ]
+    raw_stream = FakeStream(events)
+    result = {
+        "stream": raw_stream,
+        "ResponseMetadata": {"RequestId": "close-rid"},
+    }
+
+    wrapped_result = _call_wrapper(
+        stub_handler,
+        fake_client,
+        "ConverseStream",
+        _converse_params(),
+        result,
+        capture_content=True,
+    )
+
+    assert next(wrapped_result["stream"]) == events[0]
+    assert len(stub_handler.stopped_llm) == 0
+    wrapped_result["stream"].close()
+
+    assert raw_stream.closed is True
+    assert len(stub_handler.stopped_llm) == 1
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.response_id == "close-rid"
+    assert invocation.output_messages == []
+
+
+def test_invoke_model_stream_generic_maps_text_and_finish_reason(
+    stub_handler, fake_client
+):
+    events = [
+        {"chunk": {"bytes": b'{"generation":"part "}'}},
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"generation":"two","prompt_token_count":5,'
+                    b'"generation_token_count":3,"stop_reason":"stop"}'
+                )
+            }
+        },
+    ]
+    result = {
+        "body": FakeStream(events),
+        "ResponseMetadata": {"RequestId": "generic-rid"},
+    }
+    params = {
+        "modelId": "meta.llama3-8b-instruct-v1:0",
+        "body": b'{"prompt":"hello","max_gen_len":32}',
+    }
+
+    wrapped_result = _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModelWithResponseStream",
+        params,
+        result,
+        capture_content=True,
+    )
+
+    assert list(wrapped_result["body"]) == events
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.response_id == "generic-rid"
+    assert invocation.input_tokens == 5
+    assert invocation.output_tokens == 3
+    assert invocation.response_finish_reasons == ["stop"]
+    assert invocation.output_messages[0].parts[0].content == "part two"
+
+
+def test_invoke_model_stream_content_capture_off_suppresses_output_messages(
+    stub_handler, fake_client
+):
+    events = [
+        {"chunk": {"bytes": b'{"outputText":"secret"}'}},
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"completionReason":"FINISH",'
+                    b'"amazon-bedrock-invocationMetrics":'
+                    b'{"inputTokenCount":8,"outputTokenCount":4}}'
+                )
+            }
+        },
+    ]
+    result = {"body": FakeStream(events)}
+    params = {
+        "modelId": "amazon.titan-text-express-v1",
+        "body": b'{"inputText":"hello"}',
+    }
+
+    wrapped_result = _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModelWithResponseStream",
+        params,
+        result,
+        capture_content=False,
+    )
+
+    assert list(wrapped_result["body"]) == events
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.input_messages == []
+    assert invocation.output_messages == []
+    assert invocation.input_tokens == 8
+    assert invocation.output_tokens == 4
+    assert invocation.response_finish_reasons == ["FINISH"]
+
+
 def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):
     client = FakeClient(service_name="s3")
     result = {"ok": True}
@@ -658,7 +802,9 @@ def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):
 
 def test_suppression_context_skips_instrumentation(stub_handler, fake_client):
     wrapper = bedrock_runtime_api_call_wrapper(True, stub_handler)
-    ctx = context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
+    ctx = context_api.set_value(
+        SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
+    )
     token = context_api.attach(ctx)
     try:
         result = wrapper(

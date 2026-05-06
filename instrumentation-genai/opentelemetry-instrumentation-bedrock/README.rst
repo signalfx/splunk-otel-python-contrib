@@ -46,6 +46,16 @@ child LLM spans that evaluation callbacks consume.
     BedrockAgentCoreInstrumentor().instrument()
     BedrockInstrumentor().instrument()
 
+Example
+-------
+
+In the repository, see
+``examples/agentcore_composition``
+for a runnable Bedrock Runtime example that can also enable AgentCore
+instrumentation. It uses console span export by default so you can verify that
+Bedrock Runtime LLM spans nest under AgentCore workflow spans when both
+instrumentors are enabled.
+
 What Gets Instrumented
 ----------------------
 

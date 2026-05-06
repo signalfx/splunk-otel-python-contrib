@@ -19,10 +19,19 @@ from __future__ import annotations
 import logging
 from typing import Any, Collection
 
+from wrapt import wrap_function_wrapper
+
+try:
+    import botocore.client as botocore_client
+except (ImportError, ModuleNotFoundError) as error:
+    botocore_client = None
+    _BOTOCORE_CLIENT_IMPORT_ERROR = error
+else:
+    _BOTOCORE_CLIENT_IMPORT_ERROR = None
+
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.util.genai.handler import get_telemetry_handler
-from wrapt import wrap_function_wrapper
 
 from .package import _instruments
 from .utils import is_content_enabled
@@ -54,7 +63,9 @@ class BedrockInstrumentor(BaseInstrumentor):
             wrap_function_wrapper(
                 "botocore.client",
                 "BaseClient._make_api_call",
-                bedrock_runtime_api_call_wrapper(is_content_enabled(), handler),
+                bedrock_runtime_api_call_wrapper(
+                    is_content_enabled(), handler
+                ),
             )
         except (ImportError, ModuleNotFoundError):
             _LOGGER.debug(
@@ -63,15 +74,15 @@ class BedrockInstrumentor(BaseInstrumentor):
             )
 
     def _uninstrument(self, **kwargs: Any) -> None:
-        try:
-            import botocore.client
-
-            unwrap(botocore.client.BaseClient, "_make_api_call")
-        except (ImportError, ModuleNotFoundError):
+        if botocore_client is None:
             _LOGGER.debug(
                 "botocore not importable while uninstrumenting Bedrock Runtime",
-                exc_info=True,
+                exc_info=_BOTOCORE_CLIENT_IMPORT_ERROR,
             )
+            return
+
+        try:
+            unwrap(botocore_client.BaseClient, "_make_api_call")
         except Exception:
             _LOGGER.warning(
                 "Failed to uninstrument Bedrock Runtime",

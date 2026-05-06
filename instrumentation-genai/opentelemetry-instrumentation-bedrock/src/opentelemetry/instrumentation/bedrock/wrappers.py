@@ -17,10 +17,14 @@
 from __future__ import annotations
 
 import io
-import math
 import timeit
 from typing import Any, Callable, Optional
 from urllib.parse import urlparse
+
+try:
+    from botocore.response import StreamingBody
+except (ImportError, ModuleNotFoundError):
+    StreamingBody = None
 
 from opentelemetry import context as context_api
 from opentelemetry.util.genai.attributes import (
@@ -64,7 +68,9 @@ def bedrock_runtime_api_call_wrapper(
 ) -> Callable[..., Any]:
     """Wrap ``botocore.client.BaseClient._make_api_call``."""
 
-    def traced_method(wrapped: Any, instance: Any, args: tuple, kwargs: dict) -> Any:
+    def traced_method(
+        wrapped: Any, instance: Any, args: tuple, kwargs: dict
+    ) -> Any:
         if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
             return wrapped(*args, **kwargs)
 
@@ -75,6 +81,11 @@ def bedrock_runtime_api_call_wrapper(
         ):
             return wrapped(*args, **kwargs)
 
+        stream_start_time = (
+            timeit.default_timer()
+            if operation_name in _STREAMING_OPERATIONS
+            else None
+        )
         try:
             invocation = _build_invocation(
                 instance, operation_name, api_params, capture_content
@@ -100,8 +111,11 @@ def bedrock_runtime_api_call_wrapper(
                     operation_name,
                     capture_content,
                     handler,
+                    stream_start_time,
                 )
-            _apply_response(invocation, operation_name, result, capture_content)
+            _apply_response(
+                invocation, operation_name, result, capture_content
+            )
             handler.stop_llm(invocation)
         except Exception:
             _stop_safely(handler, invocation)
@@ -111,7 +125,9 @@ def bedrock_runtime_api_call_wrapper(
     return traced_method
 
 
-def _extract_api_call_args(args: tuple, kwargs: dict) -> tuple[Optional[str], dict]:
+def _extract_api_call_args(
+    args: tuple, kwargs: dict
+) -> tuple[Optional[str], dict]:
     operation_name = args[0] if args else kwargs.get("operation_name")
     api_params = args[1] if len(args) > 1 else kwargs.get("api_params")
     return operation_name, api_params if isinstance(api_params, dict) else {}
@@ -143,8 +159,6 @@ def _build_invocation(
         )
     if operation_name in _STREAMING_OPERATIONS:
         invocation.request_stream = True
-        invocation._start_time = timeit.default_timer()  # type: ignore[attr-defined]
-    invocation.attributes["custom_aws_bedrock.operation"] = operation_name
     return invocation
 
 
@@ -181,7 +195,9 @@ def _build_converse_invocation(
         invocation.request_top_p = inference_config.get("topP")
         stop_sequences = inference_config.get("stopSequences")
         if isinstance(stop_sequences, list):
-            invocation.request_stop_sequences = [safe_str(s) for s in stop_sequences]
+            invocation.request_stop_sequences = [
+                safe_str(s) for s in stop_sequences
+            ]
 
     tool_config = api_params.get("toolConfig") or {}
     tools = tool_config.get("tools") if isinstance(tool_config, dict) else None
@@ -231,7 +247,8 @@ def _apply_response(
     if not isinstance(result, dict):
         return
     invocation.response_id = (
-        result.get("ResponseMetadata", {}).get("RequestId") or invocation.response_id
+        result.get("ResponseMetadata", {}).get("RequestId")
+        or invocation.response_id
     )
     if operation_name == "Converse":
         _apply_converse_response(invocation, result, capture_content)
@@ -304,11 +321,14 @@ def _apply_invoke_model_request(
             invocation.request_max_tokens = _first_present(
                 config, "maxTokenCount", "maxTokens"
             )
-            invocation.request_temperature = _first_present(config, "temperature")
+            invocation.request_temperature = _first_present(
+                config, "temperature"
+            )
             invocation.request_top_p = _first_present(config, "topP", "top_p")
             _set_stop_sequences(invocation, config.get("stopSequences"))
-        invocation.request_max_tokens = invocation.request_max_tokens or _first_present(
-            body, "maxTokens", "max_tokens"
+        invocation.request_max_tokens = (
+            invocation.request_max_tokens
+            or _first_present(body, "maxTokens", "max_tokens")
         )
         return
 
@@ -318,7 +338,9 @@ def _apply_invoke_model_request(
             invocation.request_max_tokens = _first_present(
                 config, "max_new_tokens", "maxTokens", "max_tokens"
             )
-            invocation.request_temperature = _first_present(config, "temperature")
+            invocation.request_temperature = _first_present(
+                config, "temperature"
+            )
             invocation.request_top_p = _first_present(config, "topP", "top_p")
             _set_stop_sequences(invocation, config.get("stopSequences"))
         return
@@ -332,22 +354,23 @@ def _apply_invoke_model_request(
         return
 
     if family == "mistral":
-        invocation.request_max_tokens = _first_present(body, "max_tokens", "maxTokens")
+        invocation.request_max_tokens = _first_present(
+            body, "max_tokens", "maxTokens"
+        )
         invocation.request_temperature = _first_present(body, "temperature")
         invocation.request_top_p = _first_present(body, "top_p", "topP")
-        _set_stop_sequences(invocation, _first_present(body, "stop", "stop_sequences"))
-        if invocation.input_tokens is None and body.get("prompt"):
-            invocation.input_tokens = _estimate_token_count(body.get("prompt"))
+        _set_stop_sequences(
+            invocation, _first_present(body, "stop", "stop_sequences")
+        )
         return
 
     if family in {"command-r", "command"}:
-        invocation.request_max_tokens = _first_present(body, "max_tokens", "maxTokens")
+        invocation.request_max_tokens = _first_present(
+            body, "max_tokens", "maxTokens"
+        )
         invocation.request_temperature = _first_present(body, "temperature")
         invocation.request_top_p = _first_present(body, "p", "top_p", "topP")
         _set_stop_sequences(invocation, body.get("stop_sequences"))
-        prompt = body.get("message") if family == "command-r" else body.get("prompt")
-        if invocation.input_tokens is None and prompt:
-            invocation.input_tokens = _estimate_token_count(prompt)
         return
 
     invocation.request_max_tokens = _first_present(
@@ -390,17 +413,21 @@ def _parse_result_body(result: dict) -> Optional[dict[str, Any]]:
 
 
 def _rebuild_body_stream(body_content: Any) -> Any:
-    raw = bytes(body_content) if isinstance(body_content, bytearray) else body_content
+    raw = (
+        bytes(body_content)
+        if isinstance(body_content, bytearray)
+        else body_content
+    )
     if isinstance(raw, str):
         raw = raw.encode("utf-8")
     if not isinstance(raw, bytes):
         raw = safe_str(raw).encode("utf-8")
-    try:
-        from botocore.response import StreamingBody
-
-        return StreamingBody(io.BytesIO(raw), len(raw))
-    except Exception:
-        return io.BytesIO(raw)
+    if StreamingBody is not None:
+        try:
+            return StreamingBody(io.BytesIO(raw), len(raw))
+        except Exception:
+            pass
+    return io.BytesIO(raw)
 
 
 def _apply_invoke_usage(invocation: LLMInvocation, body: dict) -> None:
@@ -429,11 +456,6 @@ def _apply_invoke_usage(invocation: LLMInvocation, body: dict) -> None:
         invocation.input_tokens = body.get("prompt_token_count")
     if "generation_token_count" in body:
         invocation.output_tokens = body.get("generation_token_count")
-
-    if invocation.output_tokens is None:
-        output = _extract_invoke_output_text(body)
-        if output:
-            invocation.output_tokens = _estimate_token_count(output)
 
 
 def _extract_invoke_finish_reason(body: dict) -> Any:
@@ -471,7 +493,9 @@ def _output_message_from_invoke_body(
     if isinstance(content, list):
         parts = _parts_from_invoke_content(content, provider)
         if parts:
-            return OutputMessage(role=role, parts=parts, finish_reason=finish_reason)
+            return OutputMessage(
+                role=role, parts=parts, finish_reason=finish_reason
+            )
 
     output = body.get("output")
     if isinstance(output, dict):
@@ -501,13 +525,15 @@ def _wrap_streaming_result(
     operation_name: str,
     capture_content: bool,
     handler: TelemetryHandler,
+    stream_start_time: Optional[float],
 ) -> Any:
     if not isinstance(result, dict):
         _stop_safely(handler, invocation)
         return result
 
     invocation.response_id = (
-        result.get("ResponseMetadata", {}).get("RequestId") or invocation.response_id
+        result.get("ResponseMetadata", {}).get("RequestId")
+        or invocation.response_id
     )
 
     stream_key = "stream" if operation_name == "ConverseStream" else "body"
@@ -522,6 +548,7 @@ def _wrap_streaming_result(
         operation_name=operation_name,
         capture_content=capture_content,
         handler=handler,
+        stream_start_time=stream_start_time,
     )
     return result
 
@@ -536,12 +563,14 @@ class _BedrockStreamWrapper:
         operation_name: str,
         capture_content: bool,
         handler: TelemetryHandler,
+        stream_start_time: Optional[float],
     ) -> None:
         self._stream = stream
         self._invocation = invocation
         self._operation_name = operation_name
         self._capture_content = capture_content
         self._handler = handler
+        self._stream_start_time = stream_start_time
         self._stopped = False
         self._first_chunk_processed = False
         self._role = "assistant"
@@ -562,7 +591,18 @@ class _BedrockStreamWrapper:
             self._finish()
             raise
         except Exception as error:
-            self._fail(error)
+            if not self._stopped:
+                try:
+                    self._handler.fail_llm(
+                        self._invocation,
+                        Error(
+                            type=type(error),
+                            message=truncate_error(error),
+                        ),
+                    )
+                except Exception:
+                    pass
+                self._stopped = True
             raise
 
     def close(self) -> None:
@@ -586,11 +626,10 @@ class _BedrockStreamWrapper:
         if self._first_chunk_processed:
             return
         self._first_chunk_processed = True
-        start_time = getattr(self._invocation, "_start_time", None)
-        if start_time is not None:
-            self._invocation.attributes["gen_ai.response.time_to_first_chunk"] = (
-                timeit.default_timer() - start_time
-            )
+        if self._stream_start_time is not None:
+            self._invocation.attributes[
+                "gen_ai.response.time_to_first_chunk"
+            ] = timeit.default_timer() - self._stream_start_time
 
     def _process_converse_stream_event(self, event: dict) -> None:
         if "messageStart" in event:
@@ -603,7 +642,9 @@ class _BedrockStreamWrapper:
             data = event["contentBlockStart"]
             index = data.get("contentBlockIndex", 0)
             start = data.get("start") or {}
-            tool_use = start.get("toolUse") if isinstance(start, dict) else None
+            tool_use = (
+                start.get("toolUse") if isinstance(start, dict) else None
+            )
             if isinstance(tool_use, dict):
                 self._content_blocks[index] = {
                     "type": "toolUse",
@@ -639,7 +680,9 @@ class _BedrockStreamWrapper:
                 event["messageStop"].get("stopReason")
             )
             if self._finish_reason:
-                self._invocation.response_finish_reasons = [self._finish_reason]
+                self._invocation.response_finish_reasons = [
+                    self._finish_reason
+                ]
             return
 
         if "metadata" in event:
@@ -675,7 +718,10 @@ class _BedrockStreamWrapper:
         if self._stopped:
             return
         try:
-            if self._operation_name == "ConverseStream" and self._capture_content:
+            if (
+                self._operation_name == "ConverseStream"
+                and self._capture_content
+            ):
                 parts = _parts_from_stream_blocks(
                     self._content_blocks, self._invocation.provider
                 )
@@ -707,7 +753,9 @@ class _BedrockStreamWrapper:
                     self._invocation.output_messages = [
                         OutputMessage(
                             role=self._role,
-                            parts=[Text(content="".join(self._invoke_text_parts))],
+                            parts=[
+                                Text(content="".join(self._invoke_text_parts))
+                            ],
                             finish_reason=self._finish_reason,
                         )
                     ]
@@ -724,23 +772,18 @@ class _BedrockStreamWrapper:
         finally:
             self._stopped = True
 
-    def _fail(self, error: Exception) -> None:
-        if self._stopped:
-            return
-        self._handler.fail_llm(
-            self._invocation,
-            Error(type=type(error), message=truncate_error(error)),
-        )
-        self._stopped = True
-
     def _process_titan_stream_chunk(self, chunk: dict) -> None:
         if output_text := chunk.get("outputText"):
             self._invoke_text_parts.append(safe_str(output_text))
         if stop_reason := chunk.get("completionReason"):
             self._finish_reason = _map_stop_reason(stop_reason)
             if self._finish_reason:
-                self._invocation.response_finish_reasons = [self._finish_reason]
-        self._apply_invocation_metrics(chunk.get("amazon-bedrock-invocationMetrics"))
+                self._invocation.response_finish_reasons = [
+                    self._finish_reason
+                ]
+        self._apply_invocation_metrics(
+            chunk.get("amazon-bedrock-invocationMetrics")
+        )
 
     def _process_anthropic_stream_chunk(self, chunk: dict) -> None:
         message_type = chunk.get("type")
@@ -800,9 +843,14 @@ class _BedrockStreamWrapper:
             if stop_reason := delta.get("stop_reason"):
                 self._finish_reason = _map_stop_reason(stop_reason)
                 if self._finish_reason:
-                    self._invocation.response_finish_reasons = [self._finish_reason]
+                    self._invocation.response_finish_reasons = [
+                        self._finish_reason
+                    ]
             usage = chunk.get("usage") or {}
-            if isinstance(usage, dict) and usage.get("output_tokens") is not None:
+            if (
+                isinstance(usage, dict)
+                and usage.get("output_tokens") is not None
+            ):
                 self._invocation.output_tokens = usage.get("output_tokens")
             return
 
@@ -817,7 +865,9 @@ class _BedrockStreamWrapper:
         if stop_reason := _extract_invoke_finish_reason(chunk):
             self._finish_reason = _map_stop_reason(stop_reason)
             if self._finish_reason:
-                self._invocation.response_finish_reasons = [self._finish_reason]
+                self._invocation.response_finish_reasons = [
+                    self._finish_reason
+                ]
         if self._capture_content:
             output = _extract_invoke_output_text(chunk)
             if output:
@@ -827,9 +877,13 @@ class _BedrockStreamWrapper:
         if not isinstance(invocation_metrics, dict):
             return
         if invocation_metrics.get("inputTokenCount") is not None:
-            self._invocation.input_tokens = invocation_metrics.get("inputTokenCount")
+            self._invocation.input_tokens = invocation_metrics.get(
+                "inputTokenCount"
+            )
         if invocation_metrics.get("outputTokenCount") is not None:
-            self._invocation.output_tokens = invocation_metrics.get("outputTokenCount")
+            self._invocation.output_tokens = invocation_metrics.get(
+                "outputTokenCount"
+            )
 
 
 def _input_messages_from_converse_request(
@@ -860,7 +914,9 @@ def _message_from_converse_message(
     if not parts:
         parts = [Text(content="")]
     if finish_reason is not None or role == "assistant":
-        return OutputMessage(role=role, parts=parts, finish_reason=finish_reason)
+        return OutputMessage(
+            role=role, parts=parts, finish_reason=finish_reason
+        )
     return InputMessage(role=role, parts=parts)
 
 
@@ -948,7 +1004,9 @@ def _input_messages_from_invoke_body(
         messages: list[InputMessage] = []
         system = body.get("system")
         if isinstance(system, str) and system:
-            messages.append(InputMessage(role="system", parts=[Text(content=system)]))
+            messages.append(
+                InputMessage(role="system", parts=[Text(content=system)])
+            )
         for message in body["messages"]:
             if not isinstance(message, dict):
                 continue
@@ -963,11 +1021,15 @@ def _input_messages_from_invoke_body(
 
     prompt = body.get("prompt") or body.get("inputText") or body.get("message")
     if prompt is not None:
-        return [InputMessage(role="user", parts=[Text(content=safe_str(prompt))])]
+        return [
+            InputMessage(role="user", parts=[Text(content=safe_str(prompt))])
+        ]
     return []
 
 
-def _parts_from_invoke_content(content: list, provider: Optional[str]) -> list[Any]:
+def _parts_from_invoke_content(
+    content: list, provider: Optional[str]
+) -> list[Any]:
     parts: list[Any] = []
     for item in content:
         if isinstance(item, dict):
@@ -1031,7 +1093,8 @@ def _request_functions_from_invoke_tools(tools: Any) -> list[dict[str, Any]]:
             {
                 "name": tool.get("name"),
                 "description": tool.get("description"),
-                "parameters": tool.get("input_schema") or tool.get("parameters"),
+                "parameters": tool.get("input_schema")
+                or tool.get("parameters"),
             }
         )
     return functions
@@ -1074,7 +1137,9 @@ def _extract_invoke_output_text(body: dict) -> Optional[str]:
         message = output.get("message")
         if isinstance(message, dict):
             parts = _parts_from_content_blocks(message.get("content"), None)
-            text_parts = [part.content for part in parts if isinstance(part, Text)]
+            text_parts = [
+                part.content for part in parts if isinstance(part, Text)
+            ]
             if text_parts:
                 return "".join(text_parts)
     return None
@@ -1134,7 +1199,9 @@ def _model_family(model_id: str) -> str:
 
 
 def _server_from_client(instance: Any) -> tuple[Optional[str], Optional[int]]:
-    endpoint_url = getattr(getattr(instance, "meta", None), "endpoint_url", None)
+    endpoint_url = getattr(
+        getattr(instance, "meta", None), "endpoint_url", None
+    )
     if not endpoint_url:
         return None, None
     try:
@@ -1166,15 +1233,15 @@ def _first_present(source: dict, *keys: str) -> Any:
     return None
 
 
-def _set_stop_sequences(invocation: LLMInvocation, stop_sequences: Any) -> None:
+def _set_stop_sequences(
+    invocation: LLMInvocation, stop_sequences: Any
+) -> None:
     if isinstance(stop_sequences, str):
         invocation.request_stop_sequences = [stop_sequences]
     elif isinstance(stop_sequences, list):
-        invocation.request_stop_sequences = [safe_str(s) for s in stop_sequences]
-
-
-def _estimate_token_count(value: Any) -> int:
-    return math.ceil(len(safe_str(value)) / 6)
+        invocation.request_stop_sequences = [
+            safe_str(s) for s in stop_sequences
+        ]
 
 
 def _coerce_int(value: Any) -> Optional[int]:
