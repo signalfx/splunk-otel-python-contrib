@@ -62,6 +62,12 @@ class CompositeEmitter(EmitterMeta):
     def on_error(self, error: Error, obj: Any) -> None:  # type: ignore[override]
         self._dispatch(_CATEGORY_END_ORDER, "on_error", obj=obj, error=error)
 
+    def apply_evaluation_attributes(self, invocation: Any) -> None:
+        for emitter in self._categories.get("span", []):
+            fn = getattr(emitter, "apply_evaluation_attributes", None)
+            if callable(fn):
+                fn(invocation)
+
     def on_evaluation_results(
         self,
         results: Sequence[EvaluationResult],

@@ -391,3 +391,99 @@ class TestShutdown:
         handler.stop_llm(inv)
 
         assert called, "on_end must still run inline after shutdown"
+
+
+# ---------------------------------------------------------------------------
+# evaluation_error written to span after _notify_completion (async path)
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluationErrorWrittenAfterCompletion:
+    """evaluation_error set by a completion callback must appear on the span.
+
+    Regression test for the ordering bug: previously _apply_evaluation_attributes
+    ran inside on_end (before _notify_completion), so evaluation_error was always
+    None at write time. Now it runs inside _finalize() after _notify_completion.
+    """
+
+    def _make_handler_with_span_emitter(self, monkeypatch):
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+        from opentelemetry.util.genai.emitters.span import SpanEmitter
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer(__name__)
+
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION", "true"
+        )
+        handler = get_telemetry_handler()
+        span_emitter = SpanEmitter(tracer=tracer, capture_content=False)
+        handler._emitter._categories["span"] = [span_emitter]
+        return handler, exporter
+
+    def test_evaluation_error_written_to_span_sync(self, monkeypatch):
+        """sync mode: evaluation_error set by callback appears on exported span."""
+        from opentelemetry.util.genai.callbacks import CompletionCallback
+
+        handler, exporter = self._make_handler_with_span_emitter(monkeypatch)
+
+        class _QueueFullCallback(CompletionCallback):
+            def on_completion(self, invocation):
+                invocation.evaluation_error = "client_evaluation_queue_full"
+
+        handler.register_completion_callback(_QueueFullCallback())
+
+        inv = _make_llm_invocation()
+        handler.start_llm(inv)
+        handler.stop_llm(inv)
+        handler.shutdown(wait=True)
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert (
+            spans[0]._attributes.get("gen_ai.evaluation.error")
+            == "client_evaluation_queue_full"
+        )
+
+    def test_evaluation_error_written_to_span_async(self, monkeypatch):
+        """async mode: evaluation_error set by callback appears on exported span."""
+        from opentelemetry.util.genai.callbacks import CompletionCallback
+
+        handler, exporter = self._make_handler_with_span_emitter(monkeypatch)
+
+        class _QueueFullCallback(CompletionCallback):
+            def on_completion(self, invocation):
+                invocation.evaluation_error = "client_evaluation_queue_full"
+
+        handler.register_completion_callback(_QueueFullCallback())
+
+        inv = _make_llm_invocation()
+        handler.start_llm(inv)
+        handler.stop_llm(inv)
+        handler.shutdown(wait=True)
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert (
+            spans[0]._attributes.get("gen_ai.evaluation.error")
+            == "client_evaluation_queue_full"
+        )
+
+    def test_no_evaluation_error_attribute_when_none(self, monkeypatch):
+        """When evaluation_error is None, gen_ai.evaluation.error must not appear on span."""
+        handler, exporter = self._make_handler_with_span_emitter(monkeypatch)
+
+        inv = _make_llm_invocation()
+        handler.start_llm(inv)
+        handler.stop_llm(inv)
+        handler.shutdown(wait=True)
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert "gen_ai.evaluation.error" not in spans[0]._attributes

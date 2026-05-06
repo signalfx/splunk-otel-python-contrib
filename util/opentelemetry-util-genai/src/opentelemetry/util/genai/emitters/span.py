@@ -224,20 +224,21 @@ def _apply_evaluation_attributes(
         span.set_attribute(
             "gen_ai.evaluation.sampled", invocation.sample_for_evaluation
         )
-        span.set_attribute(
-            "gen_ai.evaluation.error",
-            str(invocation.evaluation_error),
-        )
+        if invocation.evaluation_error is not None:
+            span.set_attribute(
+                "gen_ai.evaluation.error",
+                str(invocation.evaluation_error),
+            )
     elif span is not None and hasattr(span, "_attributes"):
         # Fallback for ReadableSpan: directly mutate _attributes
         try:
             span._attributes["gen_ai.evaluation.sampled"] = str(
                 invocation.sample_for_evaluation
             ).lower()
-            span._attributes["gen_ai.evaluation.error"] = str(
-                invocation.evaluation_error
-            )
-
+            if invocation.evaluation_error is not None:
+                span._attributes["gen_ai.evaluation.error"] = str(
+                    invocation.evaluation_error
+                )
         except Exception:
             pass
 
@@ -466,7 +467,6 @@ class SpanEmitter(EmitterMeta):
             self._apply_start_attrs(invocation)
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
-        _apply_evaluation_attributes(invocation.span, invocation)  # type: ignore[override]
         if isinstance(invocation, Workflow):
             self._finish_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
@@ -493,6 +493,19 @@ class SpanEmitter(EmitterMeta):
             if is_recording:
                 self._apply_finish_attrs(invocation)
                 span.end()
+
+    def apply_evaluation_attributes(self, invocation: Any) -> None:
+        """Write evaluation attributes to the invocation's span.
+
+        Called from handler._finalize() after _notify_completion() so that
+        evaluation_error reflects the final value set by completion callbacks
+        (e.g. "client_evaluation_queue_full"). The span is already ended at
+        this point so the _attributes fallback path in
+        _apply_evaluation_attributes is used.
+        """
+        _apply_evaluation_attributes(
+            getattr(invocation, "span", None), invocation
+        )
 
     def _apply_error_status(self, span: Span, error: Error) -> None:
         """Apply span status based on error classification.

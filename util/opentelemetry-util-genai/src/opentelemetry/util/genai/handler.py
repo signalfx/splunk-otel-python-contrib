@@ -809,6 +809,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -840,6 +841,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -879,6 +881,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -894,6 +897,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -933,6 +937,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -948,6 +953,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -981,6 +987,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -994,6 +1001,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
+            self._emitter.apply_evaluation_attributes(invocation)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -1296,6 +1304,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(workflow)
+            self._emitter.apply_evaluation_attributes(workflow)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -1309,6 +1318,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(workflow)
+            self._emitter.apply_evaluation_attributes(workflow)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -1359,6 +1369,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(agent)
+            self._emitter.apply_evaluation_attributes(agent)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -1382,6 +1393,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(agent)
+            self._emitter.apply_evaluation_attributes(agent)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -1408,6 +1420,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(step)
+            self._emitter.apply_evaluation_attributes(step)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)
@@ -1421,6 +1434,7 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(step)
+            self._emitter.apply_evaluation_attributes(step)
             self._flush_metrics()
 
         self._submit_finalization(_finalize)

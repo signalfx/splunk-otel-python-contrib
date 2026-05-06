@@ -2,7 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
-## [Unreleased]
+## [0.1.15] - Unreleased
+
+### Added
+
+- **Async finalization (`OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION`)** — Offloads the expensive part of `stop_*`/`fail_*` calls (completion callbacks and metric `force_flush`) to a background `ThreadPoolExecutor`, removing them from the caller's request path. `end_time`, `_pop_current_span`, and `span.end()` always run inline to preserve timing accuracy, span parent/child relationships, and framework span-lifecycle expectations. Defaults to `false` (non-breaking opt-in). Queue size is configurable via `OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE` (default 128); falls back to inline execution when the queue is full so telemetry is never dropped.
 
 ### Added
 
@@ -14,6 +18,8 @@ All notable changes to this repository are documented in this file.
 - **Removed experimental mode gating** — Content capture no longer requires an experimental stability flag.
 
 ### Fixed
+- **`gen_ai.evaluation.error` now reflects final value after completion callbacks** — Previously `_apply_evaluation_attributes` ran inside `on_end` before `_notify_completion`, so values set by callbacks (e.g. `"client_evaluation_queue_full"` when the eval queue is full) were never written to the span. It now runs inside `_finalize()` after `_notify_completion` completes, in both sync and async modes.
+- **`gen_ai.evaluation.error` no longer written when `None`** — Previously `str(None)` (`"None"`) was written to the span attribute when no evaluation error occurred. The attribute is now omitted entirely when `evaluation_error` is `None`.
 - **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.
 - **Empty tool_definitions check** — Added validation to skip setting `gen_ai.tool.definitions` when the value is empty (`"[]"`, `"null"`, `"{}"`), not just `None` or empty string.
 
