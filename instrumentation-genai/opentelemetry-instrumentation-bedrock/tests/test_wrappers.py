@@ -28,6 +28,18 @@ from opentelemetry.instrumentation.bedrock.wrappers import (
 from .conftest import FakeClient, FakeStream
 
 
+class FakeReadBody:
+    def __init__(self, body):
+        self._body = body
+        self.closed = False
+
+    def read(self):
+        return self._body
+
+    def close(self):
+        self.closed = True
+
+
 def _call_wrapper(
     handler,
     client,
@@ -332,6 +344,298 @@ def test_invoke_model_uses_token_headers_for_unknown_response(
     assert invocation.input_tokens == 6
     assert invocation.output_tokens == 9
     assert invocation.output_messages == []
+
+
+def test_invoke_model_titan_reads_and_replaces_streaming_body(
+    stub_handler, fake_client
+):
+    params = {
+        "modelId": "amazon.titan-text-express-v1",
+        "body": (
+            b'{"inputText":"hello titan","textGenerationConfig":'
+            b'{"maxTokenCount":64,"temperature":0.3,"topP":0.8,'
+            b'"stopSequences":["END"]}}'
+        ),
+    }
+    response_bytes = (
+        b'{"inputTextTokenCount":4,"results":[{"outputText":"titan reply",'
+        b'"tokenCount":7,"completionReason":"FINISH"}]}'
+    )
+    original_body = FakeReadBody(response_bytes)
+    result = {
+        "body": original_body,
+        "ResponseMetadata": {"RequestId": "request-titan"},
+    }
+
+    _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModel",
+        params,
+        result,
+        capture_content=True,
+    )
+
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.operation == "text_completion"
+    assert invocation.request_max_tokens == 64
+    assert invocation.request_temperature == 0.3
+    assert invocation.request_top_p == 0.8
+    assert invocation.request_stop_sequences == ["END"]
+    assert invocation.input_tokens == 4
+    assert invocation.output_tokens == 7
+    assert invocation.response_finish_reasons == ["FINISH"]
+    assert invocation.output_messages[0].parts[0].content == "titan reply"
+    assert original_body.closed is True
+    assert result["body"].read() == response_bytes
+
+
+def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
+    params = {
+        "modelId": "amazon.nova-pro-v1:0",
+        "body": (
+            b'{"messages":[{"role":"user","content":[{"text":"weather"}]}],'
+            b'"inferenceConfig":{"max_new_tokens":96,"temperature":0.4,'
+            b'"topP":0.75,"stopSequences":["stop"]}}'
+        ),
+    }
+    result = {
+        "body": (
+            b'{"usage":{"inputTokens":10,"outputTokens":5},'
+            b'"stopReason":"tool_use","output":{"message":{"role":"assistant",'
+            b'"content":[{"text":"checking"},{"toolUse":{"toolUseId":"tool-9",'
+            b'"name":"get_weather","input":{"city":"Seattle"}}}]}}}'
+        )
+    }
+
+    _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModel",
+        params,
+        result,
+        capture_content=True,
+    )
+
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.request_max_tokens == 96
+    assert invocation.request_temperature == 0.4
+    assert invocation.request_top_p == 0.75
+    assert invocation.request_stop_sequences == ["stop"]
+    assert invocation.input_tokens == 10
+    assert invocation.output_tokens == 5
+    assert invocation.response_finish_reasons == ["tool_calls"]
+    parts = invocation.output_messages[0].parts
+    assert parts[0].content == "checking"
+    assert isinstance(parts[1], ToolCall)
+    assert parts[1].id == "tool-9"
+    assert parts[1].arguments == {"city": "Seattle"}
+
+
+@pytest.mark.parametrize(
+    (
+        "model_id",
+        "request_body",
+        "response_body",
+        "expected_max_tokens",
+        "expected_top_p",
+        "expected_input_tokens",
+        "expected_output_tokens",
+        "expected_output",
+    ),
+    [
+        (
+            "cohere.command-r-v1:0",
+            b'{"message":"hello cohere","max_tokens":16,"p":0.6}',
+            b'{"text":"cohere reply","finish_reason":"COMPLETE"}',
+            16,
+            0.6,
+            2,
+            2,
+            "cohere reply",
+        ),
+        (
+            "meta.llama3-8b-instruct-v1:0",
+            b'{"prompt":"hello llama","max_gen_len":32,"top_p":0.7}',
+            b'{"generation":"llama reply","prompt_token_count":3,'
+            b'"generation_token_count":4,"stop_reason":"stop"}',
+            32,
+            0.7,
+            3,
+            4,
+            "llama reply",
+        ),
+        (
+            "mistral.mistral-large-2402-v1:0",
+            b'{"prompt":"hello mistral","max_tokens":24,"top_p":0.9,"stop":"</s>"}',
+            b'{"outputs":[{"text":"mistral reply","stop_reason":"stop"}]}',
+            24,
+            0.9,
+            3,
+            3,
+            "mistral reply",
+        ),
+    ],
+)
+def test_invoke_model_provider_specific_json_shapes(
+    stub_handler,
+    fake_client,
+    model_id,
+    request_body,
+    response_body,
+    expected_max_tokens,
+    expected_top_p,
+    expected_input_tokens,
+    expected_output_tokens,
+    expected_output,
+):
+    params = {"modelId": model_id, "body": request_body}
+    result = {"body": response_body}
+
+    _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModel",
+        params,
+        result,
+        capture_content=True,
+    )
+
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.request_max_tokens == expected_max_tokens
+    assert invocation.request_top_p == expected_top_p
+    assert invocation.input_tokens == expected_input_tokens
+    assert invocation.output_tokens == expected_output_tokens
+    assert invocation.output_messages[0].parts[0].content == expected_output
+
+
+def test_invoke_model_stream_titan_maps_text_and_metrics(stub_handler, fake_client):
+    events = [
+        {"chunk": {"bytes": b'{"outputText":"Hel"}'}},
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"outputText":"lo","completionReason":"FINISH",'
+                    b'"amazon-bedrock-invocationMetrics":'
+                    b'{"inputTokenCount":3,"outputTokenCount":2}}'
+                )
+            }
+        },
+    ]
+    result = {"body": FakeStream(events), "ResponseMetadata": {"RequestId": "rid"}}
+    params = {"modelId": "amazon.titan-text-express-v1", "body": b'{"inputText":"hi"}'}
+
+    wrapped_result = _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModelWithResponseStream",
+        params,
+        result,
+        capture_content=True,
+    )
+
+    assert list(wrapped_result["body"]) == events
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.request_stream is True
+    assert invocation.input_tokens == 3
+    assert invocation.output_tokens == 2
+    assert invocation.response_finish_reasons == ["FINISH"]
+    assert invocation.output_messages[0].parts[0].content == "Hello"
+
+
+def test_invoke_model_stream_claude_maps_text_tool_and_metrics(
+    stub_handler, fake_client
+):
+    events = [
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"message_start","message":{"id":"msg-stream",'
+                    b'"role":"assistant","model":"claude-3","usage":'
+                    b'{"input_tokens":4}}}'
+                )
+            }
+        },
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"content_block_start","index":0,'
+                    b'"content_block":{"type":"text","text":""}}'
+                )
+            }
+        },
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"content_block_delta","index":0,'
+                    b'"delta":{"type":"text_delta","text":"Checking"}}'
+                )
+            }
+        },
+        {"chunk": {"bytes": b'{"type":"content_block_stop","index":0}'}},
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"content_block_start","index":1,'
+                    b'"content_block":{"type":"tool_use","id":"tool-1",'
+                    b'"name":"get_weather","input":{}}}'
+                )
+            }
+        },
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"content_block_delta","index":1,'
+                    b'"delta":{"type":"input_json_delta",'
+                    b'"partial_json":"{\\"city\\":\\"Paris\\"}"}}'
+                )
+            }
+        },
+        {"chunk": {"bytes": b'{"type":"content_block_stop","index":1}'}},
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"message_delta","delta":{"stop_reason":"tool_use"},'
+                    b'"usage":{"output_tokens":6}}'
+                )
+            }
+        },
+        {
+            "chunk": {
+                "bytes": (
+                    b'{"type":"message_stop","amazon-bedrock-invocationMetrics":'
+                    b'{"inputTokenCount":4,"outputTokenCount":6}}'
+                )
+            }
+        },
+    ]
+    result = {"body": FakeStream(events), "ResponseMetadata": {"RequestId": "rid"}}
+    params = {
+        "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
+        "body": b'{"messages":[{"role":"user","content":"weather"}]}',
+    }
+
+    wrapped_result = _call_wrapper(
+        stub_handler,
+        fake_client,
+        "InvokeModelWithResponseStream",
+        params,
+        result,
+        capture_content=True,
+    )
+
+    assert list(wrapped_result["body"]) == events
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.response_id == "msg-stream"
+    assert invocation.response_model_name == "claude-3"
+    assert invocation.input_tokens == 4
+    assert invocation.output_tokens == 6
+    assert invocation.response_finish_reasons == ["tool_calls"]
+    parts = invocation.output_messages[0].parts
+    assert parts[0].content == "Checking"
+    assert isinstance(parts[1], ToolCall)
+    assert parts[1].name == "get_weather"
+    assert parts[1].arguments == {"city": "Paris"}
 
 
 def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):

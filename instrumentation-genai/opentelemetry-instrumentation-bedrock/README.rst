@@ -51,9 +51,9 @@ What Gets Instrumented
 
 - ``bedrock-runtime.Converse`` -> ``LLMInvocation``
 - ``bedrock-runtime.ConverseStream`` -> streaming ``LLMInvocation``
-- ``bedrock-runtime.InvokeModel`` -> conservative ``LLMInvocation``
-- ``bedrock-runtime.InvokeModelWithResponseStream`` -> conservative streaming
-  ``LLMInvocation``
+- ``bedrock-runtime.InvokeModel`` -> provider-aware ``LLMInvocation``
+- ``bedrock-runtime.InvokeModelWithResponseStream`` -> provider-aware streaming
+  ``LLMInvocation`` for supported streamed JSON chunk formats
 
 Agent Runtime calls such as ``bedrock-agent-runtime.invoke_agent`` are not
 instrumented by this package. Agent orchestration spans belong in AgentCore or
@@ -73,6 +73,25 @@ Content capture follows the shared GenAI environment variables:
 When content capture is disabled, the instrumentation still emits model,
 operation, token, finish reason, and request metadata, but message bodies and
 tool arguments/results are omitted.
+
+InvokeModel Coverage
+--------------------
+
+``InvokeModel`` and ``InvokeModelWithResponseStream`` support generic JSON
+metadata extraction plus provider-specific shapes aligned with upstream
+OpenTelemetry botocore Bedrock behavior:
+
+- Amazon Titan
+- Amazon Nova
+- Anthropic Claude
+- Cohere Command and Command R
+- Meta Llama
+- Mistral
+
+For non-streaming ``InvokeModel`` responses, the instrumentation reads
+``botocore.response.StreamingBody`` only to parse supported JSON response
+shapes, then replaces the response body with a fresh stream so application code
+can still read it.
 
 Telemetry Details
 -----------------

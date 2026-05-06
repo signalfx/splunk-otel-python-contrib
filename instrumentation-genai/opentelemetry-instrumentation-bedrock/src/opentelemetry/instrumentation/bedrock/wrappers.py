@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import io
+import math
 import timeit
 from typing import Any, Callable, Optional
 from urllib.parse import urlparse
@@ -54,6 +56,7 @@ _SUPPORTED_OPERATIONS = {
 _STREAMING_OPERATIONS = {"ConverseStream", "InvokeModelWithResponseStream"}
 _PROFILE_PREFIXES = {"us", "eu", "apac"}
 _STREAM_BUFFER_LIMIT = 64 * 1024
+_TEXT_COMPLETION_OPERATION = "text_completion"
 
 
 def bedrock_runtime_api_call_wrapper(
@@ -204,15 +207,7 @@ def _build_invoke_model_invocation(
     invocation = _base_invocation(instance, model_id, operation_name)
     body = parse_json_body(api_params.get("body")) or {}
 
-    invocation.request_max_tokens = _first_present(
-        body, "max_tokens", "maxTokens", "max_tokens_to_sample"
-    )
-    invocation.request_temperature = _first_present(body, "temperature")
-    invocation.request_top_p = _first_present(body, "top_p", "topP")
-    invocation.request_top_k = _first_present(body, "top_k", "topK")
-    stop_sequences = _first_present(body, "stop_sequences", "stopSequences")
-    if isinstance(stop_sequences, list):
-        invocation.request_stop_sequences = [safe_str(s) for s in stop_sequences]
+    _apply_invoke_model_request(invocation, model_id, body)
 
     tools = body.get("tools")
     invocation.request_functions = _request_functions_from_invoke_tools(tools)
@@ -271,7 +266,7 @@ def _apply_converse_response(
 def _apply_invoke_model_response(
     invocation: LLMInvocation, result: dict, capture_content: bool
 ) -> None:
-    body = parse_json_body(result.get("body")) or {}
+    body = _parse_result_body(result) or {}
     if not body:
         _apply_token_headers(invocation, result)
         return
@@ -279,32 +274,225 @@ def _apply_invoke_model_response(
     invocation.response_id = body.get("id") or invocation.response_id
     invocation.response_model_name = body.get("model") or body.get("modelId")
 
-    usage = body.get("usage") or {}
-    if isinstance(usage, dict):
-        invocation.input_tokens = _first_present(
-            usage, "input_tokens", "inputTokens", "prompt_tokens"
-        )
-        invocation.output_tokens = _first_present(
-            usage, "output_tokens", "outputTokens", "completion_tokens"
-        )
+    _apply_invoke_usage(invocation, body)
     _apply_token_headers(invocation, result)
 
-    stop_reason = _first_present(
-        body, "stop_reason", "stopReason", "finish_reason", "finishReason"
-    )
+    stop_reason = _extract_invoke_finish_reason(body)
     if stop_reason:
         invocation.response_finish_reasons = [_map_stop_reason(stop_reason)]
 
     if capture_content:
+        output_message = _output_message_from_invoke_body(
+            body,
+            invocation.provider,
+            _map_stop_reason(stop_reason),
+        )
+        if output_message is not None:
+            invocation.output_messages = [output_message]
+
+
+def _apply_invoke_model_request(
+    invocation: LLMInvocation,
+    model_id: str,
+    body: dict,
+) -> None:
+    family = _model_family(model_id)
+    if family == "titan":
+        invocation.operation = _TEXT_COMPLETION_OPERATION
+        config = body.get("textGenerationConfig") or {}
+        if isinstance(config, dict):
+            invocation.request_max_tokens = _first_present(
+                config, "maxTokenCount", "maxTokens"
+            )
+            invocation.request_temperature = _first_present(config, "temperature")
+            invocation.request_top_p = _first_present(config, "topP", "top_p")
+            _set_stop_sequences(invocation, config.get("stopSequences"))
+        invocation.request_max_tokens = invocation.request_max_tokens or _first_present(
+            body, "maxTokens", "max_tokens"
+        )
+        return
+
+    if family == "nova":
+        config = body.get("inferenceConfig") or {}
+        if isinstance(config, dict):
+            invocation.request_max_tokens = _first_present(
+                config, "max_new_tokens", "maxTokens", "max_tokens"
+            )
+            invocation.request_temperature = _first_present(config, "temperature")
+            invocation.request_top_p = _first_present(config, "topP", "top_p")
+            _set_stop_sequences(invocation, config.get("stopSequences"))
+        return
+
+    if family == "llama":
+        invocation.request_max_tokens = _first_present(
+            body, "max_gen_len", "max_tokens", "maxTokens"
+        )
+        invocation.request_temperature = _first_present(body, "temperature")
+        invocation.request_top_p = _first_present(body, "top_p", "topP")
+        return
+
+    if family == "mistral":
+        invocation.request_max_tokens = _first_present(body, "max_tokens", "maxTokens")
+        invocation.request_temperature = _first_present(body, "temperature")
+        invocation.request_top_p = _first_present(body, "top_p", "topP")
+        _set_stop_sequences(invocation, _first_present(body, "stop", "stop_sequences"))
+        if invocation.input_tokens is None and body.get("prompt"):
+            invocation.input_tokens = _estimate_token_count(body.get("prompt"))
+        return
+
+    if family in {"command-r", "command"}:
+        invocation.request_max_tokens = _first_present(body, "max_tokens", "maxTokens")
+        invocation.request_temperature = _first_present(body, "temperature")
+        invocation.request_top_p = _first_present(body, "p", "top_p", "topP")
+        _set_stop_sequences(invocation, body.get("stop_sequences"))
+        prompt = body.get("message") if family == "command-r" else body.get("prompt")
+        if invocation.input_tokens is None and prompt:
+            invocation.input_tokens = _estimate_token_count(prompt)
+        return
+
+    invocation.request_max_tokens = _first_present(
+        body, "max_tokens", "maxTokens", "max_tokens_to_sample"
+    )
+    invocation.request_temperature = _first_present(body, "temperature")
+    invocation.request_top_p = _first_present(body, "top_p", "topP")
+    invocation.request_top_k = _first_present(body, "top_k", "topK")
+    _set_stop_sequences(
+        invocation, _first_present(body, "stop_sequences", "stopSequences")
+    )
+
+
+def _parse_result_body(result: dict) -> Optional[dict[str, Any]]:
+    body = result.get("body")
+    parsed = parse_json_body(body)
+    if parsed is not None:
+        return parsed
+    if body is None or not hasattr(body, "read"):
+        return None
+
+    try:
+        body_content = body.read()
+    except Exception:
+        return None
+
+    try:
+        result["body"] = _rebuild_body_stream(body_content)
+    except Exception:
+        pass
+
+    try:
+        close = getattr(body, "close", None)
+        if close is not None:
+            close()
+    except Exception:
+        pass
+
+    return parse_json_body(body_content)
+
+
+def _rebuild_body_stream(body_content: Any) -> Any:
+    raw = bytes(body_content) if isinstance(body_content, bytearray) else body_content
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
+    if not isinstance(raw, bytes):
+        raw = safe_str(raw).encode("utf-8")
+    try:
+        from botocore.response import StreamingBody
+
+        return StreamingBody(io.BytesIO(raw), len(raw))
+    except Exception:
+        return io.BytesIO(raw)
+
+
+def _apply_invoke_usage(invocation: LLMInvocation, body: dict) -> None:
+    usage = body.get("usage") or {}
+    if isinstance(usage, dict):
+        input_tokens = _first_present(
+            usage, "input_tokens", "inputTokens", "prompt_tokens"
+        )
+        output_tokens = _first_present(
+            usage, "output_tokens", "outputTokens", "completion_tokens"
+        )
+        if input_tokens is not None:
+            invocation.input_tokens = input_tokens
+        if output_tokens is not None:
+            invocation.output_tokens = output_tokens
+
+    if "inputTextTokenCount" in body:
+        invocation.input_tokens = body.get("inputTextTokenCount")
+    results = body.get("results")
+    if isinstance(results, list) and results:
+        first_result = results[0]
+        if isinstance(first_result, dict) and "tokenCount" in first_result:
+            invocation.output_tokens = first_result.get("tokenCount")
+
+    if "prompt_token_count" in body:
+        invocation.input_tokens = body.get("prompt_token_count")
+    if "generation_token_count" in body:
+        invocation.output_tokens = body.get("generation_token_count")
+
+    if invocation.output_tokens is None:
         output = _extract_invoke_output_text(body)
-        if output is not None:
-            invocation.output_messages = [
-                OutputMessage(
-                    role="assistant",
-                    parts=[Text(content=output)],
-                    finish_reason=_map_stop_reason(stop_reason),
-                )
-            ]
+        if output:
+            invocation.output_tokens = _estimate_token_count(output)
+
+
+def _extract_invoke_finish_reason(body: dict) -> Any:
+    if (
+        stop_reason := _first_present(
+            body, "stop_reason", "stopReason", "finish_reason", "finishReason"
+        )
+    ) is not None:
+        return stop_reason
+    results = body.get("results")
+    if isinstance(results, list) and results:
+        first_result = results[0]
+        if isinstance(first_result, dict):
+            return first_result.get("completionReason")
+    generations = body.get("generations")
+    if isinstance(generations, list) and generations:
+        first_generation = generations[0]
+        if isinstance(first_generation, dict):
+            return first_generation.get("finish_reason")
+    outputs = body.get("outputs")
+    if isinstance(outputs, list) and outputs:
+        first_output = outputs[0]
+        if isinstance(first_output, dict):
+            return first_output.get("stop_reason")
+    return None
+
+
+def _output_message_from_invoke_body(
+    body: dict,
+    provider: Optional[str],
+    finish_reason: Optional[str],
+) -> Optional[OutputMessage]:
+    role = safe_str(body.get("role") or "assistant")
+    content = body.get("content")
+    if isinstance(content, list):
+        parts = _parts_from_invoke_content(content, provider)
+        if parts:
+            return OutputMessage(role=role, parts=parts, finish_reason=finish_reason)
+
+    output = body.get("output")
+    if isinstance(output, dict):
+        message = output.get("message")
+        if isinstance(message, dict):
+            parsed = _message_from_converse_message(
+                message,
+                provider,
+                finish_reason=finish_reason,
+            )
+            if isinstance(parsed, OutputMessage):
+                return parsed
+
+    output_text = _extract_invoke_output_text(body)
+    if output_text is None:
+        return None
+    return OutputMessage(
+        role=role,
+        parts=[Text(content=output_text)],
+        finish_reason=finish_reason,
+    )
 
 
 def _wrap_streaming_result(
@@ -359,6 +547,7 @@ class _BedrockStreamWrapper:
         self._role = "assistant"
         self._content_blocks: dict[int, dict[str, Any]] = {}
         self._finish_reason: Optional[str] = None
+        self._invoke_text_parts: list[str] = []
         self._invoke_body = bytearray()
 
     def __iter__(self) -> "_BedrockStreamWrapper":
@@ -462,6 +651,18 @@ class _BedrockStreamWrapper:
     def _process_invoke_model_stream_event(self, event: dict) -> None:
         chunk = event.get("chunk") or {}
         chunk_bytes = chunk.get("bytes") if isinstance(chunk, dict) else None
+        parsed_chunk = parse_json_body(chunk_bytes) or {}
+        if parsed_chunk:
+            family = _model_family(self._invocation.request_model)
+            if family == "titan":
+                self._process_titan_stream_chunk(parsed_chunk)
+            elif family == "nova":
+                self._process_converse_stream_event(parsed_chunk)
+            elif family == "claude":
+                self._process_anthropic_stream_chunk(parsed_chunk)
+            else:
+                self._process_generic_stream_chunk(parsed_chunk)
+
         if (
             self._capture_content
             and isinstance(chunk_bytes, (bytes, bytearray))
@@ -491,16 +692,34 @@ class _BedrockStreamWrapper:
                 and self._capture_content
                 and self._invoke_body
             ):
-                body = parse_json_body(bytes(self._invoke_body)) or {}
-                output = _extract_invoke_output_text(body)
-                if output:
+                parts = _parts_from_stream_blocks(
+                    self._content_blocks, self._invocation.provider
+                )
+                if parts:
                     self._invocation.output_messages = [
                         OutputMessage(
-                            role="assistant",
-                            parts=[Text(content=output)],
-                            finish_reason=None,
+                            role=self._role,
+                            parts=parts,
+                            finish_reason=self._finish_reason,
                         )
                     ]
+                elif self._invoke_text_parts:
+                    self._invocation.output_messages = [
+                        OutputMessage(
+                            role=self._role,
+                            parts=[Text(content="".join(self._invoke_text_parts))],
+                            finish_reason=self._finish_reason,
+                        )
+                    ]
+                else:
+                    body = parse_json_body(bytes(self._invoke_body)) or {}
+                    output_message = _output_message_from_invoke_body(
+                        body,
+                        self._invocation.provider,
+                        self._finish_reason,
+                    )
+                    if output_message is not None:
+                        self._invocation.output_messages = [output_message]
             self._handler.stop_llm(self._invocation)
         finally:
             self._stopped = True
@@ -513,6 +732,104 @@ class _BedrockStreamWrapper:
             Error(type=type(error), message=truncate_error(error)),
         )
         self._stopped = True
+
+    def _process_titan_stream_chunk(self, chunk: dict) -> None:
+        if output_text := chunk.get("outputText"):
+            self._invoke_text_parts.append(safe_str(output_text))
+        if stop_reason := chunk.get("completionReason"):
+            self._finish_reason = _map_stop_reason(stop_reason)
+            if self._finish_reason:
+                self._invocation.response_finish_reasons = [self._finish_reason]
+        self._apply_invocation_metrics(chunk.get("amazon-bedrock-invocationMetrics"))
+
+    def _process_anthropic_stream_chunk(self, chunk: dict) -> None:
+        message_type = chunk.get("type")
+        if message_type == "message_start":
+            message = chunk.get("message") or {}
+            if role := message.get("role"):
+                self._role = safe_str(role)
+            self._invocation.response_id = (
+                message.get("id") or self._invocation.response_id
+            )
+            self._invocation.response_model_name = (
+                message.get("model") or self._invocation.response_model_name
+            )
+            usage = message.get("usage") or {}
+            if isinstance(usage, dict):
+                self._invocation.input_tokens = usage.get("input_tokens")
+            return
+
+        if message_type == "content_block_start":
+            index = chunk.get("index", 0)
+            block = chunk.get("content_block") or {}
+            if block.get("type") == "tool_use":
+                self._content_blocks[index] = {
+                    "type": "toolUse",
+                    "toolUseId": block.get("id"),
+                    "name": block.get("name"),
+                    "input": "",
+                }
+            else:
+                self._content_blocks[index] = {
+                    "type": "text",
+                    "text": safe_str(block.get("text", "")),
+                }
+            return
+
+        if message_type == "content_block_delta":
+            index = chunk.get("index", 0)
+            delta = chunk.get("delta") or {}
+            if delta.get("type") == "text_delta":
+                block = self._content_blocks.setdefault(
+                    index, {"type": "text", "text": ""}
+                )
+                block["text"] = safe_str(block.get("text", "")) + safe_str(
+                    delta.get("text", "")
+                )
+            elif delta.get("type") == "input_json_delta":
+                block = self._content_blocks.setdefault(
+                    index, {"type": "toolUse", "input": ""}
+                )
+                block["input"] = safe_str(block.get("input", "")) + safe_str(
+                    delta.get("partial_json", "")
+                )
+            return
+
+        if message_type == "message_delta":
+            delta = chunk.get("delta") or {}
+            if stop_reason := delta.get("stop_reason"):
+                self._finish_reason = _map_stop_reason(stop_reason)
+                if self._finish_reason:
+                    self._invocation.response_finish_reasons = [self._finish_reason]
+            usage = chunk.get("usage") or {}
+            if isinstance(usage, dict) and usage.get("output_tokens") is not None:
+                self._invocation.output_tokens = usage.get("output_tokens")
+            return
+
+        if message_type == "message_stop":
+            self._apply_invocation_metrics(
+                chunk.get("amazon-bedrock-invocationMetrics")
+            )
+            return
+
+    def _process_generic_stream_chunk(self, chunk: dict) -> None:
+        _apply_invoke_usage(self._invocation, chunk)
+        if stop_reason := _extract_invoke_finish_reason(chunk):
+            self._finish_reason = _map_stop_reason(stop_reason)
+            if self._finish_reason:
+                self._invocation.response_finish_reasons = [self._finish_reason]
+        if self._capture_content:
+            output = _extract_invoke_output_text(chunk)
+            if output:
+                self._invoke_text_parts.append(output)
+
+    def _apply_invocation_metrics(self, invocation_metrics: Any) -> None:
+        if not isinstance(invocation_metrics, dict):
+            return
+        if invocation_metrics.get("inputTokenCount") is not None:
+            self._invocation.input_tokens = invocation_metrics.get("inputTokenCount")
+        if invocation_metrics.get("outputTokenCount") is not None:
+            self._invocation.output_tokens = invocation_metrics.get("outputTokenCount")
 
 
 def _input_messages_from_converse_request(
@@ -644,7 +961,7 @@ def _input_messages_from_invoke_body(
             messages.append(InputMessage(role=role, parts=parts))
         return messages
 
-    prompt = body.get("prompt") or body.get("inputText")
+    prompt = body.get("prompt") or body.get("inputText") or body.get("message")
     if prompt is not None:
         return [InputMessage(role="user", parts=[Text(content=safe_str(prompt))])]
     return []
@@ -725,6 +1042,25 @@ def _extract_invoke_output_text(body: dict) -> Optional[str]:
         return safe_str(body.get("outputText"))
     if "completion" in body:
         return safe_str(body.get("completion"))
+    if "generation" in body:
+        return safe_str(body.get("generation"))
+    if "text" in body:
+        return safe_str(body.get("text"))
+    results = body.get("results")
+    if isinstance(results, list) and results:
+        first_result = results[0]
+        if isinstance(first_result, dict) and "outputText" in first_result:
+            return safe_str(first_result.get("outputText"))
+    generations = body.get("generations")
+    if isinstance(generations, list) and generations:
+        first_generation = generations[0]
+        if isinstance(first_generation, dict) and "text" in first_generation:
+            return safe_str(first_generation.get("text"))
+    outputs = body.get("outputs")
+    if isinstance(outputs, list) and outputs:
+        first_output = outputs[0]
+        if isinstance(first_output, dict) and "text" in first_output:
+            return safe_str(first_output.get("text"))
     content = body.get("content")
     if isinstance(content, list):
         text_parts = []
@@ -778,6 +1114,25 @@ def _infer_provider(model_id: str) -> str:
     return "aws.bedrock"
 
 
+def _model_family(model_id: str) -> str:
+    model = safe_str(model_id)
+    if "amazon.titan" in model:
+        return "titan"
+    if "amazon.nova" in model:
+        return "nova"
+    if "anthropic.claude" in model:
+        return "claude"
+    if "cohere.command-r" in model:
+        return "command-r"
+    if "cohere.command" in model:
+        return "command"
+    if "meta.llama" in model:
+        return "llama"
+    if "mistral" in model:
+        return "mistral"
+    return "unknown"
+
+
 def _server_from_client(instance: Any) -> tuple[Optional[str], Optional[int]]:
     endpoint_url = getattr(getattr(instance, "meta", None), "endpoint_url", None)
     if not endpoint_url:
@@ -809,6 +1164,17 @@ def _first_present(source: dict, *keys: str) -> Any:
         if key in source and source[key] is not None:
             return source[key]
     return None
+
+
+def _set_stop_sequences(invocation: LLMInvocation, stop_sequences: Any) -> None:
+    if isinstance(stop_sequences, str):
+        invocation.request_stop_sequences = [stop_sequences]
+    elif isinstance(stop_sequences, list):
+        invocation.request_stop_sequences = [safe_str(s) for s in stop_sequences]
+
+
+def _estimate_token_count(value: Any) -> int:
+    return math.ceil(len(safe_str(value)) / 6)
 
 
 def _coerce_int(value: Any) -> Optional[int]:
