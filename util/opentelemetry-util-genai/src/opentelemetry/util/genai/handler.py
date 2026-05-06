@@ -565,7 +565,8 @@ class TelemetryHandler:
         if self._finalizer_executor is None:
             fn()
             return
-        if not self._finalizer_semaphore.acquire(blocking=False):  # type: ignore[union-attr]
+        assert self._finalizer_semaphore is not None
+        if not self._finalizer_semaphore.acquire(blocking=False):
             # Queue full — run inline rather than dropping telemetry
             fn()
             return
@@ -590,13 +591,6 @@ class TelemetryHandler:
             self._finalizer_executor.shutdown(wait=wait)
             self._finalizer_executor = None
             self._finalizer_semaphore = None
-
-    def _flush_metrics(self) -> None:
-        if self._meter_provider is not None:
-            try:
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
 
     def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
         try:
@@ -809,7 +803,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover - defensive
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return invocation
@@ -840,7 +841,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return invocation
@@ -879,7 +887,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return invocation
@@ -894,7 +909,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return invocation
@@ -933,7 +955,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return invocation
@@ -948,7 +977,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(invocation)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return invocation
@@ -978,12 +1014,7 @@ class TelemetryHandler:
         )
         self._pop_current_span(invocation)
         self._emitter.on_end(invocation)
-
-        def _finalize() -> None:
-            self._notify_completion(invocation)
-            self._flush_metrics()
-
-        self._submit_finalization(_finalize)
+        self._submit_finalization(lambda: self._notify_completion(invocation))
         return invocation
 
     def fail_tool_call(self, invocation: ToolCall, error: Error) -> ToolCall:
@@ -991,12 +1022,7 @@ class TelemetryHandler:
         invocation.end_time = timeit.default_timer()
         self._pop_current_span(invocation)
         self._emitter.on_error(error, invocation)
-
-        def _finalize() -> None:
-            self._notify_completion(invocation)
-            self._flush_metrics()
-
-        self._submit_finalization(_finalize)
+        self._submit_finalization(lambda: self._notify_completion(invocation))
         return invocation
 
     # MCPOperation lifecycle (non-tool-call MCP operations) ----------------
@@ -1296,7 +1322,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(workflow)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return workflow
@@ -1309,7 +1342,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(workflow)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return workflow
@@ -1359,7 +1399,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(agent)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return agent
@@ -1382,7 +1429,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(agent)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return agent
@@ -1408,7 +1462,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(step)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return step
@@ -1421,7 +1482,14 @@ class TelemetryHandler:
 
         def _finalize() -> None:
             self._notify_completion(step)
-            self._flush_metrics()
+            if (
+                hasattr(self, "_meter_provider")
+                and self._meter_provider is not None
+            ):
+                try:  # pragma: no cover
+                    self._meter_provider.force_flush()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         self._submit_finalization(_finalize)
         return step
