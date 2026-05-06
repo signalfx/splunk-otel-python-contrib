@@ -473,7 +473,9 @@ class SpanEmitter(EmitterMeta):
             self._apply_start_attrs(invocation)
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
-        _apply_evaluation_sampled(getattr(invocation, "span", None), invocation)
+        _apply_evaluation_sampled(
+            getattr(invocation, "span", None), invocation
+        )
         if isinstance(invocation, Workflow):
             self._finish_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
