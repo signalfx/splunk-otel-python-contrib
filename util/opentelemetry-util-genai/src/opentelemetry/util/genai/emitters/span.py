@@ -210,35 +210,41 @@ def _apply_custom_attributes(
                 span.set_attribute(key, sanitized)
 
 
-def _apply_evaluation_attributes(
+def _apply_evaluation_sampled(
     span: Span,
     invocation: GenAIType,
 ) -> None:
-    # Check if span is recording before setting attribute
-    # This handles ReadableSpan which has already ended, gracefully
-    if (
-        span is not None
-        and hasattr(span, "is_recording")
-        and span.is_recording()
-    ):
+    """Write gen_ai.evaluation.sampled while the span is still recording.
+
+    Called from on_end before span.end() so the attribute is guaranteed to
+    be present before BatchSpanProcessor exports the span.
+    """
+    if span is None:
+        return
+    if hasattr(span, "is_recording") and span.is_recording():
         span.set_attribute(
             "gen_ai.evaluation.sampled", invocation.sample_for_evaluation
         )
-        if invocation.evaluation_error is not None:
-            span.set_attribute(
-                "gen_ai.evaluation.error",
-                str(invocation.evaluation_error),
-            )
-    elif span is not None and hasattr(span, "_attributes"):
-        # Fallback for ReadableSpan: directly mutate _attributes
+
+
+def _apply_evaluation_error(
+    span: Span,
+    invocation: GenAIType,
+) -> None:
+    """Write gen_ai.evaluation.error after _notify_completion.
+
+    Called from apply_evaluation_attributes() in _finalize() so the value
+    reflects what completion callbacks set (e.g. "client_evaluation_queue_full").
+    The span is already ended at this point so the _attributes fallback is used.
+    Only written when evaluation_error is not None.
+    """
+    if invocation.evaluation_error is None or span is None:
+        return
+    if hasattr(span, "_attributes"):
         try:
-            span._attributes["gen_ai.evaluation.sampled"] = str(
-                invocation.sample_for_evaluation
-            ).lower()
-            if invocation.evaluation_error is not None:
-                span._attributes["gen_ai.evaluation.error"] = str(
-                    invocation.evaluation_error
-                )
+            span._attributes["gen_ai.evaluation.error"] = str(
+                invocation.evaluation_error
+            )
         except Exception:
             pass
 
@@ -467,6 +473,7 @@ class SpanEmitter(EmitterMeta):
             self._apply_start_attrs(invocation)
 
     def on_end(self, invocation: LLMInvocation | EmbeddingInvocation) -> None:
+        _apply_evaluation_sampled(getattr(invocation, "span", None), invocation)
         if isinstance(invocation, Workflow):
             self._finish_workflow(invocation)
         elif isinstance(invocation, (AgentCreation, AgentInvocation)):
@@ -495,17 +502,13 @@ class SpanEmitter(EmitterMeta):
                 span.end()
 
     def apply_evaluation_attributes(self, invocation: Any) -> None:
-        """Write evaluation attributes to the invocation's span.
+        """Write gen_ai.evaluation.error to the invocation's span.
 
         Called from handler._finalize() after _notify_completion() so that
         evaluation_error reflects the final value set by completion callbacks
-        (e.g. "client_evaluation_queue_full"). The span is already ended at
-        this point so the _attributes fallback path in
-        _apply_evaluation_attributes is used.
+        (e.g. "client_evaluation_queue_full").
         """
-        _apply_evaluation_attributes(
-            getattr(invocation, "span", None), invocation
-        )
+        _apply_evaluation_error(getattr(invocation, "span", None), invocation)
 
     def _apply_error_status(self, span: Span, error: Error) -> None:
         """Apply span status based on error classification.
