@@ -24,6 +24,17 @@ From this directory:
     pip install -e ../../../../util/opentelemetry-util-genai
     pip install -e ../..
 
+The example sets local defaults for all environment variables it reads. The
+same defaults are listed in ``.env.example`` for shell-based workflows.
+
+To load them explicitly in your shell:
+
+.. code-block:: bash
+
+    set -a
+    source .env.example
+    set +a
+
 For AgentCore mode, also install the Bedrock AgentCore SDK and the AgentCore
 instrumentation package that provides:
 
@@ -31,32 +42,67 @@ instrumentation package that provides:
 - ``opentelemetry.instrumentation.bedrock_agentcore.BedrockAgentCoreInstrumentor``
 
 If you are testing from adjacent local branches or worktrees, install those
-packages in editable mode before running with ``--agentcore``.
+packages in editable mode before running with ``--with-agentcore``.
 
 Run Bedrock Runtime Only
 ------------------------
 
 .. code-block:: bash
 
-    export AWS_REGION=us-west-2
-    export BEDROCK_MODEL_ID=anthropic.claude-3-haiku-20240307-v1:0
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
     python main.py
 
-The example uses ``ConsoleSpanExporter`` by default so the exported span JSON is
-printed locally. To export through OTLP instead:
+The example exports to OTLP by default. It uses
+``OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`` unless you override the
+endpoint. It configures OTLP span, metric, and log exporters so evaluation
+metrics and ``gen_ai.evaluation.result`` log events can be exported alongside
+the LLM spans:
 
 .. code-block:: bash
 
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-    python main.py --exporter otlp
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://collector.example:4317 python main.py
+
+To print span JSON locally instead of sending telemetry to a collector:
+
+.. code-block:: bash
+
+    BEDROCK_EXAMPLE_EXPORTER=console python main.py
+
+Run With Evals
+--------------
+
+Install the eval framework and the evaluator plugin you want to use. For the
+local repo packages:
+
+.. code-block:: bash
+
+    pip install -e ../../../../util/opentelemetry-util-genai-evals
+    pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval
+
+Then enable an evaluator before the first instrumentor is created:
+
+.. code-block:: bash
+
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(toxicity,bias))"
+    export BEDROCK_EXAMPLE_EVAL_WAIT_SECONDS=60
+    python main.py
+
+For a local smoke test that does not need DeepEval or judge-model credentials,
+use the built-in length evaluator:
+
+.. code-block:: bash
+
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="length(LLMInvocation(length))"
+    BEDROCK_EXAMPLE_EXPORTER=console python main.py
+
+The example waits up to ``BEDROCK_EXAMPLE_EVAL_WAIT_SECONDS`` for async eval
+work to finish before shutting down exporters. Set it to ``0`` to skip waiting.
 
 Run With AgentCore
 ------------------
 
 .. code-block:: bash
 
-    python main.py --agentcore
+    python main.py --with-agentcore
 
 Equivalent environment-variable form:
 
@@ -69,12 +115,15 @@ For AgentCore server mode:
 
 .. code-block:: bash
 
-    python main.py --agentcore --serve-agentcore
+    export BEDROCK_EXAMPLE_SERVE_AGENTCORE=true
+    python main.py --with-agentcore
 
 What To Check
 -------------
 
-In console output, compare the trace and parent IDs:
+In your collector, compare the trace and parent IDs. If you run with
+``BEDROCK_EXAMPLE_EXPORTER=console``, compare those IDs in console output
+instead:
 
 - Bedrock Runtime-only mode should show one Bedrock LLM span.
 - AgentCore mode should show an AgentCore workflow span and a Bedrock Runtime
@@ -87,6 +136,11 @@ Useful environment variables:
 .. code-block:: bash
 
     export BEDROCK_PROMPT="Explain span parenting in one sentence."
+    export BEDROCK_EXAMPLE_EXPORTER=otlp
+    export BEDROCK_EXAMPLE_EVAL_WAIT_SECONDS=60
     export OTEL_SERVICE_NAME=bedrock-runtime-agentcore-example
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+    export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event
     export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
     export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+    export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(toxicity,bias))"
