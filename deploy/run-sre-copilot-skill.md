@@ -19,33 +19,32 @@ Scenarios `scenario-001` through `scenario-010` are seeded in `data/alert_catalo
 # From repo root — use the repo venv
 python -m venv .venv && source .venv/bin/activate
 
-# Core pinned deps
-pip install langgraph==1.1.6 fastmcp==3.2.4
-
-# SRE Copilot app deps
+# SRE Copilot app deps (includes langgraph, fastmcp, langchain pins)
 pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot/requirements.txt
 
 # SDOT packages in editable mode (required for local development)
+# Install util-genai first, then instrumentation packages with --no-deps to
+# bypass stale intra-repo version constraints in pyproject.toml
 pip install -e ./util/opentelemetry-util-genai
-pip install -e "./instrumentation-genai/opentelemetry-instrumentation-langchain[instruments]"
-pip install -e "./instrumentation-genai/opentelemetry-instrumentation-fastmcp[instruments]"
+pip install --no-deps -e "./instrumentation-genai/opentelemetry-instrumentation-langchain"
+pip install --no-deps -e "./instrumentation-genai/opentelemetry-instrumentation-fastmcp"
+pip install --no-deps -e "./instrumentation-genai/opentelemetry-instrumentation-openai-v2"
 
-# Zero-code instrumentation support
+# Zero-code instrumentation support (do NOT run opentelemetry-bootstrap;
+# it installs all framework instrumentors and we want only the 3 above)
 pip install opentelemetry-distro opentelemetry-exporter-otlp
-opentelemetry-bootstrap -a install
 ```
 
-**Critical version pins** (newer versions break compatibility):
+**Key version pins** (come from `requirements.txt`, no need to install separately):
 | Package | Pin |
 |---------|-----|
-| `langgraph` | `==1.1.6` |
+| `langgraph` | `==1.1.10` |
 | `fastmcp` | `==3.2.4` |
 
 ## 2. Configure environment
 
 ```bash
 cd instrumentation-genai/opentelemetry-instrumentation-langchain/examples/sre_incident_copilot
-# .env.example is added in PR #292 — copy it once merged, or create .env from the template below
 cp .env.example .env   # then edit with your API key and OTLP endpoint
 ```
 
@@ -77,9 +76,13 @@ OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric     # traces + metrics
 
 # ── MCP subprocess instrumentation ────────────────────────────────────────────
 SRE_COPILOT_MCP_USE_OTEL_WRAPPER=true               # wrap MCP servers with otel-instrument
+
+# ── Disable unwanted auto-instrumentations ────────────────────────────────────
+OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=openai_agents,urllib3,crewai
 ```
 
-> Shell env always wins over `.env` — `load_dotenv(override=False)` is in `main.py`.
+> **Important**: `main.py` does not call `load_dotenv()`. Export env vars from
+> your shell before running `opentelemetry-instrument` (see run commands below).
 
 ## 3. Run commands
 
@@ -90,6 +93,10 @@ All commands run from the `sre_incident_copilot/` directory.
 ```bash
 python main.py --scenario scenario-001 --manual-instrumentation
 ```
+
+> **Note**: `--manual-instrumentation` activates both `LangchainInstrumentor` and `FastMCPInstrumentor`.
+> `FastMCPInstrumentor` is required to inject `traceparent` into MCP subprocess calls so MCP server
+> spans are part of the same trace as the agent spans (not orphaned root traces).
 
 With full demo flags (interrupt/resume, metric flush wait):
 
@@ -112,11 +119,20 @@ python main.py --scenario scenario-001 --manual-instrumentation \
 ### Zero-code instrumentation (`opentelemetry-instrument` wrapper)
 
 ```bash
-opentelemetry-instrument python main.py --scenario scenario-001
+# Source .env first — opentelemetry-instrument reads OTEL_* before main.py starts
+set -a; source .env; set +a
+opentelemetry-instrument python main.py --scenario scenario-001 --wait-after-completion 15
 ```
 
-> **Note**: `OTEL_TRACES_EXPORTER=otlp_proto_grpc` and `OTEL_METRICS_EXPORTER=otlp_proto_grpc`
-> must be set — the generic `otlp` entry point is often missing from venvs.
+> **Notes**:
+> - `OTEL_TRACES_EXPORTER=otlp_proto_grpc` and `OTEL_METRICS_EXPORTER=otlp_proto_grpc`
+>   must be set — the generic `otlp` entry point is often missing from venvs.
+> - `main.py` does not call `load_dotenv()`, so env vars must be exported to the
+>   shell before running `opentelemetry-instrument`. The `set -a; source .env; set +a`
+>   idiom exports all `.env` vars to the shell.
+> - Only 3 instrumentors should be registered: `langchain`, `fastmcp`, `openai`
+>   (all from `splunk-otel-instrumentation-*` editable packages). Verify with:
+>   `python -c "from importlib.metadata import entry_points; [print(ep.name, ep.dist.name) for ep in entry_points(group='opentelemetry_instrumentor')]"`
 
 ### Cross-process interrupt / resume
 
@@ -146,10 +162,13 @@ Start the collector that forwards to Splunk O11y Cloud:
 
 ```bash
 # From repo root
-docker compose -f .local/otelcol-docker-compose.yaml up -d
+cp deploy/.env.example deploy/.env   # fill in SPLUNK_ACCESS_TOKEN and SPLUNK_REALM
+docker compose -f deploy/otelcol-docker-compose.yaml up -d
+# Verify
+curl http://localhost:13133
 ```
 
-Requires `.local/otelcol-config.yaml` with `SPLUNK_ACCESS_TOKEN` and `SPLUNK_REALM`.
+Requires `SPLUNK_ACCESS_TOKEN` and `SPLUNK_REALM` in `deploy/.env`.
 For console-only output (no collector), replace the OTEL endpoint with the console exporter:
 
 ```bash
@@ -175,8 +194,11 @@ OTEL_TRACES_EXPORTER=console python main.py --scenario scenario-001 --manual-ins
 | Symptom | Fix |
 |---------|-----|
 | MCP server spans missing | Check `SRE_COPILOT_MCP_USE_OTEL_WRAPPER=true` and `opentelemetry-instrument` is on `PATH` |
+| MCP server spans on separate trace (not child of agent spans) | `FastMCPInstrumentor` not active — only occurs with `--manual-instrumentation`; ensure `main.py` calls `FastMCPInstrumentor().instrument()` |
 | `otlp` exporter not found | Set `OTEL_TRACES_EXPORTER=otlp_proto_grpc` and `OTEL_METRICS_EXPORTER=otlp_proto_grpc` |
 | Metrics not appearing | Check `OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric`; add `--wait-after-completion 15` |
-| `langgraph` compatibility errors | Downgrade: `pip install langgraph==1.1.6` |
-| `fastmcp` import errors | Downgrade: `pip install fastmcp==3.2.4` |
-| `OPENAI_API_KEY` not found | Ensure `.env` is populated or export the key in shell |
+| `OPENAI_API_KEY` not found | Export `.env` vars before running: `set -a; source .env; set +a` |
+| `ImportError: cannot import name 'GenAIContext'` | Editable install of `util/opentelemetry-util-genai` was overwritten by pip. Re-run: `pip install -e ./util/opentelemetry-util-genai` |
+| Extra instrumentors being loaded (urllib, requests, etc.) | Do NOT run `opentelemetry-bootstrap -a install`; it installs all framework instrumentors. Uninstall extras with `pip uninstall opentelemetry-instrumentation-{requests,urllib,...}` |
+| `langgraph` compatibility errors | Pin version: see `requirements.txt` for the current pin |
+| `fastmcp` import errors | Pin version: `pip install fastmcp==3.2.4` |
