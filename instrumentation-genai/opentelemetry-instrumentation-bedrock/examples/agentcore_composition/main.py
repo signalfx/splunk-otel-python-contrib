@@ -73,6 +73,11 @@ DEFAULT_EMITTERS = "span_metric_event"
 DEFAULT_ENABLE_AGENTCORE = "false"
 DEFAULT_SERVE_AGENTCORE = "false"
 DEFAULT_EVAL_WAIT_SECONDS = "60"
+DEFAULT_MEMORY_NAME = "bedrockRuntimeAgentCoreExampleMemory"
+DEFAULT_MEMORY_NAMESPACE = "bedrock-runtime-agentcore-example"
+DEFAULT_MEMORY_ACTOR_ID = "bedrock-runtime-agentcore-example-user"
+DEFAULT_MEMORY_SESSION_ID = "bedrock-runtime-agentcore-example-session"
+DEFAULT_MEMORY_TOP_K = "3"
 ENVIRONMENT_HELP = f"""Environment variables:
   AWS_REGION / AWS_DEFAULT_REGION (default: {DEFAULT_REGION})
   BEDROCK_MODEL_ID (default: {DEFAULT_MODEL_ID})
@@ -81,6 +86,12 @@ ENVIRONMENT_HELP = f"""Environment variables:
   BEDROCK_EXAMPLE_ENABLE_AGENTCORE=true|false (default: {DEFAULT_ENABLE_AGENTCORE})
   BEDROCK_EXAMPLE_SERVE_AGENTCORE=true|false (default: {DEFAULT_SERVE_AGENTCORE})
   BEDROCK_EXAMPLE_EVAL_WAIT_SECONDS (default: {DEFAULT_EVAL_WAIT_SECONDS})
+  BEDROCK_AGENTCORE_MEMORY_ID (optional, otherwise the example finds or creates by name)
+  BEDROCK_AGENTCORE_MEMORY_NAME (default: {DEFAULT_MEMORY_NAME})
+  BEDROCK_AGENTCORE_MEMORY_NAMESPACE (default: {DEFAULT_MEMORY_NAMESPACE})
+  BEDROCK_AGENTCORE_MEMORY_ACTOR_ID (default: {DEFAULT_MEMORY_ACTOR_ID})
+  BEDROCK_AGENTCORE_MEMORY_SESSION_ID (default: {DEFAULT_MEMORY_SESSION_ID})
+  BEDROCK_AGENTCORE_MEMORY_TOP_K (default: {DEFAULT_MEMORY_TOP_K})
   OTEL_SERVICE_NAME (default: {DEFAULT_SERVICE_NAME})
   OTEL_EXPORTER_OTLP_ENDPOINT (default: {DEFAULT_OTLP_ENDPOINT})
   OTEL_INSTRUMENTATION_GENAI_EMITTERS (default: {DEFAULT_EMITTERS})
@@ -98,6 +109,11 @@ def _set_default_environment() -> None:
         "BEDROCK_EXAMPLE_ENABLE_AGENTCORE": DEFAULT_ENABLE_AGENTCORE,
         "BEDROCK_EXAMPLE_SERVE_AGENTCORE": DEFAULT_SERVE_AGENTCORE,
         "BEDROCK_EXAMPLE_EVAL_WAIT_SECONDS": DEFAULT_EVAL_WAIT_SECONDS,
+        "BEDROCK_AGENTCORE_MEMORY_NAME": DEFAULT_MEMORY_NAME,
+        "BEDROCK_AGENTCORE_MEMORY_NAMESPACE": DEFAULT_MEMORY_NAMESPACE,
+        "BEDROCK_AGENTCORE_MEMORY_ACTOR_ID": DEFAULT_MEMORY_ACTOR_ID,
+        "BEDROCK_AGENTCORE_MEMORY_SESSION_ID": DEFAULT_MEMORY_SESSION_ID,
+        "BEDROCK_AGENTCORE_MEMORY_TOP_K": DEFAULT_MEMORY_TOP_K,
         "OTEL_SERVICE_NAME": DEFAULT_SERVICE_NAME,
         "OTEL_EXPORTER_OTLP_ENDPOINT": DEFAULT_OTLP_ENDPOINT,
         "OTEL_INSTRUMENTATION_GENAI_EMITTERS": DEFAULT_EMITTERS,
@@ -206,10 +222,14 @@ def _instrument(
     }
     if enable_agentcore:
         try:
-            from opentelemetry.instrumentation.bedrock_agentcore import (
-                BedrockAgentCoreInstrumentor,
+            agentcore_instrumentation = importlib.import_module(
+                "opentelemetry.instrumentation.bedrock_agentcore"
             )
-        except ImportError as exc:
+            bedrock_agentcore_instrumentor = getattr(
+                agentcore_instrumentation,
+                "BedrockAgentCoreInstrumentor",
+            )
+        except (AttributeError, ImportError) as exc:
             raise SystemExit(
                 "AgentCore mode requires "
                 "opentelemetry.instrumentation.bedrock_agentcore. "
@@ -217,7 +237,9 @@ def _instrument(
                 "without --with-agentcore."
             ) from exc
 
-        BedrockAgentCoreInstrumentor().instrument(**instrumentor_kwargs)
+        bedrock_agentcore_instrumentor().instrument(**instrumentor_kwargs)
+        BedrockInstrumentor().instrument()
+        return
 
     BedrockInstrumentor().instrument(**instrumentor_kwargs)
 
@@ -289,26 +311,333 @@ def _prompt_from_payload(payload: Any, default_prompt: str) -> str:
     return default_prompt
 
 
+def _import_agentcore_class(
+    candidates: tuple[tuple[str, str], ...],
+    label: str,
+) -> Any:
+    for module_name, class_name in candidates:
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        target = getattr(module, class_name, None)
+        if target is not None:
+            return target
+    raise ImportError(f"Bedrock AgentCore {label} is not available")
+
+
+def _import_agentcore_app() -> Any:
+    return _import_agentcore_class(
+        (
+            ("bedrock_agentcore", "BedrockAgentCoreApp"),
+            ("bedrock_agentcore.runtime", "BedrockAgentCoreApp"),
+        ),
+        "BedrockAgentCoreApp",
+    )
+
+
+def _import_agentcore_memory_client() -> Any:
+    return _import_agentcore_class(
+        (
+            ("bedrock_agentcore.memory", "MemoryClient"),
+            ("bedrock_agentcore.memory.client", "MemoryClient"),
+            ("bedrock_agentcore.memory.memory_client", "MemoryClient"),
+        ),
+        "MemoryClient",
+    )
+
+
+def _import_agentcore_code_interpreter() -> Any:
+    return _import_agentcore_class(
+        (
+            (
+                "bedrock_agentcore.tools.code_interpreter_client",
+                "CodeInterpreter",
+            ),
+            ("bedrock_agentcore.tools.code_interpreter", "CodeInterpreter"),
+        ),
+        "CodeInterpreter",
+    )
+
+
+def _import_agentcore_browser_client() -> Any:
+    return _import_agentcore_class(
+        (
+            ("bedrock_agentcore.tools.browser_client", "BrowserClient"),
+            ("bedrock_agentcore.tools.browser", "BrowserClient"),
+        ),
+        "BrowserClient",
+    )
+
+
+def _configured_memory_top_k() -> int:
+    raw = os.environ["BEDROCK_AGENTCORE_MEMORY_TOP_K"]
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SystemExit(
+            "BEDROCK_AGENTCORE_MEMORY_TOP_K must be an integer."
+        ) from exc
+    return max(1, value)
+
+
+def _agentcore_call(label: str, callback: Callable[[], Any]) -> Any | None:
+    try:
+        return callback()
+    except Exception as exc:  # noqa: BLE001
+        print(f"AgentCore {label} skipped: {exc}", flush=True)
+        return None
+
+
+def _memory_id_from(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    identifier = value.get("id") or value.get("memoryId")
+    return str(identifier) if identifier else None
+
+
+def _iter_memories(response: Any) -> list[dict[str, Any]]:
+    if isinstance(response, list):
+        return [item for item in response if isinstance(item, dict)]
+    if not isinstance(response, dict):
+        return []
+    for key in ("memories", "memorySummaries", "items"):
+        value = response.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return [response] if _memory_id_from(response) else []
+
+
+def _resolve_memory_id_from_response(response: Any) -> str | None:
+    direct_id = _memory_id_from(response)
+    if direct_id:
+        return direct_id
+    for item in _iter_memories(response):
+        memory_id = _memory_id_from(item)
+        if memory_id:
+            return memory_id
+    return None
+
+
+def _get_or_create_memory_id(memory_client: Any) -> str | None:
+    explicit_memory_id = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
+    if explicit_memory_id:
+        return explicit_memory_id
+
+    memory_name = os.environ["BEDROCK_AGENTCORE_MEMORY_NAME"]
+    memories = memory_client.list_memories()
+    for memory in _iter_memories(memories):
+        memory_id = _memory_id_from(memory)
+        name = memory.get("name") or memory.get("memoryName")
+        if name == memory_name or (
+            memory_id is not None and memory_id.startswith(memory_name)
+        ):
+            return memory_id
+
+    created = memory_client.create_or_get_memory(name=memory_name)
+    return _resolve_memory_id_from_response(created)
+
+
+def _new_agentcore_client(
+    client_cls: Any,
+    *,
+    region: str,
+    region_kwarg: str,
+) -> Any:
+    try:
+        return client_cls(**{region_kwarg: region})
+    except TypeError:
+        return client_cls()
+
+
+def _retrieve_agentcore_memories(
+    memory_client: Any,
+    memory_id: str,
+    prompt: str,
+) -> Any:
+    namespace = os.environ["BEDROCK_AGENTCORE_MEMORY_NAMESPACE"]
+    top_k = _configured_memory_top_k()
+    actor_id = os.environ["BEDROCK_AGENTCORE_MEMORY_ACTOR_ID"]
+    try:
+        return memory_client.retrieve_memories(
+            memory_id=memory_id,
+            namespace=namespace,
+            query=prompt,
+            actor_id=actor_id,
+            top_k=top_k,
+        )
+    except TypeError:
+        return memory_client.retrieve_memories(
+            memory_id,
+            namespace,
+            prompt,
+            actor_id=actor_id,
+            top_k=top_k,
+        )
+
+
+def _run_agentcore_memory_lookup(
+    region: str,
+    prompt: str,
+) -> tuple[Any | None, str | None, Any | None]:
+    try:
+        memory_client_cls = _import_agentcore_memory_client()
+    except ImportError as exc:
+        print(f"AgentCore memory skipped: {exc}")
+        return None, None, None
+
+    memory_client = _agentcore_call(
+        "memory client creation",
+        lambda: _new_agentcore_client(
+            memory_client_cls,
+            region=region,
+            region_kwarg="region_name",
+        ),
+    )
+    if memory_client is None:
+        return None, None, None
+
+    memory_id = _agentcore_call(
+        "memory get_or_create",
+        lambda: _get_or_create_memory_id(memory_client),
+    )
+    if not memory_id:
+        print("AgentCore memory retrieval skipped: no memory id resolved")
+        return memory_client, None, None
+
+    memories = _agentcore_call(
+        "memory retrieve_memories",
+        lambda: _retrieve_agentcore_memories(memory_client, memory_id, prompt),
+    )
+    return memory_client, memory_id, memories
+
+
+def _save_agentcore_memory(
+    memory_client: Any | None,
+    memory_id: str | None,
+    prompt: str,
+    answer: str,
+) -> None:
+    if memory_client is None or memory_id is None:
+        return
+
+    _agentcore_call(
+        "memory create_event",
+        lambda: memory_client.create_event(
+            memory_id=memory_id,
+            actor_id=os.environ["BEDROCK_AGENTCORE_MEMORY_ACTOR_ID"],
+            session_id=os.environ["BEDROCK_AGENTCORE_MEMORY_SESSION_ID"],
+            messages=[(prompt, "USER"), (answer, "ASSISTANT")],
+        ),
+    )
+
+
+def _run_agentcore_code_interpreter(region: str) -> None:
+    try:
+        code_interpreter_cls = _import_agentcore_code_interpreter()
+    except ImportError as exc:
+        print(f"AgentCore code_interpreter skipped: {exc}")
+        return
+
+    code_interpreter = _agentcore_call(
+        "code_interpreter client creation",
+        lambda: _new_agentcore_client(
+            code_interpreter_cls,
+            region=region,
+            region_kwarg="region",
+        ),
+    )
+    if code_interpreter is None:
+        return
+
+    session_id = _agentcore_call(
+        "code_interpreter start",
+        lambda: code_interpreter.start(),
+    )
+    if not session_id:
+        return
+
+    _agentcore_call(
+        "code_interpreter execute_code",
+        lambda: code_interpreter.execute_code(
+            code="print('Hello from instrumented CodeInterpreter')",
+        ),
+    )
+    _agentcore_call(
+        "code_interpreter stop",
+        lambda: code_interpreter.stop(),
+    )
+
+
+def _run_agentcore_browser(region: str) -> None:
+    try:
+        browser_client_cls = _import_agentcore_browser_client()
+    except ImportError as exc:
+        print(f"AgentCore browser skipped: {exc}")
+        return
+
+    browser_client = _agentcore_call(
+        "browser client creation",
+        lambda: _new_agentcore_client(
+            browser_client_cls,
+            region=region,
+            region_kwarg="region",
+        ),
+    )
+    if browser_client is None:
+        return
+
+    session_id = _agentcore_call(
+        "browser start", lambda: browser_client.start()
+    )
+    if not session_id:
+        return
+
+    _agentcore_call(
+        "browser take_control",
+        lambda: browser_client.take_control(),
+    )
+    _agentcore_call("browser stop", lambda: browser_client.stop())
+
+
 def _build_agentcore_app(
     client: Any,
     model_id: str,
     prompt: str,
+    region: str,
 ) -> tuple[Any, Callable[[dict[str, Any]], Any]]:
     try:
-        from bedrock_agentcore.runtime import BedrockAgentCoreApp
+        bedrock_agentcore_app = _import_agentcore_app()
     except ImportError as exc:
         raise SystemExit(
             "AgentCore mode requires the Bedrock AgentCore SDK "
-            "providing bedrock_agentcore.runtime.BedrockAgentCoreApp. "
+            "providing BedrockAgentCoreApp. "
             "Install the SDK, or run without --with-agentcore."
         ) from exc
 
-    app = BedrockAgentCoreApp()
+    app = bedrock_agentcore_app()
 
     @app.entrypoint
     def bedrock_runtime_agent(payload: dict[str, Any]) -> dict[str, Any]:
         user_prompt = _prompt_from_payload(payload, prompt)
-        return _run_bedrock_turn(client, model_id, user_prompt)
+        result = _run_bedrock_turn(client, model_id, user_prompt)
+        memory_client, memory_id, memories = _run_agentcore_memory_lookup(
+            region,
+            user_prompt,
+        )
+        _save_agentcore_memory(
+            memory_client,
+            memory_id,
+            user_prompt,
+            result["answer"],
+        )
+        _run_agentcore_code_interpreter(region)
+        _run_agentcore_browser(region)
+        if memories is not None:
+            result["memory_result_count"] = (
+                len(memories) if hasattr(memories, "__len__") else None
+            )
+        return result
 
     return app, bedrock_runtime_agent
 
@@ -351,11 +680,13 @@ def _wait_for_evaluations() -> None:
     if timeout <= 0:
         return
     try:
-        from opentelemetry.util.genai.handler import get_telemetry_handler
+        handler_module = importlib.import_module(
+            "opentelemetry.util.genai.handler"
+        )
     except ImportError:
         return
 
-    get_telemetry_handler().wait_for_evaluations(timeout)
+    handler_module.get_telemetry_handler().wait_for_evaluations(timeout)
 
 
 def main() -> None:
@@ -383,10 +714,16 @@ def main() -> None:
 
     model_id = os.environ["BEDROCK_MODEL_ID"]
     prompt = os.environ["BEDROCK_PROMPT"]
-    client = _bedrock_client(_configured_region())
+    region = _configured_region()
+    client = _bedrock_client(region)
     try:
         if enable_agentcore:
-            app, entrypoint = _build_agentcore_app(client, model_id, prompt)
+            app, entrypoint = _build_agentcore_app(
+                client,
+                model_id,
+                prompt,
+                region,
+            )
             if serve_agentcore:
                 app.run()
             else:

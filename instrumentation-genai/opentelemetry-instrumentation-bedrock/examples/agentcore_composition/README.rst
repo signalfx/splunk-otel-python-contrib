@@ -40,6 +40,9 @@ instrumentation package that provides:
 
 - ``bedrock_agentcore.runtime.BedrockAgentCoreApp``
 - ``opentelemetry.instrumentation.bedrock_agentcore.BedrockAgentCoreInstrumentor``
+- ``bedrock_agentcore.memory.client.MemoryClient``
+- ``bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter``
+- ``bedrock_agentcore.tools.browser_client.BrowserClient``
 
 If you are testing from adjacent local branches or worktrees, install those
 packages in editable mode before running with ``--with-agentcore``.
@@ -111,6 +114,35 @@ Equivalent environment-variable form:
     export BEDROCK_EXAMPLE_ENABLE_AGENTCORE=true
     python main.py
 
+AgentCore mode also performs best-effort AgentCore capability calls around the
+Bedrock Runtime call, following the AgentCore manual example:
+
+- ``MemoryClient.list_memories`` and, if needed,
+  ``MemoryClient.create_or_get_memory``
+- ``MemoryClient.retrieve_memories`` after the Bedrock Runtime call
+- ``MemoryClient.create_event`` after the Bedrock Runtime call
+- ``CodeInterpreter.start``, ``execute_code``, and ``stop``
+- ``BrowserClient.start``, ``take_control``, and ``stop``
+
+These calls are non-fatal. If your AWS account lacks permission or a service is
+not available in the selected region, the example prints a skip message and
+continues. The Bedrock Runtime LLM call runs first so a slow optional AgentCore
+capability does not block the primary LLM span. If
+``BEDROCK_AGENTCORE_MEMORY_ID`` is not set, the example finds or creates a
+memory by ``BEDROCK_AGENTCORE_MEMORY_NAME``.
+
+To use an existing memory instead of creating or finding one by name:
+
+.. code-block:: bash
+
+    export BEDROCK_AGENTCORE_MEMORY_ID=your-memory-id
+    export BEDROCK_AGENTCORE_MEMORY_NAMESPACE=bedrock-runtime-agentcore-example
+    python main.py --with-agentcore
+
+These AgentCore capability calls are the default behavior for
+``--with-agentcore``. To run only the Bedrock Runtime LLM call, omit
+``--with-agentcore``.
+
 For AgentCore server mode:
 
 .. code-block:: bash
@@ -128,6 +160,8 @@ instead:
 - Bedrock Runtime-only mode should show one Bedrock LLM span.
 - AgentCore mode should show an AgentCore workflow span and a Bedrock Runtime
   LLM span in the same trace.
+- AgentCore mode should also show AgentCore memory, code interpreter, and
+  browser child spans when those capabilities are available.
 - The Bedrock Runtime LLM span should have the AgentCore workflow span as its
   parent when the Bedrock call runs inside the AgentCore entrypoint.
 
@@ -138,6 +172,10 @@ Useful environment variables:
     export BEDROCK_PROMPT="Explain span parenting in one sentence."
     export BEDROCK_EXAMPLE_EXPORTER=otlp
     export BEDROCK_EXAMPLE_EVAL_WAIT_SECONDS=60
+    export BEDROCK_AGENTCORE_MEMORY_NAME=bedrockRuntimeAgentCoreExampleMemory
+    export BEDROCK_AGENTCORE_MEMORY_NAMESPACE=bedrock-runtime-agentcore-example
+    export BEDROCK_AGENTCORE_MEMORY_ACTOR_ID=bedrock-runtime-agentcore-example-user
+    export BEDROCK_AGENTCORE_MEMORY_SESSION_ID=bedrock-runtime-agentcore-example-session
     export OTEL_SERVICE_NAME=bedrock-runtime-agentcore-example
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
     export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event
