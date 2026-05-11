@@ -22,6 +22,7 @@ from google.cloud.aiplatform_v1beta1.types import (
 
 from opentelemetry.instrumentation.vertexai.utils import (
     _map_finish_reason,
+    convert_content_to_input_message,
     get_server_attributes,
 )
 
@@ -62,3 +63,30 @@ def test_map_finish_reason():
             (Enum.SPII, "SPII"),
         ]:
             assert _map_finish_reason(finish_reason) == expect
+
+
+def test_convert_content_to_input_message_normalizes_roles():
+    model_content = content.Content(
+        {
+            "role": "model",
+            "parts": [{"text": "hello"}],
+        }
+    )
+    model_message = convert_content_to_input_message(model_content)
+    assert model_message.role == "assistant"
+
+    tool_content = content.Content(
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "function_response": {
+                        "name": "search",
+                        "response": {"answer": "world"},
+                    }
+                }
+            ],
+        }
+    )
+    tool_message = convert_content_to_input_message(tool_content)
+    assert tool_message.role == "tool"
