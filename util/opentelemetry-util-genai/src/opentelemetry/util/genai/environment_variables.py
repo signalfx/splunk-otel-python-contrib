@@ -326,6 +326,28 @@ workflow root can either:
 Default: ``false`` (root span is ``AgentInvocation``).
 """
 
+# ---- message part type system ----
+OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES = (
+    "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES
+
+Enable the expanded MessagePart type system in GenAI instrumentations.
+When set to a truthy value (``true``, ``1``, ``yes``, ``on``), instrumentations
+emit the full set of MessagePart types: ``ToolCallRequest``, ``ToolCallResponse``,
+``ServerToolCall``, ``ServerToolCallResponse``, ``Reasoning``, ``Blob``, ``File``,
+``Uri``, and ``GenericPart``. When disabled, legacy ``ToolCall`` objects are used
+for tool calls in message history.
+
+Default: ``false`` (disabled).
+
+Examples::
+
+    # Enable new message types
+    export OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES=true
+"""
+
 # ---- GenAI Context ----
 OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS = (
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS"
@@ -374,27 +396,6 @@ Examples::
     export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=true
 """
 
-OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES = (
-    "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES"
-)
-"""
-.. envvar:: OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES
-
-Enable the expanded MessagePart type system in GenAI instrumentations.
-When set to a truthy value (``true``, ``1``, ``yes``, ``on``), instrumentations
-emit the full set of MessagePart types: ``ToolCallRequest``, ``ToolCallResponse``,
-``ServerToolCall``, ``ServerToolCallResponse``, ``Reasoning``, ``Blob``, ``File``,
-``Uri``, and ``GenericPart``. When disabled, legacy ``ToolCall`` objects are used
-for tool calls in message history.
-
-Default: ``false`` (disabled).
-
-Examples::
-
-    # Enable new message types
-    export OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES=true
-"""
-
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -428,9 +429,9 @@ __all__ = [
     "OTEL_INSTRUMENTATION_GENAI_DISABLE_DEFAULT_COMPLETION_CALLBACKS",
     # root span type
     "OTEL_INSTRUMENTATION_GENAI_ROOT_SPAN_AS_WORKFLOW",
+    # message part type system
+    "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
     # genai context
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION",
-    # message part type system
-    "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES",
 ]
