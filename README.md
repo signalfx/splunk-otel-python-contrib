@@ -415,6 +415,7 @@ pip install -e util/opentelemetry-util-genai-evals-deepeval --no-deps
 pip install -e util/opentelemetry-util-genai-emitters-splunk --no-deps
 pip install -e util/opentelemetry-util-genai-traceloop-translator --no-deps
 pip install -e instrumentation-genai/opentelemetry-instrumentation-langchain --no-deps
+pip install -e instrumentation-genai/opentelemetry-instrumentation-strands --no-deps
 pip install -r dev-genai-requirements.txt
 pip install -r instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/requirements.txt
 
@@ -565,4 +566,3 @@ python -m opentelemetry.util.genai.emitters.eval_perf_test \
 - Unit tests: env parsing, category overrides, evaluator grammar, sampling, content capture gating.
 - Future: ordering hints tests once implemented.
 - Smoke: vendor emitters (Traceloop + Splunk) side-by-side replacement/append semantics.
-
