@@ -27,7 +27,7 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 
-from .utils import bind_call_arguments, safe_json_dumps, safe_str
+from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_error
 
 
 def _make_input_message(event: Any) -> InputMessage:
@@ -88,7 +88,11 @@ def wrap_bedrock_agentcore_app_entrypoint(
         Decorated function that creates a Workflow span on each call
     """
     decorated_func = wrapped(*args, **kwargs)
-    workflow_name = getattr(instance, "name", None) or "BedrockAgentCore"
+    workflow_name = (
+        getattr(instance, "name", None)
+        or getattr(decorated_func, "__name__", None)
+        or "BedrockAgentCore"
+    )
 
     if asyncio.iscoroutinefunction(decorated_func):
 
@@ -110,7 +114,7 @@ def wrap_bedrock_agentcore_app_entrypoint(
                 return result
             except Exception as e:
                 handler.fail_workflow(
-                    workflow, Error(type=type(e), message=safe_str(e))
+                    workflow, Error(type=type(e), message=truncate_error(e))
                 )
                 raise
 
@@ -131,7 +135,7 @@ def wrap_bedrock_agentcore_app_entrypoint(
             handler.stop_workflow(workflow)
             return result
         except Exception as e:
-            handler.fail_workflow(workflow, Error(type=type(e), message=safe_str(e)))
+            handler.fail_workflow(workflow, Error(type=type(e), message=truncate_error(e)))
             raise
 
     return workflow_wrapper

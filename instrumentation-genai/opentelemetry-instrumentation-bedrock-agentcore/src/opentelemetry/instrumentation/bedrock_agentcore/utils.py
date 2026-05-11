@@ -137,8 +137,9 @@ def invoke_tool_call(
         )
         raise
     if capture_content and result is not None:
+        serialized = safe_json_dumps(result) if not isinstance(result, str) else result
         tool_call.tool_result = (
-            safe_json_dumps(result) if not isinstance(result, str) else result
+            serialized[:_RESULT_MAX_LEN] + "..." if len(serialized) > _RESULT_MAX_LEN else serialized
         )
     if enrich_result is not None:
         enrich_result(tool_call, result)
@@ -147,6 +148,7 @@ def invoke_tool_call(
 
 
 _ERROR_MAX_LEN = 256
+_RESULT_MAX_LEN = 1024
 
 
 def truncate_error(e: Exception) -> str:

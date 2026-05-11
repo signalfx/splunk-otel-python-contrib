@@ -219,8 +219,6 @@ def demo_memory(memory_client, actor_id: str, session_id: str) -> None:
     """
     print("\n[MemoryClient]")
 
-    _try("list_memories", lambda: memory_client.list_memories())
-
     memory = _try(
         "get_or_create_memory",
         lambda: _get_or_create_memory(memory_client, "demoMemory"),

@@ -28,6 +28,8 @@ from wrapt import wrap_function_wrapper
 
 from .utils import is_content_enabled, is_instrumentation_enabled
 from .browser_wrappers import (
+    wrap_browser_generate_live_view_url,
+    wrap_browser_generate_ws_headers,
     wrap_browser_get_session,
     wrap_browser_operation,
     wrap_browser_release_control,
@@ -36,7 +38,10 @@ from .browser_wrappers import (
     wrap_browser_take_control,
 )
 from .code_interpreter_wrappers import (
+    wrap_code_interpreter_create,
+    wrap_code_interpreter_download_file,
     wrap_code_interpreter_execute,
+    wrap_code_interpreter_execute_command,
     wrap_code_interpreter_install_packages,
     wrap_code_interpreter_operation,
     wrap_code_interpreter_start,
@@ -101,11 +106,46 @@ _CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
         "CodeInterpreter.upload_file",
         wrap_code_interpreter_upload_file,
     ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.upload_files",
+        wrap_code_interpreter_upload_file,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.download_file",
+        wrap_code_interpreter_download_file,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.download_files",
+        wrap_code_interpreter_download_file,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.execute_command",
+        wrap_code_interpreter_execute_command,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.create_code_interpreter",
+        wrap_code_interpreter_create,
+    ),
     (_BROWSER_MODULE, "BrowserClient.start", wrap_browser_start),
     (_BROWSER_MODULE, "BrowserClient.stop", wrap_browser_stop),
     (_BROWSER_MODULE, "BrowserClient.take_control", wrap_browser_take_control),
     (_BROWSER_MODULE, "BrowserClient.release_control", wrap_browser_release_control),
     (_BROWSER_MODULE, "BrowserClient.get_session", wrap_browser_get_session),
+    (
+        _BROWSER_MODULE,
+        "BrowserClient.generate_ws_headers",
+        wrap_browser_generate_ws_headers,
+    ),
+    (
+        _BROWSER_MODULE,
+        "BrowserClient.generate_live_view_url",
+        wrap_browser_generate_live_view_url,
+    ),
 )
 
 _MEMORY_OPERATION_METHODS = (
@@ -146,15 +186,9 @@ _MEMORY_OPERATION_METHODS = (
 )
 
 _CODE_INTERPRETER_OPERATION_METHODS = (
-    "download_file",
-    "download_files",
-    "upload_files",
     "get_session",
     "list_sessions",
-    "execute_command",
     "clear_context",
-    "invoke",
-    "create_code_interpreter",
     "delete_code_interpreter",
     "get_code_interpreter",
     "list_code_interpreters",
@@ -166,8 +200,6 @@ _BROWSER_OPERATION_METHODS = (
     "delete_browser",
     "get_browser",
     "list_browsers",
-    "generate_live_view_url",
-    "generate_ws_headers",
     "update_stream",
 )
 

@@ -178,6 +178,58 @@ def wrap_browser_get_session(
     )
 
 
+def wrap_browser_generate_ws_headers(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        tool_call = ToolCall(
+            name="browser.generate_ws_headers",
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
+        if hasattr(instance, "session_id") and instance.session_id:
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
+                instance.session_id
+            )
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    # never capture tool_result — returns auth credentials
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False)
+
+
+def wrap_browser_generate_live_view_url(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        tool_call = ToolCall(
+            name="browser.generate_live_view_url",
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
+        if hasattr(instance, "session_id") and instance.session_id:
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = safe_str(
+                instance.session_id
+            )
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    # never capture tool_result — returns presigned URL with embedded tokens
+    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False)
+
+
 def wrap_browser_operation(operation_name: str) -> Any:
     def wrapper(
         wrapped: Any,

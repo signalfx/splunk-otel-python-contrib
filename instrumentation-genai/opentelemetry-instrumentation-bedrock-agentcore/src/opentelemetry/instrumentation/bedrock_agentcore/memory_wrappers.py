@@ -14,6 +14,7 @@
 
 """Wrapt wrappers for Bedrock AgentCore Memory instrumentation."""
 
+import json
 from typing import Any
 
 from opentelemetry.util.genai.handler import TelemetryHandler
@@ -45,7 +46,7 @@ def wrap_memory_retrieve(
             provider="bedrock-agentcore-memory",
             retriever_type="bedrock-agentcore-memory",
             data_source_id="memory.retrieve_memories",
-            query=safe_str(query) if capture_content else "",
+            query=safe_str(query) if capture_content else None,
             top_k=top_k,
             system="bedrock-agentcore",
         )
@@ -165,9 +166,10 @@ def wrap_memory_operation(operation_name: str) -> Any:
     ) -> Any:
         try:
             call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+            safe_args = {k: v for k, v in call_arguments.items() if not callable(v)}
             invocation = ToolCall(
                 name=f"memory.{operation_name}",
-                arguments=safe_json_dumps(call_arguments) if capture_content else None,
+                arguments=json.dumps(safe_args, default=str) if capture_content else None,
                 system="bedrock-agentcore",
             )
         except Exception:
