@@ -42,13 +42,22 @@ class MockMemoryClient:
         ]
 
     def create_event(self, memory_id, actor_id, session_id, payload=None):
-        return {"eventId": "event-123"}
+        return {"eventId": "event-123", "payload": payload}
 
     def create_blob_event(self, memory_id, actor_id, session_id, blob=None):
-        return {"eventId": "blob-456"}
+        return {"eventId": "blob-456", "blob": blob}
 
-    def list_events(self, memory_id, actor_id=None):
-        return [{"eventId": "event-1"}, {"eventId": "event-2"}]
+    def list_events(self, memory_id, actor_id=None, include_payload=True):
+        return [
+            {
+                "eventId": "event-1",
+                "payload": {"message": "sensitive"} if include_payload else None,
+            },
+            {
+                "eventId": "event-2",
+                "payload": {"message": "sensitive2"} if include_payload else None,
+            },
+        ]
 
     def create_memory(self, **kwargs):
         return {"memoryId": "mem-new"}
@@ -254,7 +263,7 @@ def test_memory_create_event_creates_tool_call(stub_handler):
     assert tool_call.name == "memory.create_event"
     assert tool_call.system == "bedrock-agentcore"
     assert "mem-123" in tool_call.arguments
-    assert tool_call.tool_result is not None
+    assert tool_call.tool_result is None
 
 
 def test_memory_create_event_no_content_by_default(stub_handler):
@@ -271,6 +280,30 @@ def test_memory_create_event_no_content_by_default(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.arguments is None
+    assert tool_call.tool_result is None
+
+
+def test_memory_create_event_suppresses_result_with_content(stub_handler):
+    """wrap_memory_create_event never captures returned event payloads."""
+    client = MockMemoryClient()
+
+    wrap_memory_create_event(
+        client.create_event,
+        client,
+        (),
+        {
+            "memory_id": "mem-123",
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "payload": {"message": "sensitive"},
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "mem-123" in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
     assert tool_call.tool_result is None
 
 
@@ -381,6 +414,25 @@ def test_memory_create_blob_event_no_content_by_default(stub_handler):
     assert tool_call.tool_result is None
 
 
+def test_memory_create_blob_event_suppresses_result_with_content(stub_handler):
+    """wrap_memory_create_blob_event never captures returned blob content."""
+    client = MockMemoryClient()
+
+    wrap_memory_create_blob_event(
+        client.create_blob_event,
+        client,
+        ("mem-123", "actor-1", "sess-1"),
+        {"blob": b"sensitive blob"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "mem-123" in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
 def test_memory_create_blob_event_kwargs_preferred_over_args(stub_handler):
     """wrap_memory_create_blob_event prefers kwargs when both provided."""
 
@@ -425,7 +477,7 @@ def test_memory_list_events_creates_tool_call(stub_handler):
     assert tool_call.name == "memory.list_events"
     assert tool_call.system == "bedrock-agentcore"
     assert "mem-123" in tool_call.arguments
-    assert tool_call.tool_result is not None
+    assert tool_call.tool_result is None
 
 
 def test_memory_list_events_no_content_by_default(stub_handler):
@@ -442,6 +494,24 @@ def test_memory_list_events_no_content_by_default(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.arguments is None
+    assert tool_call.tool_result is None
+
+
+def test_memory_list_events_suppresses_result_with_content(stub_handler):
+    """wrap_memory_list_events never captures event payloads returned by the SDK."""
+    client = MockMemoryClient()
+
+    wrap_memory_list_events(
+        client.list_events,
+        client,
+        (),
+        {"memory_id": "mem-123"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "mem-123" in tool_call.arguments
     assert tool_call.tool_result is None
 
 

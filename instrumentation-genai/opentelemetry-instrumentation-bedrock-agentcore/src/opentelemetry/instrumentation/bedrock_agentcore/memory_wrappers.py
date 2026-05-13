@@ -98,7 +98,10 @@ def wrap_memory_create_event(
     except Exception:
         return wrapped(*args, **kwargs)
 
-    return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
+    # never capture tool_result — event responses can include message payloads
+    return invoke_tool_call(
+        handler, invocation, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_memory_create_blob_event(
@@ -127,7 +130,10 @@ def wrap_memory_create_blob_event(
     except Exception:
         return wrapped(*args, **kwargs)
 
-    return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
+    # never capture tool_result — blob event responses can include uploaded content
+    return invoke_tool_call(
+        handler, invocation, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_memory_list_events(
@@ -152,7 +158,10 @@ def wrap_memory_list_events(
     except Exception:
         return wrapped(*args, **kwargs)
 
-    return invoke_tool_call(handler, invocation, wrapped, args, kwargs, capture_content)
+    # never capture tool_result — list_events can include event payloads by default
+    return invoke_tool_call(
+        handler, invocation, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_memory_operation(operation_name: str) -> Any:

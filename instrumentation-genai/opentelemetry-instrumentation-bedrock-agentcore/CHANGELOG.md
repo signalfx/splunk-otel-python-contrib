@@ -18,3 +18,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Support `filename` as a CodeInterpreter upload-file argument when setting AgentCore filename metadata.
 - Preserve an empty retrieval query value when content capture is disabled instead of storing `None`.
 - Suppress CodeInterpreter `clear_context` results even when content capture is enabled.
+- Suppress Memory event results and Browser control-plane results to avoid capturing payloads or infrastructure configuration.

@@ -17,9 +17,12 @@
 import pytest
 
 from opentelemetry.instrumentation.bedrock_agentcore.browser_wrappers import (
+    wrap_browser_create_browser,
     wrap_browser_generate_live_view_url,
     wrap_browser_generate_ws_headers,
+    wrap_browser_get_browser,
     wrap_browser_get_session,
+    wrap_browser_list_browsers,
     wrap_browser_operation,
     wrap_browser_release_control,
     wrap_browser_start,
@@ -55,6 +58,45 @@ class MockBrowserClient:
 
     def generate_live_view_url(self):
         return "https://example.com/live-view?X-Amz-Signature=secret"
+
+    def create_browser(
+        self,
+        name=None,
+        execution_role_arn=None,
+        network_configuration=None,
+        recording_config=None,
+        client_token=None,
+    ):
+        return {
+            "browserId": "browser-123",
+            "executionRoleArn": execution_role_arn,
+            "networkConfiguration": network_configuration,
+            "recordingConfig": recording_config,
+            "clientToken": client_token,
+        }
+
+    def get_browser(self, browser_id):
+        return {
+            "browserId": browser_id,
+            "status": "ACTIVE",
+            "browserSigningConfig": {"privateKey": "secret"},
+            "certificateReference": "cert-secret",
+        }
+
+    def list_browsers(self, max_results=None, next_token=None):
+        return {
+            "browsers": [
+                {
+                    "browserId": "browser-1",
+                    "executionRoleArn": "arn:aws:iam::123:role/secret",
+                },
+                {
+                    "browserId": "browser-2",
+                    "executionRoleArn": "arn:aws:iam::123:role/secret2",
+                },
+            ],
+            "nextToken": next_token or "opaque-secret-token",
+        }
 
     def list_sessions(self, **kwargs):
         return [{"sessionId": "s1"}, {"sessionId": "s2"}]
@@ -271,6 +313,75 @@ def test_browser_generate_live_view_url_suppresses_result_with_content(stub_hand
 
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.name == "browser.generate_live_view_url"
+    assert tool_call.tool_result is None
+
+
+def test_browser_create_browser_suppresses_control_plane_config(stub_handler):
+    """create_browser captures only allowlisted fields and never result config."""
+    browser = MockBrowserClient()
+
+    wrap_browser_create_browser(
+        browser.create_browser,
+        browser,
+        (),
+        {
+            "name": "browser-name",
+            "execution_role_arn": "arn:aws:iam::123:role/secret",
+            "network_configuration": {"subnets": ["subnet-secret"]},
+            "recording_config": {"bucket": "secret-bucket"},
+            "client_token": "secret-token",
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "browser.create_browser"
+    assert "browser-name" in tool_call.arguments
+    assert "secret" not in tool_call.arguments
+    assert tool_call.attributes["bedrock.agentcore.browser.id"] == "browser-123"
+    assert tool_call.tool_result is None
+
+
+def test_browser_get_browser_suppresses_control_plane_config(stub_handler):
+    """get_browser captures browser_id but never result config."""
+    browser = MockBrowserClient()
+
+    wrap_browser_get_browser(
+        browser.get_browser,
+        browser,
+        (),
+        {"browser_id": "browser-123"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "browser.get_browser"
+    assert "browser-123" in tool_call.arguments
+    assert tool_call.attributes["bedrock.agentcore.browser.id"] == "browser-123"
+    assert tool_call.attributes["bedrock.agentcore.browser.status"] == "ACTIVE"
+    assert tool_call.tool_result is None
+
+
+def test_browser_list_browsers_suppresses_control_plane_config(stub_handler):
+    """list_browsers captures safe paging metadata but never browser configs."""
+    browser = MockBrowserClient()
+
+    wrap_browser_list_browsers(
+        browser.list_browsers,
+        browser,
+        (),
+        {"max_results": 10, "next_token": "opaque-secret-token"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "browser.list_browsers"
+    assert "10" in tool_call.arguments
+    assert "opaque-secret-token" not in tool_call.arguments
+    assert tool_call.attributes["bedrock.agentcore.browser.count"] == 2
     assert tool_call.tool_result is None
 
 

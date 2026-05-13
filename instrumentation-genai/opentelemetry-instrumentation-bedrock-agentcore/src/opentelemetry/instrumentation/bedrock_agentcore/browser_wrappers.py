@@ -234,6 +234,152 @@ def wrap_browser_generate_live_view_url(
     )
 
 
+def _first_value(result: Any, *keys: str) -> Any:
+    if not isinstance(result, dict):
+        return None
+
+    for key in keys:
+        value = result.get(key)
+        if value is not None:
+            return value
+
+    for container_key in ("browser", "browserSummary"):
+        nested = result.get(container_key)
+        if isinstance(nested, dict):
+            for key in keys:
+                value = nested.get(key)
+                if value is not None:
+                    return value
+    return None
+
+
+def wrap_browser_create_browser(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        name = call_arguments.get("name")
+        tool_call = ToolCall(
+            name="browser.create_browser",
+            arguments=safe_json_dumps({"name": safe_str(name)})
+            if capture_content and name is not None
+            else None,
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
+        tool_call.attributes["bedrock.agentcore.browser.operation"] = "create_browser"
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    def enrich(tc: ToolCall, result: Any) -> None:
+        browser_id = _first_value(result, "browserId", "browser_id", "id")
+        if browser_id is not None:
+            tc.attributes["bedrock.agentcore.browser.id"] = safe_str(browser_id)
+
+    # never capture tool_result — control-plane responses can include infrastructure config
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
+
+
+def wrap_browser_get_browser(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        browser_id = call_arguments.get("browser_id", call_arguments.get("browserId"))
+        tool_call = ToolCall(
+            name="browser.get_browser",
+            arguments=safe_json_dumps({"browser_id": safe_str(browser_id)})
+            if capture_content and browser_id is not None
+            else None,
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
+        tool_call.attributes["bedrock.agentcore.browser.operation"] = "get_browser"
+        if browser_id is not None:
+            tool_call.attributes["bedrock.agentcore.browser.id"] = safe_str(browser_id)
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    def enrich(tc: ToolCall, result: Any) -> None:
+        status = _first_value(result, "status", "browserStatus")
+        if status is not None:
+            tc.attributes["bedrock.agentcore.browser.status"] = safe_str(status)
+
+    # never capture tool_result — control-plane responses can include infrastructure config
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
+
+
+def wrap_browser_list_browsers(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        max_results = call_arguments.get(
+            "max_results", call_arguments.get("maxResults")
+        )
+        tool_call = ToolCall(
+            name="browser.list_browsers",
+            arguments=safe_json_dumps({"max_results": max_results})
+            if capture_content and max_results is not None
+            else None,
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
+        tool_call.attributes["bedrock.agentcore.browser.operation"] = "list_browsers"
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    def enrich(tc: ToolCall, result: Any) -> None:
+        browsers = result.get("browsers") if isinstance(result, dict) else result
+        if isinstance(browsers, list):
+            tc.attributes["bedrock.agentcore.browser.count"] = len(browsers)
+
+    # never capture tool_result — list responses can include infrastructure config
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
+
+
 def wrap_browser_operation(operation_name: str) -> Any:
     def wrapper(
         wrapped: Any,

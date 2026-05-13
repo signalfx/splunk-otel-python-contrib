@@ -28,9 +28,12 @@ from wrapt import wrap_function_wrapper
 
 from .utils import is_content_enabled, is_instrumentation_enabled
 from .browser_wrappers import (
+    wrap_browser_create_browser,
     wrap_browser_generate_live_view_url,
     wrap_browser_generate_ws_headers,
+    wrap_browser_get_browser,
     wrap_browser_get_session,
+    wrap_browser_list_browsers,
     wrap_browser_operation,
     wrap_browser_release_control,
     wrap_browser_start,
@@ -152,6 +155,9 @@ _CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
         "BrowserClient.generate_live_view_url",
         wrap_browser_generate_live_view_url,
     ),
+    (_BROWSER_MODULE, "BrowserClient.create_browser", wrap_browser_create_browser),
+    (_BROWSER_MODULE, "BrowserClient.get_browser", wrap_browser_get_browser),
+    (_BROWSER_MODULE, "BrowserClient.list_browsers", wrap_browser_list_browsers),
 )
 
 _MEMORY_OPERATION_METHODS = (
@@ -201,10 +207,7 @@ _CODE_INTERPRETER_OPERATION_METHODS = (
 
 _BROWSER_OPERATION_METHODS = (
     "list_sessions",
-    "create_browser",
     "delete_browser",
-    "get_browser",
-    "list_browsers",
     "update_stream",
 )
 

@@ -115,9 +115,9 @@ erDiagram
 | SDK target | GenAI type | Span name | Key attributes |
 | --- | --- | --- | --- |
 | `MemoryClient.retrieve_memories` | `RetrievalInvocation` | `retrieval bedrock-agentcore-memory` | `gen_ai.provider.name=bedrock-agentcore-memory`, `gen_ai.data_source.id=memory.retrieve_memories`, `gen_ai.retrieval.type=bedrock-agentcore-memory`, `gen_ai.retrieval.top_k`, `gen_ai.retrieval.documents_retrieved`; query text only with content capture. |
-| `MemoryClient.create_event` | `ToolCall` | `execute_tool memory.create_event` | With content capture, arguments include `memory_id`, `actor_id`, and `session_id`. |
-| `MemoryClient.create_blob_event` | `ToolCall` | `execute_tool memory.create_blob_event` | With content capture, arguments include `memory_id`, `actor_id`, and `session_id`. |
-| `MemoryClient.list_events` | `ToolCall` | `execute_tool memory.list_events` | With content capture, arguments include `memory_id`. |
+| `MemoryClient.create_event` | `ToolCall` | `execute_tool memory.create_event` | With content capture, arguments include `memory_id`, `actor_id`, and `session_id`. Never captures `tool_result` because event responses can include message payloads. |
+| `MemoryClient.create_blob_event` | `ToolCall` | `execute_tool memory.create_blob_event` | With content capture, arguments include `memory_id`, `actor_id`, and `session_id`. Never captures `tool_result` because blob event responses can include uploaded content. |
+| `MemoryClient.list_events` | `ToolCall` | `execute_tool memory.list_events` | With content capture, arguments include `memory_id`. Never captures `tool_result` because list responses can include event payloads. |
 
 Generic MemoryClient operations are also wrapped as `ToolCall` spans named
 `execute_tool memory.<method>`.
@@ -172,13 +172,15 @@ list_code_interpreters
 | `BrowserClient.get_session` | `ToolCall` | `execute_tool browser.get_session` | Adds `operation=get_session`; enriches `bedrock.agentcore.browser.session_status` from `sessionStatus` when returned. |
 | `BrowserClient.generate_ws_headers` | `ToolCall` | `execute_tool browser.generate_ws_headers` | Never captures `tool_result` because the result contains auth credentials. |
 | `BrowserClient.generate_live_view_url` | `ToolCall` | `execute_tool browser.generate_live_view_url` | Never captures `tool_result` because the result can contain presigned URL tokens. |
+| `BrowserClient.create_browser` | `ToolCall` | `execute_tool browser.create_browser` | Captures only safe allowlisted arguments such as `name`. Never captures `tool_result` because control-plane responses can include infrastructure configuration. |
+| `BrowserClient.get_browser` | `ToolCall` | `execute_tool browser.get_browser` | Captures only `browser_id` and safe status metadata. Never captures `tool_result` because control-plane responses can include infrastructure configuration. |
+| `BrowserClient.list_browsers` | `ToolCall` | `execute_tool browser.list_browsers` | Captures only safe paging metadata and browser count. Never captures `tool_result` because list responses can include infrastructure configuration. |
 
 Generic BrowserClient operations are also wrapped as `ToolCall` spans named
 `execute_tool browser.<method>`:
 
 ```text
-list_sessions, create_browser, delete_browser, get_browser, list_browsers,
-update_stream
+list_sessions, delete_browser, update_stream
 ```
 
 ## Attribute Assertions
@@ -216,8 +218,14 @@ CodeInterpreter.download_file
 CodeInterpreter.download_files
 CodeInterpreter.execute_command
 CodeInterpreter.clear_context
+MemoryClient.create_event
+MemoryClient.create_blob_event
+MemoryClient.list_events
 BrowserClient.generate_ws_headers
 BrowserClient.generate_live_view_url
+BrowserClient.create_browser
+BrowserClient.get_browser
+BrowserClient.list_browsers
 ```
 
 ## Error Behavior
