@@ -3,7 +3,7 @@
 # HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
 
 langchain==1.2.15
-langsmith==0.7.31
+langsmith==0.8.0
 langchain-core==1.2.29
 langchain-openai==1.1.13
 opentelemetry-exporter-otlp==1.38.0
