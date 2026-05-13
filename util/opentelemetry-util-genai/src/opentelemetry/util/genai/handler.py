@@ -760,7 +760,7 @@ class TelemetryHandler:
             **self._invocation_components(),
             name=name,
             arguments=arguments,
-            tool_id=tool_call_id,
+            tool_call_id=tool_call_id,
             tool_type=tool_type,
             tool_description=tool_description,
         )
