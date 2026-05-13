@@ -1,0 +1,113 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: otel-vertexai-single-agent
+  namespace: vertexai-agent
+  labels:
+    app: otel-vertexai-single-agent
+    component: genai-instrumentation
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: otel-vertexai-single-agent
+        spec:
+          containers:
+            - name: otel-vertexai-single-agent
+              image: shuwpan/otel-vertexai-single-agent:latest
+              imagePullPolicy: Always
+              env:
+                # OpenTelemetry configuration
+                - name: OTEL_SERVICE_NAME
+                  value: "otel-vertexai-single-agent"
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=o11y-inframon-ai"
+                # OTLP exporter configuration
+                - name: SPLUNK_OTEL_AGENT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://$(SPLUNK_OTEL_AGENT):4317"
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "grpc"
+                - name: OTEL_LOGS_EXPORTER
+                  value: "otlp"
+                # Python instrumentation settings
+                - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+                  value: "true"
+                - name: OTEL_PYTHON_LOG_CORRELATION
+                  value: "true"
+                # Metrics configuration
+                - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+                  value: "DELTA"
+                # GenAI instrumentation settings
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                  value: "true"
+                - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE
+                  value: "SPAN_AND_EVENT"
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS
+                  value: "span_metric_event,splunk"
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS
+                  value: "deepeval(LLMInvocation(bias,toxicity))"
+                - name: OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION
+                  value: "true"
+                - name: OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION
+                  value: "replace-category:SplunkEvaluationResults"
+                # DeepEval configuration — OpenAI-compatible LLM judge endpoint
+                - name: DEEPEVAL_FILE_SYSTEM
+                  value: "READ_ONLY"
+                - name: DEEPEVAL_LLM_BASE_URL
+                  value: "https://chat-ai.cisco.com/openai/deployments/gpt-5-nano"
+                - name: DEEPEVAL_LLM_MODEL
+                  value: "gpt-5-nano"
+                - name: DEEPEVAL_LLM_PROVIDER
+                  value: "openai"
+                - name: DEEPEVAL_LLM_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: circuit-oauth-secrets
+                      key: client-id
+                - name: DEEPEVAL_LLM_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: circuit-oauth-secrets
+                      key: client-secret
+                # GCP / Vertex AI configuration
+                - name: GOOGLE_CLOUD_PROJECT
+                  value: "gcp-o11yinframon-nprd-81065"
+                - name: GOOGLE_CLOUD_LOCATION
+                  value: "us-central1"
+                - name: GOOGLE_APPLICATION_CREDENTIALS
+                  value: "/etc/gcp/sa-key.json"
+                # Debug / Runtime settings
+                - name: OTEL_LOG_LEVEL
+                  value: "debug"
+                - name: OTEL_INSTRUMENTATION_GENAI_DEBUG
+                  value: "true"
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+              volumeMounts:
+                - name: gcp-sa-key
+                  mountPath: /etc/gcp
+                  readOnly: true
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+          volumes:
+            - name: gcp-sa-key
+              secret:
+                secretName: gcp-vertexai-secrets
+          restartPolicy: OnFailure

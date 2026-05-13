@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `find_agent_with_tools()` fallback in invocation manager when ContextVar does not propagate across asyncio tasks
 
 ### Fixed
-- Corrected retrieval span `gen_ai.operation.name` from `"retrieve"` to `"retrieval"` per OpenTelemetry semantic conventions. Removed explicit override in callback handler; now uses the `RetrievalInvocation` dataclass default from `util-genai`.
+- Fixed potential memory leak in `_InvocationManager` where orphaned invocation entries could accumulate in long-running processes. Added TTL-based eviction (5-minute TTL, 1-minute check interval).
 
 ## [0.1.1] - 2026-01-30
 

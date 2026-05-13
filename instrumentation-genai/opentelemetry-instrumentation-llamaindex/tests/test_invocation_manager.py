@@ -136,3 +136,55 @@ def test_delete_invocation_state_with_children(invocation_manager):
     assert child1_id not in invocation_manager._invocations
     assert child2_id not in invocation_manager._invocations
     assert len(invocation_manager._invocations) == 0
+
+
+def test_evict_stale_entries(invocation_manager, mock_invocation):
+    """Entries older than _TTL_SECONDS are evicted on the next add."""
+    invocation_manager.add_invocation_state(
+        event_id="stale-1",
+        parent_id=None,
+        invocation=mock_invocation,
+    )
+    assert invocation_manager.get_invocation("stale-1") == mock_invocation
+
+    # Simulate the entry being old and the eviction interval having elapsed
+    invocation_manager._invocations["stale-1"].created_at -= (
+        invocation_manager._TTL_SECONDS + 1
+    )
+    invocation_manager._last_eviction = 0  # force eviction to run
+
+    # Adding a new entry triggers eviction of the stale one
+    new_invocation = mock.Mock(spec=LLMInvocation)
+    invocation_manager.add_invocation_state(
+        event_id="fresh-1",
+        parent_id=None,
+        invocation=new_invocation,
+    )
+
+    assert invocation_manager.get_invocation("stale-1") is None
+    assert invocation_manager.get_invocation("fresh-1") == new_invocation
+
+
+def test_eviction_skipped_within_interval(invocation_manager, mock_invocation):
+    """Eviction does not run if called within _EVICTION_INTERVAL."""
+    invocation_manager.add_invocation_state(
+        event_id="entry-1",
+        parent_id=None,
+        invocation=mock_invocation,
+    )
+
+    # Make the entry stale but keep _last_eviction recent
+    invocation_manager._invocations["entry-1"].created_at -= (
+        invocation_manager._TTL_SECONDS + 1
+    )
+    # _last_eviction is already recent (set at __init__), so eviction won't run
+
+    new_invocation = mock.Mock(spec=LLMInvocation)
+    invocation_manager.add_invocation_state(
+        event_id="entry-2",
+        parent_id=None,
+        invocation=new_invocation,
+    )
+
+    # Stale entry should still be present because eviction was skipped
+    assert invocation_manager.get_invocation("entry-1") == mock_invocation
