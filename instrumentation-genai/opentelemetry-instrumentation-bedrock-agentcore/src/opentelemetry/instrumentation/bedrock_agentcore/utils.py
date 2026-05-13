@@ -139,7 +139,9 @@ def invoke_tool_call(
     if capture_content and result is not None:
         serialized = safe_json_dumps(result) if not isinstance(result, str) else result
         tool_call.tool_result = (
-            serialized[:_RESULT_MAX_LEN] + "..." if len(serialized) > _RESULT_MAX_LEN else serialized
+            serialized[:_RESULT_MAX_LEN] + "..."
+            if len(serialized) > _RESULT_MAX_LEN
+            else serialized
         )
     if enrich_result is not None:
         enrich_result(tool_call, result)

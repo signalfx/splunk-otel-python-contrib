@@ -27,7 +27,7 @@ from opentelemetry.util.genai.types import (
     Workflow,
 )
 
-from .utils import bind_call_arguments, safe_json_dumps, safe_str, truncate_error
+from .utils import bind_call_arguments, safe_json_dumps, truncate_error
 
 
 def _make_input_message(event: Any) -> InputMessage:
@@ -59,6 +59,8 @@ def _set_workflow_input_messages(
         return
 
     for value in call_arguments.values():
+        # TODO: Revisit if AgentCore exposes richer request metadata; today the
+        # entrypoint handler convention is a single event argument.
         workflow.input_messages = [_make_input_message(value)]
         return
 
@@ -135,7 +137,9 @@ def wrap_bedrock_agentcore_app_entrypoint(
             handler.stop_workflow(workflow)
             return result
         except Exception as e:
-            handler.fail_workflow(workflow, Error(type=type(e), message=truncate_error(e)))
+            handler.fail_workflow(
+                workflow, Error(type=type(e), message=truncate_error(e))
+            )
             raise
 
     return workflow_wrapper

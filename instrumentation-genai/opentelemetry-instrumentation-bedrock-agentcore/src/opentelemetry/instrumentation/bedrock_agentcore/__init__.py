@@ -38,6 +38,7 @@ from .browser_wrappers import (
     wrap_browser_take_control,
 )
 from .code_interpreter_wrappers import (
+    wrap_code_interpreter_clear_context,
     wrap_code_interpreter_create,
     wrap_code_interpreter_download_file,
     wrap_code_interpreter_execute,
@@ -128,6 +129,11 @@ _CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
     ),
     (
         _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.clear_context",
+        wrap_code_interpreter_clear_context,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
         "CodeInterpreter.create_code_interpreter",
         wrap_code_interpreter_create,
     ),
@@ -188,7 +194,6 @@ _MEMORY_OPERATION_METHODS = (
 _CODE_INTERPRETER_OPERATION_METHODS = (
     "get_session",
     "list_sessions",
-    "clear_context",
     "delete_code_interpreter",
     "get_code_interpreter",
     "list_code_interpreters",

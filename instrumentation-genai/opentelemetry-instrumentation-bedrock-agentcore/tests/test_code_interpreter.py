@@ -17,7 +17,10 @@
 import pytest
 
 from opentelemetry.instrumentation.bedrock_agentcore.code_interpreter_wrappers import (
+    wrap_code_interpreter_clear_context,
+    wrap_code_interpreter_download_file,
     wrap_code_interpreter_execute,
+    wrap_code_interpreter_execute_command,
     wrap_code_interpreter_install_packages,
     wrap_code_interpreter_operation,
     wrap_code_interpreter_start,
@@ -47,6 +50,18 @@ class MockCodeInterpreter:
 
     def upload_file(self, filename, content, description=None):
         return {"fileId": "file-123", "filename": filename}
+
+    def download_file(self, path):
+        return "sensitive file content"
+
+    def download_files(self, paths):
+        return {path: "sensitive file content" for path in paths}
+
+    def execute_command(self, command):
+        return {"stdout": "sensitive command output", "stderr": ""}
+
+    def clear_context(self):
+        return {"cleared": True, "state": "sensitive context summary"}
 
     def get_session(self, session_id=None):
         return {"sessionId": session_id, "status": "ACTIVE"}
@@ -328,6 +343,89 @@ def test_code_interpreter_upload_file_binds_path_parameter(stub_handler):
         == "path-data.csv"
     )
     assert "path-data.csv" in tool_call.arguments
+
+
+# ---------------------------------------------------------------------------
+# protected result wrappers
+# ---------------------------------------------------------------------------
+
+
+def test_code_interpreter_download_file_suppresses_result_with_content(stub_handler):
+    """download_file never captures raw file content as tool_result."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_download_file(
+        interpreter.download_file,
+        interpreter,
+        (),
+        {"path": "secret.txt"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.download_file"
+    assert "secret.txt" in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_code_interpreter_download_files_suppresses_result_with_content(stub_handler):
+    """download_files never captures returned file-content maps."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_download_file(
+        interpreter.download_files,
+        interpreter,
+        (),
+        {"paths": ["secret-1.txt", "secret-2.txt"]},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.download_files"
+    assert "secret-1.txt" in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_code_interpreter_execute_command_suppresses_result_with_content(
+    stub_handler,
+):
+    """execute_command never captures stdout/stderr as tool_result."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_execute_command(
+        interpreter.execute_command,
+        interpreter,
+        (),
+        {"command": "cat /tmp/secret"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.execute_command"
+    assert "cat /tmp/secret" in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_code_interpreter_clear_context_suppresses_result_with_content(stub_handler):
+    """clear_context uses a dedicated wrapper so state details are not captured."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_clear_context(
+        interpreter.clear_context,
+        interpreter,
+        (),
+        {},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.clear_context"
+    assert tool_call.arguments is None
+    assert tool_call.tool_result is None
 
 
 # ---------------------------------------------------------------------------

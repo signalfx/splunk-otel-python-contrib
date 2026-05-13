@@ -123,7 +123,7 @@ def wrap_code_interpreter_upload_file(
         is_multi = files is not None
         operation_name = "upload_files" if is_multi else "upload_file"
         file_count = len(files) if is_multi else 1
-        path = call_arguments.get("path", "")
+        path = call_arguments.get("path", call_arguments.get("filename", ""))
         description = call_arguments.get("description", "")
         tool_call = ToolCall(
             name=f"code_interpreter.{operation_name}",
@@ -138,9 +138,13 @@ def wrap_code_interpreter_upload_file(
             tool_type="extension",
         )
         tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
-        tool_call.attributes["bedrock.agentcore.code_interpreter.file_count"] = file_count
+        tool_call.attributes["bedrock.agentcore.code_interpreter.file_count"] = (
+            file_count
+        )
         if not is_multi:
-            tool_call.attributes["bedrock.agentcore.code_interpreter.filename"] = safe_str(path)
+            tool_call.attributes["bedrock.agentcore.code_interpreter.filename"] = (
+                safe_str(path)
+            )
         if hasattr(instance, "session_id") and instance.session_id:
             tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = (
                 safe_str(instance.session_id)
@@ -164,10 +168,10 @@ def wrap_code_interpreter_download_file(
         is_multi = "paths" in call_arguments
         paths = call_arguments.get("paths", call_arguments.get("path", ""))
         tool_call = ToolCall(
-            name="code_interpreter.download_files" if is_multi else "code_interpreter.download_file",
-            arguments=safe_json_dumps(
-                {"paths": paths} if is_multi else {"path": paths}
-            )
+            name="code_interpreter.download_files"
+            if is_multi
+            else "code_interpreter.download_file",
+            arguments=safe_json_dumps({"paths": paths} if is_multi else {"path": paths})
             if capture_content
             else None,
             system="bedrock-agentcore",
@@ -182,7 +186,9 @@ def wrap_code_interpreter_download_file(
         return wrapped(*args, **kwargs)
 
     # never capture tool_result — returns raw file content
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_code_interpreter_execute_command(
@@ -212,7 +218,37 @@ def wrap_code_interpreter_execute_command(
         return wrapped(*args, **kwargs)
 
     # never capture tool_result — may contain sensitive stdout/stderr
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content=False
+    )
+
+
+def wrap_code_interpreter_clear_context(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        tool_call = ToolCall(
+            name="code_interpreter.clear_context",
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
+        if hasattr(instance, "session_id") and instance.session_id:
+            tool_call.attributes["bedrock.agentcore.code_interpreter.session_id"] = (
+                safe_str(instance.session_id)
+            )
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    # never capture tool_result — context cleanup responses may include state details
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_code_interpreter_create(
@@ -227,10 +263,12 @@ def wrap_code_interpreter_create(
         call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
         tool_call = ToolCall(
             name="code_interpreter.create_code_interpreter",
-            arguments=safe_json_dumps({
-                "name": safe_str(call_arguments.get("name", "")),
-                "description": safe_str(call_arguments.get("description", "")),
-            })
+            arguments=safe_json_dumps(
+                {
+                    "name": safe_str(call_arguments.get("name", "")),
+                    "description": safe_str(call_arguments.get("description", "")),
+                }
+            )
             if capture_content
             else None,
             system="bedrock-agentcore",

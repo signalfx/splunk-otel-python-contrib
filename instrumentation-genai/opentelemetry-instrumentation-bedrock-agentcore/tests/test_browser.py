@@ -17,6 +17,8 @@
 import pytest
 
 from opentelemetry.instrumentation.bedrock_agentcore.browser_wrappers import (
+    wrap_browser_generate_live_view_url,
+    wrap_browser_generate_ws_headers,
     wrap_browser_get_session,
     wrap_browser_operation,
     wrap_browser_release_control,
@@ -47,6 +49,12 @@ class MockBrowserClient:
 
     def get_session(self, browser_id=None, session_id=None):
         return {"sessionId": session_id, "sessionStatus": "ACTIVE"}
+
+    def generate_ws_headers(self):
+        return "wss://example.com/session", {"Authorization": "secret-token"}
+
+    def generate_live_view_url(self):
+        return "https://example.com/live-view?X-Amz-Signature=secret"
 
     def list_sessions(self, **kwargs):
         return [{"sessionId": "s1"}, {"sessionId": "s2"}]
@@ -218,6 +226,52 @@ def test_browser_get_session_no_content_by_default(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.arguments is None
+
+
+# ---------------------------------------------------------------------------
+# protected result wrappers
+# ---------------------------------------------------------------------------
+
+
+def test_browser_generate_ws_headers_suppresses_result_with_content(stub_handler):
+    """generate_ws_headers never captures auth headers as tool_result."""
+    browser = MockBrowserClient()
+    browser.session_id = "browser-session-123"
+
+    wrap_browser_generate_ws_headers(
+        browser.generate_ws_headers,
+        browser,
+        (),
+        {},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "browser.generate_ws_headers"
+    assert (
+        tool_call.attributes["bedrock.agentcore.browser.session_id"]
+        == "browser-session-123"
+    )
+    assert tool_call.tool_result is None
+
+
+def test_browser_generate_live_view_url_suppresses_result_with_content(stub_handler):
+    """generate_live_view_url never captures presigned URLs as tool_result."""
+    browser = MockBrowserClient()
+
+    wrap_browser_generate_live_view_url(
+        browser.generate_live_view_url,
+        browser,
+        (),
+        {},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "browser.generate_live_view_url"
+    assert tool_call.tool_result is None
 
 
 # ---------------------------------------------------------------------------

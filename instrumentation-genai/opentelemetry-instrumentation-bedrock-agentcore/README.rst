@@ -82,6 +82,13 @@ This instrumentation captures:
 All spans are properly nested with correct parent-child relationships and include
 rich attributes about the operation.
 
+Testing Reference
+-----------------
+
+For a detailed implementation map, configuration matrix, wrapped SDK method
+inventory, span attribute assertions, and suggested test cases, see
+`docs/testing-reference.md <docs/testing-reference.md>`_.
+
 
 Compositional Instrumentation
 -----------------------------

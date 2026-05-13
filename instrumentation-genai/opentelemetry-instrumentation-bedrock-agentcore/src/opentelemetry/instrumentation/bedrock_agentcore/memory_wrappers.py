@@ -46,7 +46,7 @@ def wrap_memory_retrieve(
             provider="bedrock-agentcore-memory",
             retriever_type="bedrock-agentcore-memory",
             data_source_id="memory.retrieve_memories",
-            query=safe_str(query) if capture_content else None,
+            query=safe_str(query) if capture_content else "",
             top_k=top_k,
             system="bedrock-agentcore",
         )
@@ -169,7 +169,9 @@ def wrap_memory_operation(operation_name: str) -> Any:
             safe_args = {k: v for k, v in call_arguments.items() if not callable(v)}
             invocation = ToolCall(
                 name=f"memory.{operation_name}",
-                arguments=json.dumps(safe_args, default=str) if capture_content else None,
+                arguments=json.dumps(safe_args, default=str)
+                if capture_content
+                else None,
                 system="bedrock-agentcore",
             )
         except Exception:

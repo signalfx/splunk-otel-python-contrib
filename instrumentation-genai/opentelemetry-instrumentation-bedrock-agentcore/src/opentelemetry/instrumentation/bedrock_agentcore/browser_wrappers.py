@@ -201,7 +201,9 @@ def wrap_browser_generate_ws_headers(
         return wrapped(*args, **kwargs)
 
     # never capture tool_result — returns auth credentials
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_browser_generate_live_view_url(
@@ -227,7 +229,9 @@ def wrap_browser_generate_live_view_url(
         return wrapped(*args, **kwargs)
 
     # never capture tool_result — returns presigned URL with embedded tokens
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content=False)
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_browser_operation(operation_name: str) -> Any:
