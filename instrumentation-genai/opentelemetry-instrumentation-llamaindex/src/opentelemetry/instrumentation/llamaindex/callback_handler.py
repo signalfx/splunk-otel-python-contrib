@@ -17,6 +17,10 @@ from opentelemetry.util.genai.types import (
     Workflow,
     ToolCall,
 )
+from opentelemetry.util.genai.attributes import (
+    GEN_AI_HANDOFF_FROM_AGENT,
+    GEN_AI_HANDOFF_TO_AGENT,
+)
 from opentelemetry.util.genai.utils import (
     should_capture_tool_definitions as _should_capture_tool_definitions,
 )
@@ -917,13 +921,13 @@ class LlamaindexCallbackHandler(BaseCallbackHandler):
                 arguments.get("to_agent") if isinstance(arguments, dict) else None
             )
             if to_agent:
-                tool_call.attributes["gen_ai.handoff.to_agent"] = str(to_agent)
+                tool_call.attributes[GEN_AI_HANDOFF_TO_AGENT] = str(to_agent)
             if context_agent:
                 from_name = getattr(context_agent, "agent_name", None) or getattr(
                     context_agent, "name", None
                 )
                 if from_name:
-                    tool_call.attributes["gen_ai.handoff.from_agent"] = str(from_name)
+                    tool_call.attributes[GEN_AI_HANDOFF_FROM_AGENT] = str(from_name)
 
         # Get parent span before starting the tool call
         parent_span = self._get_parent_span(parent_id)

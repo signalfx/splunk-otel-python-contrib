@@ -922,13 +922,30 @@ class SpanEmitter(EmitterMeta):
         _apply_custom_attributes(span, getattr(tool, "attributes", None))
 
     def _finish_tool_call(self, tool: ToolCall) -> None:
-        """Finish a tool call span."""
+        """Finish a tool call span.
+
+        If ``tool.is_handoff`` was set to True after the span was started
+        (e.g. LangChain detects a Command(goto=...) return value only in
+        on_tool_end), upgrade the span name and operation name from
+        ``execute_tool`` to ``agent_handoff`` here.
+        """
         span = tool.span
         if span is None:
             return
         # Check if span is still recording
         is_recording = hasattr(span, "is_recording") and span.is_recording()
         if is_recording:
+            if getattr(tool, "is_handoff", False):
+                to_agent = (
+                    getattr(tool, "attributes", {}).get(
+                        "gen_ai.handoff.to_agent"
+                    )
+                    or tool.name
+                )
+                span.update_name(f"agent_handoff {to_agent}")
+                span.set_attribute(
+                    GenAI.GEN_AI_OPERATION_NAME, "agent_handoff"
+                )
             _apply_tool_semconv_attributes(span, tool, self._capture_content)
             _apply_custom_attributes(span, getattr(tool, "attributes", None))
             span.end()
