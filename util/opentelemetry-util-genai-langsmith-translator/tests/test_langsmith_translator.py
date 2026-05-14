@@ -340,4 +340,4 @@ class TestAttributeTransformations:
 
         # Check tool mappings
         assert "langsmith.tool.name" in renames
-        assert renames["langsmith.tool.name"] == "gen_ai.tool.call.name"
+        assert renames["langsmith.tool.name"] == "gen_ai.tool.name"
