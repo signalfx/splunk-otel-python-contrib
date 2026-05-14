@@ -101,6 +101,9 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         # --- 5. Conversation & Run Tracking ---
         "langsmith.trace.session_id": "gen_ai.conversation.id",
         "langsmith.tool.name": "gen_ai.tool.name",
+        "langsmith.tool.id": "gen_ai.tool.call.id",
+        "langsmith.tool.arguments": "gen_ai.tool.call.arguments",
+        "langsmith.tool.output": "gen_ai.tool.call.result",
         "langsmith.session_id": "gen_ai.conversation.id",
         "langsmith.thread_id": "gen_ai.conversation.id",
         "langsmith.run_id": "gen_ai.run.id",

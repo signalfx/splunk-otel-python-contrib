@@ -7,7 +7,7 @@
 - Fixed negative duration on `gen_ai.client.operation.duration` histogram by using monotonic clock offsets.
 - Fixed `AgentInvocation`/`AgentCreation`/`Workflow` invocation builders to use current `input_messages`/`output_messages` fields.
 - Added `langsmith.trace.session_id` → `gen_ai.conversation.id` mapping (the actual attribute LangSmith OTELExporter uses).
-- Added `langsmith.tool.name` → `gen_ai.tool.call.name` mapping.
+- Added `langsmith.tool.name` → `gen_ai.tool.name` mapping.
 
 ### Added
 - `ToolCall` invocation creation for `execute_tool` spans with tool name, arguments, result, and parent agent context.
