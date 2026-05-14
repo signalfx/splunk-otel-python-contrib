@@ -100,7 +100,7 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
         "langsmith.usage.total_tokens": "gen_ai.usage.total_tokens",
         # --- 5. Conversation & Run Tracking ---
         "langsmith.trace.session_id": "gen_ai.conversation.id",
-        "langsmith.tool.name": "gen_ai.tool.call.name",
+        "langsmith.tool.name": "gen_ai.tool.name",
         "langsmith.session_id": "gen_ai.conversation.id",
         "langsmith.thread_id": "gen_ai.conversation.id",
         "langsmith.run_id": "gen_ai.run.id",
@@ -129,8 +129,9 @@ _DEFAULT_ATTR_TRANSFORMATIONS = {
 }
 
 # Span names are assigned by the processor per GenAI semantic conventions
-# (e.g. "chat {model}", "invoke_agent {agent.name}"). No legacy glob rewrites.
-_DEFAULT_NAME_TRANSFORMATIONS: Dict[str, str] = {}
+# (e.g. "chat {model}", "invoke_agent {agent.name}"). The
+# `name_transformations` kwarg on `enable_langsmith_translator` remains as a
+# user-supplied override for custom fnmatch rewrites.
 
 # Global flag to track if processor has been registered (prevents multiple instances)
 _PROCESSOR_REGISTERED = False
@@ -207,8 +208,7 @@ def enable_langsmith_translator(
         processor = LangsmithSpanProcessor(
             attribute_transformations=attribute_transformations
             or _DEFAULT_ATTR_TRANSFORMATIONS,
-            name_transformations=name_transformations
-            or _DEFAULT_NAME_TRANSFORMATIONS,
+            name_transformations=name_transformations,
             mutate_original_span=mutate_original_span,
         )
         provider.add_span_processor(processor)
@@ -324,7 +324,7 @@ def _install_deferred_registration() -> None:
 
                     processor = LangsmithSpanProcessor(
                         attribute_transformations=_DEFAULT_ATTR_TRANSFORMATIONS,
-                        name_transformations=_DEFAULT_NAME_TRANSFORMATIONS,
+                        name_transformations=None,
                         mutate_original_span=True,
                     )
                     tracer_provider.add_span_processor(processor)

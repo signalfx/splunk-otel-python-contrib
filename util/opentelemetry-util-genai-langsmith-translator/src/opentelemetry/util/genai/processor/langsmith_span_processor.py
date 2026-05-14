@@ -1278,27 +1278,52 @@ class LangsmithSpanProcessor(SpanProcessor):
                     # Check span_kind from both transformed and original attributes (fallback for safety)
                     span_kind = mutated.get("gen_ai.span.kind", "")
 
-                    # Reclassify "chain" operations:
-                    #   * agent-root chains → "invoke_agent"
-                    #   * everything else → "step" (splunk extension; semconv
-                    #     doesn't define "chain").
+                    # LangSmith run_type "tool" maps to gen_ai.operation.name="tool"
+                    # via the default rename map, but semconv (and downstream
+                    # code paths in this processor) expect "execute_tool".
+                    if operation_name == "tool":
+                        operation_name = "execute_tool"
+                        mutated["gen_ai.operation.name"] = operation_name
+
+                    # Reclassify "chain" operations. LangSmith uses run_type
+                    # "chain" for all orchestration shapes, so we infer:
+                    #   * explicit agent signals (gen_ai.agent.name set, or
+                    #     "agent"/"executor" in span name) → "invoke_agent"
+                    #   * root chains without an agent signal → "workflow"
+                    #     (StateGraph orchestrators, multi-agent coordinators)
+                    #   * inner non-agent chains → "step" (splunk extension;
+                    #     semconv doesn't define "chain")
+                    #
+                    # Tradeoff: if a real agent root has no "agent"/"executor"
+                    # in its name and no gen_ai.agent.name attribute, it will
+                    # be classified as a workflow and miss the agent metric.
+                    # Users can fix this by including "agent" in the name (e.g.
+                    # via create_agent(name="...")) or setting gen_ai.agent.name.
                     if operation_name == "chain":
-                        _is_agent = (
-                            span.parent is None
-                            or mutated.get("gen_ai.agent.name")
-                            or any(
-                                p in (span.name or "").lower()
-                                for p in (
-                                    "agent",
-                                    "executor",
-                                )
+                        _has_agent_signal = mutated.get(
+                            "gen_ai.agent.name"
+                        ) or any(
+                            p in (span.name or "").lower()
+                            for p in (
+                                "agent",
+                                "executor",
                             )
                         )
-                        if _is_agent:
+                        if _has_agent_signal:
                             operation_name = "invoke_agent"
                             mutated["gen_ai.operation.name"] = operation_name
                             _logger.debug(
                                 "[LANGSMITH_PROCESSOR] Reclassified chain → invoke_agent: span=%s",
+                                span.name,
+                            )
+                        elif span.parent is None:
+                            operation_name = "invoke_workflow"
+                            mutated["gen_ai.operation.name"] = operation_name
+                            mutated.setdefault(
+                                "gen_ai.workflow.name", span.name
+                            )
+                            _logger.debug(
+                                "[LANGSMITH_PROCESSOR] Reclassified chain → invoke_workflow: span=%s",
                                 span.name,
                             )
                         else:

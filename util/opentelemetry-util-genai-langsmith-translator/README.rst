@@ -106,17 +106,22 @@ Session & Run Tracking
 Known Limitations
 -----------------
 
-* **Agent name not propagated to child LLM spans.** Because the translator
-  operates post-hoc on completed spans, children may end before their parent
-  agent span is seen, so ``gen_ai.agent.name``/``gen_ai.agent.id`` are not yet
-  injected onto child ``chat``/``execute_tool`` spans. Agent-level spans and
-  metrics still carry the correct identity.
-
 * **Root agent/workflow span duplicates the full conversation.** LangSmith
   serializes the entire ``MessagesState`` accumulator as the root span's
   output, so ``gen_ai.output.messages`` on the top-level ``invoke_agent`` span
   contains every turn of the conversation rather than just the final reply.
   Child ``chat`` and nested agent spans carry the correct per-turn messages.
+
+* **Agent vs. workflow classification depends on naming.** LangSmith reports
+  every orchestration span with ``run_type=chain`` regardless of whether it
+  represents an agent or a higher-level workflow. The translator infers the
+  intent from the span name: roots whose name contains ``agent`` or
+  ``executor`` (or that already carry ``gen_ai.agent.name``) are classified
+  as ``invoke_agent``; other root chains are classified as ``invoke_workflow``;
+  inner chains become ``step``. To get correct classification, name your
+  agents accordingly — e.g. ``create_agent(name="weather_agent")`` or
+  ``compile(name="research_agent")`` for single-agent graphs, and a neutral
+  name like ``compile(name="weather_assistant")`` for multi-agent workflows.
 
 References
 ----------

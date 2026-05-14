@@ -428,7 +428,9 @@ def normalize_langsmith_content(
                     msg_content = kwargs.get("content") or ""
                     msg_type = kwargs.get("type", "unknown")
                     tool_calls = kwargs.get("tool_calls") or []
-                    tool_call_id = kwargs.get("tool_call_id")
+                    tool_call_id = kwargs.get(
+                        "tool_call_id", "unknown_tool_call_id"
+                    )
                     tool_name = kwargs.get("name")
 
                     role = _map_langchain_type_to_role(msg_type)
