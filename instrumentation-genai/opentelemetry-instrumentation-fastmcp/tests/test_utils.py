@@ -21,7 +21,6 @@ from opentelemetry.instrumentation.fastmcp.utils import (
     safe_serialize,
     truncate_if_needed,
     should_capture_content,
-    is_instrumentation_enabled,
     extract_tool_info,
     extract_result_content,
     detect_transport,
@@ -143,21 +142,6 @@ class TestShouldCaptureContent:
                 {"OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": value},
             ):
                 assert should_capture_content() is False
-
-
-class TestIsInstrumentationEnabled:
-    """Tests for is_instrumentation_enabled function."""
-
-    def test_default_true(self):
-        """Test default is True (enabled)."""
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("OTEL_INSTRUMENTATION_GENAI_ENABLE", None)
-            assert is_instrumentation_enabled() is True
-
-    def test_disabled(self):
-        """Test disabling instrumentation."""
-        with patch.dict(os.environ, {"OTEL_INSTRUMENTATION_GENAI_ENABLE": "false"}):
-            assert is_instrumentation_enabled() is False
 
 
 class TestExtractToolInfo:

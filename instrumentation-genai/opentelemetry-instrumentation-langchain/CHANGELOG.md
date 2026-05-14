@@ -2,13 +2,17 @@
 
 All notable changes to this repository are documented in this file.
 
-## Version 0.1.14
+## Unreleased
 
 ### Added
 - **LangGraph handoff support** — Detects `Command(goto=..., update=...)` return values from tools and emits `agent_handoff` spans with `gen_ai.handoff.to_agent` and `gen_ai.handoff.from_agent` attributes.
   - `goto` can be a string, list of strings, or list of `Send` objects — all normalized to a comma-separated target name.
   - State-machine pattern supported: `Command(update={"current_step": "specialist"})` with no `goto` is detected via known routing key names (`current_step`, `active_agent`, `next_agent`, `next_step`, `step`).
   - `gen_ai.handoff.from_agent` is resolved from the nearest parent `AgentInvocation` in the callback run hierarchy.
+
+## Version 0.1.14
+
+### Bump version for release
 
 ## Version 0.1.13
 

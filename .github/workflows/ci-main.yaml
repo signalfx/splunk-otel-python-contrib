@@ -66,6 +66,7 @@ jobs:
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-crewai[instruments,test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-aidefense[test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-weaviate[instruments,test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-vertexai[instruments,test]"
 
       - name: Run tests - opentelemetry-util-genai
         if: always()
@@ -143,6 +144,11 @@ jobs:
         if: always()
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-weaviate/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-vertexai
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-vertexai/tests/ -v
 
       - name: Install fastmcp for instrumentation tests
         if: always()

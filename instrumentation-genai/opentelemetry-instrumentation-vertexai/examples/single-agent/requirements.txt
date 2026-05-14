@@ -1,7 +1,22 @@
-# VertexAI Single-Agent Example — application dependencies
 google-cloud-aiplatform==1.149.0
-opentelemetry-sdk==1.38.0
-opentelemetry-exporter-otlp-proto-grpc==1.38.0
-opentelemetry-instrumentation-vertexai==0.60.0
+
+opentelemetry-api==1.41.1
+opentelemetry-sdk==1.41.1
+opentelemetry-exporter-otlp-proto-grpc==1.41.1
+opentelemetry-instrumentation==0.62b1
+opentelemetry-semantic-conventions==0.62b1
+
+# Splunk OTel GenAI packages
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
+splunk-otel-instrumentation-vertexai
+
+# Evals (deepeval uses OpenAI as LLM judge, litellm for custom endpoints like vLLM)
+deepeval==3.7.9
+openai==2.24.0
+litellm==1.83.14
+
 python-dotenv==1.2.2
-requests==2.32.5
+requests==2.33.1

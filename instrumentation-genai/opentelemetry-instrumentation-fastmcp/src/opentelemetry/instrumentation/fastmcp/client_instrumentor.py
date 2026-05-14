@@ -27,12 +27,42 @@ from opentelemetry.util.genai.types import (
     MCPToolCall,
 )
 from opentelemetry.instrumentation.fastmcp.utils import (
+    FASTMCP_FRAMEWORK,
+    HTTP_PROTOCOL_NAME,
+    HTTP_PROTOCOL_VERSION_DEFAULT,
+    MCP_SYSTEM,
+    TRANSPORT_TCP,
     detect_transport,
+    extract_protocol_version,
+    extract_server_info,
+    extract_session_id,
     safe_serialize,
     truncate_if_needed,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _enrich_client_op(op: MCPOperation, instance: object) -> None:
+    """Populate transport-derived fields on a client-side MCP operation."""
+    if op.network_transport == TRANSPORT_TCP:
+        op.network_protocol_name = HTTP_PROTOCOL_NAME
+        op.network_protocol_version = (
+            op.network_protocol_version or HTTP_PROTOCOL_VERSION_DEFAULT
+        )
+        addr, port = extract_server_info(instance)
+        if addr:
+            op.server_address = addr
+        if port:
+            op.server_port = port
+
+    sid = extract_session_id(instance)
+    if sid:
+        op.mcp_session_id = sid
+
+    pv = extract_protocol_version(instance)
+    if pv:
+        op.mcp_protocol_version = pv
 
 
 def _traced_mcp_operation(
@@ -42,13 +72,14 @@ def _traced_mcp_operation(
     """Generic async wrapper for MCPOperation lifecycle.
 
     ``build_op(instance, transport)`` must return a ready-to-start
-    :class:`MCPOperation`.  Duration is tracked by the handler via
-    ``start_time`` / ``end_time`` on the dataclass.
+    :class:`MCPOperation`. The wrapper handles start / stop / fail
+    and duration timing.
     """
 
     async def wrapper(wrapped, instance, args, kwargs):
         transport = detect_transport(instance)
         op = build_op(instance, transport)
+        _enrich_client_op(op, instance)
 
         handler.start_mcp_operation(op)
         try:
@@ -57,6 +88,7 @@ def _traced_mcp_operation(
             return result
         except Exception as e:
             op.is_error = True
+            op.error_type = type(e).__name__
             handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
             raise
 
@@ -123,16 +155,26 @@ class ClientInstrumentor:
                 mcp_method_name="initialize",
                 network_transport=transport,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
+
+            # Pre-connect: populate server address/port for HTTP transport
+            if transport == TRANSPORT_TCP:
+                init_op.network_protocol_name = HTTP_PROTOCOL_NAME
+                init_op.network_protocol_version = HTTP_PROTOCOL_VERSION_DEFAULT
+                addr, port = extract_server_info(instance)
+                if addr:
+                    init_op.server_address = addr
+                if port:
+                    init_op.server_port = port
 
             handler.start_mcp_operation(init_op)
 
             try:
                 result = await wrapped(*args, **kwargs)
 
-                # Enrich with protocol version from FastMCP after successful connect
+                # Post-connect: enrich with protocol version and server name
                 try:
                     init_result = getattr(instance, "initialize_result", None)
                     if init_result is not None:
@@ -153,10 +195,17 @@ class ClientInstrumentor:
                         exc_info=True,
                     )
 
+                # Post-connect: capture session ID (available after handshake)
+                sid = extract_session_id(instance)
+                if sid:
+                    init_op.mcp_session_id = sid
+
                 instrumentor._active_sessions[id(instance)] = init_op
                 return result
 
             except Exception as e:
+                init_op.is_error = True
+                init_op.error_type = type(e).__name__
                 handler.fail_mcp_operation(init_op, Error(type=type(e), message=str(e)))
                 raise
 
@@ -214,13 +263,14 @@ class ClientInstrumentor:
                 name=tool_name,
                 arguments=tool_args,
                 id=str(uuid.uuid4()),
-                framework="fastmcp",
-                provider="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
                 tool_type="extension",
                 mcp_method_name="tools/call",
                 network_transport=transport,
                 is_client=True,
             )
+            _enrich_client_op(tool_call, instance)
 
             if tool_args:
                 try:
@@ -252,6 +302,7 @@ class ClientInstrumentor:
 
             except Exception as e:
                 tool_call.is_error = True
+                tool_call.error_type = type(e).__name__
                 handler.fail_tool_call(tool_call, Error(type=type(e), message=str(e)))
                 raise
 
@@ -269,8 +320,8 @@ class ClientInstrumentor:
                 mcp_method_name="tools/list",
                 network_transport=transport,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             ),
         )
 
@@ -287,10 +338,10 @@ class ClientInstrumentor:
                 network_transport=transport,
                 mcp_resource_uri=uri or None,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
-
+            _enrich_client_op(op, instance)
             handler.start_mcp_operation(op)
             try:
                 result = await wrapped(*args, **kwargs)
@@ -298,6 +349,7 @@ class ClientInstrumentor:
                 return result
             except Exception as e:
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 
@@ -316,10 +368,10 @@ class ClientInstrumentor:
                 network_transport=transport,
                 gen_ai_prompt_name=prompt_name or None,
                 is_client=True,
-                framework="fastmcp",
-                system="mcp",
+                framework=FASTMCP_FRAMEWORK,
+                system=MCP_SYSTEM,
             )
-
+            _enrich_client_op(op, instance)
             handler.start_mcp_operation(op)
             try:
                 result = await wrapped(*args, **kwargs)
@@ -327,6 +379,7 @@ class ClientInstrumentor:
                 return result
             except Exception as e:
                 op.is_error = True
+                op.error_type = type(e).__name__
                 handler.fail_mcp_operation(op, Error(type=type(e), message=str(e)))
                 raise
 

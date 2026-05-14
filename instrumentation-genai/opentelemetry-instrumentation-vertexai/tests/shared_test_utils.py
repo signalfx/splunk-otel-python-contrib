@@ -21,6 +21,21 @@ from vertexai.generative_models import (
 )
 
 
+def assert_handler_event(log, parent_span):
+    """Assert log record is the unified GenAI handler event and return its body."""
+    assert (
+        log.log_record.event_name
+        == "gen_ai.client.inference.operation.details"
+    )
+    assert log.log_record.body is not None
+    if parent_span:
+        span_context = parent_span.get_span_context()
+        assert log.log_record.trace_id == span_context.trace_id
+        assert log.log_record.span_id == span_context.span_id
+        assert log.log_record.trace_flags == span_context.trace_flags
+    return dict(log.log_record.body)
+
+
 def weather_tool() -> Tool:
     # Adapted from https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling#parallel-samples
     get_current_weather_func = FunctionDeclaration(

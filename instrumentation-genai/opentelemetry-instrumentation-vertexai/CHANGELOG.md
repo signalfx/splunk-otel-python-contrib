@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Migrate to `TelemetryHandler` from `opentelemetry-util-genai`
+- Remove `_StabilityMode` branching, `events.py`, and experimental test files
+- Add function calling support via util-genai `ToolCall` and `ToolCallResponse` types
+
 ## Version 2.2b0 (2025-12-19)
 - Fix overwritten log attributes in vertexai instrumentation
   ([#3925](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/3925))

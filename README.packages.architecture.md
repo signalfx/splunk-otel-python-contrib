@@ -104,7 +104,6 @@ opentelemetry_util_genai_completion_callbacks # returns completion callback inst
 Environment variables (subset – updated):
 
 ```text
-OTEL_INSTRUMENTATION_GENAI_ENABLE=true|false
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN|EVENT|SPAN_AND_EVENT
 OTEL_INSTRUMENTATION_GENAI_EMITTERS_SPAN=...                # chain directives
