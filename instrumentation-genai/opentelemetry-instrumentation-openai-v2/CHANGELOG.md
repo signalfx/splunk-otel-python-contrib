@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Fix `AttributeError: 'StreamWrapper' object has no attribute 'headers'` when
+  using `with_raw_response.create(stream=True)` (e.g. via LiteLLM's Azure provider).
+  `StreamWrapper` now proxies unknown attribute lookups to the underlying stream via
+  `__getattr__`. Ports upstream fix
+  ([opentelemetry-python-contrib#4184](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4184),
+  fixes [#4113](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113)).
+
 ### Added
 
 - Add `gen_ai.tool.definitions` attribute on LLM spans when
