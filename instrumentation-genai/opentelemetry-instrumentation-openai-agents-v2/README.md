@@ -76,18 +76,34 @@ rich attributes about the operation.
 
 ## Configuration
 
-### Environment Variables
+### Enabling message content
+
+Message content such as prompts, completions, tool arguments, and return values
+are not captured by default. To enable content capturing, set the environment variable
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` to one of the following values:
+
+- `true` — Legacy. Treated as `span_and_event` for backward compatibility.
+- `span_only` — Capture content on span attributes only.
+- `event_only` — Capture content on event attributes only.
+- `span_and_event` — Capture content on both span and event attributes.
 
 ```bash
-# Capture message content (disabled by default)
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=span_and_event
+```
 
-# Content capture mode
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+### Other environment variables
+
+```bash
+# Capture tool/function definitions on LLM spans (disabled by default)
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true
 
 # Disable metrics
 export OTEL_INSTRUMENTATION_OPENAI_AGENTS_CAPTURE_METRICS=false
 ```
+
+> **Backward compatibility**: The deprecated
+> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE` variable is still
+> honored when the primary variable is set to a truthy value (`true`/`1`/`yes`/`on`).
 
 ### Instrumentation Options
 
