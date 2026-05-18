@@ -1,6 +1,6 @@
 # OpenTelemetry OpenAI Agents Instrumentation (Alpha)
 
-[![PyPI](https://badge.fury.io/py/splunk-otel-instrumentation-openai-agents-v2.svg)](https://pypi.org/project/splunk-otel-instrumentation-openai-agents-v2/)
+[![PyPI](https://badge.fury.io/py/splunk-otel-instrumentation-openai-agents.svg)](https://pypi.org/project/splunk-otel-instrumentation-openai-agents/)
 
 This package provides OpenTelemetry instrumentation for
 [OpenAI Agents SDK](https://github.com/openai/openai-agents-python),
@@ -13,7 +13,7 @@ Status: Alpha (APIs and produced telemetry are subject to change).
 ## Installation
 
 ```bash
-pip install splunk-otel-instrumentation-openai-agents-v2
+pip install splunk-otel-instrumentation-openai-agents
 ```
 
 ## Quick Start

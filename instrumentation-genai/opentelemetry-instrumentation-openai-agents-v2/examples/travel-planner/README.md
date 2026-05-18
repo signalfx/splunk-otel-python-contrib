@@ -37,7 +37,7 @@ Install the Splunk Distribution of OpenTelemetry packages:
 
 ```bash
 # Core instrumentation packages
-pip install splunk-otel-instrumentation-openai-agents-v2
+pip install splunk-otel-instrumentation-openai-agents
 pip install splunk-otel-util-genai
 
 # Splunk-specific emitters (required for Splunk Observability Cloud)
