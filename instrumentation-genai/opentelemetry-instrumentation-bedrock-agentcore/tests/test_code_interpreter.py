@@ -18,6 +18,7 @@ import pytest
 
 from opentelemetry.instrumentation.bedrock_agentcore.code_interpreter_wrappers import (
     wrap_code_interpreter_clear_context,
+    wrap_code_interpreter_create,
     wrap_code_interpreter_download_file,
     wrap_code_interpreter_execute,
     wrap_code_interpreter_execute_command,
@@ -62,6 +63,20 @@ class MockCodeInterpreter:
 
     def clear_context(self):
         return {"cleared": True, "state": "sensitive context summary"}
+
+    def create_code_interpreter(
+        self,
+        name=None,
+        description=None,
+        execution_role_arn=None,
+        network_configuration=None,
+    ):
+        return {
+            "codeInterpreterId": "ci-123",
+            "executionRoleArn": execution_role_arn,
+            "networkConfiguration": network_configuration,
+            "resourceArn": "arn:aws:bedrock-agentcore:us-west-2:123:code-interpreter/ci-123",
+        }
 
     def get_session(self, session_id=None):
         return {"sessionId": session_id, "status": "ACTIVE"}
@@ -425,6 +440,34 @@ def test_code_interpreter_clear_context_suppresses_result_with_content(stub_hand
     tool_call = stub_handler.started_tool_calls[0]
     assert tool_call.name == "code_interpreter.clear_context"
     assert tool_call.arguments is None
+    assert tool_call.tool_result is None
+
+
+def test_code_interpreter_create_suppresses_infrastructure_result_with_content(
+    stub_handler,
+):
+    """create_code_interpreter never captures returned ARNs or network config."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_create(
+        interpreter.create_code_interpreter,
+        interpreter,
+        (),
+        {
+            "name": "analysis-runtime",
+            "description": "safe description",
+            "execution_role_arn": "arn:aws:iam::123:role/secret",
+            "network_configuration": {"subnets": ["subnet-secret"]},
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.create_code_interpreter"
+    assert "analysis-runtime" in tool_call.arguments
+    assert "safe description" in tool_call.arguments
+    assert "secret" not in tool_call.arguments
     assert tool_call.tool_result is None
 
 

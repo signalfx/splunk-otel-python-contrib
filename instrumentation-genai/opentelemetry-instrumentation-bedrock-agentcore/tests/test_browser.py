@@ -28,6 +28,7 @@ from opentelemetry.instrumentation.bedrock_agentcore.browser_wrappers import (
     wrap_browser_start,
     wrap_browser_stop,
     wrap_browser_take_control,
+    wrap_browser_update_stream,
 )
 
 
@@ -51,7 +52,11 @@ class MockBrowserClient:
         return {"status": "control_released"}
 
     def get_session(self, browser_id=None, session_id=None):
-        return {"sessionId": session_id, "sessionStatus": "ACTIVE"}
+        return {
+            "sessionId": session_id,
+            "sessionStatus": "ACTIVE",
+            "signingMaterial": "secret-session-signing-material",
+        }
 
     def generate_ws_headers(self):
         return "wss://example.com/session", {"Authorization": "secret-token"}
@@ -96,6 +101,19 @@ class MockBrowserClient:
                 },
             ],
             "nextToken": next_token or "opaque-secret-token",
+        }
+
+    def update_stream(
+        self,
+        browser_id=None,
+        session_id=None,
+        stream_delivery_resources=None,
+    ):
+        return {
+            "browserId": browser_id,
+            "sessionId": session_id,
+            "streamStatus": "ACTIVE",
+            "streamDeliveryResources": stream_delivery_resources,
         }
 
     def list_sessions(self, **kwargs):
@@ -238,7 +256,7 @@ def test_browser_get_session_tracks_status(stub_handler):
 
 
 def test_browser_get_session_with_content(stub_handler):
-    """wrap_browser_get_session captures arguments when content enabled."""
+    """wrap_browser_get_session captures arguments but suppresses result."""
     browser = MockBrowserClient()
 
     wrap_browser_get_session(
@@ -252,6 +270,7 @@ def test_browser_get_session_with_content(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert "browser-123" in tool_call.arguments
+    assert tool_call.tool_result is None
 
 
 def test_browser_get_session_no_content_by_default(stub_handler):
@@ -382,6 +401,58 @@ def test_browser_list_browsers_suppresses_control_plane_config(stub_handler):
     assert "10" in tool_call.arguments
     assert "opaque-secret-token" not in tool_call.arguments
     assert tool_call.attributes["bedrock.agentcore.browser.count"] == 2
+    assert tool_call.tool_result is None
+
+
+def test_browser_create_browser_ignores_empty_result_id(stub_handler):
+    """empty result IDs are not recorded as browser.id attributes."""
+    browser = MockBrowserClient()
+
+    def create_empty_id(name=None):
+        return {"browserId": "", "status": "CREATED"}
+
+    wrap_browser_create_browser(
+        create_empty_id,
+        browser,
+        (),
+        {"name": "browser-name"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "bedrock.agentcore.browser.id" not in tool_call.attributes
+
+
+def test_browser_update_stream_suppresses_delivery_resources(stub_handler):
+    """update_stream captures IDs but never stream delivery resource config."""
+    browser = MockBrowserClient()
+
+    wrap_browser_update_stream(
+        browser.update_stream,
+        browser,
+        (),
+        {
+            "browser_id": "browser-123",
+            "session_id": "session-456",
+            "stream_delivery_resources": {
+                "s3BucketArn": "arn:aws:s3:::secret-bucket",
+                "kmsKeyArn": "arn:aws:kms:us-west-2:123:key/secret",
+                "recordingPrefix": "secret-prefix",
+            },
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "browser.update_stream"
+    assert "browser-123" in tool_call.arguments
+    assert "session-456" in tool_call.arguments
+    assert "secret" not in tool_call.arguments
+    assert tool_call.attributes["bedrock.agentcore.browser.id"] == "browser-123"
+    assert tool_call.attributes["bedrock.agentcore.browser.session_id"] == "session-456"
+    assert tool_call.attributes["bedrock.agentcore.browser.stream_status"] == "ACTIVE"
     assert tool_call.tool_result is None
 
 

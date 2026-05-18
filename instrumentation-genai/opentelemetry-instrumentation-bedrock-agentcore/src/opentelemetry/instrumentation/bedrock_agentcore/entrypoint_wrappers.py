@@ -71,6 +71,7 @@ def wrap_bedrock_agentcore_app_entrypoint(
     args: tuple,
     kwargs: dict,
     handler: TelemetryHandler,
+    capture_content: bool = False,
 ) -> Any:
     """Wrap BedrockAgentCoreApp.entrypoint to create Workflow span per invocation.
 
@@ -85,6 +86,7 @@ def wrap_bedrock_agentcore_app_entrypoint(
         args: Positional arguments (the function being decorated)
         kwargs: Keyword arguments
         handler: TelemetryHandler instance
+        capture_content: Whether to capture entrypoint input/output content
 
     Returns:
         Decorated function that creates a Workflow span on each call
@@ -101,13 +103,14 @@ def wrap_bedrock_agentcore_app_entrypoint(
         @functools.wraps(decorated_func)
         async def async_workflow_wrapper(*call_args, **call_kwargs):
             workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
-            _set_workflow_input_messages(
-                workflow, decorated_func, call_args, call_kwargs
-            )
+            if capture_content:
+                _set_workflow_input_messages(
+                    workflow, decorated_func, call_args, call_kwargs
+                )
             handler.start_workflow(workflow)
             try:
                 result = await decorated_func(*call_args, **call_kwargs)
-                if result is not None:
+                if capture_content and result is not None:
                     try:
                         workflow.output_messages = [_make_output_message(result)]
                     except Exception:
@@ -125,11 +128,14 @@ def wrap_bedrock_agentcore_app_entrypoint(
     @functools.wraps(decorated_func)
     def workflow_wrapper(*call_args, **call_kwargs):
         workflow = Workflow(name=workflow_name, system="bedrock-agentcore")
-        _set_workflow_input_messages(workflow, decorated_func, call_args, call_kwargs)
+        if capture_content:
+            _set_workflow_input_messages(
+                workflow, decorated_func, call_args, call_kwargs
+            )
         handler.start_workflow(workflow)
         try:
             result = decorated_func(*call_args, **call_kwargs)
-            if result is not None:
+            if capture_content and result is not None:
                 try:
                     workflow.output_messages = [_make_output_message(result)]
                 except Exception:

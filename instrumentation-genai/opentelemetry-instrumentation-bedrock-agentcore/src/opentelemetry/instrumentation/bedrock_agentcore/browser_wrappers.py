@@ -174,7 +174,13 @@ def wrap_browser_get_session(
                 )
 
     return invoke_tool_call(
-        handler, tool_call, wrapped, args, kwargs, capture_content, enrich
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
     )
 
 
@@ -240,7 +246,7 @@ def _first_value(result: Any, *keys: str) -> Any:
 
     for key in keys:
         value = result.get(key)
-        if value is not None:
+        if value is not None and value != "":
             return value
 
     for container_key in ("browser", "browserSummary"):
@@ -248,7 +254,7 @@ def _first_value(result: Any, *keys: str) -> Any:
         if isinstance(nested, dict):
             for key in keys:
                 value = nested.get(key)
-                if value is not None:
+                if value is not None and value != "":
                     return value
     return None
 
@@ -369,6 +375,65 @@ def wrap_browser_list_browsers(
             tc.attributes["bedrock.agentcore.browser.count"] = len(browsers)
 
     # never capture tool_result — list responses can include infrastructure config
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
+
+
+def wrap_browser_update_stream(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        safe_args = {}
+        for source, target in (
+            ("browser_id", "browser_id"),
+            ("browserId", "browser_id"),
+            ("session_id", "session_id"),
+            ("sessionId", "session_id"),
+            ("stream_id", "stream_id"),
+            ("streamId", "stream_id"),
+        ):
+            value = call_arguments.get(source)
+            if value is not None and value != "":
+                safe_args[target] = safe_str(value)
+
+        tool_call = ToolCall(
+            name="browser.update_stream",
+            arguments=safe_json_dumps(safe_args)
+            if capture_content and safe_args
+            else None,
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "browser"
+        tool_call.attributes["bedrock.agentcore.browser.operation"] = "update_stream"
+        browser_id = safe_args.get("browser_id")
+        if browser_id:
+            tool_call.attributes["bedrock.agentcore.browser.id"] = browser_id
+        session_id = safe_args.get("session_id")
+        if session_id:
+            tool_call.attributes["bedrock.agentcore.browser.session_id"] = session_id
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    def enrich(tc: ToolCall, result: Any) -> None:
+        status = _first_value(result, "status", "streamStatus")
+        if status is not None:
+            tc.attributes["bedrock.agentcore.browser.stream_status"] = safe_str(status)
+
+    # never capture tool_result — stream config can include S3/KMS ARNs and prefixes
     return invoke_tool_call(
         handler,
         tool_call,

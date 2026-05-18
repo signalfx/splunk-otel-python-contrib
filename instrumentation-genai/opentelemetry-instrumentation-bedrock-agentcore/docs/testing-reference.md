@@ -118,6 +118,10 @@ erDiagram
 | `MemoryClient.create_event` | `ToolCall` | `execute_tool memory.create_event` | With content capture, arguments include `memory_id`, `actor_id`, and `session_id`. Never captures `tool_result` because event responses can include message payloads. |
 | `MemoryClient.create_blob_event` | `ToolCall` | `execute_tool memory.create_blob_event` | With content capture, arguments include `memory_id`, `actor_id`, and `session_id`. Never captures `tool_result` because blob event responses can include uploaded content. |
 | `MemoryClient.list_events` | `ToolCall` | `execute_tool memory.list_events` | With content capture, arguments include `memory_id`. Never captures `tool_result` because list responses can include event payloads. |
+| `MemoryClient.process_turn_with_llm` | `ToolCall` | `execute_tool memory.process_turn_with_llm` | Captures only safe metadata such as memory, actor, and session IDs. Never captures messages, callbacks, or `tool_result`. |
+| `MemoryClient.save_conversation` | `ToolCall` | `execute_tool memory.save_conversation` | Captures only safe metadata such as memory, actor, and session IDs. Never captures conversation content or `tool_result`. |
+| `MemoryClient.fork_conversation` | `ToolCall` | `execute_tool memory.fork_conversation` | Captures only safe metadata such as memory, actor, session, and branch identifiers. Never captures messages or `tool_result`. |
+| `MemoryClient.get_last_k_turns` | `ToolCall` | `execute_tool memory.get_last_k_turns` | Captures safe count and ID metadata. Never captures returned turns. |
 
 Generic MemoryClient operations are also wrapped as `ToolCall` spans named
 `execute_tool memory.<method>`.
@@ -125,16 +129,40 @@ Generic MemoryClient operations are also wrapped as `ToolCall` spans named
 ```text
 create_memory, create_memory_and_wait, create_or_get_memory, delete_memory,
 delete_memory_and_wait, get_memory_status, list_memories, wait_for_memories,
-save_conversation, fork_conversation, get_conversation_tree, get_last_k_turns,
-list_branch_events, list_branches, merge_branch_context, process_turn_with_llm,
+get_conversation_tree, list_branch_events, list_branches, merge_branch_context,
 add_strategy, add_episodic_strategy, add_episodic_strategy_and_wait,
 add_semantic_strategy, add_semantic_strategy_and_wait, add_summary_strategy,
 add_summary_strategy_and_wait, add_user_preference_strategy,
 add_user_preference_strategy_and_wait, add_custom_episodic_strategy,
 add_custom_episodic_strategy_and_wait, add_custom_semantic_strategy,
 add_custom_semantic_strategy_and_wait, delete_strategy, modify_strategy,
-get_memory_strategies, update_memory_strategies,
-update_memory_strategies_and_wait
+get_memory_strategies, update_memory_strategies, update_memory_strategies_and_wait
+```
+
+### Memory Session Manager
+
+`MemorySession` methods delegate to `MemorySessionManager`; only
+`MemorySessionManager` is wrapped so one SDK call path creates one telemetry span.
+
+| SDK target | GenAI type | Span name | Key attributes |
+| --- | --- | --- | --- |
+| `MemorySessionManager.search_long_term_memories` | `RetrievalInvocation` | `retrieval bedrock-agentcore-memory` | `gen_ai.data_source.id=memory.session.search_long_term_memories`, `gen_ai.retrieval.top_k`, `gen_ai.retrieval.documents_retrieved`; query text only with content capture. Returned memory records are never captured. |
+| `MemorySessionManager.process_turn_with_llm` | `ToolCall` | `execute_tool memory.session.process_turn_with_llm` | Captures only safe memory, actor, and session metadata. Never captures user input, callbacks, retrieved memories, LLM responses, events, or `tool_result`. |
+| `MemorySessionManager.process_turn_with_llm_async` | `ToolCall` | `execute_tool memory.session.process_turn_with_llm_async` | Async equivalent of `process_turn_with_llm`; the span stays open until the coroutine completes. Never captures content result payloads. |
+| `MemorySessionManager.add_turns` | `ToolCall` | `execute_tool memory.session.add_turns` | Captures only safe memory, actor, and session metadata. Never captures message payloads, metadata, or `tool_result`. |
+| `MemorySessionManager.fork_conversation` | `ToolCall` | `execute_tool memory.session.fork_conversation` | Captures safe IDs and branch metadata only. Never captures forked messages or `tool_result`. |
+| `MemorySessionManager.list_events` | `ToolCall` | `execute_tool memory.session.list_events` | Captures safe IDs, paging, and payload flags. Never captures returned events because payloads are included by default. |
+| `MemorySessionManager.get_last_k_turns` | `ToolCall` | `execute_tool memory.session.get_last_k_turns` | Captures safe count and ID metadata. Never captures returned turns. |
+
+Additional `MemorySessionManager` operations are wrapped as metadata-only
+`ToolCall` spans named `execute_tool memory.session.<method>` and never capture
+`tool_result`:
+
+```text
+create_memory_session, list_branches, get_event, delete_event,
+list_long_term_memory_records, list_actors, list_actor_sessions,
+get_memory_record, delete_memory_record,
+delete_all_long_term_memories_in_namespace
 ```
 
 ### Code Interpreter
@@ -151,7 +179,7 @@ update_memory_strategies_and_wait
 | `CodeInterpreter.download_files` | `ToolCall` | `execute_tool code_interpreter.download_files` | Captures arguments only when enabled. Never captures `tool_result` because the result can be raw file content. |
 | `CodeInterpreter.execute_command` | `ToolCall` | `execute_tool code_interpreter.execute_command` | Captures command only when enabled. Never captures `tool_result` because stdout/stderr can be sensitive. |
 | `CodeInterpreter.clear_context` | `ToolCall` | `execute_tool code_interpreter.clear_context` | Never captures `tool_result` because context cleanup responses may include state details. |
-| `CodeInterpreter.create_code_interpreter` | `ToolCall` | `execute_tool code_interpreter.create_code_interpreter` | With content capture, arguments include name and description. |
+| `CodeInterpreter.create_code_interpreter` | `ToolCall` | `execute_tool code_interpreter.create_code_interpreter` | With content capture, arguments include name and description. Never captures `tool_result` because create responses can include IAM ARNs and VPC config. |
 
 Generic CodeInterpreter operations are also wrapped as `ToolCall` spans named
 `execute_tool code_interpreter.<method>`:
@@ -169,18 +197,19 @@ list_code_interpreters
 | `BrowserClient.stop` | `ToolCall` | `execute_tool browser.stop` | Adds `operation=stop_session` and existing `session_id` when available. |
 | `BrowserClient.take_control` | `ToolCall` | `execute_tool browser.take_control` | Adds `operation=take_control` and existing `session_id` when available. |
 | `BrowserClient.release_control` | `ToolCall` | `execute_tool browser.release_control` | Adds `operation=release_control` and existing `session_id` when available. |
-| `BrowserClient.get_session` | `ToolCall` | `execute_tool browser.get_session` | Adds `operation=get_session`; enriches `bedrock.agentcore.browser.session_status` from `sessionStatus` when returned. |
+| `BrowserClient.get_session` | `ToolCall` | `execute_tool browser.get_session` | Adds `operation=get_session`; enriches `bedrock.agentcore.browser.session_status` from `sessionStatus` when returned. Never captures `tool_result` because session responses can include signing material. |
 | `BrowserClient.generate_ws_headers` | `ToolCall` | `execute_tool browser.generate_ws_headers` | Never captures `tool_result` because the result contains auth credentials. |
 | `BrowserClient.generate_live_view_url` | `ToolCall` | `execute_tool browser.generate_live_view_url` | Never captures `tool_result` because the result can contain presigned URL tokens. |
 | `BrowserClient.create_browser` | `ToolCall` | `execute_tool browser.create_browser` | Captures only safe allowlisted arguments such as `name`. Never captures `tool_result` because control-plane responses can include infrastructure configuration. |
 | `BrowserClient.get_browser` | `ToolCall` | `execute_tool browser.get_browser` | Captures only `browser_id` and safe status metadata. Never captures `tool_result` because control-plane responses can include infrastructure configuration. |
 | `BrowserClient.list_browsers` | `ToolCall` | `execute_tool browser.list_browsers` | Captures only safe paging metadata and browser count. Never captures `tool_result` because list responses can include infrastructure configuration. |
+| `BrowserClient.update_stream` | `ToolCall` | `execute_tool browser.update_stream` | Captures only safe browser/session/stream IDs. Never captures stream delivery resources or `tool_result` because they can include S3/KMS ARNs and prefixes. |
 
 Generic BrowserClient operations are also wrapped as `ToolCall` spans named
 `execute_tool browser.<method>`:
 
 ```text
-list_sessions, delete_browser, update_stream
+list_sessions, delete_browser
 ```
 
 ## Attribute Assertions
@@ -218,14 +247,37 @@ CodeInterpreter.download_file
 CodeInterpreter.download_files
 CodeInterpreter.execute_command
 CodeInterpreter.clear_context
+CodeInterpreter.create_code_interpreter
 MemoryClient.create_event
 MemoryClient.create_blob_event
 MemoryClient.list_events
+MemoryClient.process_turn_with_llm
+MemoryClient.save_conversation
+MemoryClient.fork_conversation
+MemoryClient.get_last_k_turns
+MemorySessionManager.process_turn_with_llm
+MemorySessionManager.process_turn_with_llm_async
+MemorySessionManager.create_memory_session
+MemorySessionManager.add_turns
+MemorySessionManager.fork_conversation
+MemorySessionManager.list_events
+MemorySessionManager.list_branches
+MemorySessionManager.get_last_k_turns
+MemorySessionManager.get_event
+MemorySessionManager.delete_event
+MemorySessionManager.list_long_term_memory_records
+MemorySessionManager.list_actors
+MemorySessionManager.list_actor_sessions
+MemorySessionManager.get_memory_record
+MemorySessionManager.delete_memory_record
+MemorySessionManager.delete_all_long_term_memories_in_namespace
+BrowserClient.get_session
 BrowserClient.generate_ws_headers
 BrowserClient.generate_live_view_url
 BrowserClient.create_browser
 BrowserClient.get_browser
 BrowserClient.list_browsers
+BrowserClient.update_stream
 ```
 
 ## Error Behavior

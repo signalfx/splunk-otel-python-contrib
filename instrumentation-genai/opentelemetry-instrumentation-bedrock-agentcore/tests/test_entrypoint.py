@@ -49,7 +49,7 @@ def test_bedrock_agentcore_app_wrapper_sync(stub_handler):
         return {"status": "success"}
 
     wrapped = wrap_bedrock_agentcore_app_entrypoint(
-        app.entrypoint, app, (my_handler,), {}, stub_handler
+        app.entrypoint, app, (my_handler,), {}, stub_handler, capture_content=True
     )
     result = wrapped({"input": "test"})
 
@@ -80,7 +80,7 @@ def test_bedrock_agentcore_app_wrapper_sync_keyword_event(stub_handler):
         return {"status": "success", "event": event}
 
     wrapped = wrap_bedrock_agentcore_app_entrypoint(
-        app.entrypoint, app, (my_handler,), {}, stub_handler
+        app.entrypoint, app, (my_handler,), {}, stub_handler, capture_content=True
     )
     result = wrapped(event={"input": "kw-test"})
 
@@ -136,7 +136,7 @@ async def test_bedrock_agentcore_app_wrapper_async(stub_handler):
         return {"status": "async_success"}
 
     wrapped = wrap_bedrock_agentcore_app_entrypoint(
-        app.entrypoint, app, (async_handler,), {}, stub_handler
+        app.entrypoint, app, (async_handler,), {}, stub_handler, capture_content=True
     )
     result = await wrapped({"input": "test"})
 
@@ -146,3 +146,30 @@ async def test_bedrock_agentcore_app_wrapper_async(stub_handler):
     assert started_input_messages[0][0].role == "user"
     assert '"input": "test"' in started_input_messages[0][0].parts[0].content
     assert result == {"status": "async_success"}
+
+
+def test_bedrock_agentcore_app_wrapper_no_content_by_default(stub_handler):
+    """entrypoint wrapper does not capture payloads unless content capture is enabled."""
+
+    class MockApp:
+        name = "test_app"
+
+        def entrypoint(self, func):
+            return func
+
+    app = MockApp()
+    started_input_messages = _capture_start_input_messages(stub_handler)
+
+    def my_handler(payload):
+        return {"status": "success", "echo": payload}
+
+    wrapped = wrap_bedrock_agentcore_app_entrypoint(
+        app.entrypoint, app, (my_handler,), {}, stub_handler
+    )
+    result = wrapped({"input": "secret"})
+
+    workflow = stub_handler.started_workflows[0]
+    assert result == {"status": "success", "echo": {"input": "secret"}}
+    assert started_input_messages == [[]]
+    assert workflow.input_messages == []
+    assert workflow.output_messages == []

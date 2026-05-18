@@ -21,11 +21,15 @@ from opentelemetry.semconv._incubating.attributes import (
 from opentelemetry.util.genai.handler import TelemetryHandler, get_telemetry_handler
 
 from opentelemetry.instrumentation.bedrock_agentcore.memory_wrappers import (
+    wrap_memory_conversation_operation,
     wrap_memory_create_blob_event,
     wrap_memory_create_event,
     wrap_memory_list_events,
     wrap_memory_operation,
     wrap_memory_retrieve,
+    wrap_memory_session_async_operation,
+    wrap_memory_session_operation,
+    wrap_memory_session_search_long_term_memories,
 )
 
 
@@ -61,6 +65,83 @@ class MockMemoryClient:
 
     def create_memory(self, **kwargs):
         return {"memoryId": "mem-new"}
+
+    def process_turn_with_llm(
+        self,
+        memory_id,
+        actor_id,
+        session_id,
+        messages,
+        llm_callback=None,
+    ):
+        return {"messages": messages, "summary": "sensitive summary"}
+
+    def save_conversation(self, memory_id, actor_id, session_id, conversation):
+        return {"conversation": conversation}
+
+    def fork_conversation(self, memory_id, actor_id, session_id, branch_name, messages):
+        return {"branchName": branch_name, "messages": messages}
+
+    def get_last_k_turns(self, memory_id, actor_id, session_id, k=3):
+        return {"turns": [{"role": "user", "content": "sensitive"}]}
+
+
+class MockMemorySessionManager:
+    """Mock MemorySessionManager for testing."""
+
+    def __init__(self):
+        self._memory_id = "mem-session"
+
+    def create_memory_session(self, actor_id, session_id=None):
+        return {
+            "memoryId": self._memory_id,
+            "actorId": actor_id,
+            "sessionId": session_id or "generated-session",
+        }
+
+    def add_turns(self, actor_id, session_id, messages, metadata=None):
+        return {"eventId": "event-1", "payload": messages, "metadata": metadata}
+
+    def process_turn_with_llm(
+        self,
+        actor_id,
+        session_id,
+        user_input,
+        llm_callback,
+        retrieval_config=None,
+        metadata=None,
+    ):
+        return (
+            [{"content": {"text": "sensitive retrieved memory"}}],
+            llm_callback(user_input, []),
+            {"payload": [{"content": user_input}], "metadata": metadata},
+        )
+
+    async def process_turn_with_llm_async(
+        self,
+        actor_id,
+        session_id,
+        user_input,
+        llm_callback,
+        retrieval_config=None,
+        metadata=None,
+    ):
+        return (
+            [{"content": {"text": "sensitive retrieved memory"}}],
+            await llm_callback(user_input, []),
+            {"payload": [{"content": user_input}], "metadata": metadata},
+        )
+
+    def list_events(self, actor_id, session_id, include_payload=True, max_results=100):
+        return [
+            {
+                "eventId": "event-1",
+                "payload": {"message": "sensitive"} if include_payload else None,
+            }
+        ][:max_results]
+
+    def search_long_term_memories(self, query, namespace_prefix, top_k=3):
+        return [{"memoryRecordId": "record-1", "content": {"text": query}}]
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +594,209 @@ def test_memory_list_events_suppresses_result_with_content(stub_handler):
     tool_call = stub_handler.started_tool_calls[0]
     assert "mem-123" in tool_call.arguments
     assert tool_call.tool_result is None
+
+
+# ---------------------------------------------------------------------------
+# wrap_memory_conversation_operation
+# ---------------------------------------------------------------------------
+
+
+def test_memory_conversation_operation_allowlists_metadata(stub_handler):
+    """conversation wrappers avoid capturing messages and callbacks."""
+    client = MockMemoryClient()
+    wrapper = wrap_memory_conversation_operation("process_turn_with_llm")
+
+    wrapper(
+        client.process_turn_with_llm,
+        client,
+        (),
+        {
+            "memory_id": "mem-123",
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "messages": [{"role": "user", "content": "sensitive message"}],
+            "llm_callback": lambda _messages: "sensitive response",
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "memory.process_turn_with_llm"
+    assert "mem-123" in tool_call.arguments
+    assert "actor-1" in tool_call.arguments
+    assert "sess-1" in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
+    assert "llm_callback" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_memory_conversation_operation_suppresses_conversation_result(stub_handler):
+    """conversation wrappers never capture returned conversation messages."""
+    client = MockMemoryClient()
+    wrapper = wrap_memory_conversation_operation("save_conversation")
+
+    wrapper(
+        client.save_conversation,
+        client,
+        (),
+        {
+            "memory_id": "mem-123",
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "conversation": [{"role": "user", "content": "sensitive message"}],
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "memory.save_conversation"
+    assert "mem-123" in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_memory_conversation_operation_keeps_safe_turn_count(stub_handler):
+    """get_last_k_turns captures safe count metadata but not returned turns."""
+    client = MockMemoryClient()
+    wrapper = wrap_memory_conversation_operation("get_last_k_turns")
+
+    wrapper(
+        client.get_last_k_turns,
+        client,
+        (),
+        {
+            "memory_id": "mem-123",
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "k": 5,
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "memory.get_last_k_turns"
+    assert '"k": 5' in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+# ---------------------------------------------------------------------------
+# MemorySessionManager wrappers
+# ---------------------------------------------------------------------------
+
+
+def test_memory_session_operation_allowlists_metadata(stub_handler):
+    """session wrappers avoid messages, metadata, and returned payloads."""
+    manager = MockMemorySessionManager()
+    wrapper = wrap_memory_session_operation("add_turns")
+
+    wrapper(
+        manager.add_turns,
+        manager,
+        (),
+        {
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "messages": [{"role": "user", "content": "sensitive message"}],
+            "metadata": {"customer": "sensitive metadata"},
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "memory.session.add_turns"
+    assert "mem-session" in tool_call.arguments
+    assert "actor-1" in tool_call.arguments
+    assert "sess-1" in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_memory_session_list_events_suppresses_payload_result(stub_handler):
+    """session list_events never captures returned event payloads."""
+    manager = MockMemorySessionManager()
+    wrapper = wrap_memory_session_operation("list_events")
+
+    wrapper(
+        manager.list_events,
+        manager,
+        (),
+        {
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "include_payload": True,
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "memory.session.list_events"
+    assert '"include_payload": true' in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_memory_session_search_long_term_memories_retrieval(stub_handler):
+    """session long-term memory search is represented as retrieval."""
+    manager = MockMemorySessionManager()
+
+    wrap_memory_session_search_long_term_memories(
+        manager.search_long_term_memories,
+        manager,
+        (),
+        {
+            "query": "sensitive query",
+            "namespace_prefix": "support/facts/actor-1/",
+            "top_k": 5,
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    assert len(stub_handler.started_retrievals) == 1
+    assert len(stub_handler.started_tool_calls) == 0
+    invocation = stub_handler.started_retrievals[0]
+    assert invocation.data_source_id == "memory.session.search_long_term_memories"
+    assert invocation.query == "sensitive query"
+    assert invocation.top_k == 5
+    assert invocation.documents_retrieved == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_session_async_operation_suppresses_result(stub_handler):
+    """async session wrappers keep content out of arguments and result."""
+    manager = MockMemorySessionManager()
+    wrapper = wrap_memory_session_async_operation("process_turn_with_llm_async")
+
+    async def llm_callback(_user_input, _memories):
+        return "sensitive assistant response"
+
+    await wrapper(
+        manager.process_turn_with_llm_async,
+        manager,
+        (),
+        {
+            "actor_id": "actor-1",
+            "session_id": "sess-1",
+            "user_input": "sensitive user input",
+            "llm_callback": llm_callback,
+            "retrieval_config": {"namespace": "sensitive namespace"},
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "memory.session.process_turn_with_llm_async"
+    assert "actor-1" in tool_call.arguments
+    assert "sess-1" in tool_call.arguments
+    assert "sensitive" not in tool_call.arguments
+    assert tool_call.tool_result is None
+    assert len(stub_handler.stopped_tool_calls) == 1
 
 
 # ---------------------------------------------------------------------------

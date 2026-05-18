@@ -70,6 +70,14 @@ def test_wrap_specs_match_unwrap_targets():
         "bedrock_agentcore.tools.code_interpreter_client",
         "CodeInterpreter.upload_file",
     ) in unwrap_targets
+    assert (
+        "bedrock_agentcore.memory.session",
+        "MemorySessionManager.add_turns",
+    ) in unwrap_targets
+    assert (
+        "bedrock_agentcore.memory.session",
+        "MemorySession.add_turns",
+    ) not in unwrap_targets
 
 
 def test_instrument_passes_logger_provider(

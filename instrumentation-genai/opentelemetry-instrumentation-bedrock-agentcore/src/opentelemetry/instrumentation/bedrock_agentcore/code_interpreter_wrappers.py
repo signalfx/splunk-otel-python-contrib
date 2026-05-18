@@ -278,7 +278,10 @@ def wrap_code_interpreter_create(
     except Exception:
         return wrapped(*args, **kwargs)
 
-    return invoke_tool_call(handler, tool_call, wrapped, args, kwargs, capture_content)
+    # never capture tool_result - create responses can echo IAM ARNs and VPC config
+    return invoke_tool_call(
+        handler, tool_call, wrapped, args, kwargs, capture_content=False
+    )
 
 
 def wrap_code_interpreter_start(

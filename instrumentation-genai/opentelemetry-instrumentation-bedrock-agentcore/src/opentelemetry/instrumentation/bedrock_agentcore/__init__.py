@@ -39,6 +39,7 @@ from .browser_wrappers import (
     wrap_browser_start,
     wrap_browser_stop,
     wrap_browser_take_control,
+    wrap_browser_update_stream,
 )
 from .code_interpreter_wrappers import (
     wrap_code_interpreter_clear_context,
@@ -54,11 +55,15 @@ from .code_interpreter_wrappers import (
 )
 from .entrypoint_wrappers import wrap_bedrock_agentcore_app_entrypoint
 from .memory_wrappers import (
+    wrap_memory_conversation_operation,
     wrap_memory_create_blob_event,
     wrap_memory_create_event,
     wrap_memory_list_events,
     wrap_memory_operation,
     wrap_memory_retrieve,
+    wrap_memory_session_async_operation,
+    wrap_memory_session_operation,
+    wrap_memory_session_search_long_term_memories,
 )
 from .package import _instruments
 from .version import __version__
@@ -69,6 +74,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _AGENTCORE_MODULE = "bedrock_agentcore"
 _MEMORY_MODULE = "bedrock_agentcore.memory.client"
+_MEMORY_SESSION_MODULE = "bedrock_agentcore.memory.session"
 _CODE_INTERPRETER_MODULE = "bedrock_agentcore.tools.code_interpreter_client"
 _BROWSER_MODULE = "bedrock_agentcore.tools.browser_client"
 
@@ -89,6 +95,36 @@ _CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
         wrap_memory_create_blob_event,
     ),
     (_MEMORY_MODULE, "MemoryClient.list_events", wrap_memory_list_events),
+    (
+        _MEMORY_SESSION_MODULE,
+        "MemorySessionManager.search_long_term_memories",
+        wrap_memory_session_search_long_term_memories,
+    ),
+    (
+        _MEMORY_SESSION_MODULE,
+        "MemorySessionManager.process_turn_with_llm_async",
+        wrap_memory_session_async_operation("process_turn_with_llm_async"),
+    ),
+    (
+        _MEMORY_MODULE,
+        "MemoryClient.process_turn_with_llm",
+        wrap_memory_conversation_operation("process_turn_with_llm"),
+    ),
+    (
+        _MEMORY_MODULE,
+        "MemoryClient.save_conversation",
+        wrap_memory_conversation_operation("save_conversation"),
+    ),
+    (
+        _MEMORY_MODULE,
+        "MemoryClient.fork_conversation",
+        wrap_memory_conversation_operation("fork_conversation"),
+    ),
+    (
+        _MEMORY_MODULE,
+        "MemoryClient.get_last_k_turns",
+        wrap_memory_conversation_operation("get_last_k_turns"),
+    ),
     (
         _CODE_INTERPRETER_MODULE,
         "CodeInterpreter.start",
@@ -158,6 +194,7 @@ _CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
     (_BROWSER_MODULE, "BrowserClient.create_browser", wrap_browser_create_browser),
     (_BROWSER_MODULE, "BrowserClient.get_browser", wrap_browser_get_browser),
     (_BROWSER_MODULE, "BrowserClient.list_browsers", wrap_browser_list_browsers),
+    (_BROWSER_MODULE, "BrowserClient.update_stream", wrap_browser_update_stream),
 )
 
 _MEMORY_OPERATION_METHODS = (
@@ -169,14 +206,10 @@ _MEMORY_OPERATION_METHODS = (
     "get_memory_status",
     "list_memories",
     "wait_for_memories",
-    "save_conversation",
-    "fork_conversation",
     "get_conversation_tree",
-    "get_last_k_turns",
     "list_branch_events",
     "list_branches",
     "merge_branch_context",
-    "process_turn_with_llm",
     "add_strategy",
     "add_episodic_strategy",
     "add_episodic_strategy_and_wait",
@@ -197,6 +230,24 @@ _MEMORY_OPERATION_METHODS = (
     "update_memory_strategies_and_wait",
 )
 
+_MEMORY_SESSION_OPERATION_METHODS = (
+    "create_memory_session",
+    "process_turn_with_llm",
+    "add_turns",
+    "fork_conversation",
+    "list_events",
+    "list_branches",
+    "get_last_k_turns",
+    "get_event",
+    "delete_event",
+    "list_long_term_memory_records",
+    "list_actors",
+    "list_actor_sessions",
+    "get_memory_record",
+    "delete_memory_record",
+    "delete_all_long_term_memories_in_namespace",
+)
+
 _CODE_INTERPRETER_OPERATION_METHODS = (
     "get_session",
     "list_sessions",
@@ -208,7 +259,6 @@ _CODE_INTERPRETER_OPERATION_METHODS = (
 _BROWSER_OPERATION_METHODS = (
     "list_sessions",
     "delete_browser",
-    "update_stream",
 )
 
 _GENERIC_WRAP_TARGETS: tuple[
@@ -219,6 +269,12 @@ _GENERIC_WRAP_TARGETS: tuple[
         "MemoryClient",
         _MEMORY_OPERATION_METHODS,
         wrap_memory_operation,
+    ),
+    (
+        _MEMORY_SESSION_MODULE,
+        "MemorySessionManager",
+        _MEMORY_SESSION_OPERATION_METHODS,
+        wrap_memory_session_operation,
     ),
     (
         _CODE_INTERPRETER_MODULE,
@@ -247,10 +303,12 @@ def _with_handler(
 
 
 def _with_entrypoint_handler(
-    wrapper: Callable[..., Any], handler: TelemetryHandler
+    wrapper: Callable[..., Any],
+    handler: TelemetryHandler,
+    capture_content: bool,
 ) -> Callable[[Any, Any, tuple, dict], Any]:
     def _wrapper(wrapped: Any, instance: Any, args: tuple, kwargs: dict) -> Any:
-        return wrapper(wrapped, instance, args, kwargs, handler)
+        return wrapper(wrapped, instance, args, kwargs, handler, capture_content)
 
     return _wrapper
 
@@ -259,7 +317,7 @@ def _iter_wrap_specs(
     handler: TelemetryHandler, capture_content: bool
 ) -> Iterator[tuple[str, str, Callable[[Any, Any, tuple, dict], Any]]]:
     for module, name, wrapper in _ENTRYPOINT_WRAP_TARGETS:
-        yield module, name, _with_entrypoint_handler(wrapper, handler)
+        yield module, name, _with_entrypoint_handler(wrapper, handler, capture_content)
 
     for module, name, wrapper in _CONTENT_WRAP_TARGETS:
         yield module, name, _with_handler(wrapper, handler, capture_content)
