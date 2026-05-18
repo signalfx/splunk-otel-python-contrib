@@ -189,14 +189,31 @@ def _convert_normalized_to_langchain(
         # but LangChain messages only have .content (str)
         # We add .parts here to bridge the gap without requiring LangChain instrumentation
         try:
-            # Import Text from GenAI types
-            from opentelemetry.util.genai.types import Text
+            # Import Text/ToolCall from GenAI types
+            from opentelemetry.util.genai.types import Text, ToolCall
 
-            # Create a Text part from the content
-            text_part = Text(content=content, type="text")
+            built_parts: List[Any] = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                ptype = part.get("type")
+                if ptype == "tool_call":
+                    built_parts.append(
+                        ToolCall(
+                            id=part.get("id") or "",
+                            name=part.get("name") or "",
+                            arguments=part.get("arguments"),
+                        )
+                    )
+                else:
+                    built_parts.append(
+                        Text(content=part.get("content", ""), type="text")
+                    )
+            if not built_parts:
+                built_parts = [Text(content=content, type="text")]
 
             # Add .parts attribute (monkeypatch on the instance)
-            langchain_msg.parts = [text_part]  # type: ignore[attr-defined]
+            langchain_msg.parts = built_parts  # type: ignore[attr-defined]
 
             _logger.debug(
                 f"Added .parts attribute to {type(langchain_msg).__name__} "

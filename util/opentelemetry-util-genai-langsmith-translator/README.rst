@@ -103,6 +103,26 @@ Session & Run Tracking
 * ``langsmith.thread_id`` → ``gen_ai.conversation.id``
 * ``langsmith.run_id`` → ``gen_ai.run.id``
 
+Known Limitations
+-----------------
+
+* **Root agent/workflow span duplicates the full conversation.** LangSmith
+  serializes the entire ``MessagesState`` accumulator as the root span's
+  output, so ``gen_ai.output.messages`` on the top-level ``invoke_agent`` span
+  contains every turn of the conversation rather than just the final reply.
+  Child ``chat`` and nested agent spans carry the correct per-turn messages.
+
+* **Agent vs. workflow classification depends on naming.** LangSmith reports
+  every orchestration span with ``run_type=chain`` regardless of whether it
+  represents an agent or a higher-level workflow. The translator infers the
+  intent from the span name: roots whose name contains ``agent`` or
+  ``executor`` (or that already carry ``gen_ai.agent.name``) are classified
+  as ``invoke_agent``; other root chains are classified as ``invoke_workflow``;
+  inner chains become ``step``. To get correct classification, name your
+  agents accordingly — e.g. ``create_agent(name="weather_agent")`` or
+  ``compile(name="research_agent")`` for single-agent graphs, and a neutral
+  name like ``compile(name="weather_assistant")`` for multi-agent workflows.
+
 References
 ----------
 

@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import timeit as _timeit_mod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -48,7 +49,9 @@ from opentelemetry.util.genai.types import (
     InputMessage,
     LLMInvocation,
     OutputMessage,
+    Step,
     Text,
+    ToolCall,
     Workflow,
 )
 
@@ -256,11 +259,14 @@ class LangsmithSpanProcessor(SpanProcessor):
         self._synthetic_span_ids: set[int] = set()
         # Mapping from original span_id to translated INVOCATION (not span) for parent-child relationship preservation
         self._original_to_translated_invocation: Dict[int, Any] = {}
-        # Buffer spans to process them in the correct order (parents before children)
-        self._span_buffer: List[ReadableSpan] = []
+        # Buffer non-LLM spans per trace, keyed by trace_id.
+        # Flushed parent-first when the root span arrives.
+        self._trace_buffers: Dict[int, List[ReadableSpan]] = {}
         self._processing_buffer = False
         # Cache reconstructed messages to avoid double reconstruction
         self._message_cache: Dict[int, tuple] = {}
+        # Track agent spans for parent→child name propagation: span_id → (name, hex_id)
+        self._agent_spans: Dict[int, tuple] = {}
 
     def _default_span_filter(self, span: ReadableSpan) -> bool:
         """Default filter: Transform spans that look like LLM/AI calls.
@@ -605,12 +611,23 @@ class LangsmithSpanProcessor(SpanProcessor):
                     invocation.trace_id = trace_id
                     invocation.span_id = span_id_val
 
-                    # Set timing info (use span's timing if available)
-                    # ReadableSpan has start_time and end_time in nanoseconds
-                    if hasattr(span, "_start_time") and span._start_time:  # type: ignore[attr-defined]
+                    # GenAI types default start_time to timeit.default_timer() at
+                    # creation, and handler.finish() sets end_time the same way.
+                    # Since both happen near-simultaneously here (post-hoc processing),
+                    # that would yield ~0 duration. We back-date start_time by the
+                    # span's real duration so the metric reflects actual latency.
+                    if (
+                        hasattr(span, "_start_time")
+                        and hasattr(span, "_end_time")
+                        and span._start_time
+                        and span._end_time
+                    ):
+                        span_duration_s = (
+                            span._end_time - span._start_time
+                        ) / 1e9
                         invocation.start_time = (
-                            span._start_time / 1e9
-                        )  # Convert ns to seconds  # type: ignore[attr-defined]
+                            _timeit_mod.default_timer() - span_duration_s
+                        )
 
                     # Use handler.finish() for full functionality
                     # This will:
@@ -628,7 +645,6 @@ class LangsmithSpanProcessor(SpanProcessor):
                             invocation.sample_for_evaluation,
                             trace_id,
                         )
-
                     except Exception as stop_err:
                         _logger.warning(
                             "[LANGSMITH_PROCESSOR] handler.finish failed: %s",
@@ -639,55 +655,181 @@ class LangsmithSpanProcessor(SpanProcessor):
                         "[LANGSMITH_PROCESSOR] Skipped evaluations (no invocation created): %s",
                         span.name,
                     )
+
+                # After LLM processing, check if this is a root span
+                # (no parent or parent not in this trace). If so, flush
+                # the non-LLM buffer for this trace — by now, agent spans
+                # have populated _agent_spans so children can resolve them.
+                span_context = getattr(span, "context", None)
+                trace_id = getattr(span_context, "trace_id", None)
+                is_root = span.parent is None
+                if is_root and trace_id and trace_id in self._trace_buffers:
+                    self._flush_trace_buffer(trace_id)
+
             else:
-                # Non-LLM spans (tasks, workflows, tools) - buffer for optional batch processing
-                _logger.debug(
-                    "[LANGSMITH_PROCESSOR] Non-LLM span buffered: %s (buffer_size=%d)",
-                    span.name,
-                    len(self._span_buffer) + 1,
-                )
-                self._span_buffer.append(span)
-
-                # Process buffer when root span arrives (optional, for synthetic spans of workflows)
-                if span.parent is None and not self._processing_buffer:
+                # Non-LLM spans (tools, workflows) — buffer until the root
+                # span arrives so agent name propagation works correctly.
+                span_context = getattr(span, "context", None)
+                trace_id = getattr(span_context, "trace_id", None)
+                if trace_id is not None:
+                    self._trace_buffers.setdefault(trace_id, []).append(span)
                     _logger.debug(
-                        "[LANGSMITH_PROCESSOR] Root span detected, processing buffered spans (count=%d)",
-                        len(self._span_buffer),
+                        "[LANGSMITH_PROCESSOR] Buffered non-LLM span: %s (trace=%s, buffer_size=%d)",
+                        span.name,
+                        trace_id,
+                        len(self._trace_buffers[trace_id]),
                     )
-                    self._processing_buffer = True
-                    try:
-                        spans_to_process = self._sort_spans_by_hierarchy(
-                            self._span_buffer
-                        )
+                else:
+                    # No trace_id — process immediately (shouldn't happen in practice)
+                    self._process_non_llm_span(span)
 
-                        for buffered_span in spans_to_process:
-                            # Skip spans that should not be processed
-                            buffered_span_id = getattr(
-                                getattr(buffered_span, "context", None),
-                                "span_id",
-                                None,
-                            )
-                            if self._should_skip_span(
-                                buffered_span, buffered_span_id
-                            ):
-                                continue
-
-                            # Non-LLM spans (workflows, tasks, tools) don't need synthetic spans
-                            # They're already mutated and will be exported as-is
-                            _logger.debug(
-                                "[LANGSMITH_PROCESSOR] Buffered span processed (mutation only): %s",
-                                buffered_span.name,
-                            )
-
-                        self._span_buffer.clear()
-                        self._original_to_translated_invocation.clear()
-                    finally:
-                        self._processing_buffer = False
+                # If this non-LLM span is itself a root, flush immediately
+                if (
+                    span.parent is None
+                    and trace_id
+                    and trace_id in self._trace_buffers
+                ):
+                    self._flush_trace_buffer(trace_id)
 
         except Exception as e:
             # Don't let transformation errors break the original span processing
             logging.warning(
                 "[LANGSMITH_PROCESSOR] Span transformation failed: %s", e
+            )
+
+    def _flush_trace_buffer(self, trace_id: int) -> None:
+        """Flush buffered non-LLM spans for a trace, processing parent-first.
+
+        Called when the root span of a trace arrives, meaning all agent spans
+        (LLM path) have already been processed and _agent_spans is populated.
+        """
+        _logger = logging.getLogger(__name__)
+        spans = self._trace_buffers.pop(trace_id, [])
+        if not spans:
+            return
+
+        sorted_spans = self._sort_spans_by_hierarchy(spans)
+        _logger.debug(
+            "[LANGSMITH_PROCESSOR] Flushing trace buffer: trace=%s, spans=%d",
+            trace_id,
+            len(sorted_spans),
+        )
+
+        # Build span_id -> parent_span_id map for transitive parent-chain walks.
+        # Agent spans (LLM path) aren't in the buffer, but that's fine — we only
+        # need to walk *up* until we hit an id present in self._agent_spans.
+        parent_map: Dict[int, Optional[int]] = {}
+        for buffered_span in sorted_spans:
+            ctx = getattr(buffered_span, "context", None)
+            sid = getattr(ctx, "span_id", None)
+            pctx = getattr(buffered_span, "parent", None)
+            pid = getattr(pctx, "span_id", None) if pctx else None
+            if sid is not None:
+                parent_map[sid] = pid
+
+        # Collect agent span_ids that belong to this trace for cleanup
+        agent_ids_to_remove = set()
+        for buffered_span in sorted_spans:
+            # Inject agent name/id by walking the parent chain transitively
+            matched_agent_id = self._inject_agent_context(
+                buffered_span, parent_map
+            )
+            self._process_non_llm_span(buffered_span)
+            if matched_agent_id is not None:
+                agent_ids_to_remove.add(matched_agent_id)
+
+        # Clean up agent entries that were consumed by this trace
+        for aid in agent_ids_to_remove:
+            self._agent_spans.pop(aid, None)
+
+    def _inject_agent_context(
+        self,
+        span: ReadableSpan,
+        parent_map: Optional[Dict[int, Optional[int]]] = None,
+    ) -> Optional[int]:
+        """Set gen_ai.agent.name/id on a span from its nearest ancestor agent.
+
+        Walks the parent chain (via ``parent_map``) until it finds a span_id in
+        ``self._agent_spans``. Returns the matched agent span_id (for cleanup)
+        or None if no ancestor is an agent.
+        """
+        parent_ctx = getattr(span, "parent", None)
+        if not parent_ctx:
+            return None
+        cursor = getattr(parent_ctx, "span_id", None)
+        # Walk up to 32 levels defensively — real graphs are much shallower.
+        for _ in range(32):
+            if cursor is None:
+                return None
+            if cursor in self._agent_spans:
+                agent_name, agent_id = self._agent_spans[cursor]
+                if (
+                    hasattr(span, "_attributes")
+                    and span._attributes is not None
+                ):
+                    if "gen_ai.agent.name" not in span._attributes:
+                        span._attributes["gen_ai.agent.name"] = agent_name  # type: ignore[index]
+                    if "gen_ai.agent.id" not in span._attributes:
+                        span._attributes["gen_ai.agent.id"] = agent_id  # type: ignore[index]
+                return cursor
+            # Move one level up via the parent map
+            if parent_map is None:
+                return None
+            cursor = parent_map.get(cursor)
+        return None
+
+    def _process_non_llm_span(self, span: ReadableSpan) -> None:
+        """Build invocation and call handler.finish() for a non-LLM span."""
+        _logger = logging.getLogger(__name__)
+
+        invocation = self._build_invocation(
+            span,
+            attribute_transformations=self.attribute_transformations,
+            name_transformations=self.name_transformations,
+            langsmith_attributes=self.langsmith_attributes,
+        )
+
+        if not invocation:
+            _logger.debug(
+                "[LANGSMITH_PROCESSOR] No invocation created for non-LLM span: %s",
+                span.name,
+            )
+            return
+
+        invocation.span = span
+        handler = self.telemetry_handler or get_telemetry_handler()
+
+        span_context = getattr(span, "context", None)
+        trace_id = getattr(span_context, "trace_id", None)
+        span_id_val = getattr(span_context, "span_id", None)
+
+        invocation.trace_id = trace_id
+        invocation.span_id = span_id_val
+
+        # Back-date start_time by the span's actual duration so the metric
+        # reflects real latency (see on_end LLM path for full explanation).
+        if (
+            hasattr(span, "_start_time")
+            and hasattr(span, "_end_time")
+            and span._start_time
+            and span._end_time
+        ):
+            span_duration_s = (span._end_time - span._start_time) / 1e9
+            invocation.start_time = (
+                _timeit_mod.default_timer() - span_duration_s
+            )
+
+        try:
+            handler.finish(invocation)
+            _logger.debug(
+                "[LANGSMITH_PROCESSOR] finish completed for non-LLM span: %s, type=%s",
+                span.name,
+                type(invocation).__name__,
+            )
+        except Exception as stop_err:
+            _logger.warning(
+                "[LANGSMITH_PROCESSOR] handler.finish failed for non-LLM span: %s",
+                stop_err,
             )
 
     def _sort_spans_by_hierarchy(
@@ -728,10 +870,15 @@ class LangsmithSpanProcessor(SpanProcessor):
 
     def shutdown(self) -> None:
         """Called when the tracer provider is shutdown."""
-        pass
+        # Flush any remaining buffered spans
+        for trace_id in list(self._trace_buffers.keys()):
+            self._flush_trace_buffer(trace_id)
+        self._agent_spans.clear()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force flush any buffered spans."""
+        for trace_id in list(self._trace_buffers.keys()):
+            self._flush_trace_buffer(trace_id)
         return True
 
     # ------------------------------------------------------------------
@@ -795,6 +942,76 @@ class LangsmithSpanProcessor(SpanProcessor):
             span.name,
         )
         return False
+
+    @staticmethod
+    def _build_parts_from_dicts(
+        parts_value: Any, msg_dict: Dict[str, Any]
+    ) -> List[Any]:
+        """Rebuild GenAI Text/ToolCall parts from a normalized message dict.
+
+        Preserves structured tool_call entries produced by the normalizer
+        instead of collapsing everything to a single Text part.
+        """
+        built: List[Any] = []
+        if isinstance(parts_value, list):
+            for part in parts_value:
+                if isinstance(part, dict):
+                    ptype = part.get("type")
+                    if ptype == "tool_call":
+                        built.append(
+                            ToolCall(
+                                id=part.get("id") or "",
+                                name=part.get("name") or "",
+                                arguments=part.get("arguments"),
+                            )
+                        )
+                    else:
+                        built.append(
+                            Text(content=part.get("content", ""), type="text")
+                        )
+                else:
+                    built.append(Text(content=str(part), type="text"))
+        # Fallback: include tool_calls from message-level key
+        for tc in msg_dict.get("tool_calls") or []:
+            if isinstance(tc, dict):
+                built.append(
+                    ToolCall(
+                        id=tc.get("id") or "",
+                        name=tc.get("name") or "",
+                        arguments=tc.get("args") or tc.get("arguments"),
+                    )
+                )
+        if not built:
+            content = msg_dict.get("content", "")
+            built = [
+                Text(content=str(content) if content else "", type="text")
+            ]
+        return built
+
+    @staticmethod
+    def _part_to_dict(part: Any) -> Dict[str, Any]:
+        """Serialize a Text/ToolCall/ToolCallResponse message part to a JSON-safe dict."""
+        ptype = getattr(part, "type", None) or type(part).__name__.lower()
+        if ptype == "tool_call" or type(part).__name__ == "ToolCall":
+            return {
+                "type": "tool_call",
+                "id": getattr(part, "id", None) or "",
+                "name": getattr(part, "name", None) or "",
+                "arguments": getattr(part, "arguments", None),
+            }
+        if (
+            ptype == "tool_call_response"
+            or type(part).__name__ == "ToolCallResponse"
+        ):
+            return {
+                "type": "tool_call_response",
+                "id": getattr(part, "id", None) or "",
+                "response": getattr(part, "response", None),
+            }
+        content = getattr(part, "content", None)
+        if content is None:
+            content = str(part)
+        return {"type": "text", "content": content}
 
     def _reconstruct_and_set_messages(
         self,
@@ -864,29 +1081,16 @@ class LangsmithSpanProcessor(SpanProcessor):
                     try:
                         parsed = json.loads(original_input_data)
                         if isinstance(parsed, list) and parsed:
-                            # Already a JSON array - convert to InputMessage objects
                             input_messages = []
                             for msg in parsed:
                                 if isinstance(msg, dict):
                                     role = msg.get("role", "user")
-                                    parts = msg.get("parts", [])
-                                    if parts and isinstance(parts, list):
-                                        content = (
-                                            parts[0].get("content", "")
-                                            if isinstance(parts[0], dict)
-                                            else str(parts[0])
-                                        )
-                                    else:
-                                        content = msg.get("content", str(msg))
+                                    built_parts = self._build_parts_from_dicts(
+                                        msg.get("parts"), msg
+                                    )
                                     input_messages.append(
                                         InputMessage(
-                                            role=role,
-                                            parts=[
-                                                Text(
-                                                    content=content,
-                                                    type="text",
-                                                )
-                                            ],
+                                            role=role, parts=built_parts
                                         )
                                     )
                     except json.JSONDecodeError:
@@ -909,97 +1113,23 @@ class LangsmithSpanProcessor(SpanProcessor):
 
             if not output_messages and original_output_data:
                 if isinstance(original_output_data, str):
-                    # Check if it's a JSON array (already formatted)
                     try:
                         parsed = json.loads(original_output_data)
                         if isinstance(parsed, list) and parsed:
-                            # Already a JSON array - convert to OutputMessage objects
                             output_messages = []
                             for msg in parsed:
                                 if isinstance(msg, dict):
                                     role = msg.get("role", "assistant")
-                                    parts = msg.get("parts", [])
-                                    if parts and isinstance(parts, list):
-                                        content = (
-                                            parts[0].get("content", "")
-                                            if isinstance(parts[0], dict)
-                                            else str(parts[0])
-                                        )
-                                        # CRITICAL: Check if content is nested LangChain/generations JSON
-                                        # and extract the actual message content
-                                        if isinstance(
-                                            content, str
-                                        ) and content.startswith("{"):
-                                            try:
-                                                from .langsmith_content_normalizer import (
-                                                    _extract_langchain_messages,
-                                                )
-
-                                                extracted = _extract_langchain_messages(
-                                                    content
-                                                )
-                                                if extracted:
-                                                    # Use extracted message instead
-                                                    ext_msg = extracted[0]
-                                                    content = ext_msg.get(
-                                                        "content", ""
-                                                    )
-                                                    role = ext_msg.get(
-                                                        "role", role
-                                                    )
-                                                    # Get finish_reason and tool_calls from extracted
-                                                    if (
-                                                        "finish_reason"
-                                                        in ext_msg
-                                                    ):
-                                                        msg[
-                                                            "finish_reason"
-                                                        ] = ext_msg[
-                                                            "finish_reason"
-                                                        ]
-                                                    if "tool_calls" in ext_msg:
-                                                        msg["tool_calls"] = (
-                                                            ext_msg[
-                                                                "tool_calls"
-                                                            ]
-                                                        )
-                                            except Exception as e:
-                                                _logger.debug(
-                                                    "[LANGSMITH_PROCESSOR] Failed to extract nested content: %s",
-                                                    e,
-                                                )
-                                    else:
-                                        content = msg.get("content", str(msg))
+                                    built_parts = self._build_parts_from_dicts(
+                                        msg.get("parts"), msg
+                                    )
                                     finish_reason = msg.get(
                                         "finish_reason", "stop"
                                     )
-                                    # Build parts list - include tool_calls if present
-                                    msg_parts = []
-                                    if content:
-                                        msg_parts.append(
-                                            Text(content=content, type="text")
-                                        )
-                                    if msg.get("tool_calls"):
-                                        # For now, represent tool calls as text (could be enhanced)
-                                        for tc in msg["tool_calls"]:
-                                            tc_text = f"Tool call: {tc.get('name', 'unknown')}"
-                                            if tc.get("args"):
-                                                tc_text += f"({json.dumps(tc['args'])})"
-                                            msg_parts.append(
-                                                Text(
-                                                    content=tc_text,
-                                                    type="text",
-                                                )
-                                            )
-                                    if not msg_parts:
-                                        # Empty content but might be tool call - add empty text
-                                        msg_parts.append(
-                                            Text(content="", type="text")
-                                        )
                                     output_messages.append(
                                         OutputMessage(
                                             role=role,
-                                            parts=msg_parts,
+                                            parts=built_parts,
                                             finish_reason=finish_reason,
                                         )
                                     )
@@ -1024,14 +1154,12 @@ class LangsmithSpanProcessor(SpanProcessor):
 
             # Serialize to JSON and store as gen_ai.* attributes (for span export)
             if input_messages:
-                # Convert to OTel format: list of dicts with role and parts
                 input_json = json.dumps(
                     [
                         {
                             "role": msg.role,
                             "parts": [
-                                {"type": "text", "content": part.content}
-                                for part in msg.parts
+                                self._part_to_dict(part) for part in msg.parts
                             ],
                         }
                         for msg in input_messages
@@ -1045,8 +1173,7 @@ class LangsmithSpanProcessor(SpanProcessor):
                         {
                             "role": msg.role,
                             "parts": [
-                                {"type": "text", "content": part.content}
-                                for part in msg.parts
+                                self._part_to_dict(part) for part in msg.parts
                             ],
                             "finish_reason": getattr(
                                 msg, "finish_reason", "stop"
@@ -1151,6 +1278,97 @@ class LangsmithSpanProcessor(SpanProcessor):
                     # Check span_kind from both transformed and original attributes (fallback for safety)
                     span_kind = mutated.get("gen_ai.span.kind", "")
 
+                    # LangSmith run_type "tool" maps to gen_ai.operation.name="tool"
+                    # via the default rename map, but semconv (and downstream
+                    # code paths in this processor) expect "execute_tool".
+                    if operation_name == "tool":
+                        operation_name = "execute_tool"
+                        mutated["gen_ai.operation.name"] = operation_name
+
+                    # Reclassify "chain" operations. LangSmith uses run_type
+                    # "chain" for all orchestration shapes, so we infer:
+                    #   * explicit agent signals (gen_ai.agent.name set, or
+                    #     "agent"/"executor" in span name) → "invoke_agent"
+                    #   * root chains without an agent signal → "workflow"
+                    #     (StateGraph orchestrators, multi-agent coordinators)
+                    #   * inner non-agent chains → "step" (splunk extension;
+                    #     semconv doesn't define "chain")
+                    #
+                    # Tradeoff: if a real agent root has no "agent"/"executor"
+                    # in its name and no gen_ai.agent.name attribute, it will
+                    # be classified as a workflow and miss the agent metric.
+                    # Users can fix this by including "agent" in the name (e.g.
+                    # via create_agent(name="...")) or setting gen_ai.agent.name.
+                    if operation_name == "chain":
+                        _has_agent_signal = mutated.get(
+                            "gen_ai.agent.name"
+                        ) or any(
+                            p in (span.name or "").lower()
+                            for p in (
+                                "agent",
+                                "executor",
+                            )
+                        )
+                        if _has_agent_signal:
+                            operation_name = "invoke_agent"
+                            mutated["gen_ai.operation.name"] = operation_name
+                            _logger.debug(
+                                "[LANGSMITH_PROCESSOR] Reclassified chain → invoke_agent: span=%s",
+                                span.name,
+                            )
+                        elif span.parent is None:
+                            operation_name = "invoke_workflow"
+                            mutated["gen_ai.operation.name"] = operation_name
+                            mutated.setdefault(
+                                "gen_ai.workflow.name", span.name
+                            )
+                            _logger.debug(
+                                "[LANGSMITH_PROCESSOR] Reclassified chain → invoke_workflow: span=%s",
+                                span.name,
+                            )
+                        else:
+                            operation_name = "step"
+                            mutated["gen_ai.operation.name"] = operation_name
+                            mutated.setdefault("gen_ai.step.name", span.name)
+                            _logger.debug(
+                                "[LANGSMITH_PROCESSOR] Reclassified chain → step: span=%s",
+                                span.name,
+                            )
+
+                    # Track agent spans for parent→child name propagation.
+                    # Agent spans (invoke_agent) go through the LLM path in
+                    # on_end and are processed immediately. Non-LLM children
+                    # are buffered and get agent context injected during flush.
+                    if operation_name == "invoke_agent":
+                        agent_name = (
+                            mutated.get("gen_ai.agent.name") or span.name
+                        )
+                        span_ctx = getattr(span, "context", None)
+                        if span_ctx and hasattr(span_ctx, "span_id"):
+                            agent_id = f"{span_ctx.span_id:016x}"
+                            self._agent_spans[span_ctx.span_id] = (
+                                agent_name,
+                                agent_id,
+                            )
+                            # Fix A: write agent identity onto the agent span itself
+                            mutated.setdefault("gen_ai.agent.name", agent_name)
+                            mutated.setdefault("gen_ai.agent.id", agent_id)
+
+                    # For execute_tool spans, ensure gen_ai.tool.name is set so
+                    # the span can be renamed to "execute_tool {tool.name}" per
+                    # GenAI semconv. LangSmith carries the tool name in the
+                    # original span name (e.g. "search") and in
+                    # langsmith.trace.name, neither of which maps to tool.name
+                    # by default.
+                    if operation_name == "execute_tool" and not mutated.get(
+                        "gen_ai.tool.name"
+                    ):
+                        tool_name = (
+                            mutated.get("langsmith.trace.name") or span.name
+                        )
+                        if tool_name:
+                            mutated["gen_ai.tool.name"] = tool_name
+
                     # Fallback: infer from span name if operation name not set
                     if not operation_name and span.name:
                         span_name_lower = span.name.lower()
@@ -1184,19 +1402,36 @@ class LangsmithSpanProcessor(SpanProcessor):
                         for op in ["chat", "completion", "embedding", "embed"]
                     )
 
-                    is_agent_operation = any(
-                        op in str(span_kind).lower() for op in ["agent"]
+                    is_agent_operation = (
+                        operation_name == "invoke_agent"
+                        or any(
+                            op in str(span_kind).lower() for op in ["agent"]
+                        )
                     )
 
                     is_task_operation = any(
                         op in str(span_kind).lower() for op in ["task"]
                     )
 
+                    is_tool_operation = (
+                        operation_name == "execute_tool"
+                        or "tool" in str(span_kind).lower()
+                    )
+
+                    is_step_operation = operation_name == "step"
+
+                    # Steps are control-flow, not GenAI — drop message attrs
+                    # that were carried over from the raw langsmith payload.
+                    if is_step_operation:
+                        mutated.pop("gen_ai.input.messages", None)
+                        mutated.pop("gen_ai.output.messages", None)
+
                     if (
                         is_llm_operation
                         or is_agent_operation
                         or is_task_operation
-                    ):
+                        or is_tool_operation
+                    ) and not is_step_operation:
                         # This is an LLM span - reconstruct messages once and cache them
                         span_id = getattr(
                             getattr(span, "context", None), "span_id", None
@@ -1223,6 +1458,25 @@ class LangsmithSpanProcessor(SpanProcessor):
                     # Clear and update the underlying _attributes dict
                     span._attributes.clear()  # type: ignore[attr-defined]
                     span._attributes.update(mutated)  # type: ignore[attr-defined]
+
+                    # Rename span per GenAI semantic conventions:
+                    #   invoke_agent {gen_ai.agent.name}
+                    #   create_agent {gen_ai.agent.name}
+                    #   invoke_workflow {gen_ai.workflow.name}
+                    #   execute_tool {gen_ai.tool.name}
+                    #   chat|text_completion|embeddings {gen_ai.request.model}
+                    # See https://github.com/open-telemetry/semantic-conventions-genai
+                    semconv_name = self._semconv_span_name(
+                        operation_name, mutated
+                    )
+                    if semconv_name and semconv_name != span.name:
+                        if hasattr(span, "_name"):
+                            span._name = semconv_name  # type: ignore[attr-defined]
+                        elif hasattr(span, "update_name"):
+                            try:
+                                span.update_name(semconv_name)  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
 
                     # CRITICAL: Mutate the instrumentation scope to match our handler
                     try:
@@ -1276,6 +1530,37 @@ class LangsmithSpanProcessor(SpanProcessor):
                 logging.getLogger(__name__).debug(
                     "Span name mutation failed: %s", name_err
                 )
+
+    @staticmethod
+    def _semconv_span_name(
+        operation_name: str, attrs: Dict[str, Any]
+    ) -> Optional[str]:
+        """Return the span name prescribed by GenAI semantic conventions.
+
+        Returns None when the operation isn't recognized or the qualifier
+        attribute is missing, in which case the caller should leave the name
+        alone.
+        """
+        if not operation_name:
+            return None
+        if operation_name in ("invoke_agent", "create_agent"):
+            name = attrs.get("gen_ai.agent.name")
+            return f"{operation_name} {name}" if name else operation_name
+        if operation_name == "invoke_workflow":
+            name = attrs.get("gen_ai.workflow.name")
+            return f"{operation_name} {name}" if name else operation_name
+        if operation_name == "execute_tool":
+            name = attrs.get("gen_ai.tool.name")
+            return f"{operation_name} {name}" if name else operation_name
+        if operation_name == "step":
+            name = attrs.get("gen_ai.step.name")
+            return f"{operation_name} {name}" if name else operation_name
+        if operation_name in ("chat", "text_completion", "embeddings"):
+            model = attrs.get("gen_ai.request.model") or attrs.get(
+                "gen_ai.response.model"
+            )
+            return f"{operation_name} {model}" if model else operation_name
+        return None
 
     def _apply_attribute_transformations(
         self, base: Dict[str, Any], transformations: Optional[Dict[str, Any]]
@@ -1442,13 +1727,26 @@ class LangsmithSpanProcessor(SpanProcessor):
                             str(content)[:100],
                         )
 
-                parts = [Text(content=str(content))] if content else []
+                # Prefer parts already attached by the reconstructor — those
+                # carry structured tool_call entries that we must not lose by
+                # collapsing to a plain Text part.
+                existing_parts = getattr(lc_msg, "parts", None)
+                if existing_parts:
+                    parts = list(existing_parts)
+                else:
+                    parts = [Text(content=str(content))] if content else []
 
                 # Create GenAI SDK message
                 if direction == "output":
-                    finish_reason = getattr(lc_msg, "finish_reason", "stop")
+                    finish_reason = getattr(lc_msg, "finish_reason", None)
+                    if not finish_reason:
+                        add_kw = getattr(lc_msg, "additional_kwargs", None)
+                        if isinstance(add_kw, dict):
+                            finish_reason = add_kw.get("finish_reason")
                     genai_msg = OutputMessage(
-                        role=role, parts=parts, finish_reason=finish_reason
+                        role=role,
+                        parts=parts,
+                        finish_reason=finish_reason or "stop",
                     )
                 else:
                     genai_msg = InputMessage(role=role, parts=parts)
@@ -1576,6 +1874,10 @@ class LangsmithSpanProcessor(SpanProcessor):
             existing_span.name,
         )
 
+        # Step spans are framework-internal and intentionally carry no messages.
+        op_name_early = base_attrs.get("gen_ai.operation.name", "")
+        is_step = op_name_early == "step"
+
         if cached_messages:
             input_messages, output_messages = cached_messages
             _logger.debug(
@@ -1589,13 +1891,14 @@ class LangsmithSpanProcessor(SpanProcessor):
             input_messages = None
             output_messages = None
 
-            _logger.warning(
-                "[LANGSMITH_PROCESSOR] Messages NOT in cache! span_id=%s, span=%s, has_input_data=%s, has_output_data=%s",
-                span_id,
-                existing_span.name,
-                original_input_data is not None,
-                original_output_data is not None,
-            )
+            if not is_step:
+                _logger.warning(
+                    "[LANGSMITH_PROCESSOR] Messages NOT in cache! span_id=%s, span=%s, has_input_data=%s, has_output_data=%s",
+                    span_id,
+                    existing_span.name,
+                    original_input_data is not None,
+                    original_output_data is not None,
+                )
 
             if original_input_data or original_output_data:
                 try:
@@ -1632,7 +1935,7 @@ class LangsmithSpanProcessor(SpanProcessor):
                         e,
                         existing_span.name,
                     )
-            else:
+            elif not is_step:
                 _logger.error(
                     "[LANGSMITH_PROCESSOR] ERROR: No message data available! span_id=%s, span=%s, attrs_keys=%s",
                     span_id,
@@ -1663,34 +1966,26 @@ class LangsmithSpanProcessor(SpanProcessor):
                 attributes=base_attrs,
             )
             if input_messages:
-                invocation.initial_input = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.initial_input:
-                invocation.initial_input = (
-                    base_attrs.get("initial_input")
-                    or base_attrs.get("input")
-                    or base_attrs.get("input_context")
-                    or base_attrs.get("query")
-                )
-
+                invocation.input_messages = input_messages
             if output_messages:
-                invocation.final_output = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.final_output:
-                invocation.final_output = (
-                    base_attrs.get("final_output")
-                    or base_attrs.get("output")
-                    or base_attrs.get("output_result")
-                    or base_attrs.get("response")
-                )
+                invocation.output_messages = output_messages
+            return invocation
+
+        elif operation_name == "step":
+            # Splunk extension: framework-internal nodes that don't map to any
+            # semconv GenAI operation (LangGraph router/branch, chain control
+            # flow, etc.).
+            step_name = (
+                base_attrs.get("gen_ai.step.name") or existing_span.name
+            )
+            invocation = Step(
+                name=step_name,
+                attributes=base_attrs,
+            )
+            if base_attrs.get("gen_ai.framework"):
+                invocation.framework = base_attrs.get("gen_ai.framework")
+            if base_attrs.get("gen_ai.agent.name"):
+                invocation.assigned_agent = base_attrs.get("gen_ai.agent.name")
             return invocation
 
         elif operation_name == "create_agent":
@@ -1717,18 +2012,28 @@ class LangsmithSpanProcessor(SpanProcessor):
                 base_attrs.get("gen_ai.system.instructions") or None
             )
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                invocation.input_context = (
-                    base_attrs.get("input_context")
-                    or base_attrs.get("input")
-                    or base_attrs.get("initial_input")
-                )
+                invocation.input_messages = input_messages
+            return invocation
+
+        elif operation_name == "execute_tool":
+            # Create ToolCall invocation
+            tool_name = (
+                base_attrs.get("gen_ai.tool.name") or existing_span.name
+            )
+            invocation = ToolCall(
+                name=tool_name,
+                id=base_attrs.get("gen_ai.tool.call.id"),
+                tool_type=base_attrs.get("gen_ai.tool.type"),
+                tool_description=base_attrs.get("gen_ai.tool.description"),
+                arguments=base_attrs.get("gen_ai.tool.call.arguments"),
+                tool_result=base_attrs.get("gen_ai.tool.call.result"),
+            )
+            if base_attrs.get("gen_ai.framework"):
+                invocation.framework = base_attrs.get("gen_ai.framework")
+            if base_attrs.get("gen_ai.agent.name"):
+                invocation.agent_name = base_attrs.get("gen_ai.agent.name")
+            if base_attrs.get("gen_ai.agent.id"):
+                invocation.agent_id = base_attrs.get("gen_ai.agent.id")
             return invocation
 
         elif operation_name == "invoke_agent":
@@ -1756,45 +2061,9 @@ class LangsmithSpanProcessor(SpanProcessor):
             )
 
             if input_messages:
-                invocation.input_context = " ".join(
-                    part.content
-                    for msg in input_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.input_context:
-                invocation.input_context = (
-                    base_attrs.get("input_context")
-                    or base_attrs.get("input")
-                    or base_attrs.get("initial_input")
-                    or base_attrs.get("prompt")
-                    or base_attrs.get("query")
-                )
-
+                invocation.input_messages = input_messages
             if output_messages:
-                invocation.output_result = " ".join(
-                    part.content
-                    for msg in output_messages
-                    for part in msg.parts
-                    if hasattr(part, "content")
-                )
-            elif not invocation.output_result:
-                invocation.output_result = (
-                    base_attrs.get("output_result")
-                    or base_attrs.get("output")
-                    or base_attrs.get("final_output")
-                    or base_attrs.get("response")
-                    or base_attrs.get("answer")
-                )
-
-            if not invocation.input_context and not invocation.output_result:
-                _logger.warning(
-                    "[LANGSMITH_PROCESSOR] Skipping AgentInvocation - no input/output available! "
-                    "span=%s, span_id=%s",
-                    existing_span.name,
-                    span_id,
-                )
-                return None
+                invocation.output_messages = output_messages
             return invocation
         else:
             # Create LLMInvocation (default for chat, completion, embedding)
@@ -1807,17 +2076,9 @@ class LangsmithSpanProcessor(SpanProcessor):
                 )
                 return None
 
-            if output_messages and all(
-                not msg.parts for msg in output_messages
-            ):
-                _logger.warning(
-                    "[LANGSMITH_PROCESSOR] Skipping invocation creation - output messages have empty parts! "
-                    "span=%s, span_id=%s, output_messages=%s",
-                    existing_span.name,
-                    span_id,
-                    output_messages,
-                )
-                return None
+            # Note: empty output.parts is legitimate for tool-calling responses
+            # (the model emits only tool_calls, not text content). Don't skip the
+            # invocation here — duration/token metrics still need to be emitted.
 
             invocation = LLMInvocation(
                 request_model=str(request_model),
