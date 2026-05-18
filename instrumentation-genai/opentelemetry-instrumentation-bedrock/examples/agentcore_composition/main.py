@@ -37,7 +37,7 @@ from opentelemetry.sdk.metrics.export import (
     PeriodicExportingMetricReader,
 )
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     ConsoleSpanExporter,
@@ -99,6 +99,29 @@ ENVIRONMENT_HELP = f"""Environment variables:
   OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE (default: {DEFAULT_CAPTURE_CONTENT_MODE})
   OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS (optional, for evals)
 """
+
+
+class _TraceIdPrinter(SpanProcessor):
+    def __init__(self) -> None:
+        self._printed = False
+
+    def on_start(self, span: Any, parent_context: Any | None = None) -> None:
+        if self._printed:
+            return
+        span_context = span.get_span_context()
+        if not span_context.is_valid:
+            return
+        self._printed = True
+        print(f"Trace ID: {span_context.trace_id:032x}", flush=True)
+
+    def on_end(self, span: Any) -> None:
+        return
+
+    def shutdown(self) -> None:
+        return
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
 
 
 def _set_default_environment() -> None:
@@ -168,6 +191,7 @@ def _configure_telemetry(
         }
     )
     provider = TracerProvider(resource=resource)
+    provider.add_span_processor(_TraceIdPrinter())
 
     if exporter == "otlp":
         if (

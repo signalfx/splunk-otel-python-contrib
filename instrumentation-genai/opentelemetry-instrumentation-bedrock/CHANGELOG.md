@@ -15,3 +15,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Meta Llama, and Mistral JSON shapes.
 - Example showing Bedrock Runtime instrumentation by itself and composed with
   AgentCore instrumentation.
+- AgentCore composition example requirements for the Bedrock AgentCore SDK,
+  Botocore CRT login support, and compatible OTel package versions.

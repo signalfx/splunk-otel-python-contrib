@@ -157,6 +157,8 @@ In your collector, compare the trace and parent IDs. If you run with
 ``BEDROCK_EXAMPLE_EXPORTER=console``, compare those IDs in console output
 instead:
 
+- The example prints ``Trace ID: <trace-id>`` when the first span starts, so
+  you can find the trace even when exporting with OTLP.
 - Bedrock Runtime-only mode should show one Bedrock LLM span.
 - AgentCore mode should show an AgentCore workflow span and a Bedrock Runtime
   LLM span in the same trace.
