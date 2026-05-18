@@ -202,6 +202,25 @@ class TestStreamWrapper:
             "time_to_first_chunk should not change after first chunk"
         )
 
+    def test_getattr_proxies_unknown_attributes_to_stream(self):
+        """Test that unknown attributes (e.g. .headers) are proxied to the
+        underlying stream, fixing the AttributeError raised by LiteLLM when
+        accessing raw_response.headers after with_raw_response streaming.
+        Regression test for https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113
+        """
+        invocation = LLMInvocation(request_model="gpt-4o")
+        mock_stream = MagicMock()
+        mock_stream.headers = {"content-type": "application/json"}
+        mock_handler = MagicMock()
+
+        wrapper = StreamWrapper(
+            stream=mock_stream,
+            invocation=invocation,
+            handler=mock_handler,
+        )
+
+        assert wrapper.headers == {"content-type": "application/json"}
+
     def test_time_to_first_chunk_not_captured_without_start_time(self):
         """Test that time_to_first_chunk is not captured without _start_time."""
         invocation = LLMInvocation(request_model="gpt-4o")

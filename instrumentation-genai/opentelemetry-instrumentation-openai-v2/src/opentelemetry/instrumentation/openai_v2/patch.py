@@ -768,6 +768,9 @@ class StreamWrapper:
         self._first_chunk_processed = False
         self.setup()
 
+    def __getattr__(self, name: str):
+        return getattr(self.stream, name)
+
     def setup(self):
         if not self._span_started:
             self._span_started = True
