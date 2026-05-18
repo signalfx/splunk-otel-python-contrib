@@ -54,7 +54,7 @@ class MockBrowserClient:
     def get_session(self, browser_id=None, session_id=None):
         return {
             "sessionId": session_id,
-            "sessionStatus": "ACTIVE",
+            "status": "ACTIVE",
             "signingMaterial": "secret-session-signing-material",
         }
 
@@ -90,7 +90,7 @@ class MockBrowserClient:
 
     def list_browsers(self, max_results=None, next_token=None):
         return {
-            "browsers": [
+            "browserSummaries": [
                 {
                     "browserId": "browser-1",
                     "executionRoleArn": "arn:aws:iam::123:role/secret",

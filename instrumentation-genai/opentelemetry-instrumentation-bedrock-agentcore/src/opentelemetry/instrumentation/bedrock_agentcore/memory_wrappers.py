@@ -388,6 +388,39 @@ def wrap_memory_session_search_long_term_memories(
     return result
 
 
+_MEMORY_OPERATION_SAFE_ARGUMENTS = frozenset(
+    {
+        "memory_id",
+        "memoryId",
+        "memory_name",
+        "memoryName",
+        "name",
+        "max_results",
+        "maxResults",
+        "status",
+        "strategy_id",
+        "strategyId",
+        "strategy_name",
+        "strategyName",
+        "strategy_type",
+        "strategyType",
+    }
+)
+
+
+def _safe_memory_operation_arguments(call_arguments: dict[str, Any]) -> dict[str, Any]:
+    safe_args = {}
+    for key in _MEMORY_OPERATION_SAFE_ARGUMENTS:
+        value = call_arguments.get(key)
+        if value is None or value == "" or callable(value):
+            continue
+        if isinstance(value, (bool, int, float)):
+            safe_args[key] = value
+        else:
+            safe_args[key] = safe_str(value)
+    return safe_args
+
+
 def wrap_memory_operation(operation_name: str) -> Any:
     def wrapper(
         wrapped: Any,
@@ -399,19 +432,21 @@ def wrap_memory_operation(operation_name: str) -> Any:
     ) -> Any:
         try:
             call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
-            safe_args = {k: v for k, v in call_arguments.items() if not callable(v)}
+            safe_args = _safe_memory_operation_arguments(call_arguments)
             invocation = ToolCall(
                 name=f"memory.{operation_name}",
-                arguments=json.dumps(safe_args, default=str)
-                if capture_content
+                arguments=safe_json_dumps(safe_args)
+                if capture_content and safe_args
                 else None,
                 system="bedrock-agentcore",
             )
         except Exception:
             return wrapped(*args, **kwargs)
 
+        # never capture tool_result - MemoryClient generic operations can include
+        # IAM roles, stream delivery resources, and strategy configuration.
         return invoke_tool_call(
-            handler, invocation, wrapped, args, kwargs, capture_content
+            handler, invocation, wrapped, args, kwargs, capture_content=False
         )
 
     return wrapper

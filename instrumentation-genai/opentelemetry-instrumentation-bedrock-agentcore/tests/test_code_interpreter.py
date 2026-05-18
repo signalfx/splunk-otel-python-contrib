@@ -22,7 +22,9 @@ from opentelemetry.instrumentation.bedrock_agentcore.code_interpreter_wrappers i
     wrap_code_interpreter_download_file,
     wrap_code_interpreter_execute,
     wrap_code_interpreter_execute_command,
+    wrap_code_interpreter_get,
     wrap_code_interpreter_install_packages,
+    wrap_code_interpreter_list,
     wrap_code_interpreter_operation,
     wrap_code_interpreter_start,
     wrap_code_interpreter_stop,
@@ -76,6 +78,33 @@ class MockCodeInterpreter:
             "executionRoleArn": execution_role_arn,
             "networkConfiguration": network_configuration,
             "resourceArn": "arn:aws:bedrock-agentcore:us-west-2:123:code-interpreter/ci-123",
+        }
+
+    def get_code_interpreter(self, interpreter_id):
+        return {
+            "codeInterpreterId": interpreter_id,
+            "status": "READY",
+            "executionRoleArn": "arn:aws:iam::123:role/secret",
+            "networkConfiguration": {"subnets": ["subnet-secret"]},
+        }
+
+    def list_code_interpreters(
+        self, interpreter_type=None, max_results=10, next_token=None
+    ):
+        return {
+            "codeInterpreterSummaries": [
+                {
+                    "codeInterpreterId": "ci-1",
+                    "status": "READY",
+                    "executionRoleArn": "arn:aws:iam::123:role/secret",
+                },
+                {
+                    "codeInterpreterId": "ci-2",
+                    "status": "READY",
+                    "executionRoleArn": "arn:aws:iam::123:role/secret2",
+                },
+            ],
+            "nextToken": next_token or "opaque-secret-token",
         }
 
     def get_session(self, session_id=None):
@@ -468,6 +497,58 @@ def test_code_interpreter_create_suppresses_infrastructure_result_with_content(
     assert "analysis-runtime" in tool_call.arguments
     assert "safe description" in tool_call.arguments
     assert "secret" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_code_interpreter_get_suppresses_infrastructure_result_with_content(
+    stub_handler,
+):
+    """get_code_interpreter never captures returned ARNs or network config."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_get(
+        interpreter.get_code_interpreter,
+        interpreter,
+        (),
+        {"interpreter_id": "ci-123"},
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.get_code_interpreter"
+    assert "ci-123" in tool_call.arguments
+    assert "secret" not in tool_call.arguments
+    assert tool_call.attributes["bedrock.agentcore.code_interpreter.id"] == "ci-123"
+    assert tool_call.attributes["bedrock.agentcore.code_interpreter.status"] == "READY"
+    assert tool_call.tool_result is None
+
+
+def test_code_interpreter_list_suppresses_infrastructure_result_with_content(
+    stub_handler,
+):
+    """list_code_interpreters captures safe filters but never result config."""
+    interpreter = MockCodeInterpreter()
+
+    wrap_code_interpreter_list(
+        interpreter.list_code_interpreters,
+        interpreter,
+        (),
+        {
+            "interpreter_type": "CUSTOM",
+            "max_results": 5,
+            "next_token": "opaque-secret-token",
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert tool_call.name == "code_interpreter.list_code_interpreters"
+    assert "CUSTOM" in tool_call.arguments
+    assert "5" in tool_call.arguments
+    assert "opaque-secret-token" not in tool_call.arguments
+    assert tool_call.attributes["bedrock.agentcore.code_interpreter.count"] == 2
     assert tool_call.tool_result is None
 
 

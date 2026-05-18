@@ -47,7 +47,9 @@ from .code_interpreter_wrappers import (
     wrap_code_interpreter_download_file,
     wrap_code_interpreter_execute,
     wrap_code_interpreter_execute_command,
+    wrap_code_interpreter_get,
     wrap_code_interpreter_install_packages,
+    wrap_code_interpreter_list,
     wrap_code_interpreter_operation,
     wrap_code_interpreter_start,
     wrap_code_interpreter_stop,
@@ -176,6 +178,16 @@ _CONTENT_WRAP_TARGETS: tuple[tuple[str, str, Callable[..., Any]], ...] = (
         "CodeInterpreter.create_code_interpreter",
         wrap_code_interpreter_create,
     ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.get_code_interpreter",
+        wrap_code_interpreter_get,
+    ),
+    (
+        _CODE_INTERPRETER_MODULE,
+        "CodeInterpreter.list_code_interpreters",
+        wrap_code_interpreter_list,
+    ),
     (_BROWSER_MODULE, "BrowserClient.start", wrap_browser_start),
     (_BROWSER_MODULE, "BrowserClient.stop", wrap_browser_stop),
     (_BROWSER_MODULE, "BrowserClient.take_control", wrap_browser_take_control),
@@ -252,8 +264,6 @@ _CODE_INTERPRETER_OPERATION_METHODS = (
     "get_session",
     "list_sessions",
     "delete_code_interpreter",
-    "get_code_interpreter",
-    "list_code_interpreters",
 )
 
 _BROWSER_OPERATION_METHODS = (

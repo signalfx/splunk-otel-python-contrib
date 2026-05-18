@@ -284,6 +284,147 @@ def wrap_code_interpreter_create(
     )
 
 
+def _first_value(result: Any, *keys: str) -> Any:
+    if not isinstance(result, dict):
+        return None
+
+    for key in keys:
+        value = result.get(key)
+        if value is not None and value != "":
+            return value
+
+    for container_key in ("codeInterpreter", "codeInterpreterSummary"):
+        nested = result.get(container_key)
+        if isinstance(nested, dict):
+            for key in keys:
+                value = nested.get(key)
+                if value is not None and value != "":
+                    return value
+    return None
+
+
+def wrap_code_interpreter_get(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        interpreter_id = (
+            call_arguments.get("interpreter_id")
+            or call_arguments.get("code_interpreter_id")
+            or call_arguments.get("codeInterpreterId")
+        )
+        tool_call = ToolCall(
+            name="code_interpreter.get_code_interpreter",
+            arguments=safe_json_dumps({"interpreter_id": safe_str(interpreter_id)})
+            if capture_content and interpreter_id is not None
+            else None,
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
+        tool_call.attributes["bedrock.agentcore.code_interpreter.operation"] = (
+            "get_code_interpreter"
+        )
+        if interpreter_id is not None and interpreter_id != "":
+            tool_call.attributes["bedrock.agentcore.code_interpreter.id"] = safe_str(
+                interpreter_id
+            )
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    def enrich(tc: ToolCall, result: Any) -> None:
+        result_id = _first_value(
+            result,
+            "codeInterpreterId",
+            "code_interpreter_id",
+            "interpreter_id",
+            "id",
+        )
+        if result_id is not None:
+            tc.attributes["bedrock.agentcore.code_interpreter.id"] = safe_str(result_id)
+
+        status = _first_value(result, "status", "codeInterpreterStatus")
+        if status is not None:
+            tc.attributes["bedrock.agentcore.code_interpreter.status"] = safe_str(
+                status
+            )
+
+    # never capture tool_result - get responses can include IAM ARNs and VPC config
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
+
+
+def wrap_code_interpreter_list(
+    wrapped: Any,
+    instance: Any,
+    args: tuple,
+    kwargs: dict,
+    handler: TelemetryHandler,
+    capture_content: bool = False,
+) -> Any:
+    try:
+        call_arguments = bind_call_arguments(wrapped, instance, args, kwargs)
+        safe_args = {}
+        interpreter_type = call_arguments.get(
+            "interpreter_type", call_arguments.get("type")
+        )
+        max_results = call_arguments.get(
+            "max_results", call_arguments.get("maxResults")
+        )
+        if interpreter_type is not None and interpreter_type != "":
+            safe_args["interpreter_type"] = safe_str(interpreter_type)
+        if max_results is not None:
+            safe_args["max_results"] = max_results
+
+        tool_call = ToolCall(
+            name="code_interpreter.list_code_interpreters",
+            arguments=safe_json_dumps(safe_args)
+            if capture_content and safe_args
+            else None,
+            system="bedrock-agentcore",
+            tool_type="extension",
+        )
+        tool_call.attributes["bedrock.agentcore.tool.type"] = "code_interpreter"
+        tool_call.attributes["bedrock.agentcore.code_interpreter.operation"] = (
+            "list_code_interpreters"
+        )
+    except Exception:
+        return wrapped(*args, **kwargs)
+
+    def enrich(tc: ToolCall, result: Any) -> None:
+        summaries = None
+        if isinstance(result, dict):
+            summaries = result.get("codeInterpreterSummaries") or result.get("items")
+        elif isinstance(result, list):
+            summaries = result
+
+        if isinstance(summaries, list):
+            tc.attributes["bedrock.agentcore.code_interpreter.count"] = len(summaries)
+
+    # never capture tool_result - list responses can include IAM ARNs and VPC config
+    return invoke_tool_call(
+        handler,
+        tool_call,
+        wrapped,
+        args,
+        kwargs,
+        capture_content=False,
+        enrich_result=enrich,
+    )
+
+
 def wrap_code_interpreter_start(
     wrapped: Any,
     instance: Any,

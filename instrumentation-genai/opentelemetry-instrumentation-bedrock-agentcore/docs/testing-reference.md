@@ -124,7 +124,11 @@ erDiagram
 | `MemoryClient.get_last_k_turns` | `ToolCall` | `execute_tool memory.get_last_k_turns` | Captures safe count and ID metadata. Never captures returned turns. |
 
 Generic MemoryClient operations are also wrapped as `ToolCall` spans named
-`execute_tool memory.<method>`.
+`execute_tool memory.<method>`. With content capture, these wrappers capture only
+safe identifiers and simple filters such as memory name, memory ID, strategy ID,
+strategy type, status, and max results. They never capture `tool_result` because
+the SDK responses and some request payloads can include IAM roles, stream
+delivery resources, and strategy configuration.
 
 ```text
 create_memory, create_memory_and_wait, create_or_get_memory, delete_memory,
@@ -180,13 +184,14 @@ delete_all_long_term_memories_in_namespace
 | `CodeInterpreter.execute_command` | `ToolCall` | `execute_tool code_interpreter.execute_command` | Captures command only when enabled. Never captures `tool_result` because stdout/stderr can be sensitive. |
 | `CodeInterpreter.clear_context` | `ToolCall` | `execute_tool code_interpreter.clear_context` | Never captures `tool_result` because context cleanup responses may include state details. |
 | `CodeInterpreter.create_code_interpreter` | `ToolCall` | `execute_tool code_interpreter.create_code_interpreter` | With content capture, arguments include name and description. Never captures `tool_result` because create responses can include IAM ARNs and VPC config. |
+| `CodeInterpreter.get_code_interpreter` | `ToolCall` | `execute_tool code_interpreter.get_code_interpreter` | With content capture, arguments include the interpreter ID. Enriches safe ID/status attributes. Never captures `tool_result` because get responses can include IAM ARNs and VPC config. |
+| `CodeInterpreter.list_code_interpreters` | `ToolCall` | `execute_tool code_interpreter.list_code_interpreters` | With content capture, arguments include safe filters such as interpreter type and max results. Enriches interpreter count. Never captures `tool_result` because list responses can include IAM ARNs and VPC config. |
 
 Generic CodeInterpreter operations are also wrapped as `ToolCall` spans named
 `execute_tool code_interpreter.<method>`:
 
 ```text
-get_session, list_sessions, delete_code_interpreter, get_code_interpreter,
-list_code_interpreters
+get_session, list_sessions, delete_code_interpreter
 ```
 
 ### Browser Client
@@ -197,7 +202,7 @@ list_code_interpreters
 | `BrowserClient.stop` | `ToolCall` | `execute_tool browser.stop` | Adds `operation=stop_session` and existing `session_id` when available. |
 | `BrowserClient.take_control` | `ToolCall` | `execute_tool browser.take_control` | Adds `operation=take_control` and existing `session_id` when available. |
 | `BrowserClient.release_control` | `ToolCall` | `execute_tool browser.release_control` | Adds `operation=release_control` and existing `session_id` when available. |
-| `BrowserClient.get_session` | `ToolCall` | `execute_tool browser.get_session` | Adds `operation=get_session`; enriches `bedrock.agentcore.browser.session_status` from `sessionStatus` when returned. Never captures `tool_result` because session responses can include signing material. |
+| `BrowserClient.get_session` | `ToolCall` | `execute_tool browser.get_session` | Adds `operation=get_session`; enriches `bedrock.agentcore.browser.session_status` from SDK `status` when returned, with legacy `sessionStatus` fallback. Never captures `tool_result` because session responses can include signing material. |
 | `BrowserClient.generate_ws_headers` | `ToolCall` | `execute_tool browser.generate_ws_headers` | Never captures `tool_result` because the result contains auth credentials. |
 | `BrowserClient.generate_live_view_url` | `ToolCall` | `execute_tool browser.generate_live_view_url` | Never captures `tool_result` because the result can contain presigned URL tokens. |
 | `BrowserClient.create_browser` | `ToolCall` | `execute_tool browser.create_browser` | Captures only safe allowlisted arguments such as `name`. Never captures `tool_result` because control-plane responses can include infrastructure configuration. |
@@ -248,9 +253,12 @@ CodeInterpreter.download_files
 CodeInterpreter.execute_command
 CodeInterpreter.clear_context
 CodeInterpreter.create_code_interpreter
+CodeInterpreter.get_code_interpreter
+CodeInterpreter.list_code_interpreters
 MemoryClient.create_event
 MemoryClient.create_blob_event
 MemoryClient.list_events
+MemoryClient generic operations
 MemoryClient.process_turn_with_llm
 MemoryClient.save_conversation
 MemoryClient.fork_conversation
@@ -309,7 +317,7 @@ not inspect the call.
 | Memory retrieval | `retrieve_memories(..., top_k=N)` | Retrieval span has provider, data source, `top_k`, and document count. |
 | Memory errors | Wrapped memory method raises | Span fails and original exception propagates. |
 | Code interpreter errors | `execute_code` returns errors | `bedrock.agentcore.code_interpreter.has_errors=true`; result content only when enabled. |
-| Browser session lookup | `get_session` returns `sessionStatus` | `bedrock.agentcore.browser.session_status` is set. |
+| Browser session lookup | `get_session` returns `status` | `bedrock.agentcore.browser.session_status` is set. |
 | Sensitive results | Protected operations with capture enabled | No `gen_ai.tool.call.result` is emitted. |
 
 ## Known Boundaries
@@ -320,9 +328,10 @@ not inspect the call.
   model-call traces.
 - AgentCore Memory retrieval is represented as `RetrievalInvocation`; other
   Memory, Browser, and Code Interpreter methods are represented as `ToolCall`.
-- Generic wrapper methods capture all inspectable bound arguments only when
-  content capture is enabled. Specific wrappers may capture a reduced argument
-  set to avoid high-volume or sensitive data.
+- Generic MemoryClient wrappers capture only an allowlisted metadata subset and
+  suppress results. Other generic wrappers capture inspectable bound arguments
+  only when content capture is enabled; specific wrappers may capture a reduced
+  argument set to avoid high-volume or sensitive data.
 - Only the exact string `true`, case-insensitive, enables AgentCore wrapper-layer
   content capture. This differs from the shared GenAI utility's broader truthy
   parsing for emitter-level content settings.

@@ -22,3 +22,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Suppress Memory event results and Browser control-plane results to avoid capturing payloads or infrastructure configuration.
 - Gate AgentCore entrypoint input/output messages behind content capture.
 - Suppress CodeInterpreter create, Browser session/update-stream, and conversational Memory content where responses or arguments can include sensitive data.
+- Suppress CodeInterpreter get/list control-plane results and add AgentCore package tests to CI.
+- Suppress generic MemoryClient control-plane arguments/results and align Browser session/list response parsing with SDK response keys.

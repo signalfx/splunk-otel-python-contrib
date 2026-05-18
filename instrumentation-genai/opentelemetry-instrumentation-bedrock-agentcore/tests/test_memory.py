@@ -825,7 +825,7 @@ def test_memory_operation_creates_tool_call(stub_handler):
 
 
 def test_memory_operation_with_content(stub_handler):
-    """wrap_memory_operation captures kwargs as arguments when content enabled."""
+    """wrap_memory_operation captures safe kwargs but suppresses result."""
     client = MockMemoryClient()
     wrapper = wrap_memory_operation("create_memory")
 
@@ -840,7 +840,7 @@ def test_memory_operation_with_content(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert "my-memory" in tool_call.arguments
-    assert tool_call.tool_result is not None
+    assert tool_call.tool_result is None
 
 
 def test_memory_operation_no_content_by_default(stub_handler):
@@ -872,6 +872,84 @@ def test_memory_operation_captures_positional_args(stub_handler):
 
     tool_call = stub_handler.started_tool_calls[0]
     assert "my-memory" in tool_call.arguments
+
+
+def test_memory_operation_suppresses_control_plane_config(stub_handler):
+    """generic MemoryClient wrappers do not serialize IAM or strategy config."""
+
+    def create_memory(
+        memory_name=None,
+        execution_role_arn=None,
+        memory_execution_role_arn=None,
+        event_expiry_duration=None,
+    ):
+        return {
+            "memoryId": "mem-new",
+            "executionRoleArn": execution_role_arn,
+            "memoryExecutionRoleArn": memory_execution_role_arn,
+            "eventExpiryDuration": event_expiry_duration,
+        }
+
+    wrapper = wrap_memory_operation("create_memory")
+    wrapper(
+        create_memory,
+        None,
+        (),
+        {
+            "memory_name": "my-memory",
+            "execution_role_arn": "arn:aws:iam::123:role/secret",
+            "memory_execution_role_arn": "arn:aws:iam::123:role/secret-memory",
+            "event_expiry_duration": {"unit": "DAYS", "value": 30},
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "my-memory" in tool_call.arguments
+    assert "secret" not in tool_call.arguments
+    assert "arn:aws" not in tool_call.arguments
+    assert "event_expiry_duration" not in tool_call.arguments
+    assert tool_call.tool_result is None
+
+
+def test_memory_strategy_operation_suppresses_strategy_payloads(stub_handler):
+    """strategy updates capture IDs only and never serialize full payloads."""
+
+    def update_memory_strategies(memory_id=None, strategies=None, client_token=None):
+        return {
+            "memoryId": memory_id,
+            "memoryStrategies": strategies,
+            "clientToken": client_token,
+        }
+
+    wrapper = wrap_memory_operation("update_memory_strategies")
+    wrapper(
+        update_memory_strategies,
+        None,
+        (),
+        {
+            "memory_id": "mem-123",
+            "strategies": [
+                {
+                    "strategyId": "strategy-secret",
+                    "configuration": {"model": "secret-model"},
+                    "streamDeliveryResources": {
+                        "s3BucketArn": "arn:aws:s3:::secret-bucket"
+                    },
+                }
+            ],
+            "client_token": "secret-token",
+        },
+        stub_handler,
+        capture_content=True,
+    )
+
+    tool_call = stub_handler.started_tool_calls[0]
+    assert "mem-123" in tool_call.arguments
+    assert "secret" not in tool_call.arguments
+    assert "arn:aws" not in tool_call.arguments
+    assert tool_call.tool_result is None
 
 
 def test_memory_operation_exception_fails_tool_call(stub_handler):

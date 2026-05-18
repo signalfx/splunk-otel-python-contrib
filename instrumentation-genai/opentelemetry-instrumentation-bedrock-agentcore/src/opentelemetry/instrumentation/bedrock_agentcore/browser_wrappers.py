@@ -166,12 +166,11 @@ def wrap_browser_get_session(
         return wrapped(*args, **kwargs)
 
     def enrich(tc: ToolCall, result: Any) -> None:
-        if result and isinstance(result, dict):
-            session_status = result.get("sessionStatus")
-            if session_status:
-                tc.attributes["bedrock.agentcore.browser.session_status"] = safe_str(
-                    session_status
-                )
+        session_status = _first_value(result, "status", "sessionStatus")
+        if session_status:
+            tc.attributes["bedrock.agentcore.browser.session_status"] = safe_str(
+                session_status
+            )
 
     return invoke_tool_call(
         handler,
@@ -370,7 +369,9 @@ def wrap_browser_list_browsers(
         return wrapped(*args, **kwargs)
 
     def enrich(tc: ToolCall, result: Any) -> None:
-        browsers = result.get("browsers") if isinstance(result, dict) else result
+        browsers = result
+        if isinstance(result, dict):
+            browsers = result.get("browserSummaries", result.get("browsers"))
         if isinstance(browsers, list):
             tc.attributes["bedrock.agentcore.browser.count"] = len(browsers)
 

@@ -67,6 +67,7 @@ jobs:
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-aidefense[test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-weaviate[instruments,test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-vertexai[instruments,test]"
+          pip install -e "instrumentation-genai/opentelemetry-instrumentation-bedrock-agentcore[instruments,test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-bedrock[instruments,test]"
 
       - name: Run tests - opentelemetry-util-genai
@@ -150,6 +151,11 @@ jobs:
         if: always()
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-vertexai/tests/ -v
+
+      - name: Run tests - opentelemetry-instrumentation-bedrock-agentcore
+        if: always()
+        run: |
+          python -m pytest instrumentation-genai/opentelemetry-instrumentation-bedrock-agentcore/tests/ -v
 
       - name: Run tests - opentelemetry-instrumentation-bedrock
         if: always()
