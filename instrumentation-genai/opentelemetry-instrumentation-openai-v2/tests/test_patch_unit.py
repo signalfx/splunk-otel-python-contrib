@@ -216,7 +216,10 @@ class TestStreamWrapper:
         invocation = LLMInvocation(request_model="gpt-4o")
         mock_stream = MagicMock(spec=[])  # AsyncStream has no .headers
         mock_handler = MagicMock()
-        raw_headers = {"content-type": "text/event-stream", "x-request-id": "abc123"}
+        raw_headers = {
+            "content-type": "text/event-stream",
+            "x-request-id": "abc123",
+        }
 
         wrapper = StreamWrapper(
             stream=mock_stream,
