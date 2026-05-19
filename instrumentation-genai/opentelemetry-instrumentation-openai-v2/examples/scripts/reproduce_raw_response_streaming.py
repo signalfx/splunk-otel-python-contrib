@@ -24,7 +24,6 @@ Run:
 """
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -84,16 +83,19 @@ def _make_mock_httpx_response() -> httpx.Response:
 # Verbatim copy of LiteLLM's make_azure_openai_chat_completion_request
 # (litellm/llms/azure/azure.py lines 154-179)
 # ---------------------------------------------------------------------------
-async def make_azure_openai_chat_completion_request(azure_client, data, timeout):
+async def make_azure_openai_chat_completion_request(
+    azure_client, data, timeout
+):
     """
     Helper to:
     - call chat.completions.create.with_raw_response when litellm.return_response_headers is True
     - call chat.completions.create by default
     """
-    start_time = time.time()
     try:
-        raw_response = await azure_client.chat.completions.with_raw_response.create(
-            **data, timeout=timeout
+        raw_response = (
+            await azure_client.chat.completions.with_raw_response.create(
+                **data, timeout=timeout
+            )
         )
 
         headers = dict(raw_response.headers)
@@ -157,7 +159,9 @@ async def reproducer():
     print(f"✓ OTel spans: {[s.name for s in spans]}")
 
     instrumentor.uninstrument()
-    print("\nReproducer passed — 'StreamWrapper' has no attribute 'headers' is fixed.")
+    print(
+        "\nReproducer passed — 'StreamWrapper' has no attribute 'headers' is fixed."
+    )
 
 
 if __name__ == "__main__":
