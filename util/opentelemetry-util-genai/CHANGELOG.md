@@ -6,6 +6,12 @@ All notable changes to this repository are documented in this file.
 
 ### Added
 
+- **`SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION` env var** — The uppercase form of
+  `SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY` is now also checked as an
+  environment variable by the openai-v2 instrumentor, allowing zero-code
+  deployments to set suppression globally without the LangChain instrumentor
+  injecting the context key per-request. No new constant added.
+
 - **`OTEL_INSTRUMENTATION_GENAI_EMIT_EVENT` env var** — Explicit override for content event emission (`true`/`false`). When unset, defaults are derived from `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` mode.
 
 ### Changed

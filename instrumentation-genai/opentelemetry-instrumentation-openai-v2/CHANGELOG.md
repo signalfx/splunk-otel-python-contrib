@@ -21,6 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixes [#4113](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113)).
 
 ### Added
+- **`SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION` env var** — Global alternative to
+  the per-request `suppress_language_model_instrumentation` OTel context key
+  (the env var is the uppercase form of the same string). When set to a truthy
+  value (`true`, `1`, `yes`, `on`), the openai-v2 instrumentor skips creating
+  spans entirely. Intended for zero-code deployments alongside
+  `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=openai`.
+
+### Fixed
+
+- Fix `AttributeError: 'StreamWrapper' object has no attribute 'headers'` when
+  using `with_raw_response.create(stream=True)` (e.g. via LiteLLM's Azure provider).
+  `_parse_response` was calling `.parse()` on the `LegacyAPIResponse` before wrapping
+  in `StreamWrapper`, discarding the raw HTTP headers. `StreamWrapper` now captures
+  headers from the `LegacyAPIResponse` before it is parsed and exposes them directly,
+  and adds a `parse()` method returning `self` so callers can treat the wrapper as
+  a drop-in for the raw response. Also adds `__getattr__` to proxy any other unknown
+  attributes to the underlying stream. Inspired by upstream fix
+  ([opentelemetry-python-contrib#4184](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4184),
+  fixes [#4113](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113)).
+
+### Added
 
 - Add `gen_ai.tool.definitions` attribute on LLM spans when
   `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and
