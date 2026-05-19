@@ -105,8 +105,6 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     llm_invocation.agent_name
                 )
-            if llm_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = llm_invocation.agent_id
 
             # Add session context if configured
             metric_attrs.update(get_context_metric_attributes(llm_invocation))
@@ -170,10 +168,6 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     embedding_invocation.agent_name
                 )
-            if embedding_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = (
-                    embedding_invocation.agent_id
-                )
 
             # Add session context if configured
             metric_attrs.update(
@@ -224,8 +218,6 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     llm_invocation.agent_name
                 )
-            if llm_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = llm_invocation.agent_id
             if getattr(error, "type", None) is not None:
                 metric_attrs[ErrorAttributes.ERROR_TYPE] = (
                     error.type.__qualname__
@@ -252,8 +244,6 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_TOOL_NAME] = obj.name
                 if obj.agent_name:
                     metric_attrs[GenAI.GEN_AI_AGENT_NAME] = obj.agent_name
-                if obj.agent_id:
-                    metric_attrs[GenAI.GEN_AI_AGENT_ID] = obj.agent_id
                 if getattr(error, "type", None) is not None:
                     metric_attrs[ErrorAttributes.ERROR_TYPE] = (
                         error.type.__qualname__
@@ -289,8 +279,6 @@ class MetricsEmitter(EmitterMeta):
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     tool_invocation.agent_name
                 )
-            if tool_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool_invocation.agent_id
             if getattr(error, "type", None) is not None:
                 metric_attrs[ErrorAttributes.ERROR_TYPE] = (
                     error.type.__qualname__
@@ -318,10 +306,6 @@ class MetricsEmitter(EmitterMeta):
             if embedding_invocation.agent_name:
                 metric_attrs[GenAI.GEN_AI_AGENT_NAME] = (
                     embedding_invocation.agent_name
-                )
-            if embedding_invocation.agent_id:
-                metric_attrs[GenAI.GEN_AI_AGENT_ID] = (
-                    embedding_invocation.agent_id
                 )
             if getattr(error, "type", None) is not None:
                 metric_attrs[ErrorAttributes.ERROR_TYPE] = (
@@ -395,11 +379,6 @@ class MetricsEmitter(EmitterMeta):
         metric_attrs = {
             GenAI.GEN_AI_OPERATION_NAME: agent.operation,
             GenAI.GEN_AI_AGENT_NAME: agent.name,
-            GenAI.GEN_AI_AGENT_ID: (
-                f"{agent.span_id:016x}"
-                if agent.span_id is not None
-                else str(id(agent))
-            ),
         }
         if agent.agent_type:
             metric_attrs["gen_ai.agent.type"] = agent.agent_type
@@ -437,8 +416,6 @@ class MetricsEmitter(EmitterMeta):
         # Add agent context if available
         if retrieval.agent_name:
             metric_attrs[GenAI.GEN_AI_AGENT_NAME] = retrieval.agent_name
-        if retrieval.agent_id:
-            metric_attrs[GenAI.GEN_AI_AGENT_ID] = retrieval.agent_id
         # Add error type if present
         if error is not None and getattr(error, "type", None) is not None:
             metric_attrs[ErrorAttributes.ERROR_TYPE] = error.type.__qualname__
@@ -467,8 +444,6 @@ class MetricsEmitter(EmitterMeta):
         metric_attrs[GenAI.GEN_AI_TOOL_NAME] = tool.name
         if tool.agent_name:
             metric_attrs[GenAI.GEN_AI_AGENT_NAME] = tool.agent_name
-        if tool.agent_id:
-            metric_attrs[GenAI.GEN_AI_AGENT_ID] = tool.agent_id
         metric_attrs.update(get_context_metric_attributes(tool))
         _record_duration(
             self._duration_histogram,

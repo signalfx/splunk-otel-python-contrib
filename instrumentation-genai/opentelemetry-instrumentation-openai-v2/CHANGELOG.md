@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `gen_ai.request.stream` attribute for streaming requests
 - Add `gen_ai.response.time_to_first_chunk` attribute and metric for streaming requests
 
+### Fixed
+
+- Fix PyPI badge, install command, and references in README.rst to use correct
+  `splunk-otel-instrumentation-openai` package name instead of upstream
+- Fix project URLs in pyproject.toml to point to SDOT repo (`signalfx/splunk-otel-python-contrib`)
+
 ### Changed
 
 - **Always populate messages and tool arguments on Python objects** — `input_messages`, `output_messages`, and tool call `arguments` are now always set on `LLMInvocation`/`ToolCall` regardless of `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. The emitter layer controls what reaches telemetry, enabling evaluators to access full content even in `NO_CONTENT` mode.
@@ -47,7 +53,7 @@ Initial release of `splunk-otel-instrumentation-openai` package.
 - Update tool call handling
   ([#135](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
 - Add suppression key handling
-  ([#155](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
+  ([#155](https://github.com/signalfx/splunk-otel-python-contrib/pull/155))
 - Move events/logs and metrics to handler-based emitters
   ([#158](https://github.com/signalfx/splunk-otel-python-contrib/pull/158))
 - Fix service tier attribute names: use `GEN_AI_OPENAI_REQUEST_SERVICE_TIER` for request

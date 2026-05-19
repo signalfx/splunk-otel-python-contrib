@@ -282,7 +282,7 @@ Note: Including high-cardinality values into metrics association-properties may 
 | Attribute | Type | Description | OTel Semconv |
 |---|---|---|---|
 | `gen_ai.agent.name` | string | Human-readable agent name | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
-| `gen_ai.agent.id` | string | Unique agent identifier | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
+| `gen_ai.agent.id` | string | Unique agent identifier. **Span-only** — excluded from metric dimensions due to unbounded per-invocation cardinality (value equals the span ID). | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
 | `gen_ai.agent.description` | string | Agent description | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
 | `gen_ai.agent.version` | string | Agent version | [Standard](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md) |
 | `gen_ai.agent.tools` | string[] | Available tool names | **SDOT extension** |
@@ -555,7 +555,7 @@ These attributes follow the current [OTel Gen AI semantic conventions](https://g
 | Category | Attributes |
 |---|---|
 | **Core** | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.output.type` |
-| **Agent** | `gen_ai.agent.name`, `gen_ai.agent.id`, `gen_ai.agent.description`, `gen_ai.agent.version` |
+| **Agent** | `gen_ai.agent.name`, `gen_ai.agent.description`, `gen_ai.agent.version` (`gen_ai.agent.id` is **span-only** — see note above) |
 | **Workflow** | `gen_ai.workflow.name` |
 | **Conversation** | `gen_ai.conversation.id`, `gen_ai.data_source.id` |
 | **Tokens** | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.usage.cache_read.input_tokens` |

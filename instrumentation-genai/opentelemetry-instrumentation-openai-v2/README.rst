@@ -3,8 +3,8 @@ OpenTelemetry OpenAI Instrumentation
 
 |pypi|
 
-.. |pypi| image:: https://badge.fury.io/py/opentelemetry-instrumentation-openai-v2.svg
-   :target: https://pypi.org/project/opentelemetry-instrumentation-openai-v2/
+.. |pypi| image:: https://badge.fury.io/py/splunk-otel-instrumentation-openai.svg
+   :target: https://pypi.org/project/splunk-otel-instrumentation-openai/
 
 This library allows tracing LLM requests and logging of messages made by the
 `OpenAI Python API library <https://pypi.org/project/openai/>`_. It also captures
@@ -40,7 +40,7 @@ If your application is already instrumented with OpenTelemetry, add this
 package to your requirements.
 ::
 
-    pip install opentelemetry-instrumentation-openai-v2
+    pip install splunk-otel-instrumentation-openai
 
 If you don't have an OpenAI application, yet, try our `examples <examples>`_
 which only need a valid OpenAI API key.
@@ -89,6 +89,24 @@ Message content such as the contents of the prompt, completion, function argumen
 are not captured by default. To capture message content as log events, set the environment variable
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` to `true`.
 
+See the `upstream OpenTelemetry documentation <https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2#enabling-message-content>`_ for more details.
+
+Suppressing nested instrumentation
+***********************************
+
+When using multiple instrumentations together (e.g., LangChain + OpenAI), the higher-level
+instrumentation automatically sets ``SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY`` in the
+OpenTelemetry context to prevent duplicate spans for the same underlying LLM call.
+
+This is handled transparently — **no user configuration is needed**. For example, when
+LangChain instrumentation is active alongside OpenAI instrumentation, you will see
+LangChain spans without redundant nested OpenAI spans.
+
+.. note::
+
+   This is not an environment variable and cannot be configured for zero-code instrumentation.
+   It is a context key managed programmatically by instrumentation libraries.
+
 Uninstrument
 ************
 
@@ -106,7 +124,7 @@ To uninstrument clients, call the uninstrument method:
 
 References
 ----------
-* `OpenTelemetry OpenAI Instrumentation <https://opentelemetry-python-contrib.readthedocs.io/en/latest/instrumentation-genai/openai.html>`_
+* `Splunk OpenTelemetry OpenAI Instrumentation <https://github.com/signalfx/splunk-otel-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2>`_
 * `OpenTelemetry Project <https://opentelemetry.io/>`_
 * `OpenTelemetry Python Examples <https://github.com/open-telemetry/opentelemetry-python/tree/main/docs/examples>`_
 
