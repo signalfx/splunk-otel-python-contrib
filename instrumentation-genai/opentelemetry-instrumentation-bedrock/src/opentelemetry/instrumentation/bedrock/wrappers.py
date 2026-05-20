@@ -768,7 +768,7 @@ class _BedrockStreamWrapper:
                     )
                     if output_message is not None:
                         self._invocation.output_messages = [output_message]
-            self._handler.stop_llm(self._invocation)
+            _stop_safely(self._handler, self._invocation)
         finally:
             self._stopped = True
 
@@ -1033,6 +1033,9 @@ def _parts_from_invoke_content(
     parts: list[Any] = []
     for item in content:
         if isinstance(item, dict):
+            if any(key in item for key in ("text", "toolUse", "toolResult")):
+                parts.extend(_parts_from_content_blocks([item], provider))
+                continue
             if item.get("type") == "text" and "text" in item:
                 parts.append(Text(content=safe_str(item.get("text", ""))))
             elif item.get("type") == "tool_use":

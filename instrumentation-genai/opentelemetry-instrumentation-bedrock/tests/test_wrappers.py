@@ -285,6 +285,46 @@ def test_converse_stream_finalizes_on_exhaustion(stub_handler, fake_client):
     assert invocation.output_messages[0].parts[0].content == "Hello"
 
 
+def test_stream_stop_error_does_not_escape_to_application(fake_client):
+    class FailingStopHandler:
+        def __init__(self):
+            self.started_llm = []
+
+        def start_llm(self, invocation):
+            self.started_llm.append(invocation)
+            return invocation
+
+        def stop_llm(self, _invocation):
+            raise RuntimeError("telemetry stop failed")
+
+        def fail_llm(self, _invocation, _error):
+            raise AssertionError("fail_llm should not be called")
+
+    handler = FailingStopHandler()
+    events = [
+        {"messageStart": {"role": "assistant"}},
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 0,
+                "delta": {"text": "ok"},
+            }
+        },
+    ]
+    result = {"stream": FakeStream(events)}
+
+    wrapped_result = _call_wrapper(
+        handler,
+        fake_client,
+        "ConverseStream",
+        _converse_params(),
+        result,
+        capture_content=True,
+    )
+
+    assert list(wrapped_result["stream"]) == events
+    assert len(handler.started_llm) == 1
+
+
 def test_invoke_model_maps_known_anthropic_payload(stub_handler, fake_client):
     params = {
         "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
@@ -437,6 +477,7 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
     assert invocation.request_temperature == 0.4
     assert invocation.request_top_p == 0.75
     assert invocation.request_stop_sequences == ["stop"]
+    assert invocation.input_messages[0].parts[0].content == "weather"
     assert invocation.input_tokens == 10
     assert invocation.output_tokens == 5
     assert invocation.response_finish_reasons == ["tool_calls"]
