@@ -181,7 +181,7 @@ def test_agent_invoke_span_records_attributes():
             == GenAI.GenAiOperationNameValues.INVOKE_AGENT.value
         )
 
-        assert agent_span_record.kind is SpanKind.CLIENT
+        assert agent_span_record.kind is SpanKind.INTERNAL
         assert agent_span_record.name == "invoke_agent support_bot"
         assert (
             agent_span_record.attributes[GenAI.GEN_AI_AGENT_NAME]
@@ -443,14 +443,14 @@ def test_agent_name_override_applied_to_agent_spans():
         assert len(agent_spans) == 2
 
         named_span = next(s for s in agent_spans if "support_bot" in s.name)
-        assert named_span.kind is SpanKind.CLIENT
+        assert named_span.kind is SpanKind.INTERNAL
         assert named_span.name == "invoke_agent support_bot"
         assert named_span.attributes[GenAI.GEN_AI_AGENT_NAME] == "support_bot"
 
         default_span = next(
             s for s in agent_spans if "Travel Concierge" in s.name
         )
-        assert default_span.kind is SpanKind.CLIENT
+        assert default_span.kind is SpanKind.INTERNAL
         assert default_span.name == "invoke_agent Travel Concierge"
         assert (
             default_span.attributes[GenAI.GEN_AI_AGENT_NAME]
