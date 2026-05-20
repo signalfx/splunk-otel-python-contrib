@@ -50,7 +50,7 @@ Example
 -------
 
 In the repository, see
-``examples/agentcore_composition``
+``examples/manual``
 for a runnable Bedrock Runtime example that can also enable AgentCore
 instrumentation. It uses console span export by default so you can verify that
 Bedrock Runtime LLM spans nest under AgentCore workflow spans when both
