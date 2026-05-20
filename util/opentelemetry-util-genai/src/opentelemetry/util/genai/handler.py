@@ -52,10 +52,11 @@ import logging
 import os
 import threading
 import timeit
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional
 
 try:
     from opentelemetry.util.genai.debug import genai_debug_log
@@ -113,6 +114,8 @@ from opentelemetry.util.genai.version import __version__
 from .callbacks import CompletionCallback
 from .config import parse_env
 from .environment_variables import (
+    OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION,
+    OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS,
     OTEL_INSTRUMENTATION_GENAI_COMPLETION_CALLBACKS,
@@ -361,6 +364,7 @@ class TelemetryHandler:
         """
         with cls._lock:
             if cls._instance is not None:
+                cls._instance.shutdown(wait=True)
                 cls._instance._initialized = False
             cls._instance = None
             if hasattr(get_telemetry_handler, "_default_handler"):
@@ -516,7 +520,83 @@ class TelemetryHandler:
         # agent_id may be None if not provided by instrumentation
         self._agent_context_stack: list[tuple[str, Optional[str]]] = []
         self._initialize_default_callbacks()
+
+        # Background finalization thread pool — only created when the env flag is on.
+        # When None, _submit_finalization() calls the work inline (default behavior).
+        async_enabled = is_truthy_env(
+            os.getenv(OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION)
+        )
+        if async_enabled:
+            try:
+                queue_size = int(
+                    os.getenv(
+                        OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE,
+                        "128",
+                    )
+                )
+            except ValueError:
+                queue_size = 128
+            self._finalizer_executor: Optional[ThreadPoolExecutor] = (
+                ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="genai-finalizer"
+                )
+            )
+            self._finalizer_semaphore: Optional[threading.BoundedSemaphore] = (
+                threading.BoundedSemaphore(queue_size)
+            )
+        else:
+            self._finalizer_executor = None
+            self._finalizer_semaphore = None
+
         self._initialized = True
+
+    def _submit_finalization(self, fn: Callable[[], None]) -> None:
+        """Run finalization work inline or on a background thread.
+
+        When async finalization is disabled (default), fn() is called directly
+        on the caller's thread — identical to the pre-existing behavior.
+
+        When enabled: attempt to acquire the semaphore (which counts queued +
+        running tasks). If acquired, submit fn to the thread pool and release
+        the semaphore in a done-callback when the task completes. If the
+        semaphore cannot be acquired the queue is full and fn() runs inline as
+        a fallback so telemetry is never silently dropped.
+        """
+        if self._finalizer_executor is None:
+            fn()
+            return
+        if not self._finalizer_semaphore.acquire(blocking=False):  # type: ignore[union-attr]
+            # Queue full — run inline rather than dropping telemetry
+            fn()
+            return
+        try:
+            fut = self._finalizer_executor.submit(fn)
+            fut.add_done_callback(
+                lambda _: self._finalizer_semaphore.release()
+            )  # type: ignore[union-attr]
+        except RuntimeError:
+            # executor already shut down (process exit race)
+            self._finalizer_semaphore.release()
+            fn()
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Drain the background finalization queue and shut down the thread pool.
+
+        Call this at process exit or in tests to ensure all pending
+        finalization work completes before the process terminates.
+        ``wait=True`` (default) blocks until all queued tasks finish.
+        """
+        if self._finalizer_executor is not None:
+            self._finalizer_executor.shutdown(wait=wait)
+            self._finalizer_executor = None
+            self._finalizer_semaphore = None
+
+    def _flush_metrics(self) -> None:
+        if self._meter_provider is not None:
+            try:
+                self._meter_provider.force_flush()  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
     def _should_sample_for_evaluation(self, trace_id: Optional[int]) -> bool:
         try:
@@ -698,15 +778,15 @@ class TelemetryHandler:
     def stop_llm(self, invocation: LLMInvocation) -> LLMInvocation:
         """Finalize an LLM invocation successfully and end its span."""
         invocation.end_time = timeit.default_timer()
-
-        # Determine if this invocation should be sampled for evaluation
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
-
-        self._notify_completion(invocation)
-        self._emitter.on_end(invocation)
+        # _pop_current_span must run on the caller's thread: it resets a
+        # ContextVar and detaches an OTel context token that belong to this
+        # thread's context copy. Moving it to a background thread would
+        # corrupt the parent/child span relationships for any subsequent call.
         self._pop_current_span(invocation)
+        self._emitter.on_end(invocation)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -726,15 +806,12 @@ class TelemetryHandler:
             )
         except Exception:  # pragma: no cover
             pass
-        # Force flush metrics if a custom provider with force_flush is present
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover - defensive
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     def fail_llm(
@@ -742,9 +819,8 @@ class TelemetryHandler:
     ) -> LLMInvocation:
         """Fail an LLM invocation and end its span with error status."""
         invocation.end_time = timeit.default_timer()
-        self._emitter.on_error(error, invocation)
-        self._notify_completion(invocation)
         self._pop_current_span(invocation)
+        self._emitter.on_error(error, invocation)
         try:
             span_context = invocation.span_context
             if span_context is None and invocation.span is not None:
@@ -761,14 +837,12 @@ class TelemetryHandler:
             )
         except Exception:  # pragma: no cover
             pass
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     def start_embedding(
@@ -797,23 +871,17 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Finalize an embedding invocation successfully and end its span."""
         invocation.end_time = timeit.default_timer()
-
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
-
-        self._notify_completion(invocation)
-        self._emitter.on_end(invocation)
         self._pop_current_span(invocation)
-        # Force flush metrics if a custom provider with force_flush is present
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_end(invocation)
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     def fail_embedding(
@@ -821,17 +889,14 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Fail an embedding invocation and end its span with error status."""
         invocation.end_time = timeit.default_timer()
-        self._emitter.on_error(error, invocation)
-        self._notify_completion(invocation)
         self._pop_current_span(invocation)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_error(error, invocation)
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     def start_retrieval(
@@ -860,23 +925,17 @@ class TelemetryHandler:
     ) -> RetrievalInvocation:
         """Finalize a retrieval invocation successfully and end its span."""
         invocation.end_time = timeit.default_timer()
-
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
-
-        self._emitter.on_end(invocation)
         self._pop_current_span(invocation)
-        self._notify_completion(invocation)
-        # Force flush metrics if a custom provider with force_flush is present
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_end(invocation)
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     def fail_retrieval(
@@ -884,17 +943,14 @@ class TelemetryHandler:
     ) -> RetrievalInvocation:
         """Fail a retrieval invocation and end its span with error status."""
         invocation.end_time = timeit.default_timer()
-        self._emitter.on_error(error, invocation)
-        self._notify_completion(invocation)
         self._pop_current_span(invocation)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_error(error, invocation)
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     # ToolCall lifecycle --------------------------------------------------
@@ -917,22 +973,30 @@ class TelemetryHandler:
     def stop_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Finalize a tool call invocation successfully and end its span."""
         invocation.end_time = timeit.default_timer()
-
         invocation.sample_for_evaluation = self._should_sample_for_evaluation(
             invocation.trace_id
         )
-
-        self._notify_completion(invocation)
-        self._emitter.on_end(invocation)
         self._pop_current_span(invocation)
+        self._emitter.on_end(invocation)
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     def fail_tool_call(self, invocation: ToolCall, error: Error) -> ToolCall:
         """Fail a tool call invocation and end its span with error status."""
         invocation.end_time = timeit.default_timer()
-        self._emitter.on_error(error, invocation)
-        self._notify_completion(invocation)
         self._pop_current_span(invocation)
+        self._emitter.on_error(error, invocation)
+
+        def _finalize() -> None:
+            self._notify_completion(invocation)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return invocation
 
     # MCPOperation lifecycle (non-tool-call MCP operations) ----------------
@@ -1224,38 +1288,30 @@ class TelemetryHandler:
     def stop_workflow(self, workflow: Workflow) -> Workflow:
         """Finalize a workflow successfully and end its span."""
         workflow.end_time = timeit.default_timer()
-
         workflow.sample_for_evaluation = self._should_sample_for_evaluation(
             workflow.trace_id
         )
-
-        self._notify_completion(workflow)
-        self._emitter.on_end(workflow)
         self._pop_current_span(workflow)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_end(workflow)
+
+        def _finalize() -> None:
+            self._notify_completion(workflow)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return workflow
 
     def fail_workflow(self, workflow: Workflow, error: Error) -> Workflow:
         """Fail a workflow and end its span with error status."""
         workflow.end_time = timeit.default_timer()
-        self._emitter.on_error(error, workflow)
-        self._notify_completion(workflow)
         self._pop_current_span(workflow)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_error(error, workflow)
+
+        def _finalize() -> None:
+            self._notify_completion(workflow)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return workflow
 
     # Agent lifecycle -----------------------------------------------------
@@ -1285,23 +1341,12 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Finalize an agent operation successfully and end its span."""
         agent.end_time = timeit.default_timer()
-
         agent.sample_for_evaluation = self._should_sample_for_evaluation(
             agent.trace_id
         )
-
-        self._notify_completion(agent)
-        self._emitter.on_end(agent)
         self._pop_current_span(agent)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        # Pop context if matches top
+        # Agent context stack tracks nested agent identity for implicit propagation.
+        # Must stay inline — same thread-safety requirement as _pop_current_span.
         if isinstance(agent, AgentInvocation):
             try:
                 if self._agent_context_stack and agent.agent_id is not None:
@@ -1310,6 +1355,13 @@ class TelemetryHandler:
                         self._agent_context_stack.pop()
             except Exception:
                 pass
+        self._emitter.on_end(agent)
+
+        def _finalize() -> None:
+            self._notify_completion(agent)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return agent
 
     def fail_agent(
@@ -1317,18 +1369,7 @@ class TelemetryHandler:
     ) -> AgentCreation | AgentInvocation:
         """Fail an agent operation and end its span with error status."""
         agent.end_time = timeit.default_timer()
-        self._emitter.on_error(error, agent)
-        self._notify_completion(agent)
         self._pop_current_span(agent)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        # Pop context if this agent is active
         if isinstance(agent, AgentInvocation):
             try:
                 if self._agent_context_stack and agent.agent_id is not None:
@@ -1337,6 +1378,13 @@ class TelemetryHandler:
                         self._agent_context_stack.pop()
             except Exception:
                 pass
+        self._emitter.on_error(error, agent)
+
+        def _finalize() -> None:
+            self._notify_completion(agent)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return agent
 
     # Step lifecycle ------------------------------------------------------
@@ -1352,38 +1400,30 @@ class TelemetryHandler:
     def stop_step(self, step: Step) -> Step:
         """Finalize a step successfully and end its span."""
         step.end_time = timeit.default_timer()
-
         step.sample_for_evaluation = self._should_sample_for_evaluation(
             step.trace_id
         )
-
-        self._notify_completion(step)
-        self._emitter.on_end(step)
         self._pop_current_span(step)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_end(step)
+
+        def _finalize() -> None:
+            self._notify_completion(step)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return step
 
     def fail_step(self, step: Step, error: Error) -> Step:
         """Fail a step and end its span with error status."""
         step.end_time = timeit.default_timer()
-        self._emitter.on_error(error, step)
-        self._notify_completion(step)
         self._pop_current_span(step)
-        if (
-            hasattr(self, "_meter_provider")
-            and self._meter_provider is not None
-        ):
-            try:  # pragma: no cover
-                self._meter_provider.force_flush()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        self._emitter.on_error(error, step)
+
+        def _finalize() -> None:
+            self._notify_completion(step)
+            self._flush_metrics()
+
+        self._submit_finalization(_finalize)
         return step
 
     def evaluate_llm(

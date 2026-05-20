@@ -374,6 +374,40 @@ Examples::
     export OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION=true
 """
 
+OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION = (
+    "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION
+
+Offload ``stop_*`` / ``fail_*`` completion callbacks and metric
+``force_flush`` to a background thread pool so the caller's thread returns
+immediately. Default: ``false``.
+
+``end_time``, OTel context cleanup (``_pop_current_span``), and ``span.end()``
+always run inline before the handoff so timing accuracy, span parent/child
+relationships, and framework span-lifecycle expectations are preserved.
+
+If the background queue is full the finalization runs inline as a fallback —
+telemetry is never dropped.
+
+Examples::
+
+    export OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION=true
+"""
+
+OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE = (
+    "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE"
+)
+"""
+.. envvar:: OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE
+
+Maximum number of finalization tasks that can be queued in the background
+thread pool when :envvar:`OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION` is
+enabled. Default: ``128``. When the queue is full the next finalization runs
+inline rather than being dropped.
+"""
+
 __all__ = [
     # existing
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -410,4 +444,7 @@ __all__ = [
     # genai context
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_INCLUDE_IN_METRICS",
     "OTEL_INSTRUMENTATION_GENAI_CONTEXT_PROPAGATION",
+    # async finalization
+    "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION",
+    "OTEL_INSTRUMENTATION_GENAI_ASYNC_FINALIZATION_QUEUE_SIZE",
 ]

@@ -224,19 +224,12 @@ def _apply_evaluation_attributes(
         span.set_attribute(
             "gen_ai.evaluation.sampled", invocation.sample_for_evaluation
         )
-        span.set_attribute(
-            "gen_ai.evaluation.error",
-            str(invocation.evaluation_error),
-        )
     elif span is not None and hasattr(span, "_attributes"):
         # Fallback for ReadableSpan: directly mutate _attributes
         try:
             span._attributes["gen_ai.evaluation.sampled"] = str(
                 invocation.sample_for_evaluation
             ).lower()
-            span._attributes["gen_ai.evaluation.error"] = str(
-                invocation.evaluation_error
-            )
 
         except Exception:
             pass
