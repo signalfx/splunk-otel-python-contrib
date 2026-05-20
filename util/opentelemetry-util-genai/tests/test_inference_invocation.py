@@ -1,7 +1,7 @@
 import pytest
+
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import SpanKind
-
 from opentelemetry.util.genai._error import Error, ErrorClassification
 from opentelemetry.util.genai.handler import (
     TelemetryHandler,
