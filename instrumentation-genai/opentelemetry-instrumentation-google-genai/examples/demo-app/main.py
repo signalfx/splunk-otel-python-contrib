@@ -293,7 +293,7 @@ def stream_summary(
 
     print("  ", end="", flush=True)
     for chunk in stream:
-        print(chunk.text, end="", flush=True)
+        print(chunk.text or "", end="", flush=True)
     print()
 
 
