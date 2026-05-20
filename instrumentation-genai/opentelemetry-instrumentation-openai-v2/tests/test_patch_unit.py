@@ -202,6 +202,55 @@ class TestStreamWrapper:
             "time_to_first_chunk should not change after first chunk"
         )
 
+    def test_raw_response_headers_stored_from_legacy_api_response(self):
+        """Test the real production scenario: LiteLLM calls with_raw_response.create(stream=True),
+        which makes the OpenAI SDK return a LegacyAPIResponse. SDOT's _parse_response calls
+        .parse() on it to get the AsyncStream — discarding .headers. StreamWrapper must
+        preserve the headers captured before _parse_response so LiteLLM can access them.
+
+        Regression test for the AttributeError seen in production:
+          File "litellm/llms/azure/azure.py", line 176
+            headers = dict(raw_response.headers)
+          AttributeError: 'StreamWrapper' object has no attribute 'headers'
+        """
+        invocation = LLMInvocation(request_model="gpt-4o")
+        mock_stream = MagicMock(spec=[])  # AsyncStream has no .headers
+        mock_handler = MagicMock()
+        raw_headers = {
+            "content-type": "text/event-stream",
+            "x-request-id": "abc123",
+        }
+
+        wrapper = StreamWrapper(
+            stream=mock_stream,
+            invocation=invocation,
+            handler=mock_handler,
+            raw_headers=raw_headers,
+        )
+
+        # LiteLLM: headers = dict(raw_response.headers)
+        assert wrapper.headers == raw_headers
+        # LiteLLM: response = raw_response.parse()
+        assert wrapper.parse() is wrapper
+
+    def test_getattr_proxies_unknown_attributes_to_stream(self):
+        """Test that unknown attributes on StreamWrapper are proxied to the
+        underlying stream object.
+        Regression test for https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113
+        """
+        invocation = LLMInvocation(request_model="gpt-4o")
+        mock_stream = MagicMock()
+        mock_stream.some_custom_attr = "value"
+        mock_handler = MagicMock()
+
+        wrapper = StreamWrapper(
+            stream=mock_stream,
+            invocation=invocation,
+            handler=mock_handler,
+        )
+
+        assert wrapper.some_custom_attr == "value"
+
     def test_time_to_first_chunk_not_captured_without_start_time(self):
         """Test that time_to_first_chunk is not captured without _start_time."""
         invocation = LLMInvocation(request_model="gpt-4o")

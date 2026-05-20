@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Corrected package name in READMEs from `splunk-otel-instrumentation-openai-agents-v2` to `splunk-otel-instrumentation-openai-agents` to match `pyproject.toml`.
+- Updated README env vars to align with upstream `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` values (`span_only`, `event_only`, `span_and_event`), removed deprecated `CAPTURE_MESSAGE_CONTENT_MODE` flag.
+
 ### Changed
 
 - **Always populate messages on Python objects** — `_build_content_payload()` now always captures messages on `LLMInvocation` regardless of `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. The emitter layer controls what reaches telemetry, enabling evaluators to access full content even in `NO_CONTENT` mode.

@@ -418,12 +418,14 @@ def chat_completions_create(capture_content: bool, handler):
             raise
 
         try:
+            raw_headers = getattr(result, "headers", None)
             parsed_result = _parse_response(result)
             if is_streaming(kwargs):
                 return StreamWrapper(
                     parsed_result,
                     invocation,
                     handler,
+                    raw_headers=raw_headers,
                 )
 
             if span and span.is_recording():
@@ -471,12 +473,14 @@ def async_chat_completions_create(capture_content: bool, handler):
             raise
 
         try:
+            raw_headers = getattr(result, "headers", None)
             parsed_result = _parse_response(result)
             if is_streaming(kwargs):
                 return StreamWrapper(
                     parsed_result,
                     invocation,
                     handler,
+                    raw_headers=raw_headers,
                 )
 
             if span and span.is_recording():
@@ -755,11 +759,13 @@ class StreamWrapper:
         stream: Stream,
         invocation: LLMInvocation,
         handler,
+        raw_headers=None,
     ):
         self.stream = stream
         self.invocation = invocation
         self.span = getattr(invocation, "span", None)
         self.handler = handler
+        self.headers = raw_headers
         self.choice_buffers = []
         self.finish_reasons = []  # Instance-level to avoid cross-request contamination
         self._span_started = False
@@ -767,6 +773,15 @@ class StreamWrapper:
         self._error: Optional[Exception] = None
         self._first_chunk_processed = False
         self.setup()
+
+    def __getattr__(self, name: str):
+        return getattr(self.stream, name)
+
+    def parse(self):
+        """Proxy for with_raw_response callers (e.g. LiteLLM) that call
+        .parse() on the result of with_raw_response.create(stream=True).
+        Returns self so the caller can iterate the stream directly."""
+        return self
 
     def setup(self):
         if not self._span_started:

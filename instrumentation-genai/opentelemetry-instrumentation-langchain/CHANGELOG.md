@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.14
+
+### Bump version for release
+
 ## Version 0.1.13
 
 ### Fixed

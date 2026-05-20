@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Fix `AttributeError: 'StreamWrapper' object has no attribute 'headers'` when
+  using `with_raw_response.create(stream=True)` (e.g. via LiteLLM's Azure provider).
+  `_parse_response` was calling `.parse()` on the `LegacyAPIResponse` before wrapping
+  in `StreamWrapper`, discarding the raw HTTP headers. `StreamWrapper` now captures
+  headers from the `LegacyAPIResponse` before it is parsed and exposes them directly,
+  and adds a `parse()` method returning `self` so callers can treat the wrapper as
+  a drop-in for the raw response. Also adds `__getattr__` to proxy any other unknown
+  attributes to the underlying stream. Inspired by upstream fix
+  ([opentelemetry-python-contrib#4184](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4184),
+  fixes [#4113](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113)).
+
 ### Added
 
 - Add `gen_ai.tool.definitions` attribute on LLM spans when
@@ -14,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true`
 - Add `gen_ai.request.stream` attribute for streaming requests
 - Add `gen_ai.response.time_to_first_chunk` attribute and metric for streaming requests
+
+### Fixed
+
+- Fix PyPI badge, install command, and references in README.rst to use correct
+  `splunk-otel-instrumentation-openai` package name instead of upstream
+- Fix project URLs in pyproject.toml to point to SDOT repo (`signalfx/splunk-otel-python-contrib`)
 
 ### Changed
 
@@ -34,7 +53,7 @@ Initial release of `splunk-otel-instrumentation-openai` package.
 - Update tool call handling
   ([#135](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
 - Add suppression key handling
-  ([#155](https://github.com/signalfx/splunk-otel-python-contrib/pull/135))
+  ([#155](https://github.com/signalfx/splunk-otel-python-contrib/pull/155))
 - Move events/logs and metrics to handler-based emitters
   ([#158](https://github.com/signalfx/splunk-otel-python-contrib/pull/158))
 - Fix service tier attribute names: use `GEN_AI_OPENAI_REQUEST_SERVICE_TIER` for request

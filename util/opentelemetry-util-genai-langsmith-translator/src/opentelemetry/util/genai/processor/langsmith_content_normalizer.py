@@ -421,33 +421,61 @@ def normalize_langsmith_content(
         limit = INPUT_MAX if direction == "input" else OUTPUT_MAX
         for m in raw[:limit]:
             # FIRST: Check if this dict IS a LangChain serialized message
-            # Format: {"lc": 1, "type": "constructor", "kwargs": {"content": "...", "type": "human"}}
+            # Format: {"lc": 1, "type": "constructor", "kwargs": {"content": "...", "type": "human", "tool_calls": [...]}}
             if m.get("lc") == 1 and "kwargs" in m:
                 kwargs = m.get("kwargs", {})
                 if isinstance(kwargs, dict):
-                    msg_content = kwargs.get("content")
+                    msg_content = kwargs.get("content") or ""
                     msg_type = kwargs.get("type", "unknown")
+                    tool_calls = kwargs.get("tool_calls") or []
+                    tool_call_id = kwargs.get(
+                        "tool_call_id", "unknown_tool_call_id"
+                    )
+                    tool_name = kwargs.get("name")
 
+                    role = _map_langchain_type_to_role(msg_type)
+
+                    msg_parts: List[Dict[str, Any]] = []
                     if msg_content:
-                        # Map LangChain types to roles
-                        if msg_type == "human":
-                            role = "user"
-                        elif msg_type == "ai":
-                            role = "assistant"
-                        elif msg_type == "system":
-                            role = "system"
-                        else:
-                            role = (
-                                "user" if direction == "input" else "assistant"
-                            )
+                        msg_parts.append(_coerce_text_part(msg_content))
+                    for tc in tool_calls:
+                        if not isinstance(tc, dict):
+                            continue
+                        msg_parts.append(
+                            {
+                                "type": "tool_call",
+                                "id": tc.get("id"),
+                                "name": tc.get("name"),
+                                "arguments": tc.get("args")
+                                or tc.get("arguments"),
+                            }
+                        )
 
-                        parts = [_coerce_text_part(msg_content)]
+                    # Emit the message even when content is empty, as long as
+                    # we have tool_calls or it's a tool result.
+                    if msg_parts or msg_type in ("tool", "function"):
                         msg_dict: Dict[str, Any] = {
                             "role": role,
-                            "parts": parts,
+                            "parts": msg_parts
+                            if msg_parts
+                            else [_coerce_text_part("")],
                         }
+                        if role == "tool":
+                            if tool_call_id:
+                                msg_dict["tool_call_id"] = tool_call_id
+                            if tool_name:
+                                msg_dict["name"] = tool_name
                         if direction == "output":
-                            msg_dict["finish_reason"] = "stop"
+                            resp_meta = kwargs.get("response_metadata") or {}
+                            msg_dict["finish_reason"] = (
+                                (
+                                    resp_meta.get("finish_reason")
+                                    if isinstance(resp_meta, dict)
+                                    else None
+                                )
+                                or kwargs.get("finish_reason")
+                                or ("tool_calls" if tool_calls else "stop")
+                            )
                         normalized.append(msg_dict)
                         continue  # Skip to next message in list
 
@@ -509,6 +537,42 @@ def normalize_langsmith_content(
                         )
                     normalized.append(msg)
                 continue  # Skip to next message in list
+
+            # LangChain plain message shape: {"type": "human"|"ai"|"tool"|...,
+            # "content": "...", "tool_calls": [...], "tool_call_id": "...", ...}
+            # Map type -> role and carry tool_calls as structured parts.
+            if "type" in m and "role" not in m:
+                role = _map_langchain_type_to_role(m.get("type", ""))
+                content_val = m.get("content", "")
+                msg_parts: List[Dict[str, Any]] = []
+                if content_val:
+                    msg_parts.append(_coerce_text_part(content_val))
+                for tc in m.get("tool_calls") or []:
+                    if not isinstance(tc, dict):
+                        continue
+                    msg_parts.append(
+                        {
+                            "type": "tool_call",
+                            "id": tc.get("id"),
+                            "name": tc.get("name"),
+                            "arguments": tc.get("args") or tc.get("arguments"),
+                        }
+                    )
+                msg: Dict[str, Any] = {"role": role, "parts": msg_parts}
+                if role == "tool":
+                    if m.get("tool_call_id"):
+                        msg["tool_call_id"] = m["tool_call_id"]
+                    if m.get("name"):
+                        msg["name"] = m["name"]
+                if direction == "output":
+                    msg["finish_reason"] = (
+                        (m.get("response_metadata") or {}).get("finish_reason")
+                        or m.get("finish_reason")
+                        or m.get("finishReason")
+                        or "stop"
+                    )
+                normalized.append(msg)
+                continue
 
             # Standard message format with role/content
             role = m.get(
@@ -652,39 +716,54 @@ def normalize_langsmith_content(
 
                     content = ""
                     finish_reason = "stop"
+                    tool_calls: List[Dict[str, Any]] = []
 
                     # Try to extract from "message" if present (LangChain format)
                     message = gen.get("message")
                     if isinstance(message, dict):
-                        # Check for LangChain serialized message
                         if message.get("lc") == 1 and "kwargs" in message:
                             kwargs = message["kwargs"]
-                            content = kwargs.get("content", "")
-                            # Extract finish_reason from response_metadata
+                            content = kwargs.get("content") or ""
+                            tool_calls = kwargs.get("tool_calls") or []
                             resp_meta = kwargs.get("response_metadata", {})
                             if isinstance(resp_meta, dict):
                                 finish_reason = resp_meta.get(
                                     "finish_reason", "stop"
                                 )
                         else:
-                            content = message.get("content", "")
+                            content = message.get("content") or ""
+                            tool_calls = message.get("tool_calls") or []
                     else:
-                        # Fallback to "text" field
                         content = gen.get("text", "")
 
-                    # Get finish_reason from generation_info
                     gen_info = gen.get("generation_info", {})
                     if isinstance(gen_info, dict):
                         finish_reason = gen_info.get(
                             "finish_reason", finish_reason
                         )
 
+                    parts: List[Dict[str, Any]] = []
                     if content:
+                        parts.append(_coerce_text_part(content))
+                    for tc in tool_calls:
+                        if not isinstance(tc, dict):
+                            continue
+                        parts.append(
+                            {
+                                "type": "tool_call",
+                                "id": tc.get("id"),
+                                "name": tc.get("name"),
+                                "arguments": tc.get("args")
+                                or tc.get("arguments"),
+                            }
+                        )
+                    if parts:
                         out_msgs.append(
                             {
                                 "role": "assistant",
-                                "parts": [_coerce_text_part(content)],
-                                "finish_reason": finish_reason,
+                                "parts": parts,
+                                "finish_reason": finish_reason
+                                or ("tool_calls" if tool_calls else "stop"),
                             }
                         )
             if out_msgs:
@@ -722,6 +801,19 @@ def normalize_langsmith_content(
                 return normalize_langsmith_content(inner, direction)
             if isinstance(inner, dict):
                 # Recursively process - might contain "messages" array
+                return normalize_langsmith_content(inner, direction)
+
+        # singular "output" wrapping a structured LangChain message
+        # (common for execute_tool spans where output is a ToolMessage dict)
+        if direction == "output" and "output" in raw:
+            inner = raw["output"]
+            if (
+                isinstance(inner, dict)
+                and "type" in inner
+                and "content" in inner
+            ):
+                return normalize_langsmith_content([inner], direction)
+            if isinstance(inner, list):
                 return normalize_langsmith_content(inner, direction)
 
         # Langsmith run I/O format

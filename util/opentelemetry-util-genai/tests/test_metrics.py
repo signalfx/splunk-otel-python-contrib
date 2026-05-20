@@ -260,8 +260,7 @@ class TestMetricsEmission(unittest.TestCase):
             agent_id="agent-123",
         )
         metrics_list = self._collect_metrics()
-        # Collect token usage and duration datapoints and assert agent attrs present
-        # We flatten all datapoints for easier searching
+        # agent.name (bounded cardinality) is kept; agent.id (per-invocation) is excluded
         found_token_agent = False
         found_duration_agent = False
         for metric in metrics_list:
@@ -270,28 +269,29 @@ class TestMetricsEmission(unittest.TestCase):
                 "gen_ai.client.operation.duration",
             ):
                 continue
-            # metric.data.data_points for Histogram-like metrics
             data = getattr(metric, "data", None)
             if not data:
                 continue
             data_points = getattr(data, "data_points", []) or []
             for dp in data_points:
                 attrs = getattr(dp, "attributes", {}) or {}
-                if (
-                    attrs.get("gen_ai.agent.name") == "router_agent"
-                    and attrs.get("gen_ai.agent.id") == "agent-123"
-                ):
+                if attrs.get("gen_ai.agent.name") == "router_agent":
+                    self.assertNotIn(
+                        "gen_ai.agent.id",
+                        attrs,
+                        "gen_ai.agent.id must not appear on metric data points",
+                    )
                     if metric.name == "gen_ai.client.token.usage":
                         found_token_agent = True
                     if metric.name == "gen_ai.client.operation.duration":
                         found_duration_agent = True
         self.assertTrue(
             found_token_agent,
-            "Expected token usage metric datapoint to include agent.name and agent.id",
+            "Expected token usage metric datapoint to include agent.name",
         )
         self.assertTrue(
             found_duration_agent,
-            "Expected operation duration metric datapoint to include agent.name and agent.id",
+            "Expected operation duration metric datapoint to include agent.name",
         )
 
     def test_llm_metrics_include_server_attributes(self):
@@ -391,15 +391,17 @@ class TestMetricsEmission(unittest.TestCase):
                 continue
             for dp in getattr(data, "data_points", []) or []:
                 attrs = getattr(dp, "attributes", {}) or {}
-                if (
-                    attrs.get("gen_ai.agent.name") == "context_agent"
-                    and attrs.get("gen_ai.agent.id") == "agent-123"
-                ):
+                if attrs.get("gen_ai.agent.name") == "context_agent":
+                    self.assertNotIn(
+                        "gen_ai.agent.id",
+                        attrs,
+                        "gen_ai.agent.id must not appear on metric data points",
+                    )
                     inherited = True
                     break
         self.assertTrue(
             inherited,
-            "Expected metrics to inherit agent identity from active agent context",
+            "Expected metrics to inherit agent.name from active agent context",
         )
 
     def test_llm_duration_metric_includes_error_type_on_failure(self):
