@@ -1,8 +1,8 @@
 import pytest
-from opentelemetry.trace import SpanKind
 
-from opentelemetry.util.genai.handler import get_telemetry_handler
+from opentelemetry.trace import SpanKind
 from opentelemetry.util.genai._error import Error, ErrorClassification
+from opentelemetry.util.genai.handler import get_telemetry_handler
 
 
 def test_workflow_invocation_creates_span():
@@ -16,7 +16,13 @@ def test_workflow_invocation_creates_span():
 def test_workflow_invocation_fail():
     handler = get_telemetry_handler()
     inv = handler.start_workflow(name="booking-flow")
-    inv.fail(Error(message="planning failed", type=RuntimeError, classification=ErrorClassification.REAL_ERROR))
+    inv.fail(
+        Error(
+            message="planning failed",
+            type=RuntimeError,
+            classification=ErrorClassification.REAL_ERROR,
+        )
+    )
     assert inv.end_time is not None
 
 
