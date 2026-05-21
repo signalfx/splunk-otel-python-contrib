@@ -96,6 +96,4 @@ class ToolInvocation(GenAIInvocation):
             attrs[GenAIAttributes.GEN_AI_TOOL_NAME] = self.name
         if self.agent_name:
             attrs[GenAIAttributes.GEN_AI_AGENT_NAME] = self.agent_name
-        if self.agent_id:
-            attrs[GenAIAttributes.GEN_AI_AGENT_ID] = self.agent_id
         return attrs

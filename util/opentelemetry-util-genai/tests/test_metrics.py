@@ -583,6 +583,85 @@ class TestMetricsEmission(unittest.TestCase):
         )
 
 
+class TestNewStyleInvocationMetrics(unittest.TestCase):
+    """Regression tests for new-style invocation metric attributes (PR #323 cardinality fix)."""
+
+    def setUp(self):
+        self.span_exporter = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(
+            SimpleSpanProcessor(self.span_exporter)
+        )
+        trace.set_tracer_provider(tracer_provider)
+        self.tracer_provider = tracer_provider
+        self.metric_reader = InMemoryMetricReader()
+        self.meter_provider = MeterProvider(
+            metric_readers=[self.metric_reader]
+        )
+        TelemetryHandler._reset_for_testing()
+
+    def _collect_metrics(self) -> List[Any]:
+        try:
+            self.meter_provider.force_flush()
+        except Exception:
+            pass
+        try:
+            self.metric_reader.collect()
+        except Exception:
+            pass
+        data = self.metric_reader.get_metrics_data()
+        points: List[Any] = []
+        for rm in getattr(data, "resource_metrics", []) or []:
+            for sm in getattr(rm, "scope_metrics", []) or []:
+                for metric in getattr(sm, "metrics", []) or []:
+                    points.append(metric)
+        return points
+
+    def test_inference_invocation_agent_id_absent_from_metrics(self):
+        """gen_ai.agent.id must not appear on InferenceInvocation metric data points (cardinality regression)."""
+        env = {
+            **STABILITY_EXPERIMENTAL,
+            OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            _OpenTelemetrySemanticConventionStability._initialized = False
+            _OpenTelemetrySemanticConventionStability._initialize()
+            TelemetryHandler._reset_for_testing()
+            handler = get_telemetry_handler(
+                tracer_provider=self.tracer_provider,
+                meter_provider=self.meter_provider,
+            )
+            inv = handler.start_inference("openai", request_model="gpt-4o")
+            inv.agent_name = "my_agent"
+            inv.agent_id = "agent-unique-xyz"
+            inv.input_tokens = 10
+            inv.output_tokens = 5
+            inv.stop()
+
+        metrics_list = self._collect_metrics()
+        for metric in metrics_list:
+            if metric.name not in (
+                "gen_ai.client.token.usage",
+                "gen_ai.client.operation.duration",
+            ):
+                continue
+            for dp in (
+                getattr(getattr(metric, "data", None), "data_points", []) or []
+            ):
+                attrs = getattr(dp, "attributes", {}) or {}
+                self.assertNotIn(
+                    "gen_ai.agent.id",
+                    attrs,
+                    f"gen_ai.agent.id must not appear on {metric.name} data points",
+                )
+                if attrs.get("gen_ai.agent.name") == "my_agent":
+                    self.assertIn(
+                        "gen_ai.agent.name",
+                        attrs,
+                        "gen_ai.agent.name should be present on metric data points",
+                    )
+
+
 class TestMCPSessionDurationMetrics(unittest.TestCase):
     """Tests for mcp.client.session.duration and mcp.server.session.duration."""
 

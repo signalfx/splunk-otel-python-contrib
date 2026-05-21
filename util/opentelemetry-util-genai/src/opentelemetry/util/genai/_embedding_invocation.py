@@ -110,8 +110,6 @@ class EmbeddingInvocation(GenAIInvocation):
             attrs[ServerAttributes.SERVER_PORT] = self.server_port
         if self.agent_name:
             attrs[GenAIAttributes.GEN_AI_AGENT_NAME] = self.agent_name
-        if self.agent_id:
-            attrs[GenAIAttributes.GEN_AI_AGENT_ID] = self.agent_id
         return attrs
 
     def _get_metric_token_counts(self) -> dict[str, int]:

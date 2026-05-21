@@ -151,18 +151,42 @@ class InferenceInvocation(GenAIInvocation):
         _optional = (
             (GenAIAttributes.GEN_AI_REQUEST_MODEL, self.request_model),
             (GenAIAttributes.GEN_AI_OPERATION_NAME, self.operation),
-            (GenAIAttributes.GEN_AI_REQUEST_TEMPERATURE, self.request_temperature),
+            (
+                GenAIAttributes.GEN_AI_REQUEST_TEMPERATURE,
+                self.request_temperature,
+            ),
             (GenAIAttributes.GEN_AI_REQUEST_TOP_P, self.request_top_p),
             (GenAIAttributes.GEN_AI_REQUEST_TOP_K, self.request_top_k),
-            (GenAIAttributes.GEN_AI_REQUEST_FREQUENCY_PENALTY, self.request_frequency_penalty),
-            (GenAIAttributes.GEN_AI_REQUEST_PRESENCE_PENALTY, self.request_presence_penalty),
-            (GenAIAttributes.GEN_AI_REQUEST_MAX_TOKENS, self.request_max_tokens),
-            (GenAIAttributes.GEN_AI_REQUEST_CHOICE_COUNT, self.request_choice_count),
+            (
+                GenAIAttributes.GEN_AI_REQUEST_FREQUENCY_PENALTY,
+                self.request_frequency_penalty,
+            ),
+            (
+                GenAIAttributes.GEN_AI_REQUEST_PRESENCE_PENALTY,
+                self.request_presence_penalty,
+            ),
+            (
+                GenAIAttributes.GEN_AI_REQUEST_MAX_TOKENS,
+                self.request_max_tokens,
+            ),
+            (
+                GenAIAttributes.GEN_AI_REQUEST_CHOICE_COUNT,
+                self.request_choice_count,
+            ),
             (GenAIAttributes.GEN_AI_REQUEST_SEED, self.request_seed),
             (GenAIAttributes.GEN_AI_OUTPUT_TYPE, self.output_type),
-            (GenAIAttributes.GEN_AI_OPENAI_REQUEST_SERVICE_TIER, self.request_service_tier),
-            (GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SERVICE_TIER, self.response_service_tier),
-            (GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SYSTEM_FINGERPRINT, self.response_system_fingerprint),
+            (
+                GenAIAttributes.GEN_AI_OPENAI_REQUEST_SERVICE_TIER,
+                self.request_service_tier,
+            ),
+            (
+                GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SERVICE_TIER,
+                self.response_service_tier,
+            ),
+            (
+                GenAIAttributes.GEN_AI_OPENAI_RESPONSE_SYSTEM_FINGERPRINT,
+                self.response_system_fingerprint,
+            ),
             (GenAIAttributes.GEN_AI_RESPONSE_MODEL, self.response_model_name),
             (GenAIAttributes.GEN_AI_RESPONSE_ID, self.response_id),
             (GEN_AI_SECURITY_EVENT_ID, self.security_event_id),
@@ -173,15 +197,25 @@ class InferenceInvocation(GenAIInvocation):
                 result[key] = value
 
         if self.request_stop_sequences:
-            result[GenAIAttributes.GEN_AI_REQUEST_STOP_SEQUENCES] = self.request_stop_sequences
+            result[GenAIAttributes.GEN_AI_REQUEST_STOP_SEQUENCES] = (
+                self.request_stop_sequences
+            )
         if self.request_encoding_formats:
-            result[GenAIAttributes.GEN_AI_REQUEST_ENCODING_FORMATS] = self.request_encoding_formats
+            result[GenAIAttributes.GEN_AI_REQUEST_ENCODING_FORMATS] = (
+                self.request_encoding_formats
+            )
         if self.response_finish_reasons:
-            result[GenAIAttributes.GEN_AI_RESPONSE_FINISH_REASONS] = self.response_finish_reasons
+            result[GenAIAttributes.GEN_AI_RESPONSE_FINISH_REASONS] = (
+                self.response_finish_reasons
+            )
         if self.input_tokens is not None:
-            result[GenAIAttributes.GEN_AI_USAGE_INPUT_TOKENS] = self.input_tokens
+            result[GenAIAttributes.GEN_AI_USAGE_INPUT_TOKENS] = (
+                self.input_tokens
+            )
         if self.output_tokens is not None:
-            result[GenAIAttributes.GEN_AI_USAGE_OUTPUT_TOKENS] = self.output_tokens
+            result[GenAIAttributes.GEN_AI_USAGE_OUTPUT_TOKENS] = (
+                self.output_tokens
+            )
 
         return result
 
@@ -215,8 +249,6 @@ class InferenceInvocation(GenAIInvocation):
             attrs[ServerAttributes.SERVER_PORT] = self.server_port
         if self.agent_name:
             attrs[GenAIAttributes.GEN_AI_AGENT_NAME] = self.agent_name
-        if self.agent_id:
-            attrs[GenAIAttributes.GEN_AI_AGENT_ID] = self.agent_id
         return attrs
 
     def _get_metric_token_counts(self) -> dict[str, int]:
