@@ -1245,14 +1245,7 @@ class SpanEmitter(EmitterMeta):
         )
         self._add_span_to_invocation(invocation, span)
 
-        # Start-time attributes
-        span.set_attribute(GenAI.GEN_AI_OPERATION_NAME, operation)
-        if invocation.request_model:
-            span.set_attribute(
-                GenAI.GEN_AI_REQUEST_MODEL, invocation.request_model
-            )
-        if invocation.provider:
-            span.set_attribute(GEN_AI_PROVIDER_NAME, invocation.provider)
+        # server_address, server_port, framework are not in semconv_attributes
         if invocation.framework:
             span.set_attribute("gen_ai.framework", invocation.framework)
         if invocation.server_address:
@@ -1283,28 +1276,10 @@ class SpanEmitter(EmitterMeta):
         if not (hasattr(span, "is_recording") and span.is_recording()):
             return
 
-        # Finish-time attributes: tokens, response model, response id
-        if invocation.input_tokens is not None:
-            span.set_attribute(
-                GenAI.GEN_AI_USAGE_INPUT_TOKENS, invocation.input_tokens
-            )
-        if invocation.output_tokens is not None:
-            span.set_attribute(
-                GenAI.GEN_AI_USAGE_OUTPUT_TOKENS, invocation.output_tokens
-            )
-        if invocation.response_model_name:
-            span.set_attribute(
-                GenAI.GEN_AI_RESPONSE_MODEL, invocation.response_model_name
-            )
-        if invocation.response_id:
-            span.set_attribute(
-                GenAI.GEN_AI_RESPONSE_ID, invocation.response_id
-            )
-        if invocation.response_finish_reasons:
-            span.set_attribute(
-                GenAI.GEN_AI_RESPONSE_FINISH_REASONS,
-                invocation.response_finish_reasons,
-            )
+        # All scalar semconv attributes (including response fields set after start)
+        _apply_gen_ai_semconv_attributes(
+            span, invocation.semantic_convention_attributes()
+        )
 
         # Re-apply function definitions (some instrumentors populate at end)
         if invocation.request_functions:
@@ -1351,15 +1326,8 @@ class SpanEmitter(EmitterMeta):
         if span is None:
             return
         self._apply_error_status(span, error)
-        # Still apply finish attrs so token counts etc. are captured
         if hasattr(span, "is_recording") and span.is_recording():
-            if invocation.input_tokens is not None:
-                span.set_attribute(
-                    GenAI.GEN_AI_USAGE_INPUT_TOKENS, invocation.input_tokens
-                )
-            if invocation.output_tokens is not None:
-                span.set_attribute(
-                    GenAI.GEN_AI_USAGE_OUTPUT_TOKENS,
-                    invocation.output_tokens,
-                )
+            _apply_gen_ai_semconv_attributes(
+                span, invocation.semantic_convention_attributes()
+            )
         span.end()
