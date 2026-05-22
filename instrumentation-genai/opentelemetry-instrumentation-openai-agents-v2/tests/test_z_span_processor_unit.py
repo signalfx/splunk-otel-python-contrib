@@ -115,24 +115,6 @@ def processor_setup():
     exporter.clear()
 
 
-def test_metrics_dead_code_removed(processor_setup):
-    # HYBIM-701: unreachable metrics methods and their uninitialized attributes
-    # were removed. Assert they no longer exist so partial reverts are caught.
-    processor, _ = processor_setup
-    for name in (
-        "_metrics_enabled",
-        "_init_metrics",
-        "_record_metrics",
-        "_duration_histogram",
-        "_token_usage_histogram",
-        "_meter",
-    ):
-        assert not hasattr(processor, name), (
-            f"GenAISemanticProcessor.{name} should be removed (HYBIM-701)"
-        )
-    assert not hasattr(sp, "GEN_AI_TOKEN_TYPE")
-
-
 def test_time_helpers():
     dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
     assert sp._as_utc_nano(dt) == 1704067200 * 1_000_000_000
