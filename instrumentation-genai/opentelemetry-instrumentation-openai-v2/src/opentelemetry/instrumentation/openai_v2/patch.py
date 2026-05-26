@@ -51,6 +51,7 @@ from opentelemetry.util.genai.types import (
 from opentelemetry.util.genai.utils import (
     gen_ai_json_dumps,
     is_new_message_types_enabled,
+    should_capture_content_on_spans,
     should_capture_tool_definitions,
 )
 
@@ -184,7 +185,7 @@ def _build_tool_call_request(tool_call: Any) -> ToolCallRequest:
     return ToolCallRequest(
         id=tool_call_id,
         name=function_name,
-        arguments=arguments,
+        arguments=arguments if should_capture_content_on_spans() else None,
     )
 
 

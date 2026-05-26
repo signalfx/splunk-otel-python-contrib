@@ -812,17 +812,6 @@ __all__ = [
     # MCP types
     "MCPOperation",
     "MCPToolCall",
-    # extended message part types
-    "ToolCallRequest",
-    "ServerToolCall",
-    "ServerToolCallResponse",
-    "Reasoning",
-    "Modality",
-    "Blob",
-    "File",
-    "Uri",
-    "GenericPart",
-    "MessagePart",
     # Security semconv constant (Cisco AI Defense) - re-exported from attributes
     "GEN_AI_SECURITY_EVENT_ID",
 ]

@@ -136,6 +136,9 @@ def test_flag_off_tool_calls_finish_reason_emits_empty_text(monkeypatch):
 
 
 def test_flag_on_tool_calls_produces_tool_call_request(monkeypatch):
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true"
+    )
     tool_calls = [
         {"id": "call-1", "name": "get_weather", "args": {"city": "SF"}},
         {"id": "call-2", "name": "lookup_price", "args": {"item": "gpt-4o"}},
@@ -158,6 +161,21 @@ def test_flag_on_tool_calls_produces_tool_call_request(monkeypatch):
     assert isinstance(part1, ToolCallRequest)
     assert part1.name == "lookup_price"
     assert part1.id == "call-2"
+
+
+def test_flag_on_tool_calls_redacts_arguments_when_content_capture_disabled(
+    monkeypatch,
+):
+    response = _make_llm_result(
+        "",
+        "tool_calls",
+        tool_calls=[{"id": "call-1", "name": "get_weather", "args": {"city": "SF"}}],
+    )
+    inv = _run_on_llm_end(response, monkeypatch, flag_value="true")
+
+    part = inv.output_messages[0].parts[0]
+    assert isinstance(part, ToolCallRequest)
+    assert part.arguments is None
 
 
 def test_flag_on_tool_calls_empty_list_falls_back_to_text(monkeypatch):

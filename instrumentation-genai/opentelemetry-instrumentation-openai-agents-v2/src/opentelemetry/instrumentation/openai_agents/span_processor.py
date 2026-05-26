@@ -1446,7 +1446,11 @@ class GenAISemanticProcessor(TracingProcessor):
                                     name=p.get("tool_name")
                                     or p.get("name")
                                     or "unnamed_tool_call",
-                                    arguments=p.get("arguments"),
+                                    arguments=(
+                                        p.get("arguments")
+                                        if self.include_sensitive_data
+                                        else None
+                                    ),
                                 )
                             )
                         else:

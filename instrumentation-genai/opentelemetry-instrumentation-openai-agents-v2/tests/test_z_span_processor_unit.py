@@ -1112,6 +1112,34 @@ def test_make_output_messages_flag_on_tool_call_becomes_tool_call_request(
     processor.shutdown()
 
 
+def test_make_output_messages_flag_on_tool_call_redacts_arguments_when_disabled(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+    )
+    processor = _make_processor()
+    processor.include_sensitive_data = False
+    messages = [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "tool_name": "search",
+                    "tool_call_id": "c1",
+                    "arguments": {"q": "hello"},
+                },
+            ],
+        }
+    ]
+    result = processor._make_output_messages(messages)
+    part = result[0].parts[0]
+    assert isinstance(part, ToolCallRequest)
+    assert part.arguments is None
+    processor.shutdown()
+
+
 def test_make_output_messages_text_always_becomes_text(monkeypatch):
     for flag_val in ("true", None):
         if flag_val:

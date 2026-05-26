@@ -287,7 +287,7 @@ def _serialize_messages(
 
             serialized_msgs.append(msg_dict)
 
-        return json.dumps(serialized_msgs)
+        return json.dumps(serialized_msgs, default=str)
     except (TypeError, ValueError):  # pragma: no cover
         return None
 

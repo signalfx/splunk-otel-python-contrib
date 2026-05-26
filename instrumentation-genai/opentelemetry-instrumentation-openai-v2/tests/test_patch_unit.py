@@ -385,7 +385,10 @@ class TestContentToParts:
 
 
 class TestBuildToolCallRequest:
-    def test_basic(self):
+    def test_basic(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true"
+        )
         tc = _make_tool_call("search", '{"q": "otel"}', "call-1")
         result = _build_tool_call_request(tc)
         assert isinstance(result, ToolCallRequest)
@@ -393,7 +396,10 @@ class TestBuildToolCallRequest:
         assert result.id == "call-1"
         assert result.arguments == {"q": "otel"}
 
-    def test_dict_tool_call(self):
+    def test_dict_tool_call(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true"
+        )
         tc = {
             "id": "call-dict",
             "function": {"name": "lookup", "arguments": '{"q": "otel"}'},
@@ -402,12 +408,26 @@ class TestBuildToolCallRequest:
         assert result.id == "call-dict"
         assert result.arguments == {"q": "otel"}
 
-    def test_missing_name_defaults(self):
+    def test_missing_name_defaults(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true"
+        )
         tc = SimpleNamespace(
             id="c", function=SimpleNamespace(name=None, arguments=None)
         )
         result = _build_tool_call_request(tc)
         assert result.name == "unnamed_tool_call"
+
+    def test_redacts_arguments_when_content_capture_disabled(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+            raising=False,
+        )
+        tc = _make_tool_call("search", '{"q": "otel"}', "call-1")
+        result = _build_tool_call_request(tc)
+        assert result.arguments is None
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +453,9 @@ class TestBuildOutputMessagesNewTypes:
         monkeypatch.setenv(
             "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
         )
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true"
+        )
         tc = _make_tool_call("search", '{"q": "hello"}', "call-99")
         response = _make_response(
             [_make_choice(tool_calls=[tc], finish_reason="tool_calls")]
@@ -444,6 +467,25 @@ class TestBuildOutputMessagesNewTypes:
         assert part.name == "search"
         assert part.id == "call-99"
         assert part.arguments == {"q": "hello"}
+
+    def test_flag_on_tool_call_redacts_arguments_when_disabled(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv(
+            "OTEL_INSTRUMENTATION_GENAI_ENABLE_NEW_MESSAGE_TYPES", "true"
+        )
+        monkeypatch.delenv(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+            raising=False,
+        )
+        tc = _make_tool_call("search", '{"q": "hello"}', "call-99")
+        response = _make_response(
+            [_make_choice(tool_calls=[tc], finish_reason="tool_calls")]
+        )
+        msgs = _build_output_messages_from_response(response)
+        part = msgs[0].parts[0]
+        assert isinstance(part, ToolCallRequest)
+        assert part.arguments is None
 
     def test_flag_off_text_produces_text_part(self, monkeypatch):
         monkeypatch.delenv(

@@ -24,6 +24,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
+from opentelemetry.util.genai.emitters.utils import _serialize_messages
 from opentelemetry.util.genai.environment_variables import (
     OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT,
 )
@@ -33,6 +34,7 @@ from opentelemetry.util.genai.handler import (
 )
 from opentelemetry.util.genai.types import (
     ContentCapturingMode,
+    GenericPart,
     InputMessage,
     LLMInvocation,
     OutputMessage,
@@ -237,6 +239,23 @@ class TestTelemetryHandler(unittest.TestCase):
         # Child has parent set to parent's span id
         assert child_span.parent is not None
         assert child_span.parent.span_id == parent_span.context.span_id
+
+    def test_serialize_messages_stringifies_non_json_generic_parts(self):
+        class NonSerializable:
+            pass
+
+        message = OutputMessage(
+            role="assistant",
+            parts=[GenericPart(value=NonSerializable())],
+            finish_reason="stop",
+        )
+
+        serialized = _serialize_messages([message])
+
+        assert serialized is not None
+        parsed = json.loads(serialized)
+        assert parsed[0]["parts"][0]["type"] == "generic"
+        assert isinstance(parsed[0]["parts"][0]["value"], str)
 
     @patch_capture_mode("EVENT_ONLY")
     def test_span_metric_event_generator_event_only_no_span_messages(self):

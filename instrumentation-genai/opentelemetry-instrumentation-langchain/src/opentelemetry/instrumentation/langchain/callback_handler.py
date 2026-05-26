@@ -40,6 +40,7 @@ from opentelemetry.util.genai.attributes import (
 )
 from opentelemetry.util.genai.utils import (
     is_new_message_types_enabled,
+    should_capture_content_on_spans,
     should_capture_tool_definitions as _should_capture_tool_definitions,
 )
 
@@ -872,7 +873,11 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     ToolCallRequest(
                         id=tc.get("id"),
                         name=tc.get("name") or "unnamed_tool_call",
-                        arguments=tc.get("args"),
+                        arguments=(
+                            tc.get("args")
+                            if should_capture_content_on_spans()
+                            else None
+                        ),
                     )
                     for tc in raw_tool_calls
                     if isinstance(tc, dict)
