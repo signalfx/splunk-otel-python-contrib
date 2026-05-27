@@ -79,14 +79,30 @@ Content capture follows the shared GenAI environment variables:
     export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT
     export OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true
 
+Useful flags for Bedrock Runtime and AgentCore composition:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Environment variable
+     - Purpose
+   * - ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT``
+     - Controls whether captured prompt and completion message content is
+       emitted by the shared GenAI emitters. Use ``SPAN_AND_EVENT`` when
+       evals and exported telemetry both need message bodies.
+   * - ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS``
+     - Controls whether Bedrock tool definitions are serialized into emitted
+       telemetry. Leave disabled when tool schemas are large or sensitive.
+   * - ``DISABLE_ADOT_OBSERVABILITY``
+     - Set to ``true`` in AgentCore deployments that export to your own OTLP
+       collector so AgentCore does not also send telemetry through AWS ADOT
+       observability.
+
 The instrumentation always populates message bodies and tool arguments on the
 Python invocation objects so evaluations can consume them. The shared GenAI
 emitters use the content-capture setting to decide whether those values are
 emitted as span attributes or log events.
-
-When deploying inside AgentCore and sending telemetry to your own OTLP
-collector, set ``DISABLE_ADOT_OBSERVABILITY=true`` so AgentCore does not also
-send telemetry through AWS ADOT observability.
 
 For zero-code instrumentation, disable this package with
 ``OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=bedrock``.

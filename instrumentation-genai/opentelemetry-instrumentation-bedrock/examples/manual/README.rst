@@ -22,6 +22,11 @@ From this directory:
     source .venv/bin/activate
     pip install -r requirements.txt
 
+The base requirements support the default Bedrock Runtime-only mode. The
+AgentCore SDK and AgentCore instrumentation are optional because they are only
+needed for ``python main.py --with-agentcore``. To run AgentCore mode, install
+the optional AgentCore dependencies listed as comments in ``requirements.txt``.
+
 The example sets local defaults for all environment variables it reads. The
 same defaults are listed in ``.env.example`` for shell-based workflows.
 
@@ -33,8 +38,8 @@ To load them explicitly in your shell:
     source .env.example
     set +a
 
-The requirements install the Bedrock AgentCore SDK. AgentCore mode also needs
-the AgentCore instrumentation package that provides:
+AgentCore mode needs the Bedrock AgentCore SDK and the AgentCore
+instrumentation package that provides:
 
 - ``bedrock_agentcore.runtime.BedrockAgentCoreApp``
 - ``opentelemetry.instrumentation.bedrock_agentcore.BedrockAgentCoreInstrumentor``
@@ -42,8 +47,9 @@ the AgentCore instrumentation package that provides:
 - ``bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter``
 - ``bedrock_agentcore.tools.browser_client.BrowserClient``
 
-If you are testing from adjacent local branches or worktrees, install those
-packages in editable mode before running with ``--with-agentcore``.
+Use published package versions when they are available. If you are testing from
+adjacent local branches or worktrees, install the commented editable packages in
+``requirements.txt`` before running with ``--with-agentcore``.
 
 Run Bedrock Runtime Only
 ------------------------
