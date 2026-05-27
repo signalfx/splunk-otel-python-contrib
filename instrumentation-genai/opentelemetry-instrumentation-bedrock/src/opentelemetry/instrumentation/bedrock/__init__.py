@@ -34,7 +34,6 @@ from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.util.genai.handler import get_telemetry_handler
 
 from .package import _instruments
-from .utils import is_content_enabled
 from .version import __version__
 from .wrappers import bedrock_runtime_api_call_wrapper
 
@@ -63,9 +62,7 @@ class BedrockInstrumentor(BaseInstrumentor):
             wrap_function_wrapper(
                 "botocore.client",
                 "BaseClient._make_api_call",
-                bedrock_runtime_api_call_wrapper(
-                    is_content_enabled(), handler
-                ),
+                bedrock_runtime_api_call_wrapper(handler),
             )
         except (ImportError, ModuleNotFoundError):
             _LOGGER.debug(

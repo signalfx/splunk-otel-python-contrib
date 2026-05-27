@@ -33,8 +33,8 @@ Composition With AgentCore
 
 Use this package with AgentCore instrumentation when your application uses
 ``BedrockAgentCoreApp`` and calls Bedrock Runtime from inside the entrypoint.
-AgentCore provides the workflow/tool/retrieval spans, and this package adds the
-child LLM spans that evaluation callbacks consume.
+AgentCore owns the agent parent spans, and this package adds the child LLM
+spans that evaluation callbacks consume.
 
 .. code-block:: python
 
@@ -53,7 +53,7 @@ In the repository, see
 ``examples/manual``
 for a runnable Bedrock Runtime example that can also enable AgentCore
 instrumentation. It uses console span export by default so you can verify that
-Bedrock Runtime LLM spans nest under AgentCore workflow spans when both
+Bedrock Runtime LLM spans nest under active AgentCore spans when both
 instrumentors are enabled.
 
 What Gets Instrumented
@@ -76,13 +76,20 @@ Content capture follows the shared GenAI environment variables:
 
 .. code-block:: bash
 
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT
     export OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true
 
-When content capture is disabled, the instrumentation still emits model,
-operation, token, finish reason, and request metadata, but message bodies and
-tool arguments/results are omitted.
+The instrumentation always populates message bodies and tool arguments on the
+Python invocation objects so evaluations can consume them. The shared GenAI
+emitters use the content-capture setting to decide whether those values are
+emitted as span attributes or log events.
+
+When deploying inside AgentCore and sending telemetry to your own OTLP
+collector, set ``DISABLE_ADOT_OBSERVABILITY=true`` so AgentCore does not also
+send telemetry through AWS ADOT observability.
+
+For zero-code instrumentation, disable this package with
+``OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=bedrock``.
 
 InvokeModel Coverage
 --------------------
@@ -111,7 +118,7 @@ The instrumentation sets:
 - ``gen_ai.system`` = ``aws.bedrock``
 - ``gen_ai.framework`` = ``boto3``
 - ``gen_ai.request.model`` from ``modelId``
-- ``gen_ai.provider.name`` inferred from the model ID
+- ``gen_ai.provider.name`` = ``aws.bedrock``
 - request params such as temperature, top-p, max tokens, and stop sequences
 - response ID, response model, finish reasons, and token usage when available
 - ``gen_ai.request.stream`` and ``gen_ai.response.time_to_first_chunk`` for

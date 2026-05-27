@@ -58,19 +58,22 @@ _SUPPORTED_OPERATIONS = {
     "InvokeModelWithResponseStream",
 }
 _STREAMING_OPERATIONS = {"ConverseStream", "InvokeModelWithResponseStream"}
-_PROFILE_PREFIXES = {"us", "eu", "apac"}
 _STREAM_BUFFER_LIMIT = 64 * 1024
 _TEXT_COMPLETION_OPERATION = "text_completion"
 
 
 def bedrock_runtime_api_call_wrapper(
-    capture_content: bool, handler: TelemetryHandler
+    handler: TelemetryHandler,
 ) -> Callable[..., Any]:
     """Wrap ``botocore.client.BaseClient._make_api_call``."""
 
     def traced_method(
         wrapped: Any, instance: Any, args: tuple, kwargs: dict
     ) -> Any:
+        # Avoid duplicate nested LLM spans when another GenAI instrumentation
+        # owns the active model call. Use
+        # OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=bedrock to disable this
+        # package for zero-code instrumentation.
         if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
             return wrapped(*args, **kwargs)
 
@@ -88,7 +91,7 @@ def bedrock_runtime_api_call_wrapper(
         )
         try:
             invocation = _build_invocation(
-                instance, operation_name, api_params, capture_content
+                instance, operation_name, api_params
             )
             handler.start_llm(invocation)
         except Exception:
@@ -109,13 +112,10 @@ def bedrock_runtime_api_call_wrapper(
                     result,
                     invocation,
                     operation_name,
-                    capture_content,
                     handler,
                     stream_start_time,
                 )
-            _apply_response(
-                invocation, operation_name, result, capture_content
-            )
+            _apply_response(invocation, operation_name, result)
             handler.stop_llm(invocation)
         except Exception:
             _stop_safely(handler, invocation)
@@ -147,15 +147,14 @@ def _build_invocation(
     instance: Any,
     operation_name: str,
     api_params: dict,
-    capture_content: bool,
 ) -> LLMInvocation:
     if operation_name in {"Converse", "ConverseStream"}:
         invocation = _build_converse_invocation(
-            instance, operation_name, api_params, capture_content
+            instance, operation_name, api_params
         )
     else:
         invocation = _build_invoke_model_invocation(
-            instance, operation_name, api_params, capture_content
+            instance, operation_name, api_params
         )
     if operation_name in _STREAMING_OPERATIONS:
         invocation.request_stream = True
@@ -170,7 +169,7 @@ def _base_invocation(
     server_address, server_port = _server_from_client(instance)
     return LLMInvocation(
         request_model=model_id,
-        provider=_infer_provider(model_id),
+        provider="aws.bedrock",
         framework="boto3",
         system="aws.bedrock",
         server_address=server_address,
@@ -183,7 +182,6 @@ def _build_converse_invocation(
     instance: Any,
     operation_name: str,
     api_params: dict,
-    capture_content: bool,
 ) -> LLMInvocation:
     model_id = safe_str(api_params.get("modelId") or "")
     invocation = _base_invocation(instance, model_id, operation_name)
@@ -202,13 +200,12 @@ def _build_converse_invocation(
     tool_config = api_params.get("toolConfig") or {}
     tools = tool_config.get("tools") if isinstance(tool_config, dict) else None
     invocation.request_functions = _request_functions_from_bedrock_tools(tools)
-    if capture_content and tools and should_capture_tool_definitions():
+    if tools and should_capture_tool_definitions():
         invocation.tool_definitions = safe_json_dumps(tools)
 
-    if capture_content:
-        invocation.input_messages = _input_messages_from_converse_request(
-            api_params, invocation.provider
-        )
+    invocation.input_messages = _input_messages_from_converse_request(
+        api_params, invocation.provider
+    )
 
     return invocation
 
@@ -217,7 +214,6 @@ def _build_invoke_model_invocation(
     instance: Any,
     operation_name: str,
     api_params: dict,
-    capture_content: bool,
 ) -> LLMInvocation:
     model_id = safe_str(api_params.get("modelId") or "")
     invocation = _base_invocation(instance, model_id, operation_name)
@@ -227,13 +223,12 @@ def _build_invoke_model_invocation(
 
     tools = body.get("tools")
     invocation.request_functions = _request_functions_from_invoke_tools(tools)
-    if capture_content and tools and should_capture_tool_definitions():
+    if tools and should_capture_tool_definitions():
         invocation.tool_definitions = safe_json_dumps(tools)
 
-    if capture_content:
-        invocation.input_messages = _input_messages_from_invoke_body(
-            body, invocation.provider
-        )
+    invocation.input_messages = _input_messages_from_invoke_body(
+        body, invocation.provider
+    )
 
     return invocation
 
@@ -242,7 +237,6 @@ def _apply_response(
     invocation: LLMInvocation,
     operation_name: str,
     result: Any,
-    capture_content: bool,
 ) -> None:
     if not isinstance(result, dict):
         return
@@ -251,37 +245,35 @@ def _apply_response(
         or invocation.response_id
     )
     if operation_name == "Converse":
-        _apply_converse_response(invocation, result, capture_content)
+        _apply_converse_response(invocation, result)
     elif operation_name == "InvokeModel":
-        _apply_invoke_model_response(invocation, result, capture_content)
+        _apply_invoke_model_response(invocation, result)
 
 
-def _apply_converse_response(
-    invocation: LLMInvocation, result: dict, capture_content: bool
-) -> None:
+def _apply_converse_response(invocation: LLMInvocation, result: dict) -> None:
     usage = result.get("usage") or {}
     if isinstance(usage, dict):
         invocation.input_tokens = usage.get("inputTokens")
         invocation.output_tokens = usage.get("outputTokens")
 
     stop_reason = result.get("stopReason")
-    if stop_reason:
-        invocation.response_finish_reasons = [_map_stop_reason(stop_reason)]
+    mapped_stop_reason = _map_stop_reason(stop_reason)
+    if mapped_stop_reason:
+        invocation.response_finish_reasons = [mapped_stop_reason]
 
-    if capture_content:
-        message = (result.get("output") or {}).get("message")
-        if isinstance(message, dict):
-            invocation.output_messages = [
-                _message_from_converse_message(
-                    message,
-                    invocation.provider,
-                    finish_reason=_map_stop_reason(stop_reason),
-                )
-            ]
+    message = (result.get("output") or {}).get("message")
+    if isinstance(message, dict):
+        invocation.output_messages = [
+            _message_from_converse_message(
+                message,
+                invocation.provider,
+                finish_reason=mapped_stop_reason,
+            )
+        ]
 
 
 def _apply_invoke_model_response(
-    invocation: LLMInvocation, result: dict, capture_content: bool
+    invocation: LLMInvocation, result: dict
 ) -> None:
     body = _parse_result_body(result) or {}
     if not body:
@@ -295,17 +287,17 @@ def _apply_invoke_model_response(
     _apply_token_headers(invocation, result)
 
     stop_reason = _extract_invoke_finish_reason(body)
-    if stop_reason:
-        invocation.response_finish_reasons = [_map_stop_reason(stop_reason)]
+    mapped_stop_reason = _map_stop_reason(stop_reason)
+    if mapped_stop_reason:
+        invocation.response_finish_reasons = [mapped_stop_reason]
 
-    if capture_content:
-        output_message = _output_message_from_invoke_body(
-            body,
-            invocation.provider,
-            _map_stop_reason(stop_reason),
-        )
-        if output_message is not None:
-            invocation.output_messages = [output_message]
+    output_message = _output_message_from_invoke_body(
+        body,
+        invocation.provider,
+        mapped_stop_reason,
+    )
+    if output_message is not None:
+        invocation.output_messages = [output_message]
 
 
 def _apply_invoke_model_request(
@@ -523,7 +515,6 @@ def _wrap_streaming_result(
     result: Any,
     invocation: LLMInvocation,
     operation_name: str,
-    capture_content: bool,
     handler: TelemetryHandler,
     stream_start_time: Optional[float],
 ) -> Any:
@@ -546,7 +537,6 @@ def _wrap_streaming_result(
         stream=stream,
         invocation=invocation,
         operation_name=operation_name,
-        capture_content=capture_content,
         handler=handler,
         stream_start_time=stream_start_time,
     )
@@ -561,14 +551,12 @@ class _BedrockStreamWrapper:
         stream: Any,
         invocation: LLMInvocation,
         operation_name: str,
-        capture_content: bool,
         handler: TelemetryHandler,
         stream_start_time: Optional[float],
     ) -> None:
         self._stream = stream
         self._invocation = invocation
         self._operation_name = operation_name
-        self._capture_content = capture_content
         self._handler = handler
         self._stream_start_time = stream_start_time
         self._stopped = False
@@ -707,8 +695,7 @@ class _BedrockStreamWrapper:
                 self._process_generic_stream_chunk(parsed_chunk)
 
         if (
-            self._capture_content
-            and isinstance(chunk_bytes, (bytes, bytearray))
+            isinstance(chunk_bytes, (bytes, bytearray))
             and len(self._invoke_body) < _STREAM_BUFFER_LIMIT
         ):
             remaining = _STREAM_BUFFER_LIMIT - len(self._invoke_body)
@@ -718,10 +705,7 @@ class _BedrockStreamWrapper:
         if self._stopped:
             return
         try:
-            if (
-                self._operation_name == "ConverseStream"
-                and self._capture_content
-            ):
+            if self._operation_name == "ConverseStream":
                 parts = _parts_from_stream_blocks(
                     self._content_blocks, self._invocation.provider
                 )
@@ -735,7 +719,6 @@ class _BedrockStreamWrapper:
                     ]
             elif (
                 self._operation_name == "InvokeModelWithResponseStream"
-                and self._capture_content
                 and self._invoke_body
             ):
                 parts = _parts_from_stream_blocks(
@@ -868,10 +851,9 @@ class _BedrockStreamWrapper:
                 self._invocation.response_finish_reasons = [
                     self._finish_reason
                 ]
-        if self._capture_content:
-            output = _extract_invoke_output_text(chunk)
-            if output:
-                self._invoke_text_parts.append(output)
+        output = _extract_invoke_output_text(chunk)
+        if output:
+            self._invoke_text_parts.append(output)
 
     def _apply_invocation_metrics(self, invocation_metrics: Any) -> None:
         if not isinstance(invocation_metrics, dict):
@@ -1170,18 +1152,6 @@ def _apply_token_headers(invocation: LLMInvocation, result: dict) -> None:
         invocation.output_tokens = output_tokens
 
 
-def _infer_provider(model_id: str) -> str:
-    if not model_id:
-        return "aws.bedrock"
-    model = model_id.split("/")[-1]
-    parts = model.split(".")
-    if len(parts) > 1 and parts[0] in _PROFILE_PREFIXES:
-        return parts[1]
-    if len(parts) > 1:
-        return parts[0]
-    return "aws.bedrock"
-
-
 def _model_family(model_id: str) -> str:
     model = safe_str(model_id)
     if "amazon.titan" in model:
@@ -1217,16 +1187,26 @@ def _server_from_client(instance: Any) -> tuple[Optional[str], Optional[int]]:
 def _map_stop_reason(stop_reason: Any) -> Optional[str]:
     if stop_reason is None:
         return None
-    value = safe_str(stop_reason)
+    value = safe_str(stop_reason).strip()
+    key = value.lower()
     mapping = {
         "end_turn": "stop",
+        "finish": "stop",
+        "complete": "stop",
+        "stop": "stop",
         "stop_sequence": "stop",
+        "stop_sequences": "stop",
+        "stop_criteria": "stop",
         "tool_use": "tool_calls",
+        "tool_calls": "tool_calls",
         "max_tokens": "length",
+        "length": "length",
         "content_filtered": "content_filter",
+        "content_filter": "content_filter",
         "guardrail_intervened": "content_filter",
+        "error": "error",
     }
-    return mapping.get(value, value)
+    return mapping.get(key)
 
 
 def _first_present(source: dict, *keys: str) -> Any:

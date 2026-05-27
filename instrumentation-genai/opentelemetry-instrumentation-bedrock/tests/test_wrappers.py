@@ -46,9 +46,8 @@ def _call_wrapper(
     operation_name,
     api_params,
     result,
-    capture_content=True,
 ):
-    wrapper = bedrock_runtime_api_call_wrapper(capture_content, handler)
+    wrapper = bedrock_runtime_api_call_wrapper(handler)
 
     def wrapped(op_name, params):
         assert op_name == operation_name
@@ -133,7 +132,6 @@ def test_converse_happy_path_maps_request_and_response(
         "Converse",
         _converse_params(),
         _converse_result(),
-        capture_content=True,
     )
 
     assert result == _converse_result()
@@ -144,7 +142,7 @@ def test_converse_happy_path_maps_request_and_response(
     assert (
         invocation.request_model == "us.anthropic.claude-3-haiku-20240307-v1:0"
     )
-    assert invocation.provider == "anthropic"
+    assert invocation.provider == "aws.bedrock"
     assert invocation.system == "aws.bedrock"
     assert invocation.framework == "boto3"
     assert invocation.request_temperature == 0.2
@@ -180,7 +178,7 @@ def test_converse_happy_path_maps_request_and_response(
     assert output_parts[1].arguments == {"city": "Paris"}
 
 
-def test_converse_content_capture_off_suppresses_messages(
+def test_converse_always_populates_invocation_messages(
     stub_handler, fake_client
 ):
     _call_wrapper(
@@ -189,19 +187,35 @@ def test_converse_content_capture_off_suppresses_messages(
         "Converse",
         _converse_params(),
         _converse_result(),
-        capture_content=False,
     )
 
     invocation = stub_handler.stopped_llm[0]
-    assert invocation.input_messages == []
-    assert invocation.output_messages == []
+    assert len(invocation.input_messages) == 3
+    assert invocation.output_messages[0].parts[0].content == "It is sunny."
     assert invocation.input_tokens == 12
     assert invocation.output_tokens == 8
     assert invocation.request_functions[0]["name"] == "get_weather"
 
 
+def test_converse_omits_unknown_finish_reason(stub_handler, fake_client):
+    result = _converse_result()
+    result["stopReason"] = "MODEL_SPECIFIC_DONE"
+
+    _call_wrapper(
+        stub_handler,
+        fake_client,
+        "Converse",
+        _converse_params(),
+        result,
+    )
+
+    invocation = stub_handler.stopped_llm[0]
+    assert invocation.response_finish_reasons == []
+    assert invocation.output_messages[0].finish_reason is None
+
+
 def test_converse_exception_fails_invocation(stub_handler, fake_client):
-    wrapper = bedrock_runtime_api_call_wrapper(True, stub_handler)
+    wrapper = bedrock_runtime_api_call_wrapper(stub_handler)
 
     def wrapped(_op_name, _params):
         raise RuntimeError("bedrock failed")
@@ -228,7 +242,7 @@ def test_telemetry_setup_error_passes_through_to_bedrock(fake_client):
         def fail_llm(self, _invocation, _error):
             raise AssertionError("fail_llm should not be called")
 
-    wrapper = bedrock_runtime_api_call_wrapper(True, FailingStartHandler())
+    wrapper = bedrock_runtime_api_call_wrapper(FailingStartHandler())
 
     result = wrapper(
         lambda _op_name, _params: {"ok": True},
@@ -269,7 +283,6 @@ def test_converse_stream_finalizes_on_exhaustion(stub_handler, fake_client):
         "ConverseStream",
         _converse_params(),
         result,
-        capture_content=True,
     )
 
     assert len(stub_handler.stopped_llm) == 0
@@ -318,7 +331,6 @@ def test_stream_stop_error_does_not_escape_to_application(fake_client):
         "ConverseStream",
         _converse_params(),
         result,
-        capture_content=True,
     )
 
     assert list(wrapped_result["stream"]) == events
@@ -348,7 +360,6 @@ def test_invoke_model_maps_known_anthropic_payload(stub_handler, fake_client):
         "InvokeModel",
         params,
         result,
-        capture_content=True,
     )
 
     invocation = stub_handler.stopped_llm[0]
@@ -387,12 +398,11 @@ def test_invoke_model_uses_token_headers_for_unknown_response(
         "InvokeModel",
         params,
         result,
-        capture_content=True,
     )
 
     invocation = stub_handler.stopped_llm[0]
     assert invocation.request_model == "amazon.titan-text-express-v1"
-    assert invocation.provider == "amazon"
+    assert invocation.provider == "aws.bedrock"
     assert invocation.request_max_tokens == 64
     assert invocation.input_messages[0].parts[0].content == "hello"
     assert invocation.response_id == "request-789"
@@ -428,7 +438,6 @@ def test_invoke_model_titan_reads_and_replaces_streaming_body(
         "InvokeModel",
         params,
         result,
-        capture_content=True,
     )
 
     invocation = stub_handler.stopped_llm[0]
@@ -439,7 +448,7 @@ def test_invoke_model_titan_reads_and_replaces_streaming_body(
     assert invocation.request_stop_sequences == ["END"]
     assert invocation.input_tokens == 4
     assert invocation.output_tokens == 7
-    assert invocation.response_finish_reasons == ["FINISH"]
+    assert invocation.response_finish_reasons == ["stop"]
     assert invocation.output_messages[0].parts[0].content == "titan reply"
     assert original_body.closed is True
     assert result["body"].read() == response_bytes
@@ -469,7 +478,6 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
         "InvokeModel",
         params,
         result,
-        capture_content=True,
     )
 
     invocation = stub_handler.stopped_llm[0]
@@ -498,6 +506,7 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
         "expected_input_tokens",
         "expected_output_tokens",
         "expected_output",
+        "expected_finish_reason",
     ),
     [
         (
@@ -509,6 +518,7 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
             None,
             None,
             "cohere reply",
+            "stop",
         ),
         (
             "meta.llama3-8b-instruct-v1:0",
@@ -520,6 +530,7 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
             3,
             4,
             "llama reply",
+            "stop",
         ),
         (
             "mistral.mistral-large-2402-v1:0",
@@ -530,6 +541,7 @@ def test_invoke_model_nova_maps_tool_use_response(stub_handler, fake_client):
             None,
             None,
             "mistral reply",
+            "stop",
         ),
     ],
 )
@@ -544,6 +556,7 @@ def test_invoke_model_provider_specific_json_shapes(
     expected_input_tokens,
     expected_output_tokens,
     expected_output,
+    expected_finish_reason,
 ):
     params = {"modelId": model_id, "body": request_body}
     result = {"body": response_body}
@@ -554,7 +567,6 @@ def test_invoke_model_provider_specific_json_shapes(
         "InvokeModel",
         params,
         result,
-        capture_content=True,
     )
 
     invocation = stub_handler.stopped_llm[0]
@@ -562,6 +574,7 @@ def test_invoke_model_provider_specific_json_shapes(
     assert invocation.request_top_p == expected_top_p
     assert invocation.input_tokens == expected_input_tokens
     assert invocation.output_tokens == expected_output_tokens
+    assert invocation.response_finish_reasons == [expected_finish_reason]
     assert invocation.output_messages[0].parts[0].content == expected_output
 
 
@@ -595,7 +608,6 @@ def test_invoke_model_stream_titan_maps_text_and_metrics(
         "InvokeModelWithResponseStream",
         params,
         result,
-        capture_content=True,
     )
 
     assert list(wrapped_result["body"]) == events
@@ -603,7 +615,7 @@ def test_invoke_model_stream_titan_maps_text_and_metrics(
     assert invocation.request_stream is True
     assert invocation.input_tokens == 3
     assert invocation.output_tokens == 2
-    assert invocation.response_finish_reasons == ["FINISH"]
+    assert invocation.response_finish_reasons == ["stop"]
     assert invocation.output_messages[0].parts[0].content == "Hello"
 
 
@@ -688,7 +700,6 @@ def test_invoke_model_stream_claude_maps_text_tool_and_metrics(
         "InvokeModelWithResponseStream",
         params,
         result,
-        capture_content=True,
     )
 
     assert list(wrapped_result["body"]) == events
@@ -729,7 +740,6 @@ def test_converse_stream_close_mid_stream_finalizes_span(
         "ConverseStream",
         _converse_params(),
         result,
-        capture_content=True,
     )
 
     assert next(wrapped_result["stream"]) == events[0]
@@ -772,7 +782,6 @@ def test_invoke_model_stream_generic_maps_text_and_finish_reason(
         "InvokeModelWithResponseStream",
         params,
         result,
-        capture_content=True,
     )
 
     assert list(wrapped_result["body"]) == events
@@ -784,7 +793,7 @@ def test_invoke_model_stream_generic_maps_text_and_finish_reason(
     assert invocation.output_messages[0].parts[0].content == "part two"
 
 
-def test_invoke_model_stream_content_capture_off_suppresses_output_messages(
+def test_invoke_model_stream_always_populates_invocation_messages(
     stub_handler, fake_client
 ):
     events = [
@@ -811,16 +820,15 @@ def test_invoke_model_stream_content_capture_off_suppresses_output_messages(
         "InvokeModelWithResponseStream",
         params,
         result,
-        capture_content=False,
     )
 
     assert list(wrapped_result["body"]) == events
     invocation = stub_handler.stopped_llm[0]
-    assert invocation.input_messages == []
-    assert invocation.output_messages == []
+    assert invocation.input_messages[0].parts[0].content == "hello"
+    assert invocation.output_messages[0].parts[0].content == "secret"
     assert invocation.input_tokens == 8
     assert invocation.output_tokens == 4
-    assert invocation.response_finish_reasons == ["FINISH"]
+    assert invocation.response_finish_reasons == ["stop"]
 
 
 def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):
@@ -833,7 +841,6 @@ def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):
         "ListBuckets",
         {},
         result,
-        capture_content=True,
     )
 
     assert wrapped_result == result
@@ -842,7 +849,7 @@ def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):
 
 
 def test_suppression_context_skips_instrumentation(stub_handler, fake_client):
-    wrapper = bedrock_runtime_api_call_wrapper(True, stub_handler)
+    wrapper = bedrock_runtime_api_call_wrapper(stub_handler)
     ctx = context_api.set_value(
         SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
     )

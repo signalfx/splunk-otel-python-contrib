@@ -8,7 +8,7 @@ The default mode calls ``bedrock-runtime.Converse`` directly and emits an
 ``LLMInvocation`` span. The AgentCore mode enables
 ``BedrockAgentCoreInstrumentor`` first, then enables ``BedrockInstrumentor`` and
 runs the same Bedrock Runtime call from an AgentCore entrypoint. In that mode,
-the Bedrock Runtime LLM span should be a child of the active AgentCore workflow
+the Bedrock Runtime LLM span should be a child of the active AgentCore parent
 span.
 
 Setup
@@ -21,8 +21,6 @@ From this directory:
     python -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt
-    pip install -e ../../../../util/opentelemetry-util-genai
-    pip install -e ../..
 
 The example sets local defaults for all environment variables it reads. The
 same defaults are listed in ``.env.example`` for shell-based workflows.
@@ -35,8 +33,8 @@ To load them explicitly in your shell:
     source .env.example
     set +a
 
-For AgentCore mode, also install the Bedrock AgentCore SDK and the AgentCore
-instrumentation package that provides:
+The requirements install the Bedrock AgentCore SDK. AgentCore mode also needs
+the AgentCore instrumentation package that provides:
 
 - ``bedrock_agentcore.runtime.BedrockAgentCoreApp``
 - ``opentelemetry.instrumentation.bedrock_agentcore.BedrockAgentCoreInstrumentor``
@@ -73,15 +71,7 @@ To print span JSON locally instead of sending telemetry to a collector:
 Run With Evals
 --------------
 
-Install the eval framework and the evaluator plugin you want to use. For the
-local repo packages:
-
-.. code-block:: bash
-
-    pip install -e ../../../../util/opentelemetry-util-genai-evals
-    pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval
-
-Then enable an evaluator before the first instrumentor is created:
+Enable an evaluator before the first instrumentor is created:
 
 .. code-block:: bash
 
@@ -160,11 +150,11 @@ instead:
 - The example prints ``Trace ID: <trace-id>`` when the first span starts, so
   you can find the trace even when exporting with OTLP.
 - Bedrock Runtime-only mode should show one Bedrock LLM span.
-- AgentCore mode should show an AgentCore workflow span and a Bedrock Runtime
+- AgentCore mode should show an AgentCore parent span and a Bedrock Runtime
   LLM span in the same trace.
 - AgentCore mode should also show AgentCore memory, code interpreter, and
   browser child spans when those capabilities are available.
-- The Bedrock Runtime LLM span should have the AgentCore workflow span as its
+- The Bedrock Runtime LLM span should have the active AgentCore span as its
   parent when the Bedrock call runs inside the AgentCore entrypoint.
 
 Useful environment variables:
@@ -181,6 +171,10 @@ Useful environment variables:
     export OTEL_SERVICE_NAME=bedrock-runtime-agentcore-example
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
     export OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
-    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT
+    export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT
     export OTEL_INSTRUMENTATION_GENAI_EVALS_EVALUATORS="deepeval(LLMInvocation(toxicity,bias))"
+    export DISABLE_ADOT_OBSERVABILITY=true
+
+For AgentCore deployments that export to your own OTLP endpoint, keep
+``DISABLE_ADOT_OBSERVABILITY=true`` so AgentCore does not also send telemetry
+through AWS ADOT observability.

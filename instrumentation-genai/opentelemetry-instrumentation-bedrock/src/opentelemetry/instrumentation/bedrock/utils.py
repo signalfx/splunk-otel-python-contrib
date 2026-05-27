@@ -17,15 +17,7 @@
 import json
 from typing import Any, Optional
 
-from opentelemetry.util.genai.types import ContentCapturingMode
-from opentelemetry.util.genai.utils import get_content_capturing_mode
-
 _ERROR_MAX_LEN = 256
-
-
-def is_content_enabled() -> bool:
-    """Return whether GenAI message content capture is enabled."""
-    return get_content_capturing_mode() != ContentCapturingMode.NO_CONTENT
 
 
 def safe_json_dumps(value: Any) -> str:
@@ -79,6 +71,9 @@ def parse_json_body(value: Any) -> Optional[dict[str, Any]]:
 def maybe_parse_json(value: Any) -> Any:
     """Parse a JSON string if possible, otherwise return the original value."""
     if not isinstance(value, str):
+        return value
+    stripped = value.lstrip()
+    if not stripped or stripped[0] not in "{[":
         return value
     try:
         return json.loads(value)
