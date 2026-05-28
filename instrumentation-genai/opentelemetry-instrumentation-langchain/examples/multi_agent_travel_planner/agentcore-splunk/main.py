@@ -16,20 +16,18 @@ from uuid import uuid4
 
 from bedrock_agentcore import BedrockAgentCoreApp
 
+from langchain_aws import ChatBedrock
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
     HumanMessage,
     SystemMessage,
 )
+from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import create_react_agent
 from langgraph.graph.message import AnyMessage, add_messages
-
-from langchain.agents import (
-    create_agent as _create_react_agent,
-)
 
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -189,14 +187,15 @@ class PlannerState(TypedDict):
 
 
 def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    return os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-haiku-20240307-v1:0")
 
 
-def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
+def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatBedrock:
     """
-    Create an LLM instance using OpenAI API directly.
+    Create a ChatBedrock instance backed by Amazon Bedrock.
 
-    Uses OPENAI_API_KEY environment variable for authentication.
+    Uses boto3 credential chain (AWS_ACCESS_KEY_ID / instance profile / etc.).
+    Set BEDROCK_MODEL_ID to override the default model.
     """
     model = _model_name()
     tags = [f"agent:{agent_name}", "travel-planner"]
@@ -205,17 +204,41 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "agent_type": agent_name,
         "session_id": session_id,
         "thread_id": session_id,
-        "ls_model_name": model,
-        "ls_temperature": temperature,
     }
 
-    return ChatOpenAI(
-        model=model,
-        temperature=temperature,
+    return ChatBedrock(
+        model_id=model,
+        model_kwargs={"temperature": temperature},
         tags=tags,
         metadata=metadata,
-        # Uses OPENAI_API_KEY from environment automatically
     )
+
+
+def _create_agent(
+    llm: ChatBedrock, tools: list, agent_name: str, session_id: str
+):
+    """Create an agent runnable with Bedrock-compatible tool handling.
+
+    Mirrors the original Splunk code structure: create_react_agent wrapped with
+    .with_config(run_name=...) so the Splunk OTEL instrumentor reads the agent
+    name for the span label.
+
+    Bedrock-specific constraint: it rejects bind_tools([]) with a validation
+    error, so the coordinator (tools=[]) uses a RunnableLambda instead, with the
+    same .with_config(run_name=...) wrapper so the span name is identical.
+    """
+    config = {
+        "run_name": agent_name,
+        "tags": ["agent", f"agent:{agent_name}"],
+        "metadata": {"agent_name": agent_name, "session_id": session_id},
+    }
+    if not tools:
+        # Bedrock rejects bind_tools([]); fall back to direct LLM invocation.
+        # Output is wrapped as {"messages": [...]} to match create_react_agent's interface.
+        return RunnableLambda(
+            lambda inputs: {"messages": inputs["messages"] + [llm.invoke(inputs["messages"])]}
+        ).with_config(config)
+    return create_react_agent(llm, tools).with_config(config)
 
 
 # =============================================================================
@@ -309,16 +332,7 @@ def coordinator_node(
     state: PlannerState, custom_poison_config: Optional[Dict[str, object]] = None
 ) -> PlannerState:
     llm = _create_llm("coordinator", temperature=0.2, session_id=state["session_id"])
-    agent = _create_react_agent(llm, tools=[]).with_config(
-        {
-            "run_name": "coordinator",
-            "tags": ["agent", "agent:coordinator"],
-            "metadata": {
-                "agent_name": "coordinator",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    agent = _create_agent(llm, tools=[], agent_name="coordinator", session_id=state["session_id"])
     system_message = SystemMessage(
         content="You are the lead travel coordinator. Extract the key details from the traveller's request."
     )
@@ -343,16 +357,7 @@ def flight_specialist_node(
     llm = _create_llm(
         "flight_specialist", temperature=0.4, session_id=state["session_id"]
     )
-    agent = _create_react_agent(llm, tools=[mock_search_flights]).with_config(
-        {
-            "run_name": "flight_specialist",
-            "tags": ["agent", "agent:flight_specialist"],
-            "metadata": {
-                "agent_name": "flight_specialist",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    agent = _create_agent(llm, tools=[mock_search_flights], agent_name="flight_specialist", session_id=state["session_id"])
     step = f"Find an appealing flight from {state['origin']} to {state['destination']} departing {state['departure']} for {state['travellers']} travellers."
     step = maybe_add_quality_noise(
         "flight_specialist", step, state, custom_poison_config
@@ -379,16 +384,7 @@ def hotel_specialist_node(
     llm = _create_llm(
         "hotel_specialist", temperature=0.5, session_id=state["session_id"]
     )
-    agent = _create_react_agent(llm, tools=[mock_search_hotels]).with_config(
-        {
-            "run_name": "hotel_specialist",
-            "tags": ["agent", "agent:hotel_specialist"],
-            "metadata": {
-                "agent_name": "hotel_specialist",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    agent = _create_agent(llm, tools=[mock_search_hotels], agent_name="hotel_specialist", session_id=state["session_id"])
     step = f"Recommend a boutique hotel in {state['destination']} between {state['departure']} and {state['return_date']} for {state['travellers']} travellers."
     step = maybe_add_quality_noise(
         "hotel_specialist", step, state, custom_poison_config
@@ -415,16 +411,7 @@ def activity_specialist_node(
     llm = _create_llm(
         "activity_specialist", temperature=0.6, session_id=state["session_id"]
     )
-    agent = _create_react_agent(llm, tools=[mock_search_activities]).with_config(
-        {
-            "run_name": "activity_specialist",
-            "tags": ["agent", "agent:activity_specialist"],
-            "metadata": {
-                "agent_name": "activity_specialist",
-                "session_id": state["session_id"],
-            },
-        }
-    )
+    agent = _create_agent(llm, tools=[mock_search_activities], agent_name="activity_specialist", session_id=state["session_id"])
     step = f"Curate signature activities for travellers spending a week in {state['destination']}."
     step = maybe_add_quality_noise(
         "activity_specialist", step, state, custom_poison_config
