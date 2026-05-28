@@ -10,6 +10,7 @@ All notable changes to this repository are documented in this file.
 
 ### Changed
 
+- **`SpanKind` for `Workflow`, `AgentInvocation`/`AgentCreation`, and `Step` changed from `CLIENT` → `INTERNAL`** — Semantically correct per OTel semconv (these are not network calls). **Breaking observable change**: dashboards, sampling rules, or tests that filter on `SpanKind.CLIENT` for these span types will silently miss them after upgrade. Update any span-kind-based filters or alert queries accordingly.
 - **`gen_ai.agent.id` removed from all GenAI metric dimensions** — The attribute was set to the span ID (unique per invocation), causing unbounded metric cardinality. It remains available on spans where per-invocation identity is expected and useful. `gen_ai.agent.name` is unaffected.
 - **`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` now accepts mode values directly** — Accepts `NO_CONTENT`, `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT` in addition to legacy `true`/`false`. Aligns with upstream OpenTelemetry GenAI conventions.
 - **Removed experimental mode gating** — Content capture no longer requires an experimental stability flag.

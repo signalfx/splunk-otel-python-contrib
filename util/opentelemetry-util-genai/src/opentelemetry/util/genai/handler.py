@@ -869,16 +869,14 @@ class TelemetryHandler:
         invocation: LLMInvocation,
     ) -> LLMInvocation:
         """Start an LLM invocation and create a pending span entry."""
-        invocation._handler = self
+        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
         # Implicit agent inheritance
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
+        if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
@@ -1006,13 +1004,11 @@ class TelemetryHandler:
         .. deprecated::
             Use ``handler.start_embedding(provider)`` (new factory) instead.
         """
-        invocation._handler = self
+        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
+        if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
@@ -1055,13 +1051,11 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
-        invocation._handler = self
+        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
+        if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
@@ -1118,11 +1112,9 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
-        invocation._handler = self
+        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         _apply_genai_context(invocation)
-        if (
-            not invocation.agent_name or not invocation.agent_id
-        ) and self._agent_context_stack:
+        if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
             if not invocation.agent_name:
                 invocation.agent_name = top_name
@@ -1158,9 +1150,7 @@ class TelemetryHandler:
     def start_mcp_operation(self, op: MCPOperation) -> MCPOperation:
         """Start a non-tool-call MCP operation (list, read, get, etc.)."""
         _apply_genai_context(op)
-        if (
-            not op.agent_name or not op.agent_id
-        ) and self._agent_context_stack:
+        if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
             if not op.agent_name:
                 op.agent_name = top_name
@@ -1354,7 +1344,7 @@ class TelemetryHandler:
         .. deprecated::
             Use ``handler.start_workflow(name=...)`` (new factory) instead.
         """
-        workflow._handler = self
+        workflow._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         self._refresh_capture_content()
         _apply_genai_context(workflow)
         self._inherit_parent_span(workflow)
@@ -1508,7 +1498,7 @@ class TelemetryHandler:
         self, agent: AgentCreation | AgentInvocation
     ) -> AgentCreation | AgentInvocation:
         """Start an agent operation (create or invoke) and create a pending span entry."""
-        agent._handler = self
+        agent._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         self._refresh_capture_content()
         _apply_genai_context(agent)
         self._inherit_parent_span(agent)
@@ -1588,7 +1578,7 @@ class TelemetryHandler:
     # Step lifecycle ------------------------------------------------------
     def start_step(self, step: Step) -> Step:
         """Start a step and create a pending span entry."""
-        step._handler = self
+        step._handler = self  # prep for GenAI.stop() / .fail() in follow-up
         self._refresh_capture_content()
         _apply_genai_context(step)
         self._inherit_parent_span(step)
@@ -1761,6 +1751,9 @@ class TelemetryHandler:
 
     def finish(self, obj: Any) -> Any:
         """Generic finish method for any invocation type."""
+        if isinstance(obj, GenAIInvocation):
+            obj.stop()
+            return obj
         if isinstance(obj, Workflow):
             return self.stop_workflow(obj)
         if isinstance(obj, (AgentCreation, AgentInvocation)):
@@ -1779,6 +1772,9 @@ class TelemetryHandler:
 
     def fail(self, obj: Any, error: Error) -> Any:
         """Generic fail method for any invocation type."""
+        if isinstance(obj, GenAIInvocation):
+            obj.fail(error)
+            return obj
         if isinstance(obj, Workflow):
             return self.fail_workflow(obj, error)
         if isinstance(obj, (AgentCreation, AgentInvocation)):
