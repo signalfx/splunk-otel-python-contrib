@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Corrected package name in READMEs from `splunk-otel-instrumentation-openai-agents-v2` to `splunk-otel-instrumentation-openai-agents` to match `pyproject.toml`.
 - Updated README env vars to align with upstream `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` values (`span_only`, `event_only`, `span_and_event`), removed deprecated `CAPTURE_MESSAGE_CONTENT_MODE` flag.
+- Removed unreachable `_init_metrics`/`_record_metrics` code from `GenAISemanticProcessor` that referenced an uninitialized `_metrics_enabled` attribute and would have raised `AttributeError` if invoked (HYBIM-701).
 
 ### Changed
 

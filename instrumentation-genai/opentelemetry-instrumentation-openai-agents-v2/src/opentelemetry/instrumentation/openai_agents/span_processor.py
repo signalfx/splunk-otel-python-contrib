@@ -51,9 +51,7 @@ from opentelemetry.util.genai.types import (
 )
 from opentelemetry.util.genai.utils import gen_ai_json_dumps
 from opentelemetry.util.types import AttributeValue
-from opentelemetry.metrics import get_meter
 from opentelemetry.trace import Span as OtelSpan
-from opentelemetry.util.genai.instruments import Instruments
 
 
 # Invocation State Management
@@ -272,7 +270,6 @@ GEN_AI_GUARDRAIL_TRIGGERED = "gen_ai.guardrail.triggered"
 GEN_AI_HANDOFF_FROM_AGENT = "gen_ai.handoff.from_agent"
 GEN_AI_HANDOFF_TO_AGENT = "gen_ai.handoff.to_agent"
 GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"
-GEN_AI_TOKEN_TYPE = _attr("GEN_AI_TOKEN_TYPE", "gen_ai.token.type")
 
 # Normalization utilities
 
@@ -544,92 +541,6 @@ class GenAISemanticProcessor(TracingProcessor):
         if self.server_port:
             attrs[ServerAttributes.SERVER_PORT] = self.server_port
         return attrs
-
-    def _init_metrics(self):
-        """Initialize metric instruments."""
-        self._meter = get_meter(
-            "opentelemetry.instrumentation.openai_agents", "0.1.0"
-        )
-
-        # Use the shared Instruments class to ensure consistent bucket boundaries
-        # per OpenTelemetry semantic conventions:
-        # https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-metrics.md
-        instruments = Instruments(self._meter)
-        self._duration_histogram = instruments.operation_duration_histogram
-        self._token_usage_histogram = instruments.token_usage_histogram
-
-    def _record_metrics(
-        self, span: Span[Any], attributes: dict[str, AttributeValue]
-    ) -> None:
-        """Record metrics for the span."""
-        if not self._metrics_enabled or (
-            self._duration_histogram is None
-            and self._token_usage_histogram is None
-        ):
-            return
-
-        try:
-            # Calculate duration
-            duration = None
-            if hasattr(span, "started_at") and hasattr(span, "ended_at"):
-                try:
-                    start = datetime.fromisoformat(span.started_at)
-                    end = datetime.fromisoformat(span.ended_at)
-                    duration = (end - start).total_seconds()
-                except Exception:
-                    pass
-
-            # Build metric attributes
-            metric_attrs = {
-                GEN_AI_PROVIDER_NAME: attributes.get(GEN_AI_PROVIDER_NAME),
-                GEN_AI_OPERATION_NAME: attributes.get(GEN_AI_OPERATION_NAME),
-                GEN_AI_REQUEST_MODEL: (
-                    attributes.get(GEN_AI_REQUEST_MODEL)
-                    or attributes.get(GEN_AI_RESPONSE_MODEL)
-                ),
-                ServerAttributes.SERVER_ADDRESS: attributes.get(
-                    ServerAttributes.SERVER_ADDRESS
-                ),
-                ServerAttributes.SERVER_PORT: attributes.get(
-                    ServerAttributes.SERVER_PORT
-                ),
-            }
-
-            # Add error type if present
-            if error := getattr(span, "error", None):
-                error_type = error.get("type") or error.get("name")
-                if error_type:
-                    metric_attrs["error.type"] = error_type
-
-            # Remove None values
-            metric_attrs = {
-                k: v for k, v in metric_attrs.items() if v is not None
-            }
-
-            # Record duration
-            if duration is not None and self._duration_histogram is not None:
-                self._duration_histogram.record(duration, metric_attrs)
-
-            # Record token usage
-            if self._token_usage_histogram:
-                input_tokens = attributes.get(GEN_AI_USAGE_INPUT_TOKENS)
-                if isinstance(input_tokens, (int, float)):
-                    token_attrs = dict(metric_attrs)
-                    token_attrs[GEN_AI_TOKEN_TYPE] = "input"
-                    self._token_usage_histogram.record(
-                        input_tokens, token_attrs
-                    )
-
-                output_tokens = attributes.get(GEN_AI_USAGE_OUTPUT_TOKENS)
-                if isinstance(output_tokens, (int, float)):
-                    token_attrs = dict(metric_attrs)
-                    token_attrs[GEN_AI_TOKEN_TYPE] = "output"
-                    self._token_usage_histogram.record(
-                        output_tokens, token_attrs
-                    )
-
-        except Exception as e:
-            logger.debug("Failed to record metrics: %s", e)
 
     def _emit_content_events(
         self,
