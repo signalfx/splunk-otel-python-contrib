@@ -869,7 +869,9 @@ class TelemetryHandler:
         invocation: LLMInvocation,
     ) -> LLMInvocation:
         """Start an LLM invocation and create a pending span entry."""
-        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
+        invocation._handler = (
+            self  # prep for GenAI.stop() / .fail() in follow-up
+        )
         # Ensure capture content settings are current
         self._refresh_capture_content()
         genai_debug_log("handler.start_llm.begin", invocation)
@@ -1004,7 +1006,9 @@ class TelemetryHandler:
         .. deprecated::
             Use ``handler.start_embedding(provider)`` (new factory) instead.
         """
-        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
+        invocation._handler = (
+            self  # prep for GenAI.stop() / .fail() in follow-up
+        )
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
@@ -1051,7 +1055,9 @@ class TelemetryHandler:
         self, invocation: RetrievalInvocation
     ) -> RetrievalInvocation:
         """Start a retrieval invocation and create a pending span entry."""
-        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
+        invocation._handler = (
+            self  # prep for GenAI.stop() / .fail() in follow-up
+        )
         self._refresh_capture_content()
         # Apply GenAI context from contextvars if not already set
         _apply_genai_context(invocation)
@@ -1112,7 +1118,9 @@ class TelemetryHandler:
     # ToolCall lifecycle --------------------------------------------------
     def start_tool_call(self, invocation: ToolCall) -> ToolCall:
         """Start a tool call invocation and create a pending span entry."""
-        invocation._handler = self  # prep for GenAI.stop() / .fail() in follow-up
+        invocation._handler = (
+            self  # prep for GenAI.stop() / .fail() in follow-up
+        )
         _apply_genai_context(invocation)
         if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
@@ -1344,7 +1352,9 @@ class TelemetryHandler:
         .. deprecated::
             Use ``handler.start_workflow(name=...)`` (new factory) instead.
         """
-        workflow._handler = self  # prep for GenAI.stop() / .fail() in follow-up
+        workflow._handler = (
+            self  # prep for GenAI.stop() / .fail() in follow-up
+        )
         self._refresh_capture_content()
         _apply_genai_context(workflow)
         self._inherit_parent_span(workflow)
