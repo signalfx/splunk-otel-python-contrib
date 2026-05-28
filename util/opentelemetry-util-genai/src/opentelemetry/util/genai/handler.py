@@ -1761,7 +1761,7 @@ class TelemetryHandler:
 
     def finish(self, obj: Any) -> Any:
         """Generic finish method for any invocation type."""
-        if isinstance(obj, GenAIInvocation):
+        if isinstance(obj, GenAIInvocation) and not isinstance(obj, GenAI):
             obj.stop()
             return obj
         if isinstance(obj, Workflow):
@@ -1782,7 +1782,7 @@ class TelemetryHandler:
 
     def fail(self, obj: Any, error: Error) -> Any:
         """Generic fail method for any invocation type."""
-        if isinstance(obj, GenAIInvocation):
+        if isinstance(obj, GenAIInvocation) and not isinstance(obj, GenAI):
             obj.fail(error)
             return obj
         if isinstance(obj, Workflow):
