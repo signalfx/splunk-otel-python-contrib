@@ -1697,8 +1697,9 @@ class TelemetryHandler:
         directly (no dispatch needed here); this is only used by the
         deprecated ``GenAI.stop()`` path on old dataclasses.
         """
-        if isinstance(obj, GenAIInvocation):
-            # New-style: invocation handles everything internally
+        if isinstance(obj, GenAIInvocation) and not isinstance(obj, GenAI):
+            # New-style invocations (InferenceInvocation, EmbeddingInvocation, etc.)
+            # handle their own stop(); GenAI subclasses use type-specific dispatch below.
             obj.stop()
             return
         if isinstance(obj, Workflow):
@@ -1721,8 +1722,8 @@ class TelemetryHandler:
 
         Called by ``GenAI.fail()`` on the invocation object.
         """
-        if isinstance(obj, GenAIInvocation):
-            # New-style: invocation handles everything internally
+        if isinstance(obj, GenAIInvocation) and not isinstance(obj, GenAI):
+            # New-style invocations handle their own fail(); GenAI subclasses use dispatch below.
             obj.fail(error)
             return
         if isinstance(obj, Workflow):
