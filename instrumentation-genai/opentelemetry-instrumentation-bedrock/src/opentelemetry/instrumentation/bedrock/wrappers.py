@@ -26,10 +26,6 @@ try:
 except (ImportError, ModuleNotFoundError):
     StreamingBody = None
 
-from opentelemetry import context as context_api
-from opentelemetry.util.genai.attributes import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
-)
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.types import (
     Error,
@@ -70,13 +66,6 @@ def bedrock_runtime_api_call_wrapper(
     def traced_method(
         wrapped: Any, instance: Any, args: tuple, kwargs: dict
     ) -> Any:
-        # Avoid duplicate nested LLM spans when another GenAI instrumentation
-        # owns the active model call. Use
-        # OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=bedrock to disable this
-        # package for zero-code instrumentation.
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
-            return wrapped(*args, **kwargs)
-
         operation_name, api_params = _extract_api_call_args(args, kwargs)
         if (
             not _is_bedrock_runtime_client(instance)
@@ -100,10 +89,7 @@ def bedrock_runtime_api_call_wrapper(
         try:
             result = wrapped(*args, **kwargs)
         except Exception as error:
-            handler.fail_llm(
-                invocation,
-                Error(type=type(error), message=truncate_error(error)),
-            )
+            _fail_safely(handler, invocation, error)
             raise
 
         try:
@@ -580,16 +566,7 @@ class _BedrockStreamWrapper:
             raise
         except Exception as error:
             if not self._stopped:
-                try:
-                    self._handler.fail_llm(
-                        self._invocation,
-                        Error(
-                            type=type(error),
-                            message=truncate_error(error),
-                        ),
-                    )
-                except Exception:
-                    pass
+                _fail_safely(self._handler, self._invocation, error)
                 self._stopped = True
             raise
 
@@ -1239,5 +1216,19 @@ def _coerce_int(value: Any) -> Optional[int]:
 def _stop_safely(handler: TelemetryHandler, invocation: LLMInvocation) -> None:
     try:
         handler.stop_llm(invocation)
+    except Exception:
+        pass
+
+
+def _fail_safely(
+    handler: TelemetryHandler,
+    invocation: LLMInvocation,
+    error: Exception,
+) -> None:
+    try:
+        handler.fail_llm(
+            invocation,
+            Error(type=type(error), message=truncate_error(error)),
+        )
     except Exception:
         pass

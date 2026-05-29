@@ -16,12 +16,8 @@
 
 import pytest
 
-from opentelemetry import context as context_api
 from opentelemetry.instrumentation.bedrock.wrappers import (
     bedrock_runtime_api_call_wrapper,
-)
-from opentelemetry.util.genai.attributes import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
 )
 from opentelemetry.util.genai.types import Text, ToolCall, ToolCallResponse
 
@@ -229,6 +225,30 @@ def test_converse_exception_fails_invocation(stub_handler, fake_client):
     _invocation, error = stub_handler.failed_llm[0]
     assert error.type is RuntimeError
     assert error.message == "bedrock failed"
+
+
+def test_fail_llm_error_does_not_mask_bedrock_exception(fake_client):
+    class FailingFailHandler:
+        def __init__(self):
+            self.started_llm = []
+
+        def start_llm(self, invocation):
+            self.started_llm.append(invocation)
+            return invocation
+
+        def stop_llm(self, _invocation):
+            raise AssertionError("stop_llm should not be called")
+
+        def fail_llm(self, _invocation, _error):
+            raise RuntimeError("telemetry fail failed")
+
+    wrapper = bedrock_runtime_api_call_wrapper(FailingFailHandler())
+
+    def wrapped(_op_name, _params):
+        raise RuntimeError("bedrock failed")
+
+    with pytest.raises(RuntimeError, match="bedrock failed"):
+        wrapper(wrapped, fake_client, ("Converse", _converse_params()), {})
 
 
 def test_telemetry_setup_error_passes_through_to_bedrock(fake_client):
@@ -846,23 +866,3 @@ def test_non_bedrock_runtime_call_is_not_instrumented(stub_handler):
     assert wrapped_result == result
     assert stub_handler.started_llm == []
     assert stub_handler.stopped_llm == []
-
-
-def test_suppression_context_skips_instrumentation(stub_handler, fake_client):
-    wrapper = bedrock_runtime_api_call_wrapper(stub_handler)
-    ctx = context_api.set_value(
-        SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True
-    )
-    token = context_api.attach(ctx)
-    try:
-        result = wrapper(
-            lambda _op_name, _params: {"ok": True},
-            fake_client,
-            ("Converse", _converse_params()),
-            {},
-        )
-    finally:
-        context_api.detach(token)
-
-    assert result == {"ok": True}
-    assert stub_handler.started_llm == []
