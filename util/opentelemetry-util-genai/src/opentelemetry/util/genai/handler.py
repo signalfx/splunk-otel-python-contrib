@@ -1157,6 +1157,7 @@ class TelemetryHandler:
     # MCPOperation lifecycle (non-tool-call MCP operations) ----------------
     def start_mcp_operation(self, op: MCPOperation) -> MCPOperation:
         """Start a non-tool-call MCP operation (list, read, get, etc.)."""
+        op._handler = self
         _apply_genai_context(op)
         if self._agent_context_stack:
             top_name, top_id = self._agent_context_stack[-1]
@@ -1550,7 +1551,7 @@ class TelemetryHandler:
         # Pop context if matches top
         if isinstance(agent, AgentInvocation):
             try:
-                if self._agent_context_stack and agent.agent_id is not None:
+                if self._agent_context_stack:
                     top_name, top_id = self._agent_context_stack[-1]
                     if top_name == agent.name and top_id == agent.agent_id:
                         self._agent_context_stack.pop()
@@ -1577,7 +1578,7 @@ class TelemetryHandler:
         # Pop context if this agent is active
         if isinstance(agent, AgentInvocation):
             try:
-                if self._agent_context_stack and agent.agent_id is not None:
+                if self._agent_context_stack:
                     top_name, top_id = self._agent_context_stack[-1]
                     if top_name == agent.name and top_id == agent.agent_id:
                         self._agent_context_stack.pop()

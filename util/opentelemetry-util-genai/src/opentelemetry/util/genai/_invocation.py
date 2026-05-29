@@ -217,10 +217,11 @@ class GenAIInvocation:
 
         self.sample_for_evaluation = self._sampler_fn(self.trace_id)
 
-        if error is not None:
-            self._emitter.on_error(error, self)
-        else:
-            self._emitter.on_end(self)
+        if self._emitter is not None:
+            if error is not None:
+                self._emitter.on_error(error, self)
+            else:
+                self._emitter.on_end(self)
 
         self._notify_completion()
         self._pop_current_span()
