@@ -703,6 +703,7 @@ class TelemetryHandler:
         self,
         provider: str,
         *,
+        operation_name: Optional[str] = None,
         request_model: Optional[str] = None,
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
@@ -716,6 +717,7 @@ class TelemetryHandler:
         return InferenceInvocation(
             **self._invocation_components(),
             provider=provider,
+            operation=operation_name,
             request_model=request_model,
             server_address=server_address,
             server_port=server_port,
@@ -792,11 +794,12 @@ class TelemetryHandler:
         self,
         provider: str,
         *,
+        operation_name: Optional[str] = None,
         request_model: Optional[str] = None,
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
-    ):
-        """Context manager for LLM inference invocations.
+    ) -> InferenceInvocation:
+        """Context manager or direct invocation for LLM inference.
 
         Starts the span on entry. On normal exit, finalizes the invocation
         and ends the span. If an exception occurs, marks the span as error,
@@ -804,10 +807,11 @@ class TelemetryHandler:
         """
         return self.start_inference(
             provider=provider,
+            operation_name=operation_name,
             request_model=request_model,
             server_address=server_address,
             server_port=server_port,
-        )._managed()
+        )
 
     def embedding(
         self,
@@ -816,14 +820,14 @@ class TelemetryHandler:
         request_model: Optional[str] = None,
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
-    ):
-        """Context manager for embedding invocations."""
+    ) -> NewEmbeddingInvocation:
+        """Context manager or direct invocation for embedding operations."""
         return self._start_embedding_factory(
             provider=provider,
             request_model=request_model,
             server_address=server_address,
             server_port=server_port,
-        )._managed()
+        )
 
     def tool(
         self,
@@ -833,15 +837,15 @@ class TelemetryHandler:
         tool_call_id: Optional[str] = None,
         tool_type: Optional[str] = None,
         tool_description: Optional[str] = None,
-    ):
-        """Context manager for tool invocations."""
+    ) -> ToolInvocation:
+        """Context manager or direct invocation for tool operations."""
         return self.start_tool(
             name,
             arguments=arguments,
             tool_call_id=tool_call_id,
             tool_type=tool_type,
             tool_description=tool_description,
-        )._managed()
+        )
 
     def workflow(
         self,
@@ -850,14 +854,14 @@ class TelemetryHandler:
         workflow_type: Optional[str] = None,
         framework: Optional[str] = None,
         system: Optional[str] = None,
-    ):
-        """Context manager for workflow invocations."""
+    ) -> WorkflowInvocation:
+        """Context manager or direct invocation for workflow operations."""
         return self._start_workflow_factory(
             name=name,
             workflow_type=workflow_type,
             framework=framework,
             system=system,
-        )._managed()
+        )
 
     # -- Deprecated lifecycle methods ----------------------------------------
     # The following methods are preserved for backward compatibility.

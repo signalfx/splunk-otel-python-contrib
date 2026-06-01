@@ -276,6 +276,16 @@ class GenAIInvocation:
             raise
         self.stop()
 
+    def __enter__(self) -> "GenAIInvocation":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if exc_type is not None:
+            self.fail(exc_val)
+        else:
+            self.stop()
+        return False
+
     # -- Semconv helpers (for emitter compatibility) -------------------------
 
     def semantic_convention_attributes(self) -> dict[str, Any]:

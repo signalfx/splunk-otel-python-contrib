@@ -1,6 +1,9 @@
 import pytest
 
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAI,
+)
 from opentelemetry.trace import SpanKind
 from opentelemetry.util.genai._error import Error, ErrorClassification
 from opentelemetry.util.genai.handler import (
@@ -75,3 +78,36 @@ def test_inference_context_manager_propagates_exception():
         with handler.inference("openai") as inv:
             raise ValueError("bad input")
     assert inv.end_time is not None
+
+
+def test_inference_direct_use_without_context_manager():
+    handler = get_telemetry_handler()
+    inv = handler.inference("openai", request_model="gpt-4o")
+    inv.input_tokens = 5
+    inv.stop()
+    assert inv.end_time is not None
+    assert inv.input_tokens == 5
+
+
+def test_start_inference_operation_name():
+    handler = get_telemetry_handler()
+    inv = handler.start_inference("openai", operation_name="completion")
+    inv.stop()
+    attrs = inv.semantic_convention_attributes()
+    assert attrs[GenAI.GEN_AI_OPERATION_NAME] == "completion"
+
+
+def test_inference_operation_name_default_is_chat():
+    handler = get_telemetry_handler()
+    inv = handler.start_inference("openai")
+    inv.stop()
+    attrs = inv.semantic_convention_attributes()
+    assert attrs[GenAI.GEN_AI_OPERATION_NAME] == "chat"
+
+
+def test_inference_context_manager_operation_name():
+    handler = get_telemetry_handler()
+    with handler.inference("openai", operation_name="completion") as inv:
+        pass
+    attrs = inv.semantic_convention_attributes()
+    assert attrs[GenAI.GEN_AI_OPERATION_NAME] == "completion"
