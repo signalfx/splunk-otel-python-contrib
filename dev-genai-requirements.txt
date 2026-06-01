@@ -36,3 +36,6 @@ opentelemetry-distro==0.59b0
 
 # DeepEval dependency for opentelemetry-util-genai-evals-deepeval
 deepeval>=3.3.9,<3.8.0
+
+# aiohttp 3.14 removed AsyncStreamReaderMixin which vcrpy still depends on
+aiohttp < 3.14

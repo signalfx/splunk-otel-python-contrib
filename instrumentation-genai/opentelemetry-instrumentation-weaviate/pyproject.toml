@@ -34,6 +34,7 @@ test = [
   "pytest >= 7.0.0",
   "pytest-recording >= 0.13.0",
   "vcrpy >= 7.0.0",
+  "aiohttp < 3.14",
 ]
 
 [project.entry-points.opentelemetry_instrumentor]
