@@ -1,0 +1,142 @@
+# Splunk OTel Collector — gateway config for Azure Container Instance
+#
+# Tested with: quay.io/signalfx/splunk-otel-collector:0.123.0
+#
+# Required env vars (set in ACI via deploy-aci.sh):
+#   SPLUNK_ACCESS_TOKEN   Splunk Observability Cloud ingest token
+#   SPLUNK_API_URL        e.g. https://api.us1.signalfx.com
+#   SPLUNK_INGEST_URL     e.g. https://ingest.us1.signalfx.com
+#   SPLUNK_TRACE_URL      e.g. https://ingest.us1.signalfx.com/v2/trace
+#   SPLUNK_HEC_TOKEN      Splunk HEC token for log ingestion
+#   SPLUNK_HEC_URL        e.g. https://http-inputs-<realm>.splunkcloud.com:443/services/collector/event
+#   SPLUNK_BUNDLE_DIR     /usr/lib/splunk-otel-collector/agent-bundle
+#   SPLUNK_COLLECTD_DIR   /usr/lib/splunk-otel-collector/agent-bundle/run/collectd
+#   SPLUNK_LISTEN_INTERFACE  0.0.0.0 in ACI
+#   SPLUNK_MEMORY_LIMIT_MIB  e.g. 900
+#
+# Note: deployment.environment is set by the application via OTEL_RESOURCE_ATTRIBUTES.
+# The resourcedetection processor uses override: false so it never overwrites
+# app-supplied attributes.
+
+extensions:
+  health_check:
+    endpoint: "${SPLUNK_LISTEN_INTERFACE}:13133"
+  http_forwarder:
+    ingress:
+      endpoint: "${SPLUNK_LISTEN_INTERFACE}:6060"
+    egress:
+      endpoint: "${SPLUNK_API_URL}"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "${SPLUNK_LISTEN_INTERFACE}:4317"
+      http:
+        endpoint: "${SPLUNK_LISTEN_INTERFACE}:4318"
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: "${SPLUNK_LISTEN_INTERFACE}:14250"
+      thrift_binary:
+        endpoint: "${SPLUNK_LISTEN_INTERFACE}:6832"
+      thrift_compact:
+        endpoint: "${SPLUNK_LISTEN_INTERFACE}:6831"
+      thrift_http:
+        endpoint: "${SPLUNK_LISTEN_INTERFACE}:14268"
+  zipkin:
+    endpoint: "${SPLUNK_LISTEN_INTERFACE}:9411"
+  signalfx:
+    endpoint: "${SPLUNK_LISTEN_INTERFACE}:9943"
+  prometheus/internal:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ["localhost:8888"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'otelcol_rpc_.*'
+              action: drop
+            - source_labels: [__name__]
+              regex: 'otelcol_http_.*'
+              action: drop
+            - source_labels: [__name__]
+              regex: 'otelcol_processor_batch_.*'
+              action: drop
+  nop:
+
+processors:
+  batch:
+    metadata_keys:
+      - X-SF-Token
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: ${SPLUNK_MEMORY_LIMIT_MIB}
+  resourcedetection:
+    detectors: [azure, system]
+    # override: false preserves app-sent attributes (e.g. deployment.environment
+    # from OTEL_RESOURCE_ATTRIBUTES). Cloud/host attributes from the detector are
+    # still added when they are absent from the incoming resource.
+    override: false
+exporters:
+  # Traces → Splunk APM via OTLP HTTP (replaces sapm, removed in latest image)
+  otlphttp/splunk:
+    traces_endpoint: "${SPLUNK_INGEST_URL}/v2/trace/otlp"
+    headers:
+      X-SF-Token: "${SPLUNK_ACCESS_TOKEN}"
+  signalfx:
+    access_token: "${SPLUNK_ACCESS_TOKEN}"
+    api_url: "${SPLUNK_API_URL}"
+    ingest_url: "${SPLUNK_INGEST_URL}"
+    sync_host_metadata: true
+    correlation:
+    send_otlp_histograms: true
+  otlphttp/entities:
+    logs_endpoint: "${SPLUNK_INGEST_URL}/v3/event"
+    headers:
+      "X-SF-Token": "${SPLUNK_ACCESS_TOKEN}"
+  splunk_hec:
+    token: "${SPLUNK_HEC_TOKEN}"
+    endpoint: "${SPLUNK_HEC_URL}"
+    source: "otel"
+    sourcetype: "otel"
+    profiling_data_enabled: false
+  splunk_hec/profiling:
+    token: "${SPLUNK_ACCESS_TOKEN}"
+    endpoint: "${SPLUNK_INGEST_URL}/v1/log"
+    log_data_enabled: false
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    metrics:
+      level: basic
+  extensions: [health_check, http_forwarder]
+  pipelines:
+    traces:
+      receivers: [jaeger, otlp, zipkin]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [otlphttp/splunk, signalfx]
+    metrics:
+      receivers: [otlp, signalfx]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [signalfx]
+    metrics/internal:
+      receivers: [prometheus/internal]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [signalfx]
+    logs/signalfx:
+      receivers: [signalfx]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [signalfx]
+    logs/entities:
+      receivers: [nop]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [otlphttp/entities]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [splunk_hec, splunk_hec/profiling]
