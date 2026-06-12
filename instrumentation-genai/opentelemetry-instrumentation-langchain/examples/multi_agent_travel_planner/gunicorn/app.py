@@ -124,15 +124,15 @@ if _OTEL_INIT_KEY not in sys.modules:
     except Exception:
         pass  # SDK not installed — safe to continue without telemetry
 
-import json
-import os
-import random
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Annotated, List, Optional, TypedDict
-from uuid import uuid4
+import json  # noqa: E402
+import os  # noqa: E402
+import random  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Annotated, List, Optional, TypedDict  # noqa: E402
+from uuid import uuid4  # noqa: E402
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 
 # Load ~/.env so AzureOpenAI credentials and OTEL vars are available at import time.
 load_dotenv(Path.home() / ".env")
