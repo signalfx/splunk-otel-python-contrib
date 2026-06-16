@@ -710,6 +710,9 @@ class TelemetryHandler:
     ) -> InferenceInvocation:
         """Create and start an LLM inference invocation.
 
+        .. deprecated:: 1.0b0
+            Use ``handler.inference()`` instead.
+
         Set remaining attributes (input_messages, temperature, etc.) on the
         returned invocation, then call ``invocation.stop()`` or
         ``invocation.fail()``.
@@ -755,6 +758,9 @@ class TelemetryHandler:
     ) -> ToolInvocation:
         """Create and start a tool invocation.
 
+        .. deprecated:: 1.0b0
+            Use ``handler.tool()`` instead.
+
         Set tool_result on the returned invocation when done, then call
         ``invocation.stop()`` or ``invocation.fail()``.
         """
@@ -799,15 +805,18 @@ class TelemetryHandler:
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
     ) -> InferenceInvocation:
-        """Context manager or direct invocation for LLM inference.
+        """Returns an Inference invocation. Starts span when called.
 
-        Starts the span on entry. On normal exit, finalizes the invocation
-        and ends the span. If an exception occurs, marks the span as error,
-        ends it, and re-raises the original exception.
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
+
+        Only set data attributes on the invocation object, do not modify the span or context.
         """
-        return self.start_inference(
+        return InferenceInvocation(
+            **self._invocation_components(),
             provider=provider,
-            operation_name=operation_name,
+            operation=operation_name,
             request_model=request_model,
             server_address=server_address,
             server_port=server_port,
@@ -821,8 +830,16 @@ class TelemetryHandler:
         server_address: Optional[str] = None,
         server_port: Optional[int] = None,
     ) -> NewEmbeddingInvocation:
-        """Context manager or direct invocation for embedding operations."""
-        return self._start_embedding_factory(
+        """Returns an Embedding invocation. Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
+
+        Only set data attributes on the invocation object, do not modify the span or context.
+        """
+        return NewEmbeddingInvocation(
+            **self._invocation_components(),
             provider=provider,
             request_model=request_model,
             server_address=server_address,
@@ -838,9 +855,17 @@ class TelemetryHandler:
         tool_type: Optional[str] = None,
         tool_description: Optional[str] = None,
     ) -> ToolInvocation:
-        """Context manager or direct invocation for tool operations."""
-        return self.start_tool(
-            name,
+        """Returns a Tool invocation. Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
+
+        Only set data attributes on the invocation object, do not modify the span or context.
+        """
+        return ToolInvocation(
+            **self._invocation_components(),
+            name=name,
             arguments=arguments,
             tool_call_id=tool_call_id,
             tool_type=tool_type,
@@ -855,9 +880,17 @@ class TelemetryHandler:
         framework: Optional[str] = None,
         system: Optional[str] = None,
     ) -> WorkflowInvocation:
-        """Context manager or direct invocation for workflow operations."""
-        return self._start_workflow_factory(
-            name=name,
+        """Returns a Workflow invocation. Starts a span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
+
+        Only set data attributes on the invocation object, do not modify the span or context.
+        """
+        return WorkflowInvocation(
+            **self._invocation_components(),
+            name=name or "",
             workflow_type=workflow_type,
             framework=framework,
             system=system,
@@ -981,10 +1014,8 @@ class TelemetryHandler:
     ) -> "NewEmbeddingInvocation | EmbeddingInvocation":
         """Create and start an embedding invocation.
 
-        New-style (preferred)::
-
-            inv = handler.start_embedding("openai", request_model="text-embedding-3-small")
-            inv.stop()
+        .. deprecated:: 1.0b0
+            Use ``handler.embedding()`` instead.
 
         Legacy (deprecated — pass an ``EmbeddingInvocation`` dataclass)::
 
@@ -993,7 +1024,7 @@ class TelemetryHandler:
             handler.stop_embedding(inv)
         """
         if isinstance(provider_or_invocation, str):
-            return self._start_embedding_factory(
+            return self.embedding(
                 provider_or_invocation,
                 request_model=request_model,
                 server_address=server_address,
@@ -1327,10 +1358,8 @@ class TelemetryHandler:
     ) -> "WorkflowInvocation | Workflow":
         """Create and start a workflow invocation.
 
-        New-style (preferred)::
-
-            inv = handler.start_workflow(name="my-workflow")
-            inv.stop()
+        .. deprecated:: 1.0b0
+            Use ``handler.workflow()`` instead.
 
         Legacy (deprecated — pass a ``Workflow`` dataclass)::
 
@@ -1344,8 +1373,8 @@ class TelemetryHandler:
         resolved_name = (
             workflow_or_name if isinstance(workflow_or_name, str) else name
         )
-        return self._start_workflow_factory(
-            name=resolved_name,
+        return self.workflow(
+            resolved_name,
             workflow_type=workflow_type,
             framework=framework,
             system=system,
