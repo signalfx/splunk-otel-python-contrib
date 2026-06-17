@@ -79,7 +79,9 @@ def test_embedding_span_kind():
 
 def test_embedding_context_manager():
     handler = get_telemetry_handler()
-    with handler.embedding("openai", request_model="text-embedding-3-small") as inv:
+    with handler.embedding(
+        "openai", request_model="text-embedding-3-small"
+    ) as inv:
         pass
     assert inv.end_time is not None
 
