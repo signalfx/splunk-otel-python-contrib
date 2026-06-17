@@ -35,6 +35,8 @@ from opentelemetry.util.genai.types import (
 from opentelemetry.util.genai.attributes import (
     GEN_AI_COMMAND,
     GEN_AI_FINISH_REASON,
+    GEN_AI_HANDOFF_FROM_AGENT,
+    GEN_AI_HANDOFF_TO_AGENT,
     FINISH_REASON_INTERRUPTED,
 )
 from opentelemetry.util.genai.utils import (
@@ -111,6 +113,45 @@ def _serialize(obj: Any) -> Optional[str]:
         return json.dumps(obj, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return None
+
+
+def _extract_handoff_target(command: Any) -> Optional[str]:
+    """Return the target node name from a LangGraph Command.goto, or None.
+
+    Handles three goto forms:
+    - str: single named node -> returned directly
+    - list[str]: multiple named nodes -> joined as comma-separated string
+    - Send / list[Send]: programmatic dispatch with inputs -> "Send(...)" repr
+    """
+    goto = getattr(command, "goto", None)
+    if not goto:
+        return None
+    if isinstance(goto, str):
+        return goto
+    if isinstance(goto, (list, tuple)):
+        names = []
+        for item in goto:
+            if isinstance(item, str):
+                names.append(item)
+            else:
+                # Send object or unknown — use repr
+                node = getattr(item, "node", None)
+                names.append(_safe_str(node) if node else _safe_str(item))
+        return ", ".join(names) if names else None
+    # Single Send or other object
+    node = getattr(goto, "node", None)
+    return _safe_str(node) if node else _safe_str(goto)
+
+
+def _is_handoff_command(command: Any) -> bool:
+    """Return True if the Command has a goto that could not be resolved to a name.
+
+    A Command with only an update dict (no goto) is a plain state write, not a
+    handoff — e.g. Command(update={"messages": [result]}) is common for writing
+    tool output back into graph state.
+    """
+    goto = getattr(command, "goto", None)
+    return bool(goto)
 
 
 def _make_command_input_message(command: Any) -> list[InputMessage]:
@@ -1017,6 +1058,24 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         tool = self._invocation_manager.get(run_id)
         if not isinstance(tool, ToolCall):
             return
+        # Detect LangGraph handoff: a tool that returns a Command object.
+        # Uses type-name matching to avoid importing LangGraph at instrumentation time.
+        if type(output).__name__ == "Command":
+            to_agent = _extract_handoff_target(output)
+            if to_agent is not None:
+                tool.is_handoff = True
+                tool.attributes[GEN_AI_HANDOFF_TO_AGENT] = to_agent
+            elif _is_handoff_command(output):
+                # Command exists but target unresolvable — still mark as handoff.
+                tool.is_handoff = True
+            if tool.is_handoff and parent_run_id is not None:
+                context_agent = self._find_nearest_agent(parent_run_id)
+                if context_agent is not None:
+                    from_name = context_agent.agent_name or context_agent.name
+                    if from_name:
+                        tool.attributes[GEN_AI_HANDOFF_FROM_AGENT] = _safe_str(
+                            from_name
+                        )
         serialized = _serialize(output)
         if serialized is not None:
             tool.attributes.setdefault("tool.response", serialized)

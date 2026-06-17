@@ -62,6 +62,75 @@ def test_tool_call_span_name_and_kind():
     assert spans[0].kind == SpanKind.INTERNAL
 
 
+# --- Handoff tests ---
+
+
+def test_handoff_set_before_start_uses_agent_handoff_span_name():
+    """is_handoff=True before on_start emits agent_handoff span name and operation name.
+
+    This is the LlamaIndex / OpenAI Agents v2 path: the framework knows the call
+    is a handoff before the span is created.
+    """
+    emitter, exporter = _make_emitter()
+    call = ToolCall(name="handoff", id="tool-1", is_handoff=True)
+    call.attributes = {"gen_ai.handoff.to_agent": "billing_agent"}
+
+    emitter.on_start(call)
+    emitter.on_end(call)
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].name == "agent_handoff billing_agent"
+    attrs = dict(spans[0].attributes)
+    assert attrs.get(GenAI.GEN_AI_OPERATION_NAME) == "agent_handoff"
+    assert attrs.get("gen_ai.handoff.to_agent") == "billing_agent"
+
+
+def test_handoff_set_after_start_upgrades_span_name_at_finish():
+    """is_handoff flipped between on_start and on_end upgrades the span name.
+
+    This is the LangChain path: handoff is only detected from the tool's
+    return value in on_tool_end, after the span has already been started
+    with the execute_tool name.
+    """
+    emitter, exporter = _make_emitter()
+    call = ToolCall(name="transfer_to_billing", id="tool-1")
+
+    # Span starts as execute_tool (is_handoff is still False).
+    emitter.on_start(call)
+
+    # Framework detects handoff from return value, sets flag and attributes.
+    call.is_handoff = True
+    call.attributes["gen_ai.handoff.to_agent"] = "billing_agent"
+    call.attributes["gen_ai.handoff.from_agent"] = "sales_agent"
+
+    emitter.on_end(call)
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    # Span name was upgraded from "execute_tool transfer_to_billing"
+    assert spans[0].name == "agent_handoff billing_agent"
+    attrs = dict(spans[0].attributes)
+    assert attrs.get(GenAI.GEN_AI_OPERATION_NAME) == "agent_handoff"
+    assert attrs.get("gen_ai.handoff.to_agent") == "billing_agent"
+    assert attrs.get("gen_ai.handoff.from_agent") == "sales_agent"
+
+
+def test_handoff_without_to_agent_falls_back_to_tool_name():
+    """If gen_ai.handoff.to_agent is missing, span name uses tool.name."""
+    emitter, exporter = _make_emitter()
+    call = ToolCall(name="handoff_to_specialist", id="tool-1")
+    emitter.on_start(call)
+    call.is_handoff = True  # No to_agent attribute set
+    emitter.on_end(call)
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].name == "agent_handoff handoff_to_specialist"
+    attrs = dict(spans[0].attributes)
+    assert attrs.get(GenAI.GEN_AI_OPERATION_NAME) == "agent_handoff"
+
+
 # --- MCPToolCall tests ---
 
 
