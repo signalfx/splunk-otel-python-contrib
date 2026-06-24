@@ -14,6 +14,7 @@ All notable changes to this repository are documented in this file.
 - **`gen_ai.agent.id` removed from all GenAI metric dimensions** — The attribute was set to the span ID (unique per invocation), causing unbounded metric cardinality. It remains available on spans where per-invocation identity is expected and useful. `gen_ai.agent.name` is unaffected.
 - **`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` now accepts mode values directly** — Accepts `NO_CONTENT`, `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT` in addition to legacy `true`/`false`. Aligns with upstream OpenTelemetry GenAI conventions.
 - **Removed experimental mode gating** — Content capture no longer requires an experimental stability flag.
+- **`start_inference()`, `start_tool()`, `start_embedding()`, `start_workflow()` deprecated** — Replaced by shorter aliases `handler.inference()`, `handler.tool()`, `handler.embedding()`, `handler.workflow()` that return invocation objects usable as context managers or directly. The `start_*` methods remain functional but emit a deprecation warning.
 
 ### Fixed
 - **SpanEmitter tool_definitions at finish time** — `_apply_finish_attrs()` now also applies `gen_ai.tool.definitions` for instrumentations that populate `tool_definitions` at span end time (e.g., OpenAI Agents V2). Previously only applied in `_apply_start_attrs()`.

@@ -17,6 +17,10 @@ anything) you need to change.
   support context-manager usage.
 - `start_embedding` and `start_workflow` now accept either the old dataclass
   or the new string/keyword arguments — old call sites are unaffected.
+- **`start_inference`, `start_tool`, `start_embedding`, `start_workflow` are
+  deprecated** — use the shorter aliases `handler.inference()`,
+  `handler.tool()`, `handler.embedding()`, `handler.workflow()` instead.
+  The `start_*` methods remain functional but emit a deprecation warning.
 
 ---
 
@@ -59,15 +63,18 @@ from opentelemetry.util.genai import (
 from opentelemetry.util.genai import NewEmbeddingInvocation
 ```
 
-### 2. New `TelemetryHandler` factory methods
+### 2. `TelemetryHandler` factory methods (preferred: short aliases)
+
+The preferred API uses the short alias methods, which return invocation objects
+usable both directly and as context managers:
 
 ```python
 from opentelemetry.util.genai import get_telemetry_handler
 
 handler = get_telemetry_handler()
 
-# LLM inference
-inv = handler.start_inference("openai", request_model="gpt-4o")
+# LLM inference — direct usage
+inv = handler.inference("openai", request_model="gpt-4o")
 inv.input_messages = [...]
 response = call_llm(...)
 inv.output_messages = [...]
@@ -75,45 +82,32 @@ inv.input_tokens = response.usage.input_tokens
 inv.output_tokens = response.usage.output_tokens
 inv.stop()          # or inv.fail(exception)
 
-# Tool execution
-inv = handler.start_tool("search_web", arguments={"query": "..."})
-inv.tool_result = search(...)
-inv.stop()
-
-# Workflow
-inv = handler.start_workflow(name="my-pipeline", framework="crewai")
-# ... nested operations ...
-inv.stop()
-
-# Embedding
-inv = handler.start_embedding("openai", request_model="text-embedding-3-small")
-inv.input_tokens = 12
-inv.stop()
-```
-
-### 3. Context-manager convenience methods
-
-Each factory has a matching context manager on `TelemetryHandler` that calls
-`stop()` on success and `fail(exc)` on exception automatically:
-
-```python
+# LLM inference — context manager
 with handler.inference("openai", request_model="gpt-4o") as inv:
     inv.input_messages = [...]
     response = call_llm(...)
     inv.output_messages = [...]
     inv.input_tokens = response.usage.input_tokens
     inv.output_tokens = response.usage.output_tokens
-# span ends automatically
+# span ends automatically (fail(exc) called on exception)
 
+# Tool execution
 with handler.tool("search_web", arguments={"query": "climate change"}) as inv:
     inv.tool_result = search(...)
 
-with handler.workflow(name="my-pipeline") as inv:
+# Workflow
+with handler.workflow(name="my-pipeline", framework="crewai") as inv:
     ...
 
+# Embedding
 with handler.embedding("openai", request_model="text-embedding-3-small") as inv:
     inv.input_tokens = 12
 ```
+
+> **Deprecated:** `handler.start_inference()`, `handler.start_tool()`,
+> `handler.start_embedding()`, and `handler.start_workflow()` are deprecated
+> in favour of the shorter aliases above. They remain functional but will emit
+> a `DeprecationWarning`.
 
 ### 4. `start_embedding` and `start_workflow` — dual signatures
 
@@ -168,6 +162,7 @@ in existing instrumentations:
 | All types in `opentelemetry.util.genai.types` | Unchanged |
 | `get_telemetry_handler()` | Unchanged |
 | `TelemetryHandler._reset_for_testing()` | Unchanged |
+| `handler.start_inference` / `start_tool` / `start_embedding` / `start_workflow` | **Deprecated** — use `handler.inference()` / `tool()` / `embedding()` / `workflow()` |
 
 ---
 

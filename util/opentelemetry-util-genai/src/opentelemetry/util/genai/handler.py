@@ -726,27 +726,6 @@ class TelemetryHandler:
             server_port=server_port,
         )
 
-    def _start_embedding_factory(
-        self,
-        provider: str,
-        *,
-        request_model: Optional[str] = None,
-        server_address: Optional[str] = None,
-        server_port: Optional[int] = None,
-    ) -> NewEmbeddingInvocation:
-        """Create and start an embedding invocation (new-style factory).
-
-        Set remaining attributes (encoding_formats, etc.) on the returned
-        invocation, then call ``invocation.stop()`` or ``invocation.fail()``.
-        """
-        return NewEmbeddingInvocation(
-            **self._invocation_components(),
-            provider=provider,
-            request_model=request_model,
-            server_address=server_address,
-            server_port=server_port,
-        )
-
     def start_tool(
         self,
         name: str,
@@ -771,27 +750,6 @@ class TelemetryHandler:
             tool_call_id=tool_call_id,
             tool_type=tool_type,
             tool_description=tool_description,
-        )
-
-    def _start_workflow_factory(
-        self,
-        *,
-        name: Optional[str] = None,
-        workflow_type: Optional[str] = None,
-        framework: Optional[str] = None,
-        system: Optional[str] = None,
-    ) -> WorkflowInvocation:
-        """Create and start a workflow invocation (new-style factory).
-
-        Set remaining attributes on the returned invocation, then call
-        ``invocation.stop()`` or ``invocation.fail()``.
-        """
-        return WorkflowInvocation(
-            **self._invocation_components(),
-            name=name or "",
-            workflow_type=workflow_type,
-            framework=framework,
-            system=system,
         )
 
     # -- Context manager convenience methods ---------------------------------
@@ -898,7 +856,7 @@ class TelemetryHandler:
 
     # -- Deprecated lifecycle methods ----------------------------------------
     # The following methods are preserved for backward compatibility.
-    # Prefer the new factory methods (start_inference, start_tool, etc.)
+    # Prefer the short alias methods (handler.inference(), handler.tool(), etc.)
     # and invocation.stop() / invocation.fail() instead.
 
     def start_llm(
