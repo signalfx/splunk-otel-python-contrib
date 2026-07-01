@@ -1,0 +1,7 @@
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.10
+python-dotenv==1.2.2
+requests==2.32.3
+opentelemetry-distro==0.59b0
+opentelemetry-exporter-otlp==1.38.0
