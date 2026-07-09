@@ -252,6 +252,38 @@ build-instrumentation-fastmcp:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
 
+build-instrumentation-bedrock:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-bedrock
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-bedrock
+    - mv dist/* ../../dist/instrumentation-bedrock/
+    - cd ../../dist/instrumentation-bedrock
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-bedrock/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-bedrock-v0\.[0-9]+\.[0-9]+.*/'
+
+build-instrumentation-bedrock-agentcore:
+  stage: build
+  script:
+    - pip install hatch
+    - cd instrumentation-genai/opentelemetry-instrumentation-bedrock-agentcore
+    - hatch build
+    - mkdir -p ../../dist/instrumentation-bedrock-agentcore
+    - mv dist/* ../../dist/instrumentation-bedrock-agentcore/
+    - cd ../../dist/instrumentation-bedrock-agentcore
+    - sha256sum * > checksums.txt
+  artifacts:
+    paths:
+      - dist/instrumentation-bedrock-agentcore/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-bedrock-agentcore-v0\.[0-9]+\.[0-9]+.*/'
+
 # Signing jobs for each package
 sign-util-genai:
   stage: sign
@@ -493,6 +525,38 @@ sign-instrumentation-fastmcp:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
 
+sign-instrumentation-bedrock:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-bedrock
+  variables:
+    ARTIFACT: dist/instrumentation-bedrock/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-bedrock
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-bedrock/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-bedrock-v0\.[0-9]+\.[0-9]+.*/'
+
+sign-instrumentation-bedrock-agentcore:
+  stage: sign
+  extends: .submit-signing-request
+  needs:
+    - build-instrumentation-bedrock-agentcore
+  variables:
+    ARTIFACT: dist/instrumentation-bedrock-agentcore/checksums.txt
+    SIGN_TYPE: GPG
+    DOWNLOAD_DIR: dist/instrumentation-bedrock-agentcore
+    LOGLEVEL: DEBUG
+  artifacts:
+    paths:
+      - dist/instrumentation-bedrock-agentcore/
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-bedrock-agentcore-v0\.[0-9]+\.[0-9]+.*/'
+
 # Deploy jobs for each package
 deploy-util-genai:
   stage: deploy
@@ -688,3 +752,29 @@ deploy-instrumentation-fastmcp:
     - sign-instrumentation-fastmcp
   rules:
     - if: '$CI_COMMIT_TAG =~ /^instrumentation-fastmcp-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-bedrock:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-bedrock
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-bedrock/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-bedrock
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-bedrock-v0\.[0-9]+\.[0-9]+.*/'
+
+deploy-instrumentation-bedrock-agentcore:
+  stage: deploy
+  script:
+    - pip install hatch keyrings.alt
+    - cd instrumentation-genai/opentelemetry-instrumentation-bedrock-agentcore
+    - mkdir -p dist
+    - cp ../../dist/instrumentation-bedrock-agentcore/* dist/
+    - hatch --no-interactive publish
+  needs:
+    - sign-instrumentation-bedrock-agentcore
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^instrumentation-bedrock-agentcore-v0\.[0-9]+\.[0-9]+.*/'

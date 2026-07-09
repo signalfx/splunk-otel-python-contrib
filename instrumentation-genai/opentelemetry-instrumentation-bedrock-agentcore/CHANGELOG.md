@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Add the package to the GitLab build, signing, and PyPI release pipeline.
 - Initial release of Bedrock AgentCore instrumentation
 - Support for BedrockAgentCoreApp.entrypoint workflow spans
 - Support for MemoryClient operations (retrieve_memories, create_event, create_blob_event, list_events)
