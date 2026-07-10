@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Add the package to the GitLab build, signing, and PyPI release pipeline.
 - Initial Bedrock Runtime GenAI instrumentation package.
 - Support for `bedrock-runtime` `Converse` and `ConverseStream` LLM spans.
 - Provider-aware support for `InvokeModel` and `InvokeModelWithResponseStream`.
