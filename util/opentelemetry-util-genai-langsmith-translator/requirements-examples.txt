@@ -2,7 +2,7 @@
 # Run `pip install -r requirements-examples.txt` and verify with `pip freeze`
 # HYBIM-586: pinned to prevent supply-chain attacks via unpinned AI/ML packages
 
-langchain==1.2.15
+langchain==1.3.9
 langsmith==0.8.0
 langchain-core==1.3.3
 langchain-openai==1.1.13
