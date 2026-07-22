@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 instruments = ["google-cloud-aiplatform >= 1.64"]
-test = ["vcrpy >= 7.0", "aiohttp < 3.14"]
+test = ["vcrpy >= 8.3.0", "aiohttp >= 3.14.1"]
 
 [project.entry-points.opentelemetry_instrumentor]
 vertexai = "opentelemetry.instrumentation.vertexai:VertexAIInstrumentor"
