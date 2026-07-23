@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.9 - 2026-07-23
+
+### Fixed
+- Bump `pytest` to `9.0.3` in test dependencies to address security vulnerabilities (VULN-99407, VULN-99429, VULN-99430).
+
 ## Version 0.1.8 - 2026-04-07
 
 ### Changed

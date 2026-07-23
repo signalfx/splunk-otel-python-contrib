@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 0.1.5 - 2026-07-23
+
+### Fixed
+- Bump `langsmith` to `0.8.0` and `langchain-core` to `1.3.3` to address security vulnerabilities (VULN-99267, VULN-99269).
+- Bump `langchain` to `1.3.9` and `pytest` to `>=9.0.3` to address security vulnerabilities (VULN-99430, VULN-99407).
+
 ## Version 0.1.4 - 2026-04-29
 
 ### Fixed

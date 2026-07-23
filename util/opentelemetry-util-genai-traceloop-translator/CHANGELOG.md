@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.10 - 2026-07-23
+
+### Fixed
+- Bump `langchain-core` to `1.3.3` and `pytest` to `>=9.0.3` in test dependencies to address security vulnerabilities (VULN-99269, VULN-99407, VULN-99429, VULN-99430).
+
 ## Version 0.1.9 - 2026-04-29
 - Fixed namespace package conflicts between translator packages.
 - Added CI tests.

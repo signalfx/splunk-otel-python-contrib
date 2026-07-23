@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.15 - 2026-07-23
+
+### Fixed
+- Bump `aiohttp` to `>=3.14.1` and `vcrpy` to `>=8.3.0` in test dependencies to address CVE-2026-54278.
+
 ## Version 0.1.14
 
 ### Bump version for release
