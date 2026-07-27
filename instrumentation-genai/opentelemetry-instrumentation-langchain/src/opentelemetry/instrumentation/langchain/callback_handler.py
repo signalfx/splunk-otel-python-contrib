@@ -629,10 +629,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
                     self._invocation_manager.add(run_id, parent_run_id, tool)
                 if inputs is not None and getattr(tool, "arguments", None) is None:
                     tool.arguments = inputs
-                if getattr(tool, "arguments", None) is not None:
-                    serialized_args = _serialize(tool.arguments)
-                    if serialized_args is not None:
-                        tool.attributes.setdefault("tool.arguments", serialized_args)
             else:
                 step = Step(
                     name=name,
@@ -684,9 +680,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         elif isinstance(entity, Step):
             self._handler.stop_step(entity)
         elif isinstance(entity, ToolCall):
-            serialized = _serialize(outputs)
-            if serialized is not None:
-                entity.attributes.setdefault("tool.response", serialized)
+            if outputs is not None:
+                entity.tool_result = outputs
             self._handler.stop_tool_call(entity)
         self._invocation_manager.remove(run_id)
 
@@ -997,10 +992,6 @@ class LangchainCallbackHandler(BaseCallbackHandler):
             tool.agent_name = context_agent_name
             tool.agent_id = _agent_span_id(context_agent)
         tool.parent_span = self._resolve_parent_span(parent_run_id)
-        if arguments is not None:
-            serialized_args = _serialize(arguments)
-            if serialized_args is not None:
-                tool.attributes.setdefault("tool.arguments", serialized_args)
         if inputs is None and input_str:
             tool.attributes.setdefault("tool.input_str", _safe_str(input_str))
         self._handler.start_tool_call(tool)
@@ -1017,9 +1008,8 @@ class LangchainCallbackHandler(BaseCallbackHandler):
         tool = self._invocation_manager.get(run_id)
         if not isinstance(tool, ToolCall):
             return
-        serialized = _serialize(output)
-        if serialized is not None:
-            tool.attributes.setdefault("tool.response", serialized)
+        if output is not None:
+            tool.tool_result = output
         self._handler.stop_tool_call(tool)
         self._invocation_manager.remove(run_id)
 

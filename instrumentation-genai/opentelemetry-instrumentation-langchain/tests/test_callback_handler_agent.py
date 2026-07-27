@@ -245,7 +245,7 @@ def test_chain_metadata_maps_to_tool_call(handler_with_stub):
     )
 
     assert stub.stopped_tools and stub.stopped_tools[-1] is tool
-    assert tool.attributes.get("tool.response") == '{"temperature": 20}'
+    assert tool.tool_result == {"temperature": 20}
 
 
 @pytest.mark.skipif(not LANGCHAIN_CORE_AVAILABLE, reason="langchain_core not available")
@@ -277,14 +277,14 @@ def test_tool_callbacks_use_tool_call(handler_with_stub):
     assert tool.name == "weather_tool"
     assert tool.id == "tool-1"
     assert tool.arguments == {"city": "Madrid"}
-    assert tool.attributes.get("tool.arguments") == '{"city": "Madrid"}'
+    assert "gen_ai.tool.call.arguments" not in tool.attributes
 
     handler.on_tool_end(
         output={"result": "sunny"}, run_id=tool_run_id, parent_run_id=agent_run_id
     )
 
     assert stub.stopped_tools and stub.stopped_tools[-1] is tool
-    assert tool.attributes.get("tool.response") == '{"result": "sunny"}'
+    assert tool.tool_result == {"result": "sunny"}
 
 
 def test_chain_without_tool_creates_step(handler_with_stub):

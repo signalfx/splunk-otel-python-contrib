@@ -1922,10 +1922,7 @@ class GenAISemanticProcessor(TracingProcessor):
         try:
             # Add tool result from payload
             if payload.tool_result is not None:
-                invocation.attributes.setdefault(
-                    "tool.response",
-                    safe_json_dumps(payload.tool_result),
-                )
+                invocation.tool_result = payload.tool_result
             self._handler.stop_tool_call(invocation)
         except Exception as e:
             logger.debug(
