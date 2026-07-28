@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.1.5] - 2026-07-28
+
+### Fixed
+- Remove non-semconv tool attributes and emit standard `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` attributes via the semconv-compliant path.
+
+## [0.1.4] - 2026-07-23
 
 ### Fixed
 - Corrected package name in READMEs from `splunk-otel-instrumentation-openai-agents-v2` to `splunk-otel-instrumentation-openai-agents` to match `pyproject.toml`.
