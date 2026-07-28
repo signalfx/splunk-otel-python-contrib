@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## Version 0.1.16 - 2026-07-28
+
+### Fixed
+- Remove non-semconv tool attributes (`tool.arguments`, `tool.response`) and replace with standard `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` attributes (opt-in via `capture_content=True`).
+
 ## Version 0.1.15 - 2026-07-23
 
 ### Fixed
