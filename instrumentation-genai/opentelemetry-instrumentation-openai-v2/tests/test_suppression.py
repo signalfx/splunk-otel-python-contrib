@@ -13,8 +13,14 @@
 # limitations under the License.
 
 """
-Tests for SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY functionality.
-This prevents duplicate telemetry when multiple instrumentations (e.g., LangChain + OpenAI) are active.
+Tests for suppression of OpenAI instrumentation.
+
+Covers two suppression surfaces:
+1. SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY context key — set per-request
+   by the LangChain instrumentor to prevent duplicate LLM spans when both
+   instrumentors are active simultaneously.
+2. SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION environment variable — set globally
+   for zero-code deployments alongside OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=openai.
 """
 
 import pytest
@@ -22,6 +28,11 @@ import pytest
 from opentelemetry import context as context_api
 from opentelemetry.util.genai.attributes import (
     SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
+)
+
+# The env var name is the uppercase form of the context key string.
+SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_ENV_VAR = (
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY.upper()
 )
 
 
@@ -144,3 +155,81 @@ def test_chat_completion_not_suppressed_by_default(
     # Should have at least the main chat completion span
     chat_spans = [s for s in spans if "chat" in s.name.lower()]
     assert len(chat_spans) > 0
+
+
+# ---------------------------------------------------------------------------
+# Environment variable suppression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.vcr()
+def test_chat_completion_suppressed_via_env_var(
+    monkeypatch, span_exporter, openai_client, instrument_with_content
+):
+    """SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION=true suppresses spans globally."""
+    monkeypatch.setenv(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_ENV_VAR, "true")
+
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Say this is a test"}],
+    )
+    assert response is not None
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 0
+
+
+@pytest.mark.vcr()
+def test_chat_completion_not_suppressed_when_env_var_false(
+    monkeypatch, span_exporter, openai_client, instrument_with_content
+):
+    """SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION=false leaves instrumentation active."""
+    monkeypatch.setenv(
+        SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_ENV_VAR, "false"
+    )
+
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Say this is a test"}],
+    )
+    assert response is not None
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) > 0
+
+
+@pytest.mark.parametrize("value", ["true", "1", "yes", "on", "TRUE"])
+def test_env_var_truthy_values_suppress(monkeypatch, value):
+    """All truthy spellings of the env var are recognised."""
+    monkeypatch.setenv(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_ENV_VAR, value)
+
+    from opentelemetry.instrumentation.openai_v2.patch import (
+        _is_instrumentation_suppressed,
+    )
+
+    assert _is_instrumentation_suppressed() is True
+
+
+@pytest.mark.parametrize("value", ["false", "0", "no", "off", "FALSE", ""])
+def test_env_var_falsey_values_do_not_suppress(monkeypatch, value):
+    """Falsey env var spellings leave instrumentation active."""
+    monkeypatch.setenv(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_ENV_VAR, value)
+
+    from opentelemetry.instrumentation.openai_v2.patch import (
+        _is_instrumentation_suppressed,
+    )
+
+    assert _is_instrumentation_suppressed() is False
+
+
+def test_env_var_unset_does_not_suppress(monkeypatch):
+    """When the env var is absent, instrumentation is active by default."""
+    monkeypatch.delenv(
+        SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_ENV_VAR, raising=False
+    )
+
+    from opentelemetry.instrumentation.openai_v2.patch import (
+        _is_instrumentation_suppressed,
+    )
+
+    assert _is_instrumentation_suppressed() is False

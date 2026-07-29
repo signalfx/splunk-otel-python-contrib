@@ -95,7 +95,11 @@ GEN_AI_ASSOCIATION_PROPERTIES_PREFIX = "gen_ai.association.properties"
 GEN_AI_SECURITY_EVENT_ID = "gen_ai.security.event_id"
 
 # Context key for suppressing instrumentation to avoid duplicate telemetry
-# when multiple instrumentations (e.g., LangChain + OpenAI) are active
+# when multiple instrumentations (e.g., LangChain + OpenAI) are active.
+# The uppercase form of this string is also checked as an environment variable
+# (SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION) so zero-code deployments can set
+# suppression globally without the LangChain instrumentor injecting it
+# per-request. Use together with OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=openai.
 SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY = (
     "suppress_language_model_instrumentation"
 )
