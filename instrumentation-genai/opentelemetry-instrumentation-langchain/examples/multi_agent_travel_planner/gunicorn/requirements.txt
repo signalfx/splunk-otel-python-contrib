@@ -1,0 +1,11 @@
+fastapi
+gunicorn
+uvicorn[standard]
+langchain
+langchain-core
+langchain-openai
+langgraph
+python-dotenv
+opentelemetry-distro
+opentelemetry-exporter-otlp
+splunk-otel-instrumentation-langchain==0.1.14
