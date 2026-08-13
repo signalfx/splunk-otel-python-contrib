@@ -1,0 +1,259 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: langchain-travel-planner-config
+  namespace: travel-planner
+data:
+  AZURE_OPENAI_ENDPOINT: "https://o11y-for-ai-test.openai.azure.com/"
+  AZURE_CHAT_DEPLOYMENT: "gpt-5-nano"
+  AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "DELTA"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "true"
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE: "SPAN_AND_EVENT"
+  OTEL_INSTRUMENTATION_GENAI_EMITTERS: "span_metric_event,splunk"
+  OTEL_INSTRUMENTATION_GENAI_DEBUG: "false"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: langchain-travel-planner
+  namespace: travel-planner
+  labels:
+    app: langchain-travel-planner
+spec:
+  schedule: "*/15 7-18 * * 1-5"
+  timeZone: "America/Los_Angeles"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+
+  jobTemplate:
+    metadata:
+      labels:
+        app: langchain-travel-planner
+    spec:
+      activeDeadlineSeconds: 600
+      backoffLimit: 2
+
+      template:
+        metadata:
+          labels:
+            app: langchain-travel-planner
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+
+          containers:
+          - name: langchain-travel-planner
+            image: ertserendavga918/travel-planner-ao:v1.1.2
+            imagePullPolicy: Always
+
+            envFrom:
+            - configMapRef:
+                name: langchain-travel-planner-config
+
+            env:
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langgraph-travel-agent-langchain-secrets
+                  key: azure-openai-api-key
+            - name: OTEL_SERVICE_NAME
+              value: "travel-planner-ao"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=agent-observability,splunk_ao.project.name=O11y Test Data,splunk_ao.logstream.name=test,galileo.project.name=O11y Test Data,galileo.logstream.name=test"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):34317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: false
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: langchain-travel-planner-offhours
+  namespace: travel-planner
+  labels:
+    app: langchain-travel-planner
+spec:
+  schedule: "*/45 0-6,19-23 * * 1-5"
+  timeZone: "America/Los_Angeles"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+
+  jobTemplate:
+    metadata:
+      labels:
+        app: langchain-travel-planner
+    spec:
+      activeDeadlineSeconds: 600
+      backoffLimit: 2
+
+      template:
+        metadata:
+          labels:
+            app: langchain-travel-planner
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+
+          containers:
+          - name: langchain-travel-planner
+            image: ertserendavga918/travel-planner-ao:v1.1.2
+            imagePullPolicy: Always
+
+            envFrom:
+            - configMapRef:
+                name: langchain-travel-planner-config
+
+            env:
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langgraph-travel-agent-langchain-secrets
+                  key: azure-openai-api-key
+            - name: OTEL_SERVICE_NAME
+              value: "travel-planner-ao"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=agent-observability,splunk_ao.project.name=O11y Test Data,splunk_ao.logstream.name=test,galileo.project.name=O11y Test Data,galileo.logstream.name=test"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):34317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: false
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: langchain-travel-planner-weekend
+  namespace: travel-planner
+  labels:
+    app: langchain-travel-planner
+spec:
+  schedule: "*/45 * * * 0,6"
+  timeZone: "America/Los_Angeles"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+
+  jobTemplate:
+    metadata:
+      labels:
+        app: langchain-travel-planner
+    spec:
+      activeDeadlineSeconds: 600
+      backoffLimit: 2
+
+      template:
+        metadata:
+          labels:
+            app: langchain-travel-planner
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+
+          containers:
+          - name: langchain-travel-planner
+            image: ertserendavga918/travel-planner-ao:v1.1.2
+            imagePullPolicy: Always
+
+            envFrom:
+            - configMapRef:
+                name: langchain-travel-planner-config
+
+            env:
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langgraph-travel-agent-langchain-secrets
+                  key: azure-openai-api-key
+            - name: OTEL_SERVICE_NAME
+              value: "travel-planner-ao"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=agent-observability,splunk_ao.project.name=O11y Test Data,splunk_ao.logstream.name=test,galileo.project.name=O11y Test Data,galileo.logstream.name=test"
+            - name: SPLUNK_OTEL_AGENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(SPLUNK_OTEL_AGENT):34317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: HOME
+              value: "/tmp"
+
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: false
