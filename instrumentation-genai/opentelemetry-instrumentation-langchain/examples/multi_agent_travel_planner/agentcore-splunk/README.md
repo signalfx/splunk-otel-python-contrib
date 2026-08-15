@@ -129,7 +129,7 @@ agentcore deploy --force-rebuild-deps \
   --env HOME=/tmp
 ```
 
-#### Option B: Via OTel Collector Gateway (gRPC)
+#### Option B: Via OTel Collector Gateway (gRPC) -> This is our preferred route
 
 Send traces, metrics, and logs via an OTel Collector in your VPC:
 
@@ -140,16 +140,18 @@ NLB_DNS=$(kubectl get svc splunk-otel-collector -n splunk-monitoring \
 
 # Deploy AgentCore with collector endpoint
 agentcore deploy --force-rebuild-deps \
-  --env OPENAI_API_KEY=<your-openai-api-key> \
-  --env OPENAI_MODEL=gpt-4o-mini \
+  --env BEDROCK_MODEL_ID=us.anthropic.claude-3-haiku-20240307-v1:0 \
+  --env AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+  --env AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+  --env AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN \
+  --env AWS_DEFAULT_REGION=us-east-1 \
   --env OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
   --env OTEL_EXPORTER_OTLP_ENDPOINT=http://${NLB_DNS}:4317 \
   --env OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=DELTA \
   --env OTEL_SERVICE_NAME=travel-planner-agentcore \
-  --env OTEL_RESOURCE_ATTRIBUTES=deployment.environment=aws-agentcore \
+  --env OTEL_RESOURCE_ATTRIBUTES=deployment.environment=poc \
   --env OTEL_INSTRUMENTATION_GENAI_EMITTERS=span_metric_event,splunk \
-  --env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true \
-  --env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT_MODE=SPAN_AND_EVENT \
+  --env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT \
   --env OTEL_INSTRUMENTATION_GENAI_EVALS_RESULTS_AGGREGATION=true \
   --env OTEL_INSTRUMENTATION_GENAI_EMITTERS_EVALUATION=replace-category:SplunkEvaluationResults \
   --env OTEL_GENAI_EVAL_DEBUG_SKIPS=true \
