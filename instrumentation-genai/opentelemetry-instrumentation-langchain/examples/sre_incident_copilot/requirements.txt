@@ -2,7 +2,7 @@
 langchain==1.2.15
 langchain-openai==1.1.13
 langgraph==1.1.10
-langgraph-checkpoint-sqlite==3.0.3
+langgraph-checkpoint-sqlite==3.1.1
 python-dotenv==1.2.2
 fastmcp==3.2.4
 httpx==0.28.1
