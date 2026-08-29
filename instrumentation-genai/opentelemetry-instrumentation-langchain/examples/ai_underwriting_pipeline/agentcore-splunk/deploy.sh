@@ -12,6 +12,13 @@ set -euo pipefail
 VARIANT="${1:-}"
 [[ -n "$VARIANT" ]] || { echo "usage: $0 {ao|spans-logs|both}" >&2; exit 2; }
 
+# The agentcore CLI is a dependency of this example, so it lives in the local venv rather
+# than on the system PATH. Prepending it means the script works whether or not the caller
+# happened to activate the venv first -- otherwise it fails at the first agentcore call,
+# after already having printed the deployment banner.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -x "$HERE/.venv/bin/agentcore" ]] && PATH="$HERE/.venv/bin:$PATH"
+
 AWS_REGION="${AWS_REGION:-us-west-2}"
 MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 NOISE="${UNDERWRITING_NOISE_RATE:-0.35}"
@@ -63,6 +70,16 @@ deploy_one() {
   # configure regenerates the Dockerfile and discards manual edits.
   python3 patch_dockerfile.py "$agent_name" || true
 
+  # The runtime id, which the app puts on its root span as the coverage-join key. AgentCore
+  # does not inject it, and it only exists once the runtime has been created -- so on a
+  # first-ever deploy this resolves to empty and the app omits the attribute. Re-running
+  # deploy.sh once the runtime exists fills it in.
+  local runtime_id
+  runtime_id=$(aws bedrock-agentcore-control list-agent-runtimes \
+    --query "agentRuntimes[?agentRuntimeName=='${agent_name}'].agentRuntimeId | [0]" \
+    --output text 2>/dev/null | grep -v '^None$' || true)
+  echo "  coverage-join runtime id: ${runtime_id:-<none yet, first deploy>}"
+
   # --auto-update-on-conflict: launch refuses to touch an existing agent otherwise, so a
   # second deploy of the same name fails with ConflictException rather than updating it.
   agentcore launch \
@@ -70,6 +87,7 @@ deploy_one() {
     --auto-update-on-conflict \
     --env UNDERWRITING_EXPORT_MODE="$export_mode" \
     --env UNDERWRITING_NOISE_RATE="$NOISE" \
+    --env AGENTCORE_RUNTIME_ID="$runtime_id" \
     --env OPENAI_API_KEY="$OPENAI_API_KEY" \
     --env OPENAI_MODEL="$MODEL" \
     --env OTEL_SERVICE_NAME="$agent_name" \

@@ -55,6 +55,11 @@ from underwriting_tools import (  # noqa: E402
 
 NOISE_RATE = float(os.environ.get("UNDERWRITING_NOISE_RATE", "0.35"))
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+# AgentCore does not hand the container its own runtime id -- the only env vars it injects
+# are the memory id and whatever the deployment passed -- so deploy.sh passes it in. It is
+# only knowable after the runtime exists, which means the very first deploy of a new agent
+# runs without it and the second carries it.
+AGENTCORE_RUNTIME_ID = os.environ.get("AGENTCORE_RUNTIME_ID", "")
 
 
 class UnderwritingState(TypedDict):
@@ -328,6 +333,21 @@ def invoke(payload: dict) -> dict:
         root.set_attribute("gen_ai.agent.name", "ai-underwriting-pipeline")
         root.set_attribute("session.id", session_id)
         root.set_attribute("underwriting.applicant_id", applicant_id)
+        # The join key for the coverage reconciliation, and it has to be a SPAN attribute.
+        #
+        # Splunk identifies this workload by its AgentCore runtime id, recovered from the log
+        # group name and from the platform span's resource ARN. AO identifies it by the OTel
+        # service name. Nothing in the telemetry connects the two, so a reconciler had to be
+        # handed the mapping by an operator -- exactly the manual step this example's
+        # surrounding project exists to remove.
+        #
+        # A resource attribute would be the semantically correct home, but AO surfaces only
+        # per-span custom attributes (as user_metadata) and drops resource attributes, so a
+        # resource attribute is invisible to anything querying AO. Setting it on the root
+        # span is what makes the key actually readable on both sides.
+        if AGENTCORE_RUNTIME_ID:
+            root.set_attribute("aws.agentcore.runtime", AGENTCORE_RUNTIME_ID)
+        root.set_attribute("service.name", os.environ.get("OTEL_SERVICE_NAME", "ai-underwriting-pipeline"))
         try:
             state: UnderwritingState = {
                 "messages": [],
