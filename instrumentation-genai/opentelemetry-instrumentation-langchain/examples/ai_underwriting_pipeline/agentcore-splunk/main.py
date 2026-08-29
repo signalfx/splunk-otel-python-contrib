@@ -386,9 +386,17 @@ def invoke(payload: dict) -> dict:
 
 
 if __name__ == "__main__":
-    # Local smoke run: python main.py [n]
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    for i in range(n):
-        out = invoke({"applicant_id": f"APP-{20000 + i}"})
-        print(json.dumps(out, indent=2)[:900])
-        print("-" * 60)
+    # Default MUST be app.run(): under AgentCore the container is started as
+    # `python -m main` and has to bring up the HTTP server the platform health-checks.
+    # An earlier version ran the smoke loop here instead, so the container executed one
+    # underwriting pass, printed it, and exited 0 -- which the platform reports only as
+    # "An error occurred when starting the runtime", giving no hint that the process
+    # simply finished. Local smoke runs are opt-in via `--smoke [n]`.
+    if len(sys.argv) > 1 and sys.argv[1] == "--smoke":
+        n = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        for i in range(n):
+            out = invoke({"applicant_id": f"APP-{20000 + i}"})
+            print(json.dumps(out, indent=2)[:900])
+            print("-" * 60)
+    else:
+        app.run()

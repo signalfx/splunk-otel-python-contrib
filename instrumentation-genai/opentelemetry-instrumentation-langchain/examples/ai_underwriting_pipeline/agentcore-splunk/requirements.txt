@@ -1,15 +1,39 @@
 # AI underwriting pipeline -- production dependencies.
 #
-# Layer order matters and is the reason this file exists separately from
-# requirements-app.txt. aws-opentelemetry-distro pins the whole OTel stack with `==`, so
-# installing it AFTER the application requirements silently downgrades
-# opentelemetry-semantic-conventions beneath what the GenAI instrumentation needs, and the
-# instrumentation then fails to import at runtime while the process serves traffic
-# normally. Install app deps first, Splunk GenAI packages second, and never add the AWS
-# distro after them.
--r requirements-app.txt
+# Deliberately FLAT, with no `-r requirements-app.txt` include. The AgentCore starter
+# toolkit uploads only a filtered build context to CodeBuild, and the included file is not
+# part of it, so `uv pip install -r requirements.txt` fails inside the container with
+#     error: Error parsing included file ... failed to read `requirements-app.txt`
+# which reads like a dependency-resolution problem rather than a missing-file one.
+# requirements-app.txt is kept alongside for local development.
+#
+# ORDER MATTERS. aws-opentelemetry-distro pins the whole OTel stack with `==`; installing
+# it after these would silently downgrade opentelemetry-semantic-conventions beneath what
+# the GenAI instrumentation needs, and the instrumentation would then fail to import at
+# runtime while the process carried on serving traffic. It is deliberately absent, and the
+# Splunk GenAI packages come last.
+
+# ── application ────────────────────────────────────────────────────────────────
+bedrock-agentcore==1.7.0
+bedrock-agentcore-starter-toolkit==0.3.6
+langchain==1.2.15
+langchain-openai==1.1.13
+langgraph==1.1.10
+openai==2.32.0
+pydantic==2.12.5
+python-dotenv==1.2.2
+requests==2.32.5
+
+# ── OpenTelemetry core (pinned together; the GenAI stack expects this exact set) ─
+opentelemetry-api==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-exporter-otlp-proto-http==1.38.0
+opentelemetry-exporter-otlp-proto-grpc==1.38.0
+opentelemetry-instrumentation==0.59b0
+opentelemetry-semantic-conventions==0.59b0
+opentelemetry-instrumentation-openai==0.60.0
+
+# ── Splunk GenAI instrumentation (must come after the OTel core above) ─────────
 splunk-otel-util-genai
 splunk-otel-genai-emitters-splunk
-splunk-otel-util-genai-evals
-splunk-otel-genai-evals-deepeval
 splunk-otel-instrumentation-langchain

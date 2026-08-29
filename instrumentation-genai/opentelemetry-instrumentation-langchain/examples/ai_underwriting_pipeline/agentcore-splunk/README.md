@@ -117,7 +117,7 @@ cp .env.example .env      # add your OPENAI_API_KEY
 
 export UNDERWRITING_EXPORT_MODE=console
 export UNDERWRITING_NOISE_RATE=1.0
-.venv/bin/python main.py 6        # 6 underwriting passes
+.venv/bin/python main.py --smoke 6   # 6 local underwriting passes (no --smoke starts the server)
 ```
 
 ### Corporate TLS interception

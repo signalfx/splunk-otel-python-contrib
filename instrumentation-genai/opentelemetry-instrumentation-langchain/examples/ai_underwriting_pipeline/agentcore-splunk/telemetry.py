@@ -80,16 +80,28 @@ def _install_otlp(provider: TracerProvider) -> list[str]:
 
     # Metrics and logs are best-effort: Agent Observability's OTLP surface accepts
     # traces, and a missing metrics/logs endpoint should not stop the pipeline running.
-    try:
-        metrics.set_meter_provider(
-            MeterProvider(
-                resource=_resource(),
-                metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+    #
+    # Honour OTEL_METRICS_EXPORTER / OTEL_LOGS_EXPORTER = "none". Without this the SDK
+    # happily builds an exporter pointed at the default localhost:4318, and with no
+    # collector in the container every export cycle logs a ConnectionError traceback --
+    # thousands of lines that bury the actual startup failure.
+    if os.environ.get("OTEL_METRICS_EXPORTER", "").strip().lower() == "none":
+        installed.append("otlp-metrics(disabled)")
+    else:
+        try:
+            metrics.set_meter_provider(
+                MeterProvider(
+                    resource=_resource(),
+                    metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+                )
             )
-        )
-        installed.append("otlp-metrics")
-    except Exception as exc:  # pragma: no cover - depends on deployment
-        print(f"[telemetry] metrics exporter not installed: {exc}", file=sys.stderr)
+            installed.append("otlp-metrics")
+        except Exception as exc:  # pragma: no cover - depends on deployment
+            print(f"[telemetry] metrics exporter not installed: {exc}", file=sys.stderr)
+
+    if os.environ.get("OTEL_LOGS_EXPORTER", "").strip().lower() == "none":
+        installed.append("otlp-logs(disabled)")
+        return installed
 
     try:
         logger_provider = LoggerProvider(resource=_resource())
@@ -114,13 +126,26 @@ def init_telemetry() -> dict:
         installed += _install_otlp(provider)
 
     if EXPORT_MODE in ("console", "both"):
-        # SimpleSpanProcessor, not Batch: one span per line, flushed as it ends, so each
-        # CloudWatch log record holds exactly one complete span. A batch processor would
-        # emit a JSON array spanning multiple records, and CloudWatch line-fragments
-        # multiline output -- the array would arrive as unjoinable pieces and could not be
-        # reassembled downstream.
-        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter(out=sys.stdout)))
-        installed.append("console-spans(stdout->cloudwatch)")
+        # Two decisions here, both required for the spans to be recoverable downstream.
+        #
+        # 1. SimpleSpanProcessor, not Batch -- one span emitted as it ends, rather than a
+        #    JSON array of many.
+        # 2. A COMPACT single-line formatter. ConsoleSpanExporter's default pretty-prints
+        #    with indentation, and CloudWatch line-fragments multiline output: each span
+        #    then arrives as dozens of separate log records that cannot be reassembled,
+        #    and a search for any given attribute matches only the fragment containing it.
+        #    Measured before this fix: a record matched `gen_ai.usage.input_tokens` but the
+        #    same span's `trace_id`, `span_id` and `gen_ai.request.model` were in other
+        #    records. One span per line is what makes recovery possible at all.
+        provider.add_span_processor(
+            SimpleSpanProcessor(
+                ConsoleSpanExporter(
+                    out=sys.stdout,
+                    formatter=lambda span: span.to_json(indent=None) + "\n",
+                )
+            )
+        )
+        installed.append("console-spans(stdout->cloudwatch, one-line)")
 
     trace.set_tracer_provider(provider)
 

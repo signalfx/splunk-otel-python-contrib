@@ -21,6 +21,18 @@ require() {
   [[ -n "${!name:-}" ]] || { echo "ERROR: \$$name is required for this variant" >&2; exit 1; }
 }
 
+# Infrastructure is reused from the account's existing AgentCore setup rather than
+# auto-created: the execution role, VPC subnets and security group already exist and the
+# runtime must sit in the same VPC to reach the model provider.
+EXEC_ROLE="${AGENTCORE_EXECUTION_ROLE:-arn:aws:iam::875228160670:role/AmazonBedrockAgentCoreSDKRuntime-us-west-2-2e5331ee53}"
+# subnet-0702145c672de22db is deliberately omitted: it sits in us-west-2d (usw2-az4), and
+# AgentCore only supports usw2-az1/az2/az3 in this region. Including it fails endpoint
+# creation AFTER the image has built and the runtime has been created, so the error
+# arrives late and looks like a networking fault rather than an unsupported AZ.
+# Remaining: subnet-0b37c9ca7669536d0 (us-west-2c/az3), subnet-0e3580ee0738dbf35 (us-west-2a/az1).
+SUBNETS="${AGENTCORE_SUBNETS:-subnet-0b37c9ca7669536d0,subnet-0e3580ee0738dbf35}"
+SEC_GROUPS="${AGENTCORE_SECURITY_GROUPS:-sg-0c4ea20f07e5794cc}"
+
 deploy_one() {
   local agent_name="$1" export_mode="$2"; shift 2
   echo "=============================================================="
@@ -32,11 +44,30 @@ deploy_one() {
     --name "$agent_name" \
     --requirements-file requirements.txt \
     --region "$AWS_REGION" \
+    --execution-role "$EXEC_ROLE" \
+    --ecr auto \
+    --vpc --subnets "$SUBNETS" --security-groups "$SEC_GROUPS" \
+    --disable-otel \
     --non-interactive
 
-  # shellcheck disable=SC2086
+  # --disable-otel above is the real fix: aws-opentelemetry-distro pins
+  # opentelemetry-sdk==1.33.1, which drags opentelemetry-semantic-conventions down to
+  # 0.54b1 -- and GEN_AI_CONVERSATION_ID does not exist until a later version, so the
+  # Splunk GenAI instrumentation dies at import. This app configures its own
+  # TracerProvider and LangchainInstrumentor, so it needs neither the distro nor the
+  # `opentelemetry-instrument` wrapper the template adds.
+  #
+  # patch_dockerfile.py still runs as a safety net: it adds a build-time import guard so a
+  # future template change that reintroduces the distro fails the BUILD rather than
+  # shipping an image that cannot start. It must run between configure and launch because
+  # configure regenerates the Dockerfile and discards manual edits.
+  python3 patch_dockerfile.py "$agent_name" || true
+
+  # --auto-update-on-conflict: launch refuses to touch an existing agent otherwise, so a
+  # second deploy of the same name fails with ConflictException rather than updating it.
   agentcore launch \
-    --name "$agent_name" \
+    --agent "$agent_name" \
+    --auto-update-on-conflict \
     --env UNDERWRITING_EXPORT_MODE="$export_mode" \
     --env UNDERWRITING_NOISE_RATE="$NOISE" \
     --env OPENAI_API_KEY="$OPENAI_API_KEY" \
@@ -88,5 +119,5 @@ esac
 
 echo
 echo "Done. Invoke with:"
-echo "  agentcore invoke --name underwriting_ao '{\"applicant_id\":\"APP-31001\"}'"
-echo "  agentcore invoke --name underwriting_spans_to_logs '{\"applicant_id\":\"APP-31002\"}'"
+echo "  agentcore invoke --agent underwriting_ao '{\"applicant_id\":\"APP-31001\"}'"
+echo "  agentcore invoke --agent underwriting_spans_to_logs '{\"applicant_id\":\"APP-31002\"}'"
