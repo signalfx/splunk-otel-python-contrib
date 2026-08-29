@@ -1,0 +1,15 @@
+# AI underwriting pipeline -- production dependencies.
+#
+# Layer order matters and is the reason this file exists separately from
+# requirements-app.txt. aws-opentelemetry-distro pins the whole OTel stack with `==`, so
+# installing it AFTER the application requirements silently downgrades
+# opentelemetry-semantic-conventions beneath what the GenAI instrumentation needs, and the
+# instrumentation then fails to import at runtime while the process serves traffic
+# normally. Install app deps first, Splunk GenAI packages second, and never add the AWS
+# distro after them.
+-r requirements-app.txt
+splunk-otel-util-genai
+splunk-otel-genai-emitters-splunk
+splunk-otel-util-genai-evals
+splunk-otel-genai-evals-deepeval
+splunk-otel-instrumentation-langchain
