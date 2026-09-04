@@ -100,6 +100,11 @@ def _plan_noise() -> list[str]:
 
 def intake_node(state: UnderwritingState) -> dict:
     with tracer().start_as_current_span("underwriting.intake") as span:
+        # Onboarding's "Discover" step groups spans into confirmable features by this key.
+        # It is a sub-span attribute, not a root one, so it does not feed genai_lens.mapping's
+        # cost split (that reads only the root span's metadata) -- it makes this step
+        # classifiable as "Document Intake" for a human confirming agents in AO/the wizard.
+        span.set_attribute("genai_lens.feature_id", "Document Intake")
         span.set_attribute("underwriting.applicant_id", state["applicant_id"])
         span.set_attribute("underwriting.product", state["product"])
         span.set_attribute("underwriting.coverage_limit_usd", state["coverage_limit_usd"])
@@ -190,6 +195,7 @@ def _derive_tier(facts: dict) -> str:
 
 def guidelines_node(state: UnderwritingState) -> dict:
     with tracer().start_as_current_span("underwriting.guidelines") as span:
+        span.set_attribute("genai_lens.feature_id", "Risk Scoring")
         tier = _derive_tier(state["facts"])
         data = json.loads(
             check_underwriting_guidelines.invoke({"product": state["product"], "risk_tier": tier})
@@ -207,6 +213,7 @@ def guidelines_node(state: UnderwritingState) -> dict:
 
 def pricing_node(state: UnderwritingState) -> dict:
     with tracer().start_as_current_span("underwriting.pricing") as span:
+        span.set_attribute("genai_lens.feature_id", "Quote Generation")
         g = state["facts"].get("guidelines", {})
         tier = state.get("risk_tier") or "standard"
         multiplier = {"preferred": 0.85, "standard": 1.0, "substandard": 1.6, "declined": 0.0}[tier]

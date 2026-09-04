@@ -1,0 +1,23 @@
+# Fraud-detection agent -- production dependencies.
+#
+# Deliberately flat, matching ai_underwriting_pipeline/agentcore-splunk/requirements.txt: the
+# AgentCore starter toolkit uploads a filtered build context that excludes files not listed
+# here.
+#
+# No pin on the opentelemetry-api/sdk/instrumentation core: aws-opentelemetry-distro is
+# installed by a SEPARATE Dockerfile layer (patched by patch_dockerfile.py to a version
+# recent enough to carry GEN_AI_CONVERSATION_ID) and owns those versions. Pinning them here
+# too would just create a second thing that has to agree with the distro's pin.
+
+bedrock-agentcore==1.7.0
+bedrock-agentcore-starter-toolkit==0.3.6
+openai==2.32.0
+pydantic==2.12.5
+python-dotenv==1.2.2
+requests==2.32.5
+
+# Community package (not Splunk's fork): its floors (opentelemetry-instrumentation>=0.59b0,
+# opentelemetry-semantic-conventions>=0.63b1) are satisfied by aws-opentelemetry-distro's own
+# pin, unlike splunk-otel-util-genai / splunk-otel-genai-emitters-splunk, which pin
+# `~=0.57b0` and cannot install alongside a current ADOT release at all.
+opentelemetry-instrumentation-openai==0.62.3
