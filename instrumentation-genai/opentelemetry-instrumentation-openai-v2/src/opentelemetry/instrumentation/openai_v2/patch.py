@@ -15,6 +15,7 @@
 
 import asyncio
 import inspect
+import os
 import timeit
 from typing import Any, Iterable, Optional
 
@@ -57,6 +58,25 @@ from .utils import (
     set_span_attribute,
     value_is_set,
 )
+
+
+def _is_instrumentation_suppressed() -> bool:
+    """Return True when OpenAI spans should be skipped.
+
+    Checks two surfaces for the suppression signal:
+    1. OTel context key — set per-request by the LangChain instrumentor's
+       ``_OpenAITracingWrapper`` to prevent duplicate LLM spans when both
+       instrumentors are active simultaneously.
+    2. Environment variable ``SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION`` —
+       set globally (e.g. in zero-code deployments) together with
+       ``OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=openai``.
+    """
+    if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+        return True
+    raw = os.environ.get(
+        SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY.upper(), ""
+    )
+    return raw.strip().lower() in ("true", "1", "yes", "on")
 
 
 def _normalize_stop_sequences(stop_values: Any) -> list[str]:
@@ -394,7 +414,7 @@ def chat_completions_create(capture_content: bool, handler):
 
     def traced_method(wrapped, instance, args, kwargs):
         # Check if instrumentation is suppressed (e.g., by LangChain)
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+        if _is_instrumentation_suppressed():
             return wrapped(*args, **kwargs)
 
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
@@ -449,7 +469,7 @@ def async_chat_completions_create(capture_content: bool, handler):
 
     async def traced_method(wrapped, instance, args, kwargs):
         # Check if instrumentation is suppressed (e.g., by LangChain)
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+        if _is_instrumentation_suppressed():
             return await wrapped(*args, **kwargs)
 
         span_attributes = {**get_llm_request_attributes(kwargs, instance)}
@@ -504,7 +524,7 @@ def embeddings_create(capture_content: bool, handler):
 
     def traced_method(wrapped, instance, args, kwargs):
         # Check if instrumentation is suppressed (e.g., by LangChain)
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+        if _is_instrumentation_suppressed():
             return wrapped(*args, **kwargs)
 
         span_attributes = get_llm_request_attributes(
@@ -553,7 +573,7 @@ def async_embeddings_create(capture_content: bool, handler):
 
     async def traced_method(wrapped, instance, args, kwargs):
         # Check if instrumentation is suppressed (e.g., by LangChain)
-        if context_api.get_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY):
+        if _is_instrumentation_suppressed():
             return await wrapped(*args, **kwargs)
 
         span_attributes = get_llm_request_attributes(

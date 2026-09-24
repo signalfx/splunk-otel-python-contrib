@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version 0.1.2 (2026-05-19)
 
+### Added
+
+- **`SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION` env var** — Global alternative to
+  the per-request `suppress_language_model_instrumentation` OTel context key
+  (the env var is the uppercase form of the same string). When set to a truthy
+  value (`true`, `1`, `yes`, `on`), the openai-v2 instrumentor skips creating
+  spans entirely. Intended for zero-code deployments alongside
+  `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=openai`.
+- Add `gen_ai.tool.definitions` attribute on LLM spans when
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true`
+- Add `gen_ai.request.stream` attribute for streaming requests
+- Add `gen_ai.response.time_to_first_chunk` attribute and metric for streaming requests
+
 ### Fixed
 
 - Fix `AttributeError: 'StreamWrapper' object has no attribute 'headers'` when
@@ -19,17 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attributes to the underlying stream. Inspired by upstream fix
   ([opentelemetry-python-contrib#4184](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4184),
   fixes [#4113](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4113)).
-
-### Added
-
-- Add `gen_ai.tool.definitions` attribute on LLM spans when
-  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and
-  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_TOOL_DEFINITIONS=true`
-- Add `gen_ai.request.stream` attribute for streaming requests
-- Add `gen_ai.response.time_to_first_chunk` attribute and metric for streaming requests
-
-### Fixed
-
 - Fix PyPI badge, install command, and references in README.rst to use correct
   `splunk-otel-instrumentation-openai` package name instead of upstream
 - Fix project URLs in pyproject.toml to point to SDOT repo (`signalfx/splunk-otel-python-contrib`)
