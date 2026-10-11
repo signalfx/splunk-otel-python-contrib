@@ -4,7 +4,7 @@
 
 # LangChain/LangGraph
 langgraph==1.1.10
-langchain-openai==1.1.13
+langchain-openai==1.1.14
 langchain-community==0.4.1
 
 # MCP (Model Context Protocol)
