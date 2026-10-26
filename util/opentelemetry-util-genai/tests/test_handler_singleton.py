@@ -154,14 +154,15 @@ class TestGetTelemetryHandlerSingleton:
         """TelemetryHandler.__new__ allocates exactly one instance under contention."""
         num_threads = 10
         barrier = threading.Barrier(num_threads)
-        new_count = 0
+        returned = []
         original_new = TelemetryHandler.__new__
 
         def counting_new(cls, *args, **kwargs):
-            nonlocal new_count
             instance = original_new(cls, *args, **kwargs)
-            if not getattr(instance, "_initialized", False):
-                new_count += 1
+            # Each allocation is returned by the call that made it, so count
+            # distinct objects. Checking ``_initialized`` here would also count
+            # threads that get the singleton before its first ``__init__`` ends.
+            returned.append(instance)
             return instance
 
         with mock.patch.object(TelemetryHandler, "__new__", counting_new):
@@ -179,6 +180,7 @@ class TestGetTelemetryHandlerSingleton:
             for t in threads:
                 t.join()
 
+        new_count = len({id(instance) for instance in returned})
         assert new_count == 1, (
             f"TelemetryHandler created {new_count} fresh instances, expected 1"
         )
