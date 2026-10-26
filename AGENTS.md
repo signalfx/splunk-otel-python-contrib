@@ -63,7 +63,7 @@ ruff check --fix . && ruff format .
 ### CI Checks (must pass)
 
 1. **Lint** (`ci-lint.yaml`): `ruff check .` and `ruff format --check .`
-2. **Tests** (`ci-main.yaml`): pytest across Python 3.10-3.13 on Linux/macOS/Windows
+2. **Tests** (`ci-main.yaml`): pytest across Python 3.10-3.14 on Linux/macOS/Windows
 
 ## Code Patterns
 

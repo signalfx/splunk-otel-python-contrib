@@ -230,7 +230,7 @@ def test_tool_definitions_captured(span_exporter, instrument):
             await handler
             await asyncio.sleep(0.5)
 
-        asyncio.get_event_loop().run_until_complete(run())
+        asyncio.run(run())
 
         # ReActAgent uses astream_chat which bypasses @llm_chat_callback,
         # so check workflow/agent spans for tool_definitions instead.
