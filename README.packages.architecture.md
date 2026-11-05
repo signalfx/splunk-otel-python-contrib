@@ -1,6 +1,11 @@
 
 # OpenTelemetry GenAI Utility - Packages architecture
 
+> **Deprecated: Support has ended** for this repository and its packages.
+> Use [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib)
+> for instrumentation going forward.
+> Future plans below are historical context. See [DEPRECATION.md](DEPRECATION.md).
+
 ## 1. Goals (Why this utility exists)
 Provide a stable, extensible core abstraction (GenAI Types + TelemetryHandler + CompositeEmitter + Evaluator hooks) separating *instrumentation capture* from *telemetry flavor emission* so that:
 - Instrumentation authors create neutral GenAI data objects once.

@@ -1,3 +1,12 @@
+.. warning::
+
+   Deprecated: This package is part of the deprecated Splunk OpenTelemetry
+   Python Contrib repository. Support and maintenance have ended.
+   Use upstream OpenTelemetry Python Contrib for instrumentation:
+   https://github.com/open-telemetry/opentelemetry-python-contrib
+   See https://github.com/signalfx/splunk-otel-python-contrib/blob/main/DEPRECATION.md
+   for details.
+
 OpenTelemetry Util GenAI Evaluations
 ====================================
 

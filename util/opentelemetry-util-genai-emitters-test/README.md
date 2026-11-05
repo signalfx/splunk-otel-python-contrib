@@ -1,3 +1,8 @@
+> **Deprecated:** This package is part of the deprecated Splunk OpenTelemetry
+> Python Contrib repository. Support and maintenance have ended.
+> Use [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib) for instrumentation.
+> See [the deprecation notice](https://github.com/signalfx/splunk-otel-python-contrib/blob/main/DEPRECATION.md).
+
 # OpenTelemetry GenAI Test Emitter
 
 This package provides a test emitter for OpenTelemetry GenAI utilities. It captures all telemetry (spans, metrics, events, evaluation results) in memory for testing, validation, and performance benchmarking.

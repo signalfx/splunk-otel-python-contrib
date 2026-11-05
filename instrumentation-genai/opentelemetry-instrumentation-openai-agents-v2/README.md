@@ -1,3 +1,8 @@
+> **Deprecated:** This package is part of the deprecated Splunk OpenTelemetry
+> Python Contrib repository. Support and maintenance have ended.
+> Use [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib) for instrumentation.
+> See [the deprecation notice](https://github.com/signalfx/splunk-otel-python-contrib/blob/main/DEPRECATION.md).
+
 # OpenTelemetry OpenAI Agents Instrumentation (Alpha)
 
 [![PyPI](https://badge.fury.io/py/splunk-otel-instrumentation-openai-agents.svg)](https://pypi.org/project/splunk-otel-instrumentation-openai-agents/)

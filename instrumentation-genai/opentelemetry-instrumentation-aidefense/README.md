@@ -1,3 +1,8 @@
+> **Deprecated:** This package is part of the deprecated Splunk OpenTelemetry
+> Python Contrib repository. Support and maintenance have ended.
+> Use [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib) for instrumentation.
+> See [the deprecation notice](https://github.com/signalfx/splunk-otel-python-contrib/blob/main/DEPRECATION.md).
+
 # OpenTelemetry Cisco AI Defense Instrumentation
 
 This package provides OpenTelemetry instrumentation for [Cisco AI Defense](https://www.cisco.com/site/us/en/products/security/ai-defense/index.html), enabling automatic telemetry capture for security inspection operations.
