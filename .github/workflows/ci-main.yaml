@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -63,7 +63,15 @@ jobs:
           pip install -e instrumentation-genai/opentelemetry-instrumentation-openai-agents-v2 --no-deps
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-llamaindex[instruments,test]"
           pip install -e instrumentation-genai/opentelemetry-instrumentation-fastmcp --no-deps
+
+      - name: Install crewai instrumentation package
+        # crewai requires Python < 3.14
+        if: matrix.python-version != '3.14'
+        run: |
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-crewai[instruments,test]"
+
+      - name: Install remaining instrumentation packages
+        run: |
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-aidefense[test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-weaviate[instruments,test]"
           pip install -e "instrumentation-genai/opentelemetry-instrumentation-vertexai[instruments,test]"
@@ -133,7 +141,7 @@ jobs:
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-llamaindex/tests/ -v
 
       - name: Run tests - opentelemetry-instrumentation-crewai
-        if: always()
+        if: always() && matrix.python-version != '3.14'
         run: |
           python -m pytest instrumentation-genai/opentelemetry-instrumentation-crewai/tests/ -v
 
