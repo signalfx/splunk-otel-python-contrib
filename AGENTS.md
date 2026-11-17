@@ -1,12 +1,18 @@
 # Agent Instructions
 
+> **Deprecated: Support has ended.** This repository and all packages in
+> `instrumentation-genai/` and `util/` are deprecated. Do not add features, bug
+> fixes, packages, or version changes here. Direct instrumentation issues and
+> contributions to [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib).
+> See [DEPRECATION.md](DEPRECATION.md).
+
 > This file provides context for AI coding agents (OpenAI Codex, GitHub Copilot, Cursor, Windsurf, Claude).
 
 ## Project Overview
 
 **Splunk OpenTelemetry Python Contrib** - GenAI instrumentation packages for Python providing AI/ML observability through OpenTelemetry.
 
-**Status**: Alpha preview - breaking changes expected.
+**Status**: Deprecated. Support, maintenance, and security updates have ended. No removal date is announced.
 
 **Core Purpose of Splunk Distro for OpenTelemetry(SDOT)**: Provides util libraries to separate *instrumentation capture* from *telemetry emission* so:
 
@@ -14,6 +20,14 @@
 - Pluggable emitters produce different telemetry flavors (spans, metrics, events)
 - Evaluations (LLM-as-a-judge) run asynchronously through the same pipeline
 - Configuration is environment-variable driven
+
+## Deprecation Rules for AI Agents
+
+- Do not implement features, bug fixes, instrumentations, emitters, evaluators, or translators in this repository.
+- Do not change package versions or publish distributions. This deprecation does not change package behavior or versions.
+- Allowed changes: documentation that clarifies the deprecation, and fixes to the deprecation notices themselves.
+- If a user asks for a change to package behavior, tell them that this repository is deprecated and point them to the upstream project in [DEPRECATION.md](DEPRECATION.md). Confirm with the user before making any other change.
+- Treat the development, workflow, and "Common Tasks" sections below as historical reference only.
 
 ## Repository Structure
 

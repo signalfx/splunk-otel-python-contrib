@@ -1,5 +1,10 @@
 # OpenTelemetry GenAI Utility
 
+> **Deprecated: Support has ended** for this repository and all packages maintained here.
+> Use [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib)
+> for instrumentation going forward. See [DEPRECATION.md](DEPRECATION.md)
+> for the scope of this notice and guidance for existing users.
+
 This software is for Alpha preview only. This code may be discontinued, include breaking changes and may require code changes to use it.
 
 ## 1. Why this utility exists
@@ -578,4 +583,3 @@ python -m opentelemetry.util.genai.emitters.eval_perf_test \
 - Unit tests: env parsing, category overrides, evaluator grammar, sampling, content capture gating.
 - Future: ordering hints tests once implemented.
 - Smoke: vendor emitters (Traceloop + Splunk) side-by-side replacement/append semantics.
-

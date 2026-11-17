@@ -1,3 +1,12 @@
+.. warning::
+
+   Deprecated: This package is part of the deprecated Splunk OpenTelemetry
+   Python Contrib repository. Support and maintenance have ended.
+   Use upstream OpenTelemetry Python Contrib for instrumentation:
+   https://github.com/open-telemetry/opentelemetry-python-contrib
+   See https://github.com/signalfx/splunk-otel-python-contrib/blob/main/DEPRECATION.md
+   for details.
+
 OpenTelemetry OpenAI Instrumentation
 ====================================
 
@@ -127,4 +136,3 @@ References
 * `Splunk OpenTelemetry OpenAI Instrumentation <https://github.com/signalfx/splunk-otel-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2>`_
 * `OpenTelemetry Project <https://opentelemetry.io/>`_
 * `OpenTelemetry Python Examples <https://github.com/open-telemetry/opentelemetry-python/tree/main/docs/examples>`_
-

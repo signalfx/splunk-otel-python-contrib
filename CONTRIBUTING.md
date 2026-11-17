@@ -1,5 +1,10 @@
 # Contributing Guidelines
 
+> **Deprecated: Support has ended.** This repository no longer accepts bug fixes
+> or feature contributions. Submit instrumentation issues and contributions to
+> [upstream OpenTelemetry Python Contrib](https://github.com/open-telemetry/opentelemetry-python-contrib).
+> The instructions below are historical reference. See [DEPRECATION.md](DEPRECATION.md).
+
 Thank you for your interest in contributing to our repository! Whether it's a bug
 report, new feature, or question, we greatly value feedback and contributions from
 our community. Read through this document before submitting any issues or pull
