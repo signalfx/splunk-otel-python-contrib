@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Bump `fsspec` to `2026.9.0` in test dependencies to address CVE-2026-104851 (VULN-123548).
+
 ## Version 0.1.15 - 2026-07-23
 
 ### Fixed
